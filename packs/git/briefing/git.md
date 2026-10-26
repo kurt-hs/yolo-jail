@@ -16,14 +16,16 @@
 
 With the broker running:
 
-- **It grants nothing until the user's config does.** A fetch or push refused with `no read
-  grant` means the user has not granted read access: ask them to add
+- **It grants nothing until the user's config does.** SSH fetches and pushes refused with `no read
+  grant` mean the user has not granted read access: ask them to add
   `{"kind": "read", "repo": "*"}` to `brokered.git.grants` in their user config on the host, then
   run `yolo config apply` on the host, in this workspace, and approve the grant. The running
   broker takes it at its next call. You cannot grant it from the jail, and a workspace config
-  edit does not either.
+  edit does not either. A public HTTPS fetch is the exception: it is tried anonymously, and never
+  asks the host credential helper.
 - With the read grant, `git fetch`, `git pull` and `git ls-remote` work against this
-  workspace's remotes as the user approved them, over SSH or HTTPS.
+  workspace's approved remotes, over SSH or HTTPS. An HTTPS credential is used only after that
+  exact remote and read grant are approved.
 - **A push goes through only when the user granted it ahead of time.** With a `create-branch`
   grant on the repository, you may push a branch that does not exist on the remote yet; once the
   remote accepts it, it joins this workspace's working set, and later pushes to it (updates,
@@ -37,11 +39,14 @@ With the broker running:
   grant `create-branch` for a new branch, or a `branch` grant for that branch, in the workspace
   config and approve it with `yolo config apply`); a ref outside `refs/heads/` and `refs/tags/` is never pushed through
   the broker. Do not retry a refused push.
-- A remote outside the approved scope is refused naming the scope. A new remote joins only when
-  the user approves it in the config-change prompt on the host: add it with `git remote add`,
-  then ask the user to run `yolo config apply` on the host, in this workspace, and answer y.
+- A remote outside the approved scope is refused for SSH and push. A public HTTPS fetch may be
+  tried anonymously outside that scope; if it asks for credentials, it is refused naming the
+  scope. A new remote joins only when the user approves it in the config-change prompt on the
+  host: add it with `git remote add`, then ask the user to run `yolo config apply` on the host, in
+  this workspace, and answer y.
 - An HTTPS fetch the host has no credential for is refused naming the `git credential fill` the
-  user can run on the host; the broker never prompts.
+  user can run on the host, but only after its URL and read grant are approved; public fetches
+  never ask the helper. The broker never prompts.
 - `http://`, `git://`, `file://`, local paths, and an scp-style remote whose user is not `git`
   are not rewritten, so they behave as they would with no broker.
 - Never set or export `GIT_CONFIG_COUNT` or `GIT_CONFIG_KEY_<n>` yourself: yours replaces

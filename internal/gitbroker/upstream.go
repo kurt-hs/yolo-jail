@@ -20,8 +20,9 @@ import (
 
 // upstream.go is the leg from the broker to the remote: which transports it carries, the
 // host ssh it runs and the environment it runs it in (docs/design/git-broker-plan.md ID-7,
-// docs/design/git-broker.md §4.3). The URL it connects to is always the approved scope entry,
-// which the request matched exactly, never anything else the jail sent.
+// docs/design/git-broker.md §4.3). Credentialed HTTPS and every SSH leg use an exact URL in
+// live scope; the broker may also try an HTTPS fetch anonymously outside scope, without
+// credential helper access.
 
 const (
 	transportSSH   = "ssh"

@@ -867,9 +867,10 @@ hostname from it and knows no tool; `packs/github`'s `github-broker` is the firs
   manifest may not set `default_enabled: true` (refused at load); a `loopholes.<name>.enabled` in
   the user config, or any switch of it in a workspace config, refuses the launch and fails
   `yolo check`, naming the read grant; one in the per-workspace file is ignored with a warning, and
-  `yolo loopholes enable` and `disable` refuse for it. yolo's shipped brokers refuse every call no
-  `read` grant in the scope file covers ([BB-D108](../design/boundary-broker.md#BB-D108)), a
-  precedent for shipped packs that yolo does not enforce on others.
+  `yolo loopholes enable` and `disable` refuse for it. yolo's shipped brokers generally refuse
+  calls no `read` grant in the scope file covers ([BB-D108](../design/boundary-broker.md#BB-D108));
+  the git broker's public HTTPS fetch is the narrow exception and never uses a credential. This is
+  a precedent for shipped packs that yolo does not enforce on others.
 
 ## Retirement: what happens when a pack goes away
 

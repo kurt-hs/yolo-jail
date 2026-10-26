@@ -207,9 +207,9 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 }
 
 // With the pack selected and NO read grant the broker runs and grants nothing (BB-D104, BB-D108,
-// BB-D110): the launch meets no config-change gate for it, so it proceeds with no terminal and no
-// approval recorded; the rewrite is served, and the fetch is refused naming the grant, with the
-// host's ssh never run.
+// BB-D110): this fixture uses SSH, so its fetch and push are refused naming the grant, with the
+// host's ssh never run. Anonymous public HTTPS fetch is covered through the fixture HTTPS broker
+// in internal/gitbroker/https_test.go.
 func TestGitBrokerWithNoGrantRefusesTheFetch(t *testing.T) {
 	fx := newGitBrokerFixture(t, false)
 	script := gitInJail + ghScript(

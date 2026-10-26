@@ -9,9 +9,9 @@ import (
 )
 
 // The broker of a selected pack grants nothing (docs/design/boundary-broker.md BB-D104, BB-D108):
-// with no read grant it still serves, and refuses a fetch and a push alike, naming the user-config
-// grant and `yolo config apply`, without starting the host's ssh.
-func TestNoReadGrantRefusesEveryCall(t *testing.T) {
+// with no read grant it refuses an SSH fetch and push, naming the user-config grant and `yolo config
+// apply`, without starting the host's ssh. Public HTTPS fetch behavior is pinned in https_test.go.
+func TestSSHNoReadGrantRefusesEveryCall(t *testing.T) {
 	f := newFixtureOpts(t, fixtureOpts{noRead: true})
 	for _, args := range [][]string{{"fetch", "origin"}, {"push", "origin", "HEAD:refs/heads/agent/x"}} {
 		out, err := f.git(args...)
@@ -103,8 +103,8 @@ func TestReadGrantOnAnotherRepoCoversNothing(t *testing.T) {
 }
 
 // A workspace whose launch recorded no remotes, because it held no read grant and so stayed out
-// of the gate (docs/design/boundary-broker.md BB-D110), is refused naming the read grant, not
-// told to add a remote.
+// of the gate (docs/design/boundary-broker.md BB-D110), refuses this SSH fetch naming the read
+// grant, not told to add a remote.
 func TestNoReadGrantAndNoRemotesNamesTheGrant(t *testing.T) {
 	f := newFixtureOpts(t, fixtureOpts{noRead: true})
 	if err := brokerscope.ReplaceScopeContext(context.Background(), f.scopeFile, f.broker.bound, nil, nil); err != nil {

@@ -33,10 +33,12 @@ Select the pack, and grant read access, in your user config (`~/.config/yolo-jai
 }
 ```
 
-Selecting the pack starts the broker in every project, and on its own it **grants nothing**:
-without the read grant, every fetch and push through it is refused, naming the grant to add. The
-read grant lets each project fetch from its own approved remotes, and nothing else; `"*"` means
-each project's own remotes, never every repository you can reach.
+Selecting the pack starts the broker in every project, and on its own it **grants nothing**: an SSH
+fetch or any push without the read grant is refused, naming the grant to add. A public HTTPS fetch
+is tried anonymously and never uses a host credential; if that server asks for one, the fetch is
+refused until the read grant and the project's remote are approved. The read grant lets each
+project use its own approved remotes, and nothing else; `"*"` means each project's own remotes,
+never every repository you can reach.
 
 The grant never takes effect unseen. Each project's next config-change prompt, or
 `yolo config apply` run on your machine in the project, shows it as a line of the
@@ -54,9 +56,10 @@ removes it.
 
 Once the read grant applies, the next fresh launch of the project asks once, in its
 config-change prompt, to approve its **remotes**: every `url` and `pushurl` in the project's `.git/config`, on any host, shown exactly
-as written. The broker connects only to a remote you approved, and only to the address you
-approved. With no terminal, pass `--accept-config-changes`, or run
-`yolo check --accept-config-changes` on your machine first.
+as written. The broker uses host credentials only for a remote you approved, and only to the address you
+approved. A public HTTPS fetch may be tried anonymously without adding that remote to the approved
+scope; that exception grants no credential access and cannot be used to push. With no terminal, pass
+`--accept-config-changes`, or run `yolo check --accept-config-changes` on your machine first.
 
 A remote whose `https://` address carries a password is left out, and the prompt says why.
 

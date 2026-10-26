@@ -110,8 +110,22 @@ type httpsOpts struct {
 	rejectPushPost bool
 	// authOnlyPushPost serves everything without a credential except a push POST.
 	authOnlyPushPost bool
+	// authOnlyFetchPost requires a credential only for a v2 command=fetch POST.
+	authOnlyFetchPost bool
+	// public serves smart HTTP without credentials; the fixture's default is private.
+	public bool
+	// revokeReadAfterAdvertisement removes the live scope's read grant before the first POST.
+	revokeReadAfterAdvertisement bool
+	// revokeReadOnAuthenticatedAdvertisement removes it after an authenticated advertisement request.
+	revokeReadOnAuthenticatedAdvertisement bool
+	// rejectAuthenticatedAdvertisement answers its authenticated retry with 401.
+	rejectAuthenticatedAdvertisement bool
+	// changeIdentityAfterAdvertisement changes the bound scope's launch identity.
+	changeIdentityAfterAdvertisement bool
 	// grants are the scope file's approved user grants.
 	grants []brokerscope.Grant
+	// noRead leaves the read grant out of both the user config and the scope file.
+	noRead bool
 	// acceptChunked de-chunks a chunked POST for http-backend. Without it the server answers a
 	// chunked POST 411, as a CGI host that cannot take one does (net/http/cgi refuses it).
 	acceptChunked bool
@@ -119,10 +133,11 @@ type httpsOpts struct {
 
 type httpsFixture struct {
 	*fixture
-	srv    *httpsServer
-	url    string // the approved remote
-	host   string // 127.0.0.1:<port>
-	credRc string // what the fake host git records
+	srv       *httpsServer
+	url       string // the approved remote
+	host      string // 127.0.0.1:<port>
+	credRc    string // what the fake host git records
+	revokeErr error  // scope revocation result for the live-revoke test
 }
 
 // newHTTPSFixture is the SSH fixture with origin moved to the TLS server.
@@ -138,8 +153,10 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 	}
 	h := &httpsFixture{srv: &httpsServer{}}
 	var ts *httptest.Server
+	var revokeOnce sync.Once
 	h.fixture = newFixtureOpts(t, fixtureOpts{
 		grants: o.grants,
+		noRead: o.noRead,
 		prepare: func(f *fixture) ([]string, string) {
 			srvRoot := filepath.Join(f.root, "srv")
 			mustGit(t, f.bare, "config", "http.receivepack", "true")
@@ -162,6 +179,21 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 						r.ContentLength, r.TransferEncoding = int64(len(body)), nil
 					}
 				}
+				if (o.revokeReadAfterAdvertisement || o.revokeReadOnAuthenticatedAdvertisement || o.changeIdentityAfterAdvertisement) &&
+					r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/info/refs") &&
+					(!o.revokeReadOnAuthenticatedAdvertisement || rec.Authed) {
+					revokeOnce.Do(func() {
+						sf, readErr := brokerscope.ReadFile(h.fixture.scopeFile)
+						if readErr == nil && (o.revokeReadAfterAdvertisement || o.revokeReadOnAuthenticatedAdvertisement) {
+							readErr = brokerscope.ReplaceScopeContext(context.Background(), h.fixture.scopeFile, h.fixture.broker.bound,
+								sf.Repos, nil)
+						} else if readErr == nil {
+							sf.Container += "-changed"
+							_, readErr = brokerscope.Write(sf)
+						}
+						h.revokeErr = readErr
+					})
+				}
 				sw := &statusRecorder{ResponseWriter: w, status: 200}
 				defer func() {
 					rec.Status = sw.status
@@ -174,8 +206,11 @@ func newHTTPSFixture(t *testing.T, o httpsOpts) *httpsFixture {
 					return
 				}
 				pushPost := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack")
-				needAuth := !o.authOnlyPushPost || pushPost
-				if (needAuth && !rec.Authed) || (o.rejectPushPost && pushPost) {
+				fetchPost := r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack")
+				needAuth := (!o.public && !o.authOnlyPushPost && !o.authOnlyFetchPost) ||
+					(o.authOnlyPushPost && pushPost) || (o.authOnlyFetchPost && fetchPost && rec.Command == "command=fetch")
+				if (needAuth && !rec.Authed) || (o.rejectPushPost && pushPost) ||
+					(o.rejectAuthenticatedAdvertisement && r.Method == http.MethodGet && rec.Authed && strings.HasSuffix(r.URL.Path, "/info/refs")) {
 					sw.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
 					sw.WriteHeader(http.StatusUnauthorized)
 					return
@@ -268,6 +303,221 @@ func readFile(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestHTTPSPublicFetchWithoutReadGrantOrApprovedURL(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{public: true, noRead: true})
+	h.setScope()
+	h.upstreamCommit()
+
+	out, err := h.git("fetch", "origin")
+	if err != nil {
+		t.Fatalf("public fetch without grants or scope: %v\n%s\nrequests:\n%s", err, out, h.srv.log(t))
+	}
+	if got, want := mustGit(t, h.ws, "rev-parse", "refs/remotes/origin/main"), mustGit(t, h.bare, "rev-parse", "main"); got != want {
+		t.Fatalf("origin/main %s, bare main %s", got, want)
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("anonymous public fetch ran the host credential helper: %v", h.credCalls())
+	}
+	for _, r := range h.srv.requests() {
+		if r.AnyAuth {
+			t.Fatalf("anonymous public fetch sent authorization:\n%s", h.srv.log(t))
+		}
+	}
+	if h.sshRan() {
+		t.Fatal("HTTPS public fetch started host ssh")
+	}
+	scope, err := brokerscope.ReadFile(h.scopeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.Repos) != 0 {
+		t.Fatalf("anonymous fetch registered an approved repository: %v", scope.Repos)
+	}
+	if !strings.Contains(auditRaw(t), `"set":"read"`) || !strings.Contains(auditRaw(t), `"outcome":"ran"`) {
+		t.Fatalf("anonymous fetch was not audited as a read:\n%s", auditRaw(t))
+	}
+}
+
+func TestHTTPSPrivateAnonymous401RefusesWithoutCredential(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		noRead bool
+		want   []string
+	}{
+		{name: "outside scope", want: []string{"not in this workspace's approved scope", "config-change gate"}},
+		{name: "no read grant", noRead: true, want: []string{"holds no read grant", `"kind": "read"`, "yolo config apply"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHTTPSFixture(t, httpsOpts{noRead: tc.noRead})
+			if tc.name == "outside scope" {
+				h.setScope()
+			}
+			out, err := h.git("fetch", "origin")
+			if err == nil {
+				t.Fatalf("private fetch without authorization succeeded:\n%s", out)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("refusal lacks %q:\n%s", want, out)
+				}
+			}
+			if len(h.credCalls()) != 0 {
+				t.Errorf("anonymous 401 started host credential helper: %v", h.credCalls())
+			}
+			for _, r := range h.srv.requests() {
+				if r.AnyAuth {
+					t.Errorf("private anonymous request sent authorization:\n%s", h.srv.log(t))
+				}
+			}
+		})
+	}
+}
+
+func TestHTTPSAnonymousFetchLate401NeverFillsCredential(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{public: true, authOnlyFetchPost: true, noRead: true})
+	h.setScope()
+	h.upstreamCommit()
+	out, err := h.git("fetch", "origin")
+	if err == nil {
+		t.Fatalf("fetch succeeded when the upload-pack POST required authorization:\n%s", out)
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("late anonymous POST 401 started the host credential helper: %v", h.credCalls())
+	}
+	reqs := h.srv.requests()
+	if len(reqs) < 3 || reqs[0].Method != http.MethodGet || reqs[0].Status != http.StatusOK ||
+		reqs[1].Command != "command=ls-refs" || reqs[1].Status != http.StatusOK ||
+		reqs[2].Command != "command=fetch" || reqs[2].Status != http.StatusUnauthorized {
+		t.Fatalf("did not exercise anonymous advertisement/ls-refs followed by fetch-command 401:\n%s", h.srv.log(t))
+	}
+	for _, r := range reqs {
+		if r.AnyAuth {
+			t.Fatalf("anonymous HTTPS leg sent authorization:\n%s", h.srv.log(t))
+		}
+	}
+}
+
+func TestHTTPSURLUserInfoIsNotCredentialHint(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{public: true, noRead: true})
+	h.url = strings.Replace(h.url, "https://", "https://urluser:urlpass@", 1)
+	mustGit(t, h.ws, "remote", "set-url", "origin", h.url)
+	out, err := h.git("fetch", "origin")
+	if err != nil {
+		t.Fatalf("anonymous fetch with user-info URL: %v\n%s", err, out)
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("URL user-info triggered host credential helper: %v", h.credCalls())
+	}
+	for _, r := range h.srv.requests() {
+		if r.AnyAuth {
+			t.Fatalf("URL user-info became HTTP authorization:\n%s", h.srv.log(t))
+		}
+	}
+}
+
+func TestHTTPSCredentialFillRechecksLiveReadGrant(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{public: true, authOnlyFetchPost: true, revokeReadAfterAdvertisement: true})
+	h.upstreamCommit()
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "no read grant") {
+		t.Fatalf("fetch after live read-grant revoke: %v\n%s", err, out)
+	}
+	if h.revokeErr != nil {
+		t.Fatalf("revoke the live grant: %v", h.revokeErr)
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("credential helper ran after the live read grant was revoked: %v", h.credCalls())
+	}
+	reqs := h.srv.requests()
+	if len(reqs) < 3 || reqs[0].Method != http.MethodGet || reqs[1].Command != "command=ls-refs" ||
+		reqs[2].Command != "command=fetch" || reqs[2].Status != http.StatusUnauthorized {
+		t.Fatalf("did not exercise live revoke before a late fetch-command 401:\n%s", h.srv.log(t))
+	}
+}
+
+func TestHTTPSCredentialApprovalRechecksLiveReadGrant(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{revokeReadOnAuthenticatedAdvertisement: true})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "no read grant") {
+		t.Fatalf("fetch after live read-grant revoke: %v\n%s", err, out)
+	}
+	if h.revokeErr != nil {
+		t.Fatalf("revoke the live grant: %v", h.revokeErr)
+	}
+	calls := h.credCalls()
+	if len(calls) != 1 || !strings.HasSuffix(calls[0], "-fill") {
+		t.Fatalf("only the pre-revoke credential fill should run, got %v", calls)
+	}
+	if len(h.callsOf("approve")) != 0 || len(h.callsOf("reject")) != 0 {
+		t.Fatalf("credential helper was approved or rejected after live revocation: %v", h.credCalls())
+	}
+}
+
+func TestHTTPSCredentialRejectRechecksLiveReadGrant(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{
+		revokeReadOnAuthenticatedAdvertisement: true,
+		rejectAuthenticatedAdvertisement:       true,
+	})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "approval changed before its helper could be updated") {
+		t.Fatalf("fetch after live read-grant revoke: %v\n%s", err, out)
+	}
+	if h.revokeErr != nil {
+		t.Fatalf("revoke the live grant: %v", h.revokeErr)
+	}
+	calls := h.credCalls()
+	if len(calls) != 1 || !strings.HasSuffix(calls[0], "-fill") {
+		t.Fatalf("only the pre-revoke credential fill should run, got %v", calls)
+	}
+	if len(h.callsOf("approve")) != 0 || len(h.callsOf("reject")) != 0 {
+		t.Fatalf("credential helper was approved or rejected after live revocation: %v", h.credCalls())
+	}
+}
+
+func TestHTTPSPublicFetchRefusesChangedLiveScopeIdentity(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{public: true, noRead: true, changeIdentityAfterAdvertisement: true})
+	out, err := h.git("fetch", "origin")
+	if err == nil || !strings.Contains(out, "live host authority changed") || !strings.Contains(out, "relaunch the jail") {
+		t.Fatalf("fetch after live scope identity changed: %v\n%s", err, out)
+	}
+	if h.revokeErr != nil {
+		t.Fatalf("change live scope identity: %v", h.revokeErr)
+	}
+	if len(h.credCalls()) != 0 {
+		t.Fatalf("scope identity change started the host credential helper: %v", h.credCalls())
+	}
+	for _, r := range h.srv.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("scope identity change allowed an upload-pack POST:\n%s", h.srv.log(t))
+		}
+	}
+}
+
+func TestHTTPSPrivatePushOutsideScopeRefusesBeforeCredentials(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{})
+	h.setScope()
+	h.localCommit()
+	out, err := h.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, "not in this workspace's approved scope") {
+		t.Fatalf("private push outside scope: %v\n%s", err, out)
+	}
+	if len(h.srv.requests()) != 0 || len(h.credCalls()) != 0 {
+		t.Fatalf("out-of-scope push reached HTTPS server or credentials:\nrequests:\n%s\ncredential calls: %v", h.srv.log(t), h.credCalls())
+	}
+}
+
+func TestHTTPSPushWithoutReadGrantDoesNotReachCredentialHelper(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{noRead: true})
+	h.localCommit()
+	out, err := h.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, "holds no read grant") {
+		t.Fatalf("push without read grant: %v\n%s", err, out)
+	}
+	if len(h.srv.requests()) != 0 || len(h.credCalls()) != 0 {
+		t.Fatalf("ungranted push reached HTTPS server or credentials:\nrequests:\n%s\ncredential calls: %v", h.srv.log(t), h.credCalls())
+	}
 }
 
 func TestHTTPSFetchProtocolV2(t *testing.T) {

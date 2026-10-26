@@ -5,8 +5,9 @@
 //
 // The jail's remote helper (internal/gitremote) sends one request frame naming the service
 // and the remote URL, then git's bytes (ID-5). The broker checks the URL against the launch's
-// live remote-url scope, connects to the approved URL over the host's own ssh (ID-7) or over
-// smart HTTP with the host's own `git credential fill` (ID-8, https.go), and:
+// live remote-url scope and, for HTTPS fetch, may try that URL anonymously even outside it. It
+// connects to approved URLs over the host's own ssh (ID-7) or smart HTTP with the host's own
+// `git credential fill` only while the live read grant still covers that URL (ID-8, https.go), and:
 //
 //   - for a fetch (git-upload-pack), relays both ways: a `read`;
 //   - for a push (git-receive-pack), relays the upstream's advertisement, reads the push's ref
@@ -138,7 +139,7 @@ func newBroker(ctx context.Context, scopeFile string, sf brokerscope.File, spawn
 	b := &Broker{ctx: ctx, scopeFile: scopeFile, bound: bound, start: start, spawnCwd: spawnCwd, getenv: getenv,
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) { fmt.Fprintln(log, Name+":", msg) }),
 		log:   log, now: time.Now, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source}}
-	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and git credentials; a push goes through when a create-branch grant or the workspace's working set (recorded, or declared in config) covers every ref")
+	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and approved HTTPS credentials; public HTTPS fetches are tried anonymously, and a push goes through when a create-branch grant or the workspace's working set (recorded, or declared in config) covers every ref")
 	return b, func() { _ = brokercore.CloseLease(Source, lease) }, nil
 }
 
@@ -266,27 +267,26 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		return refuse("refused", "scope file is not a remote-url scope", "this launch's scope file does not hold "+
 			"remote URLs, so no remote is approved; nothing ran. Relaunch the jail.", brokercore.ExitNoPerm)
 	}
-	// A WORKSPACE HOLDING NO READ GRANT AT ALL is told so before anything about its remotes: its
-	// launch recorded none, since a source with no read grant stays out of the gate
-	// (docs/design/boundary-broker.md BB-D110), so "not in the approved scope" would name the
-	// wrong next step.
-	if !brokerscope.HoldsRead(f.Grants) {
+	// HTTPS fetches first try anonymously even when this launch has no read grant or has not
+	// approved the URL. Only a fetch whose current URL and read grant are both approved may
+	// fall back to the host credential helper after a 401. Every other transport and every push
+	// keeps the scope and grant checks as a hard precondition.
+	httpsFetch := req.Service == serviceUploadPack && strings.HasPrefix(strings.ToLower(req.URL), "https://")
+	if !httpsFetch && !brokerscope.HoldsRead(f.Grants) {
 		ev.Repo, _ = gitproto.Identity(req.URL)
 		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
 			brokercore.ExitUsage)
 	}
-	if !slices.Contains(f.Repos, req.URL) {
+	if !httpsFetch && !slices.Contains(f.Repos, req.URL) {
 		return refuse("out-of-scope", "remote not in the approved scope", outOfScope(req.URL, f), brokercore.ExitUsage)
 	}
-	if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
-		return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
+	if !httpsFetch {
+		if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
+			return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
+		}
 	}
 	ev.Repo, _ = gitproto.Identity(req.URL)
-	// READ IS THE FLOOR (docs/design/boundary-broker.md BB-D108): a selected pack's broker grants
-	// nothing until a read grant in the live scope file covers the remote, so a fetch and a push
-	// alike are refused here. The gate approved the grant into the file, and only the gate takes
-	// it out: a `yolo config apply` after the user config drops it.
-	if !brokerscope.ReadCovers(f.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
+	if !httpsFetch && !brokerscope.ReadCovers(f.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
 		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
 			brokercore.ExitUsage)
 	}
@@ -296,13 +296,43 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 			err.Error()+". Only ssh://, https:// and scp-style user@host:path remotes reach the host, so nothing ran. "+
 			"Give the remote its SSH or HTTPS URL (`git remote set-url`), or fetch it on the host.", brokercore.ExitUsage)
 	}
+	credentialPolicy := func() (bool, string, error) {
+		live, err := brokercore.Live(Source, b.scopeFile, b.bound, b.start)
+		if err != nil {
+			return false, "", err
+		}
+		if !brokerscope.HoldsRead(live.Grants) {
+			return false, config.BrokerNoReadRefusal(Source, req.URL, live.LiveScope), nil
+		}
+		if !slices.Contains(live.Repos, req.URL) {
+			return false, outOfScope(req.URL, live), nil
+		}
+		if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
+			return false, "", err
+		}
+		if !brokerscope.ReadCovers(live.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
+			return false, config.BrokerNoReadRefusal(Source, req.URL, live.LiveScope), nil
+		}
+		return true, "", nil
+	}
+	if httpsFetch {
+		// A URL that is already in scope must pass the same current-scope check even for an
+		// anonymous request. An out-of-scope public URL may be tried without credentials, but
+		// cannot become approved by that attempt.
+		if slices.Contains(f.Repos, req.URL) {
+			if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
+				return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
+			}
+		}
+		return finish(b.serveHTTPS(ctx, req, in, out, &ev, nil, say, credentialPolicy))
+	}
 	var cover coverer
 	if req.Service == serviceReceivePack {
 		// The live scope's grants and the user's grant kinds, as they read at this push.
 		cover = b.coverFor(f, ev.Repo, say)
 	}
 	if transport == transportHTTPS {
-		return finish(b.serveHTTPS(ctx, req, in, out, &ev, cover, say))
+		return finish(b.serveHTTPS(ctx, req, in, out, &ev, cover, say, credentialPolicy))
 	}
 
 	argv, err := sshArgv(req.URL, req.Service, req.Protocol)

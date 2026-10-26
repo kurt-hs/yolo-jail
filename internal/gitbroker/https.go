@@ -24,8 +24,9 @@ import (
 )
 
 // https.go is the HTTPS upstream (docs/design/git-broker-plan.md ID-8, docs/design/git-broker.md
-// §4.3): smart HTTP to the approved URL, with the credential the host's own `git credential
-// fill` gives.
+// §4.3): smart HTTP. HTTPS fetch always tries anonymously first. The broker may try a URL
+// outside scope only without credentials; host credentials are filled only while the live scope
+// approves that exact URL and its read grant.
 //
 // A fetch always asks the server for protocol v2 (`Git-Protocol: version=2`). v2 is
 // request-response, so the client's stateful stream maps onto stateless POSTs with no
@@ -47,8 +48,11 @@ import (
 // Content-Length, git's own default http.postBuffer (1 MiB); a larger one streams chunked.
 const pushBufferMax = 1 << 20
 
-// errNoCredential is a 401 the host's credential helper had no answer for.
-var errNoCredential = errors.New("the host has no credential for this remote")
+var (
+	errNoCredential               = errors.New("the host has no credential for this remote")
+	errCredentialApprovalChanged  = errors.New("host credential approval changed during the request")
+	errCredentialAuthorityChanged = errors.New("host launch authority changed during the request")
+)
 
 // credentialTimeout bounds one `git credential` run. A helper that waits on a person (a
 // keychain unlock dialog, say) is given that long, and is then killed.
@@ -77,20 +81,24 @@ type credential struct {
 
 // httpsLeg is one request's HTTPS upstream.
 type httpsLeg struct {
-	ctx      context.Context
-	b        *Broker
-	client   *http.Client
-	remote   *url.URL // the approved URL, user-info dropped
-	user     string   // the approved URL's user name, if any
-	service  string
-	say      func(string)
-	ev       *brokeraudit.Event
-	cred     *credential
-	approved bool
-	cover    coverer // the push policy, for a push
+	ctx                context.Context
+	b                  *Broker
+	client             *http.Client
+	remote             *url.URL // the remote URL, user-info dropped
+	service            string
+	say                func(string)
+	ev                 *brokeraudit.Event
+	cred               *credential
+	approved           bool
+	cover              coverer // the push policy, for a push
+	credentialPolicy   func() (bool, string, error)
+	credentialDenial   string
+	lastCredentialSent bool
+	credentialRejected bool
 }
 
-// newHTTPSLeg readies the upstream for the approved remote.
+// newHTTPSLeg readies the upstream for the requested HTTPS remote. User-info is stripped and
+// never becomes an HTTP or credential-helper credential.
 func (b *Broker) newHTTPSLeg(ctx context.Context, remote, service string, ev *brokeraudit.Event, say func(string)) (*httpsLeg, error) {
 	u, err := url.Parse(remote)
 	if err != nil {
@@ -100,9 +108,6 @@ func (b *Broker) newHTTPSLeg(ctx context.Context, remote, service string, ev *br
 		return nil, errors.New("it carries a query or fragment, or names no host")
 	}
 	h := &httpsLeg{ctx: ctx, b: b, service: service, say: say, ev: ev}
-	if u.User != nil {
-		h.user = u.User.Username()
-	}
 	clean := *u
 	clean.User = nil
 	h.remote = &clean
@@ -115,44 +120,96 @@ func (b *Broker) newHTTPSLeg(ctx context.Context, remote, service string, ev *br
 	return h, nil
 }
 
-// endpoint is the approved URL with suffix appended to its path, as git's remote-curl does.
+// endpoint is the remote URL with suffix appended to its path, as git's remote-curl does.
 func (h *httpsLeg) endpoint(suffix string) string {
 	u := *h.remote
 	return u.Scheme + "://" + u.Host + strings.TrimSuffix(u.EscapedPath(), "/") + suffix
 }
 
-// do sends one request, filling a credential from the host on a 401 and retrying once. body
-// is replayable bytes (nil for a GET). On success it reports the credential approved to the
-// host's helper, once; a credential the server then refuses is reported rejected.
+// do sends one request, filling a credential from the host only after a 401 and while the
+// live scope still approves this exact URL and read grant. Every request re-checks authority;
+// an anonymous public fetch never acquires a credential midway through the HTTP leg.
 func (h *httpsLeg) do(method, suffix, contentType, accept string, body []byte) (*http.Response, error) {
-	send := func() (*http.Response, error) {
+	send := func(withCredential bool) (*http.Response, error) {
 		var rd io.Reader
 		if body != nil {
 			rd = bytes.NewReader(body)
 		}
-		return h.send(method, suffix, contentType, accept, rd)
+		return h.send(method, suffix, contentType, accept, rd, withCredential)
 	}
-	resp, err := send()
+	allowed, denial, authorityErr := h.credentialAllowed()
+	if authorityErr != nil {
+		return nil, fmt.Errorf("%w: %v", errCredentialAuthorityChanged, authorityErr)
+	}
+	if !allowed && h.service == serviceReceivePack {
+		return nil, fmt.Errorf("%w: %s", errCredentialApprovalChanged, denial)
+	}
+	h.credentialDenial = ""
+	h.credentialRejected = false
+	resp, err := send(h.cred != nil && allowed)
 	if err != nil {
 		return nil, err
 	}
+	h.lastCredentialSent = h.cred != nil && allowed
 	if resp.StatusCode == http.StatusUnauthorized && h.cred == nil {
+		allowed, denial, authorityErr = h.credentialAllowed()
+		if authorityErr != nil {
+			drainClose(resp)
+			return nil, fmt.Errorf("%w: %v", errCredentialAuthorityChanged, authorityErr)
+		}
+		if !allowed {
+			h.credentialDenial = denial
+			return resp, nil
+		}
 		drainClose(resp)
 		c, err := h.fill()
 		if err != nil {
 			return nil, err
 		}
 		h.cred = c
-		if resp, err = send(); err != nil {
+		allowed, denial, authorityErr = h.credentialAllowed()
+		if authorityErr != nil {
+			return nil, fmt.Errorf("%w: %v", errCredentialAuthorityChanged, authorityErr)
+		}
+		if !allowed {
+			h.credentialDenial = denial
+			return nil, fmt.Errorf("%w: %s", errCredentialApprovalChanged, denial)
+		}
+		if resp, err = send(true); err != nil {
 			return nil, err
 		}
+		h.lastCredentialSent = true
 	}
-	h.settle(resp)
+	allowed, denial, authorityErr = h.credentialAllowed()
+	if authorityErr != nil {
+		drainClose(resp)
+		return nil, fmt.Errorf("%w: %v", errCredentialAuthorityChanged, authorityErr)
+	}
+	if !allowed && h.service == serviceReceivePack {
+		drainClose(resp)
+		return nil, fmt.Errorf("%w: %s", errCredentialApprovalChanged, denial)
+	}
+	if resp.StatusCode == http.StatusUnauthorized && !allowed {
+		h.credentialDenial = denial
+	}
+	if resp.StatusCode == http.StatusUnauthorized && !h.lastCredentialSent && h.credentialDenial == "" {
+		h.credentialDenial = denial
+	}
+	if h.lastCredentialSent {
+		h.settle(resp)
+	}
 	return resp, nil
 }
 
-// send sends one request with the credential held, if any.
-func (h *httpsLeg) send(method, suffix, contentType, accept string, body io.Reader) (*http.Response, error) {
+func (h *httpsLeg) credentialAllowed() (bool, string, error) {
+	if h.credentialPolicy == nil {
+		return true, "", nil
+	}
+	return h.credentialPolicy()
+}
+
+// send sends one request with the credential held only when the current live policy permits it.
+func (h *httpsLeg) send(method, suffix, contentType, accept string, body io.Reader, withCredential bool) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(h.ctx, method, h.endpoint(suffix), body)
 	if err != nil {
 		return nil, err
@@ -168,7 +225,7 @@ func (h *httpsLeg) send(method, suffix, contentType, accept string, body io.Read
 	if h.service == serviceUploadPack {
 		req.Header.Set("Git-Protocol", "version=2")
 	}
-	if h.cred != nil {
+	if withCredential && h.cred != nil {
 		req.SetBasicAuth(h.cred.username, h.cred.password)
 	}
 	return h.client.Do(req)
@@ -180,12 +237,20 @@ func (h *httpsLeg) settle(resp *http.Response) {
 	if h.cred == nil {
 		return
 	}
+	allowed, denial, err := h.credentialAllowed()
+	if err != nil || !allowed {
+		if !allowed {
+			h.credentialDenial = denial
+		}
+		return
+	}
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
-		_ = h.credentialRun("reject", h.cred)
+		h.credentialRejected = h.credentialRun("reject", h.cred) == nil
 	case resp.StatusCode/100 == 2 && !h.approved:
-		h.approved = true
-		_ = h.credentialRun("approve", h.cred)
+		if h.credentialRun("approve", h.cred) == nil {
+			h.approved = true
+		}
 	}
 }
 
@@ -193,6 +258,9 @@ func (h *httpsLeg) settle(resp *http.Response) {
 // helper that fails, is errNoCredential: the broker never prompts and never starts a login.
 func (h *httpsLeg) fill() (*credential, error) {
 	out, err := h.credentialRunOutput("fill", nil)
+	if errors.Is(err, errCredentialApprovalChanged) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errNoCredential, err)
 	}
@@ -250,6 +318,15 @@ func (h *httpsLeg) credentialRun(action string, c *credential) error {
 // prompt and no askpass program, so a helper with nothing stored answers nothing rather than
 // asking anyone.
 func (h *httpsLeg) credentialRunOutput(action string, c *credential) ([]byte, error) {
+	if h.credentialPolicy != nil {
+		allowed, denial, authorityErr := h.credentialAllowed()
+		if authorityErr != nil {
+			return nil, fmt.Errorf("%w: %v", errCredentialAuthorityChanged, authorityErr)
+		}
+		if !allowed {
+			return nil, fmt.Errorf("%w: %s", errCredentialApprovalChanged, denial)
+		}
+	}
 	b := h.b
 	git, err := lookPath("git", b.getenv("PATH"))
 	if err != nil {
@@ -275,8 +352,6 @@ func (h *httpsLeg) credentialRunOutput(action string, c *credential) ([]byte, er
 	switch {
 	case c != nil:
 		lines = append(lines, c.fields...)
-	case h.user != "":
-		lines = append(lines, "username="+h.user)
 	}
 	var in strings.Builder
 	for _, l := range lines {
@@ -334,7 +409,7 @@ func mediaType(resp *http.Response) string {
 
 // serveHTTPS answers one request over the HTTPS upstream and returns its exit code. Nothing
 // has reached the client yet.
-func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out io.Writer, ev *brokeraudit.Event, cover coverer, say func(string)) int {
+func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out io.Writer, ev *brokeraudit.Event, cover coverer, say func(string), credentialPolicy func() (bool, string, error)) int {
 	h, err := b.newHTTPSLeg(ctx, req.URL, req.Service, ev, say)
 	if err != nil {
 		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "remote not usable over https"
@@ -343,6 +418,7 @@ func (b *Broker) serveHTTPS(ctx context.Context, req request, in io.Reader, out 
 		return brokercore.ExitUsage
 	}
 	h.cover = cover
+	h.credentialPolicy = credentialPolicy
 	// Each request has its own transport; its idle connections end with the request.
 	defer h.client.CloseIdleConnections()
 	if req.Service == serviceUploadPack {
@@ -370,6 +446,16 @@ func (h *httpsLeg) advertisement() (*http.Response, int) {
 func (h *httpsLeg) requestFailed(err error) int {
 	host := h.remote.Host
 	h.ev.Outcome = "failed"
+	if errors.Is(err, errCredentialAuthorityChanged) {
+		h.ev.Outcome, h.ev.Reason = "refused", "host launch authority changed during the request"
+		h.say("the broker's live host authority changed, so this request stopped: " + err.Error() + "; relaunch the jail.")
+		return brokercore.ExitNoPerm
+	}
+	if errors.Is(err, errCredentialApprovalChanged) {
+		h.ev.Outcome, h.ev.Reason = "refused", "credential approval changed during the request"
+		h.say("the live read approval changed, so the broker stopped this operation before the next request: " + err.Error() + "; relaunch or approve the scope again.")
+		return brokercore.ExitUsage
+	}
 	if errors.Is(err, errNoCredential) {
 		h.ev.Outcome, h.ev.Reason = "refused", "the host has no credential for the remote"
 		h.say("the host has no credential for " + host + " (the server asked for one, and the host's " +
@@ -390,12 +476,30 @@ func (h *httpsLeg) requestFailed(err error) int {
 func (h *httpsLeg) checkResponse(resp *http.Response, want string) int {
 	host := h.remote.Host
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized && h.cred != nil:
+	case resp.StatusCode == http.StatusUnauthorized && h.lastCredentialSent && h.cred != nil && h.credentialDenial != "":
+		h.ev.Outcome, h.ev.Reason = "refused", "credential approval changed before helper feedback"
+		h.say("the server " + host + " refused a host credential that was sent while approved, but the live approval " +
+			"changed before its helper could be updated: " + h.credentialDenial)
+		return brokercore.ExitUsage
+	case resp.StatusCode == http.StatusUnauthorized && h.lastCredentialSent && h.cred != nil:
 		h.ev.Outcome, h.ev.Reason = "refused", "the server refused the host's credential"
-		h.say("the server " + host + " refused the credential the host's `git credential fill` gave (HTTP 401), " +
-			"so nothing was transferred; the broker told the host's credential helper to reject it. Store a working " +
-			"credential on the host (run this fetch or push once there), then try again.")
+		if h.credentialRejected {
+			h.say("the server " + host + " refused the credential the host's `git credential fill` gave (HTTP 401), " +
+				"so nothing was transferred; the broker told the host's credential helper to reject it. Store a working " +
+				"credential on the host (run this fetch or push once there), then try again.")
+		} else {
+			h.say("the server " + host + " refused the credential the host's `git credential fill` gave (HTTP 401), " +
+				"so nothing was transferred. The broker could not confirm the host credential helper's rejection; store a " +
+				"working credential on the host (run this fetch or push once there), then try again.")
+		}
 		return brokercore.ExitUnavailable
+	case resp.StatusCode == http.StatusUnauthorized && h.credentialDenial != "":
+		h.ev.Outcome, h.ev.Reason = "refused", "remote requires credentials but this request is not approved"
+		denial := strings.Replace(h.credentialDenial, ", so nothing ran: ", ", so the host credential was not used: ", 1)
+		denial = strings.Replace(denial, "so nothing ran and the host's ssh was not started.", "so no host credential was used.", 1)
+		h.say("the server " + host + " requires a credential (HTTP 401). The broker tried anonymously and sent no host credential: " +
+			denial)
+		return brokercore.ExitUsage
 	case resp.StatusCode == http.StatusUnauthorized:
 		// Only a push POST over pushBufferMax gets here: it streams, so it cannot be replayed
 		// with a credential.
@@ -660,10 +764,18 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		presp, err = h.do(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
 			"application/x-git-receive-pack-result", head)
 	} else {
-		presp, err = h.send(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
-			"application/x-git-receive-pack-result", io.MultiReader(bytes.NewReader(head), full))
-		if err == nil {
-			h.settle(presp)
+		allowed, denial, authorityErr := h.credentialAllowed()
+		if authorityErr != nil {
+			err = fmt.Errorf("%w: %v", errCredentialAuthorityChanged, authorityErr)
+		} else if !allowed {
+			err = fmt.Errorf("%w: %s", errCredentialApprovalChanged, denial)
+		} else {
+			presp, err = h.send(http.MethodPost, "/git-receive-pack", "application/x-git-receive-pack-request",
+				"application/x-git-receive-pack-result", io.MultiReader(bytes.NewReader(head), full), h.cred != nil && allowed)
+			h.lastCredentialSent = h.cred != nil && allowed
+			if err == nil && h.lastCredentialSent {
+				h.settle(presp)
+			}
 		}
 	}
 	// A failed POST is answered in git's own report, then the rest of git's stream is read and

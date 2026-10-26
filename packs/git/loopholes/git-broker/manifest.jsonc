@@ -15,16 +15,18 @@
 // other push is refused per ref, and every call is audited.
 {
   "name": "git-broker",
-  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only against this workspace's git remotes as approved at launch, and only under a read grant in config (brokered.git.grants; with none, every call is refused): fetches stream back, a push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares; yolo approve lists them), every other push is refused per ref (push from the host), and every call is audited on the host (yolo audit --service git).",
+  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only using those credentials against this workspace's approved git remotes and read grant (brokered.git.grants). A public HTTPS fetch is tried anonymously even without a grant or approved remote. A push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares; yolo approve lists them), every other push is refused per ref (push from the host), and every call is audited on the host (yolo audit --service git).",
   "version": 1,
 
   // NO SWITCH, AND NO ACCESS BY DEFAULT (boundary-broker.md BB-D104 to BB-D106, git-broker.md
   // GB-D15). A `brokered` loophole runs whenever its pack is selected, so selecting the pack
   // starts the broker and serves the remote rewrite (ID-6) in every workspace, and the broker
-  // grants nothing: every fetch and push is refused until a read grant covers the remote. The
-  // usual one is the user config's `"brokered": {"git": {"grants": [{"kind": "read", "repo":
-  // "*"}]}}`, which each workspace's config-change prompt or `yolo config apply` shows and a
-  // human approves. That is why this manifest has no `default_enabled`.
+  // grants no credential access by default: every push and every SSH fetch is refused until a
+  // read grant covers the remote. A public HTTPS fetch is tried anonymously even without that
+  // grant or an approved URL. The usual read grant is the user config's
+  // `"brokered": {"git": {"grants": [{"kind": "read", "repo": "*"}]}}`, which each
+  // workspace's config-change prompt or `yolo config apply` shows and a human approves. That is
+  // why this manifest has no `default_enabled`.
 
   "transport": "loopback-tls",
   "lifecycle": "spawned",
