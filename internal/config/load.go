@@ -412,6 +412,37 @@ func LoadWorkspaceConfigWithSources(workspace string, strict bool, warn Warn) (*
 	return m, sourcesOf(n), err
 }
 
+// loadReadableWorkspaceConfigOver applies TOML workspace layers in file precedence order to an
+// existing readable config, so an empty-list reset survives into the next layer.
+func loadReadableWorkspaceConfigOver(workspace string, strict bool, warn Warn, record bool, base *jsonx.OrderedMap, baseNode *srcNode) (*jsonx.OrderedMap, *srcNode, error) {
+	if workspace == "" {
+		workspace = cwd()
+	}
+	var at readAt
+	if record {
+		at.ws = openWorkspaceRoot(workspace)
+		defer at.ws.close()
+	}
+	seen := map[string]struct{}{}
+	merged := base
+	if merged == nil {
+		merged = jsonx.NewOrderedMap()
+	}
+	mergedNode := baseNode
+	for _, name := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
+		path, label, err := resolveWorkspaceConfigPath(workspace, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		layer, layerNode, err := loadWithIncludesScope(path, label, strict, warn, seen, record, SchemaScopeWorkspaceOnly, at)
+		if err != nil {
+			return nil, nil, err
+		}
+		merged, mergedNode = mergeReadableConfig(merged, layer, mergedNode, layerNode, nil)
+	}
+	return merged, mergedNode, nil
+}
+
 // LoadReadableWorkspaceConfig reads one format-2 TOML workspace graph without activating it for
 // runtime consumers. H switches those consumers only after their compatibility projections land.
 func LoadReadableWorkspaceConfig(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
@@ -514,20 +545,36 @@ func composeReadableConfig(workspace string, strict bool, warn Warn, record, wit
 	if err != nil {
 		return nil, nil, err
 	}
-	mergeableAsReadable := false
 	ws := workspace
 	if ws == "" {
 		ws = cwd()
 	}
+	workspaceHasTOML := false
+	workspaceLayersAreTOML := true
 	for _, base := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
 		path, _, resolveErr := resolveWorkspaceConfigPath(ws, base)
 		if resolveErr != nil {
 			return nil, nil, resolveErr
 		}
-		if pathExists(path) && strings.EqualFold(filepath.Ext(path), ".toml") {
-			mergeableAsReadable = true
+		if pathExists(path) {
+			if strings.EqualFold(filepath.Ext(path), ".toml") {
+				workspaceHasTOML = true
+			} else {
+				workspaceLayersAreTOML = false
+			}
 		}
 	}
+	if workspaceHasTOML && workspaceLayersAreTOML {
+		merged, mergedNode, err := loadReadableWorkspaceConfigOver(ws, strict, warn, record, userCfg, userNode)
+		if err != nil {
+			return nil, nil, err
+		}
+		if withWorkspaceFile {
+			merged, mergedNode = applyWorkspaceFile(merged, mergedNode, workspace, record)
+		}
+		return merged, mergedNode, nil
+	}
+	mergeableAsReadable := workspaceHasTOML
 	var merged *jsonx.OrderedMap
 	var mergedNode *srcNode
 	if mergeableAsReadable {

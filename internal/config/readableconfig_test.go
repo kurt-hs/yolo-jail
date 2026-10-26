@@ -84,6 +84,85 @@ func TestLoadReadableWorkspaceConfigIncludesOptionalAndCycle(t *testing.T) {
 	}
 }
 
+func TestLoadReadableUserScopeConfigDFragmentsApplyResetSequentiallyWithSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	basePath := filepath.Join(userDir, paths.UserConfigTOMLName)
+	fragments := filepath.Join(userDir, "config.d")
+	resetPath := filepath.Join(fragments, "00-reset.toml")
+	lastPath := filepath.Join(fragments, "01-last.toml")
+	write(t, basePath, "[install]\nnix = ['a']\n")
+	write(t, resetPath, "[install]\nnix = []\n")
+	write(t, lastPath, "[install]\nnix = ['b']\n")
+
+	got, sources, err := LoadReadableUserScopeConfigWithSources(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ := got.Get("install")
+	nix, _ := install.(*jsonx.OrderedMap).Get("nix")
+	if !reflect.DeepEqual(nix, []any{"b"}) {
+		t.Fatalf("user config.d install.nix = %#v, want [\"b\"] after the fragment reset", nix)
+	}
+	locations := sources.Locations("config.install.nix")
+	for _, path := range []string{basePath, resetPath, lastPath} {
+		found := false
+		for _, location := range locations {
+			if strings.Contains(location, filepath.Base(path)+":") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("install.nix provenance %q omits writer %q", locations, path)
+		}
+	}
+	itemLocations := sources.Locations("config.install.nix[0]")
+	if len(itemLocations) != 1 || !strings.Contains(itemLocations[0], filepath.Base(lastPath)+":") {
+		t.Errorf("surviving install.nix item provenance = %q, want only final fragment %q", itemLocations, lastPath)
+	}
+}
+
+func TestLoadReadableConfigComposesEmptyListResetAcrossThreeLayersWithSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
+	write(t, userPath, "[install]\nnix = ['a']\n")
+	workspace := t.TempDir()
+	projectPath := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
+	localPath := filepath.Join(workspace, paths.WorkspaceLocalConfigTOMLName)
+	write(t, projectPath, "[install]\nnix = []\n")
+	write(t, localPath, "[install]\nnix = ['b']\n")
+
+	got, sources, err := LoadReadableConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ := got.Get("install")
+	nix, _ := install.(*jsonx.OrderedMap).Get("nix")
+	if !reflect.DeepEqual(nix, []any{"b"}) {
+		t.Fatalf("three-layer install.nix = %#v, want [\"b\"] after the middle empty list clears the base", nix)
+	}
+	locations := sources.Locations("config.install.nix")
+	for _, path := range []string{userPath, projectPath, localPath} {
+		found := false
+		for _, location := range locations {
+			if strings.Contains(location, filepath.Base(path)+":") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("install.nix provenance %q omits writer %q", locations, path)
+		}
+	}
+	itemLocations := sources.Locations("config.install.nix[0]")
+	if len(itemLocations) != 1 || !strings.Contains(itemLocations[0], filepath.Base(localPath)+":") {
+		t.Errorf("surviving install.nix item provenance = %q, want only local layer %q", itemLocations, localPath)
+	}
+}
+
 func TestLoadReadableUserScopeReadsSortedConfigDFragments(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -137,12 +137,15 @@ func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, er
 	return filepath.Join(dir, name), filepath.Join(dir, name), name == paths.UserConfigTOMLName, nil
 }
 
-func loadUserConfigFragments(dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
 	fragmentDir := filepath.Join(dir, "config.d")
 	entries, err := os.ReadDir(fragmentDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return jsonx.NewOrderedMap(), nil, nil
+			if base == nil {
+				base = jsonx.NewOrderedMap()
+			}
+			return base, baseNode, nil
 		}
 		m, parseErr := handleParseFailure(fragmentDir, err, strict, warn)
 		if parseErr != nil {
@@ -157,8 +160,11 @@ func loadUserConfigFragments(dir string, strict bool, warn Warn, seen map[string
 		}
 	}
 	sort.Strings(names)
-	merged := jsonx.NewOrderedMap()
-	var mergedNode *srcNode
+	merged := base
+	if merged == nil {
+		merged = jsonx.NewOrderedMap()
+	}
+	mergedNode := baseNode
 	for _, name := range names {
 		path := filepath.Join(fragmentDir, name)
 		info, statErr := os.Stat(path) // Follow conventional symlinked fragments.
@@ -182,10 +188,9 @@ func loadUserConfigFragments(dir string, strict bool, warn Warn, seen map[string
 }
 
 func mergeUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	fragments, fragmentNode, err := loadUserConfigFragments(dir, strict, warn, seen, record)
+	fragments, fragmentNode, err := loadUserConfigFragments(base, baseNode, dir, strict, warn, seen, record)
 	if err != nil {
 		return nil, nil, err
 	}
-	merged, node := mergeReadableConfig(base, fragments, baseNode, fragmentNode, nil)
-	return merged, node, nil
+	return fragments, fragmentNode, nil
 }
