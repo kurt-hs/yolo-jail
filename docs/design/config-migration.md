@@ -3,7 +3,7 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC11 (§2, write a format key now or only know it), OQ-RC6 (§3), OQ-RC18 (§4) and OQ-RC8 (§5)"
+next: "Rule OQ-RC6 (§3), OQ-RC18 (§4) and OQ-RC8 (§5)"
 tags: [config, migration, versioning, release, design]
 summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Each section ends with its question. Part of the readable-config redesign."
 ---
@@ -14,10 +14,9 @@ summary: "How a yolo knows which config it has, the order of releases, what `yol
 leanings.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-how-a-yolo-knows-which-config-it-has)
-to [§5](#5-every-case) each end with their question.
+is approved; [§3](#3-the-order-of-releases) to [§5](#5-every-case) each end with their question.
 
-**Needs your ruling:** [OQ-RC11](#OQ-RC11) in [§2](#2-how-a-yolo-knows-which-config-it-has),
-[OQ-RC6](#OQ-RC6) in [§3](#3-the-order-of-releases), [OQ-RC18](#OQ-RC18) in
+**Needs your ruling:** [OQ-RC6](#OQ-RC6) in [§3](#3-the-order-of-releases), [OQ-RC18](#OQ-RC18) in
 [§4](#4-what-yolo-config-migrate-does), [OQ-RC8](#OQ-RC8) in [§5](#5-every-case).
 
 > **In short.** `config.toml` beside no `config.jsonc` is the whole version scheme for this move.
@@ -117,47 +116,22 @@ release cannot be told anything ([§1](#1-what-youd-see)); the TOML release can 
 the next move it can. Three things it does for that:
 
 1. **Its reader knows a `format` key** and refuses a value above its own, naming the upgrade. A
-   file with no `format` is format 2, because format 1 is the other file name. Whether migrated
-   files also *write* the key is the question below.
+   file with no `format` is format 2, because format 1 is the other file name, and no migrated
+   file writes the key: a line nobody acts on for years is a line every reader asks about
+   (ruled 2026-10-25, [OQ-RC11](readable-config.md#decision-ledger)). The next shape change
+   writes `format = 3` into the files it produces.
 2. **The rename table is data, not code.** One table of old key → new lines drives the conversion,
    the refusal in [§1](#1-what-youd-see), and the next conversion, which adds rows.
 3. **Each file name is one constant and one fixture helper**, where today over 400 Go files spell
    them ([§5](#5-every-case)); the next rename touches the constant.
 
-What a format-3 file does to a format-2 yolo, under either option:
+What a format-3 file does to a format-2 yolo:
 
 ```console
 $ yolo
 ~/.config/yolo-jail/config.toml is format 3; this yolo (0.19.0) reads format 2.
 Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started.
 ```
-
-1. 💬 <a id="OQ-RC11"></a>**OQ-RC11: Does the first TOML release write the `format` key, or only know it?**
-
-   You open a migrated `config.toml`. Under A its first line is `[install]`; under B it is
-   `format = 2`, a line that does nothing until the next shape change, which may be years away. A
-   colleague's yolo from before that change behaves the same under both: it refuses a format-3
-   file naming the upgrade.
-
-   ```toml
-   # A  the reader knows `format`; migrate writes nothing; no `format` means 2
-   [install]
-   nix = ["just"]
-
-   # B  every migrated file starts with it, and the next migration rewrites the number
-   format = 2
-
-   [install]
-   nix = ["just"]
-   ```
-
-   <!-- vantage: question id=OQ-RC11 leaning="A: absence meaning 2 is as exact as writing it, since format 1 is the other file name, and a line nobody acts on for years is a line every reader asks about." -->
-
-   _Leaning:_ A: absence meaning 2 is as exact as writing it, since format 1 is the other file
-   name, and a line nobody acts on for years is a line every reader asks about.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
 
 ## 3. The order of releases
 
@@ -298,7 +272,8 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 ## 6. Principles
 
 1. **The name is the version** for a format change: `.jsonc` is old, `.toml` is new. A change
-   inside TOML is told by the `format` key the first TOML reader already knows.
+   inside TOML is told by the `format` key the first TOML reader already knows and no format-2
+   file writes.
 2. **A conversion proves equality or writes nothing.**
 3. **No aliases, ever.** An old spelling is refused naming the new one, from the table the
    conversion uses.

@@ -12,12 +12,12 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Thirty-four rulings recorded ([ledger](#decision-ledger));
-nine questions open, each in the document that shows its file. Evidence verified at
+**Status:** 2026-10-25. Nothing is built. Thirty-five rulings recorded ([ledger](#decision-ledger));
+eight questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
 
-**Needs your ruling:** nine questions, listed per document in [§2](#2-the-five-documents).
+**Needs your ruling:** eight questions, listed per document in [§2](#2-the-five-documents).
 
 > **In short.** A config a stranger reads correctly comes from its shape, not its file format, and
 > a config yolo can edit without a mess comes from touching only the bytes of one value. Neither
@@ -59,7 +59,7 @@ seed; incomplete while any question is open).
 | [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC21](config-user.md#OQ-RC21) a public repository outside the scope |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | none; approved |
-| [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) write a `format` key now, or only know it · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
+| [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
 | [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC19](pack-manifests.md#OQ-RC19) the manifest shape · [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
 
 ## 3. What this takes over, and what it reverses
@@ -89,9 +89,10 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| OQ-RC11 | **The TOML reader knows a `format` key; no migrated file writes it; absent means 2.** Ruled by taking the leaning: *"A: absence meaning 2 is as exact as writing it, since format 1 is the other file name, and a line nobody acts on for years is a line every reader asks about."* The next shape change writes `format = 3` | 2026-10-25 | [`config-migration.md` §2](config-migration.md#2-how-a-yolo-knows-which-config-it-has) | — |
 | <a id="RC-D22"></a>RC-D22 | **TOML ships in the next release; no release before it only knows the names.** Review follow-up: *"we're going to ship toml in the next version."* A yolo older than that release meets a migrated config as no config at all, which is what the window in RC-D19 is for | 2026-10-25 | [`config-migration.md` §3](config-migration.md#3-the-order-of-releases) | — |
 | <a id="RC-D21"></a>RC-D21 | **The offer stops only when the person writes `"convert_later": true` in the old user file, by hand.** The maintainer: *"force the user to add something to their user level config file to acknowledge that they're using the old version so that it doesn't bug them every time … They have to add that. It's an annoyance for them if they don't want to convert. That's fine."* No command writes it | 2026-10-25 | [`config-migration.md` §1](config-migration.md#1-what-youd-see) | — |
-| <a id="RC-D20"></a>RC-D20 | **For this move the file name is the version.** Review comment on the name-or-key question: *"We're moving to TOML, so that's the answer here. The only question is, do we have to do something now to prepare for the eventual version 3?"* A format change changes the name; [OQ-RC11](config-migration.md#OQ-RC11) narrows to whether the first TOML release writes a `format` key or only knows it | 2026-10-25 | [`config-migration.md` §2](config-migration.md#2-how-a-yolo-knows-which-config-it-has) | — |
+| <a id="RC-D20"></a>RC-D20 | **For this move the file name is the version.** Review comment on the name-or-key question: *"We're moving to TOML, so that's the answer here. The only question is, do we have to do something now to prepare for the eventual version 3?"* A format change changes the name; [OQ-RC11](#decision-ledger) narrows to whether the first TOML release writes a `format` key or only knows it | 2026-10-25 | [`config-migration.md` §2](config-migration.md#2-how-a-yolo-knows-which-config-it-has) | — |
 | <a id="RC-D19"></a>RC-D19 | **The first TOML release reads both formats, for a few releases; `n` launches on the old file.** Review comment: *"answering no needs to launch with the old file at least for a few versions. we need to maintain both."* The old reader goes in a later release; both files in one place are still refused | 2026-10-25 | [`config-migration.md` §3](config-migration.md#3-the-order-of-releases) | — |
 | <a id="RC-D18"></a>RC-D18 | **An old key in a new file is refused from the conversion's own rename table.** Review comment: *"If we have this mapping anyway for the conversion, we might as well use it for nice happy path errors."* Nothing is maintained for the message alone; no aliases | 2026-10-25 | [`config-migration.md` §5](config-migration.md#5-every-case) | — |
 | OQ-RC15 | **A pack yolo does not ship is named by its source.** Ruled by taking the leaning: *"A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is."* `local/<name>`, `<source>/<name>`, `<owner>/<repo>`; no bare path form | 2026-10-25 | [`config-user.md` §4](config-user.md#4-naming-a-pack-that-is-not-shipped) | — |
