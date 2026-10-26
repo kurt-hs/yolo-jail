@@ -633,8 +633,11 @@ clearing contents *inside* each directory.
 **Three layers, lowest first:** the **workspace**, the built-in skill suite, then every
 selected pack's skills in config order. On an attach the pack layer comes from the packs the
 running jail booted with, not the configured ones, since a running jail keeps its pack tree
-([`OQ-PK2`](pack-system.md#oq-pk2)). A pack may therefore override a built-in — a legitimate
-reason to ship one — and the conventional local pack is appended last among packs.
+([`OQ-PK2`](pack-system.md#oq-pk2)). A pack may override an ordinary built-in — a legitimate
+reason to ship one — and the conventional local pack is appended last among packs. Fact-backed
+`jail-mechanics` is the exception: its generated built-in replaces a same-named pack skill and
+reports the override; the workspace layer cannot replace it. The [mechanics reference](jail-mechanics-skill.md)
+explains how this keeps the applied-environment guidance tied to its host-side deciders.
 
 **The pack layers are the host's.** Since
 [`OQ-NC11`](../plans/notch-convergence.md#7-decision-ledger) the jail builds the host's layer plan for
@@ -671,10 +674,11 @@ behavior:
   manifest `name` is not a plain folder name, one with a `/` or a `..`, is refused at both
   notches, with the rename to make, rather than written where that path points.
 
-The built-in suite and the workspace fill only the names the packs left free, so the order is
-unchanged. A **reserved child** a destination declares (`packs/claude` reserves `synced`) is
-withheld whichever layer ships it, and no lower layer fills it. What the writer refused or
-withheld prints on stderr at every invocation, as `Skills: …` lines beside the workspace ones.
+The built-in suite and the workspace fill only the names the packs left free, except for the
+fact-backed `jail-mechanics` built-in described above. A **reserved child** a destination declares
+(`packs/claude` reserves `synced`) is withheld whichever layer ships it, and no lower layer fills
+it. What the writer refused or withheld prints on stderr at every invocation, as `Skills: …` lines
+beside the workspace ones.
 The **fan-out stays the jail's**: every selected pack's skills reach every destination their
 audience admits, where the host narrows a content `into`
 ([`OQ-S4`](../plans/BACKLOG.md#OQ-S4), open).

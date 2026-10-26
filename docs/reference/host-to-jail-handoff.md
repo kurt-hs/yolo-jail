@@ -195,7 +195,7 @@ only place the values themselves are stated.
 | The consumed marker | `<workspace>/.yolo/handover.md.consumed` | `run.handoffConsumed` |
 | Section heading in the briefing | `## Handoff` | `jailcontent.BriefingContent` |
 | The recovery instruction printed on stderr | `mv .yolo/handover.md.consumed .yolo/handover.md` | `run.noteHandoffConsumed` |
-| Built-in skills after the deletion | `configuring-the-jail`, `diagnosing-the-jail`, and a source-tree-only third | `internal/jailcontent/builtinskills` |
+| Built-in skills after the deletion | `configuring-the-jail`, `diagnosing-the-jail`, and the generated `jail-mechanics` skill | `internal/jailcontent/builtinskills` ([mechanics reference](jail-mechanics-skill.md)) |
 
 ## Why it's this way
 

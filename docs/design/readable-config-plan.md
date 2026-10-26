@@ -54,8 +54,9 @@ next step is to grow this seed into the hand-off.
   carry; each rename is an entry change there, and the `yolo-origins` line's key names change with it.
 - The retired-key set in `internal/config/config.go` and its per-key refusals in `validate.go`
   are the pattern for refusing an old key with the new spelling.
-- A test [`jail-mechanics-skill.md`](jail-mechanics-skill.md) describes pins every config-schema key to `yolo config apply`'s
-  planner; renamed keys break it. Find it before renaming.
+- The [jail-mechanics reference](../reference/jail-mechanics-skill.md) describes the shared
+  timing classifier. `TestEveryConfigKeyHasAnExplicitTimingRow` compares it with the accepted
+  config schema for every backend; keep that schema-total check current on key renames.
 - A zero-byte `~/.config/yolo-jail/config.lua` exists on at least one machine; the transform that
   read it is gone.
 
