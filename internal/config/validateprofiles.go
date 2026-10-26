@@ -8,6 +8,10 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
+// knownProfileKeys records the explicit profile fields, including model (which the legacy
+// lowering treated as a provider option). Other provider-specific option names remain dynamic.
+var knownProfileKeys = set("provider", "model", "via", "enforce_models", "subagents")
+
 // validateAgentProfilesRetired refuses the pre-rename spelling by name, the
 // validateJournalRetired pattern: error on the host, warning in-jail (a snapshot
 // written by an older launcher legitimately carries the old key).
