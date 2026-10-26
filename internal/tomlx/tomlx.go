@@ -15,6 +15,7 @@ package tomlx
 
 import (
 	"os"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -60,20 +61,16 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 	}
 	keys := md.Keys()
 
-	// A key is a TABLE (built incrementally as its children are visited) if any
-	// other reported key has it as a strict prefix; otherwise it is a
-	// scalar/array LEAF. BurntSushi reports inline-table subkeys too, so an
-	// inline table like env = {K="v"} shows up as a table with a child key.
-	isPrefix := make(map[string]bool, len(keys))
-	for i := range keys {
-		for j := range keys {
-			if i == j {
-				continue
-			}
-			if hasPrefix(keys[j], keys[i]) {
-				isPrefix[joinKey(keys[i])] = true
-				break
-			}
+	// A path is a table prefix only when its semantic value is a map. Arrays
+	// of inline tables also produce nested metadata paths, but their parent
+	// must remain an array value rather than an empty table.
+	isPrefix := make(map[string]bool)
+	for _, key := range keys {
+		if len(key) == 0 {
+			continue
+		}
+		if _, ok := rawMapAt(raw, key); ok {
+			isPrefix[joinKey(key)] = true
 		}
 	}
 
@@ -99,6 +96,9 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 					cur.Set(p, convertTOMLValue(val))
 				}
 			} else {
+				if _, isTable := val.(map[string]any); !isTable {
+					break
+				}
 				cur = ensureChild(cur, p)
 				srcCur = val
 			}
@@ -107,16 +107,20 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 	return root, nil
 }
 
-func hasPrefix(key, prefix toml.Key) bool {
-	if len(prefix) >= len(key) {
-		return false
-	}
-	for i := range prefix {
-		if key[i] != prefix[i] {
-			return false
+func rawMapAt(root map[string]any, path toml.Key) (map[string]any, bool) {
+	var current any = root
+	for _, part := range path {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = m[part]
+		if !ok {
+			return nil, false
 		}
 	}
-	return true
+	m, ok := current.(map[string]any)
+	return m, ok
 }
 
 func joinKey(k toml.Key) string {
@@ -146,19 +150,20 @@ func ensureChild(m *jsonx.OrderedMap, key string) *jsonx.OrderedMap {
 	return child
 }
 
-// convertTOMLValue converts a BurntSushi-decoded value into the ordered model:
-// nested map[string]any -> *jsonx.OrderedMap is NOT done here (tables are built
-// via MetaData.Keys ordering in DecodeOrdered); this handles leaf scalars and
-// arrays. An inline table appears as map[string]any and is converted with its
-// own MetaData-less order — but codex only reads inline tables it wrote (env
-// maps), which the writer re-serializes from jsonx anyway; for the round-trip
-// we preserve Go map order via a stable fallback (rare for user keys).
+// convertTOMLValue converts BurntSushi-decoded leaves into the ordered model.
+// BurntSushi represents maps inside arrays with Go maps and provides no key
+// order for those elements, so those maps use lexical ordering consistently.
 func convertTOMLValue(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
 		om := jsonx.NewOrderedMap()
-		for k, val := range t {
-			om.Set(k, convertTOMLValue(val))
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			om.Set(k, convertTOMLValue(t[k]))
 		}
 		return om
 	case []map[string]any:

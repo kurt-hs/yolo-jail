@@ -35,8 +35,13 @@ func configErr(format string, args ...any) *ConfigError {
 
 // Config file names.
 const (
-	WorkspaceConfigName      = "yolo-jail.jsonc"
-	WorkspaceLocalConfigName = "yolo-jail.local.jsonc"
+	// Existing JSONC names stay active until the reader switch is implemented.
+	WorkspaceConfigName            = "yolo-jail.jsonc"
+	WorkspaceLocalConfigName       = "yolo-jail.local.jsonc"
+	WorkspaceLegacyConfigName      = WorkspaceConfigName
+	WorkspaceLocalLegacyConfigName = WorkspaceLocalConfigName
+	WorkspaceTOMLConfigName        = "yolo-jail.toml"
+	WorkspaceLocalTOMLConfigName   = "yolo-jail.local.toml"
 )
 
 // ---------------------------------------------------------------------------

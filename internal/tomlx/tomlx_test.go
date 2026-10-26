@@ -3,8 +3,38 @@ package tomlx
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
+
+func TestDecodeOrderedSortsMapsInsideArrays(t *testing.T) {
+	for range 2 {
+		values, err := DecodeOrdered([]byte(`items = [{ z = "last", a = "first" }, { b = 2, a = 1 }]`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, _ := values.Get("items")
+		items, ok := value.([]any)
+		if !ok || len(items) != 2 {
+			t.Fatalf("items = %#v", value)
+		}
+		for i, item := range items {
+			m, ok := item.(*jsonx.OrderedMap)
+			if !ok {
+				t.Fatalf("item %d = %T", i, item)
+			}
+			want := []string{"a", "z"}
+			if i == 1 {
+				want = []string{"a", "b"}
+			}
+			if !reflect.DeepEqual(m.Keys(), want) {
+				t.Fatalf("item %d keys = %v, want %v", i, m.Keys(), want)
+			}
+		}
+	}
+}
 
 func TestDecodeBasic(t *testing.T) {
 	m, err := Decode([]byte("[a]\nb = 1\nc = \"x\"\n"))
