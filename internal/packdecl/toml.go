@@ -356,6 +356,9 @@ func modelRename(raw any, prefix string) *scopedRename {
 }
 
 func orderedTableKeys(doc *configdoc.Document, path []configdoc.Step, table map[string]any) []string {
+	if keys, ok := orderedValueKeys(doc.Values, path, table); ok {
+		return keys
+	}
 	keys := sortedKeys(table)
 	positions := make(map[string]int, len(keys))
 	for _, key := range keys {
@@ -377,6 +380,37 @@ func orderedTableKeys(doc *configdoc.Document, path []configdoc.Step, table map[
 		return positions[keys[i]] < positions[keys[j]]
 	})
 	return keys
+}
+
+func orderedValueKeys(root *jsonx.OrderedMap, path []configdoc.Step, table map[string]any) ([]string, bool) {
+	var value any = root
+	for _, step := range path {
+		if step.IsIndex {
+			return nil, false
+		}
+		current, ok := value.(*jsonx.OrderedMap)
+		if !ok {
+			return nil, false
+		}
+		value, ok = current.Get(step.Key)
+		if !ok {
+			return nil, false
+		}
+	}
+	ordered, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		return nil, false
+	}
+	keys := ordered.Keys()
+	if len(keys) != len(table) {
+		return nil, false
+	}
+	for _, key := range keys {
+		if _, ok := table[key]; !ok {
+			return nil, false
+		}
+	}
+	return append([]string(nil), keys...), true
 }
 
 func providerShapeUnknownField(fields map[string]any) string {

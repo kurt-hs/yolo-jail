@@ -162,6 +162,54 @@ model = "alpha-model"
 	}
 }
 
+func TestDecodeTOMLProviderMixedInlineAndHeaderOrder(t *testing.T) {
+	data := []byte(`[providers.meta]
+models.zulu = { name = "Zulu" }
+variants.zulu = { model = "zulu-model" }
+[providers.meta.models.alpha]
+name = "Alpha"
+[providers.meta.variants.alpha]
+model = "alpha-model"
+`)
+	m, problems := DecodeTOML(data)
+	if len(problems) != 0 {
+		t.Fatalf("DecodeTOML: %v", problems)
+	}
+	providers := m.Providers()
+	if len(providers) != 1 {
+		t.Fatalf("providers = %#v, want one", providers)
+	}
+	if got, want := providers[0].ModelOrder, []string{"zulu", "alpha"}; !equalStrings(got, want) {
+		t.Errorf("mixed model declaration order = %v, want authored order %v", got, want)
+	}
+	if got, want := providers[0].VariantOrder, []string{"zulu", "alpha"}; !equalStrings(got, want) {
+		t.Errorf("mixed variant declaration order = %v, want authored order %v", got, want)
+	}
+}
+
+func TestDecodeTOMLDottedProviderRowsKeepAuthoredOrder(t *testing.T) {
+	data := []byte(`[providers.meta]
+models.z.name = "Z"
+models.a.name = "A"
+variants.z.model = "z"
+variants.a.model = "a"
+`)
+	m, problems := DecodeTOML(data)
+	if len(problems) != 0 {
+		t.Fatalf("DecodeTOML: %v", problems)
+	}
+	providers := m.Providers()
+	if len(providers) != 1 {
+		t.Fatalf("providers = %#v, want one", providers)
+	}
+	if got, want := providers[0].ModelOrder, []string{"z", "a"}; !equalStrings(got, want) {
+		t.Errorf("dotted model declaration order = %v, want authored order %v", got, want)
+	}
+	if got, want := providers[0].VariantOrder, []string{"z", "a"}; !equalStrings(got, want) {
+		t.Errorf("dotted variant declaration order = %v, want authored order %v", got, want)
+	}
+}
+
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -263,6 +311,42 @@ newer_field = true
 		if m == nil || len(problems) != 0 || len(skipped) != 1 || len(m.Providers()) != 0 {
 			t.Errorf("%s reader: manifest=%#v problems=%v skipped=%v", name, m, problems, skipped)
 		}
+	}
+}
+
+func TestDecodeTOMLProviderViaReachesProvidersAccessor(t *testing.T) {
+	decoders := []struct {
+		name   string
+		decode func([]byte) (*Manifest, []string, []string)
+	}{
+		{name: "strict", decode: func(data []byte) (*Manifest, []string, []string) {
+			m, problems := DecodeTOML(data)
+			return m, problems, nil
+		}},
+		{name: "use", decode: DecodeTOMLForUse},
+		{name: "tolerant", decode: DecodeTOMLTolerant},
+	}
+	for _, decoder := range decoders {
+		t.Run(decoder.name+" preserves provider via", func(t *testing.T) {
+			m, problems, skipped := decoder.decode([]byte(`[providers.meta]
+via = "wire-bridge"
+`))
+			if m == nil || len(problems) != 0 || len(skipped) != 0 {
+				t.Fatalf("provider via: manifest=%#v problems=%v skipped=%v", m, problems, skipped)
+			}
+			providers := m.Providers()
+			if len(providers) != 1 || providers[0].Via != "wire-bridge" {
+				t.Fatalf("Providers() = %#v, want provider via wire-bridge", providers)
+			}
+		})
+		t.Run(decoder.name+" rejects invalid provider via type", func(t *testing.T) {
+			m, problems, skipped := decoder.decode([]byte(`[providers.meta]
+via = 7
+`))
+			if m != nil || len(problems) == 0 || len(skipped) != 0 {
+				t.Fatalf("invalid provider via: manifest=%#v problems=%v skipped=%v", m, problems, skipped)
+			}
+		})
 	}
 }
 

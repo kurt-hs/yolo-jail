@@ -1987,9 +1987,11 @@ type ProviderEndpoint struct {
 // go with it. The credential is deliberately absent — the only key-shaped field is the
 // NAME of the variable the user hydrates.
 type ProviderContribution struct {
-	Name          string
-	Alias         string
-	Model         string
+	Name  string
+	Alias string
+	Model string
+	// Via is the optional service pack that carries this provider's traffic.
+	Via           string
 	Variants      map[string]ProviderVariant
 	VariantOrder  []string
 	EveryModel    *ProviderModel
@@ -2037,6 +2039,7 @@ func (m *Manifest) Providers() []ProviderContribution {
 			Name:          c.Name,
 			Alias:         c.ProviderAlias,
 			Model:         c.ProviderModel,
+			Via:           c.Via,
 			Variants:      c.ProviderVariants,
 			VariantOrder:  append([]string(nil), c.ProviderVariantOrder...),
 			EveryModel:    c.EveryProviderModel,
