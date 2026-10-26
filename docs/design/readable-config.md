@@ -12,7 +12,7 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Twenty-nine rulings recorded ([ledger](#decision-ledger));
+**Status:** 2026-10-25. Nothing is built. Thirty-two rulings recorded ([ledger](#decision-ledger));
 nine questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
@@ -59,7 +59,7 @@ seed; incomplete while any question is open).
 | [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC21](config-user.md#OQ-RC21) a public repository outside the scope |
 | [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC17](config-project.md#OQ-RC17) the file's shape · [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | none; approved |
-| [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) name or version key · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
+| [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | [OQ-RC11](config-migration.md#OQ-RC11) write a `format` key now, or only know it · [OQ-RC6](config-migration.md#OQ-RC6) older yolos · [OQ-RC18](config-migration.md#OQ-RC18) what migrate does · [OQ-RC8](config-migration.md#OQ-RC8) fetched packs |
 | [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC19](pack-manifests.md#OQ-RC19) the manifest shape · [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
 
 ## 3. What this takes over, and what it reverses
@@ -89,6 +89,9 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| <a id="RC-D20"></a>RC-D20 | **For this move the file name is the version.** Review comment on the name-or-key question: *"We're moving to TOML, so that's the answer here. The only question is, do we have to do something now to prepare for the eventual version 3?"* A format change changes the name; [OQ-RC11](config-migration.md#OQ-RC11) narrows to whether the first TOML release writes a `format` key or only knows it | 2026-10-25 | [`config-migration.md` §2](config-migration.md#2-how-a-yolo-knows-which-config-it-has) | — |
+| <a id="RC-D19"></a>RC-D19 | **The first TOML release reads both formats, for a few releases; `n` launches on the old file.** Review comment: *"answering no needs to launch with the old file at least for a few versions. we need to maintain both."* The old reader goes in a later release; both files in one place are still refused | 2026-10-25 | [`config-migration.md` §3](config-migration.md#3-the-order-of-releases) | — |
+| <a id="RC-D18"></a>RC-D18 | **An old key in a new file is refused from the conversion's own rename table.** Review comment: *"If we have this mapping anyway for the conversion, we might as well use it for nice happy path errors."* Nothing is maintained for the message alone; no aliases | 2026-10-25 | [`config-migration.md` §5](config-migration.md#5-every-case) | — |
 | OQ-RC15 | **A pack yolo does not ship is named by its source.** Ruled by taking the leaning: *"A: the collision cannot happen, so there is nothing to rename; it is Homebrew's model, and the shipped set is the only bare namespace, as core is."* `local/<name>`, `<source>/<name>`, `<owner>/<repo>`; no bare path form | 2026-10-25 | [`config-user.md` §4](config-user.md#4-naming-a-pack-that-is-not-shipped) | — |
 | OQ-RC13 | **All six conventions go in.** Ruled by taking the leaning: *"A: each of the six reads only what the user already wrote, and none lets a heading or a declaration stand for a value."* C1 pack sources, C2 `config.d/`, C5 no project file, C6 no manifest, C7 catalog facts, C9 default branch | 2026-10-25 | [`config-user.md` §8](config-user.md#8-lines-you-never-write) | — |
 | OQ-RC3 | **A provider is selectable by its own name and starts on its `model`; a variant is a second configuration of one provider.** Ruled by taking the leaning: *"B: the common case is one name, and the rare case keeps the profile that already works."* Same-named shipped profiles are deleted; answers [OQ-PP1](providers-and-profiles-redesign.md#OQ-PP1) | 2026-10-25 | [`config-user.md` §5](config-user.md#5-which-setup-each-agent-runs-on) | — |

@@ -201,13 +201,14 @@ manifest field outright, so a new manifest shape is a new file name however it i
    new while your packs are old for a release, and you migrate twice.
 
    ```text
-   # A  together: one migration, one release pair
+   # A  together: one migration, one release sequence
    release N    knows config.toml, yolo-jail.toml, pack.toml
-   release N+1  reads only them; config migrate and pack migrate
+   release N+1  reads both formats; config migrate and pack migrate
+   later        reads only the new ones
 
    # B  configs first, packs next: two migrations; the configs land sooner
    release N    knows config.toml, yolo-jail.toml
-   release N+1  reads only them
+   release N+1  reads both config formats
    release N+2  knows pack.toml …
 
    # C  packs stay as they are; the 860-line manifest stays

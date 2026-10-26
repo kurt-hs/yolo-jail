@@ -13,7 +13,7 @@ summary: "The parking lot for what the readable-config design surfaced below its
 **Status:** 2026-10-24 — seeded during design; not a hand-off, and incomplete until
 [`readable-config.md`](readable-config.md) and the five documents it fronts are accepted. The
 design wins on behavior; this file holds mechanism notes only. Blocked on
-[OQ-RC2](readable-config.md#decision-ledger) (ruled: TOML), [OQ-RC9](readable-config.md#decision-ledger) (ruled: splice) and [OQ-RC11](config-migration.md#OQ-RC11) (file name or key), which decide which of
+[OQ-RC2](readable-config.md#decision-ledger) (ruled: TOML), [OQ-RC9](readable-config.md#decision-ledger) (ruled: splice) and [OQ-RC11](config-migration.md#OQ-RC11) (a `format` key: written now, or only known), which decide which of
 the entries below apply.
 
 ## What already exists for a splice
@@ -73,8 +73,8 @@ the entries below apply.
 - `launchFlagClaims` in `internal/packload/packload.go` assigns a bin's flag list; P4 makes it
   append unless `replace = true`.
 - Manifests at yolo ≤ 0.11.1 are decoded with `DisallowUnknownFields`, so any new field refuses
-  the pack; the new file name sidesteps that, and release N must refuse a pack folder holding
-  `pack.toml`.
+  the pack; the new file name sidesteps that, and the next release must refuse a pack folder holding
+  `pack.toml` ([`config-migration.md` §3](config-migration.md#3-the-order-of-releases)).
 - `pack lint` findings the design asks for: an overlay key the surface's derive also writes
   (`subagents.defaultModel`, `defaultProvider`, `modelScope.*` on `pi/settings`), named with the
   winning layer; a pack copying files one by one into a folder pi loads as a package; a gzip ratio

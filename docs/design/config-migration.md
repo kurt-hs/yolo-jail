@@ -3,7 +3,7 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC11 (§2), OQ-RC6 (§3), OQ-RC18 (§4) and OQ-RC8 (§5)"
+next: "Rule OQ-RC11 (§2, write a format key now or only know it), OQ-RC6 (§3), OQ-RC18 (§4) and OQ-RC8 (§5)"
 tags: [config, migration, versioning, release, design]
 summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Each section ends with its question. Part of the readable-config redesign."
 ---
@@ -20,9 +20,10 @@ to [§5](#5-every-case) each end with their question.
 [OQ-RC6](#OQ-RC6) in [§3](#3-the-order-of-releases), [OQ-RC18](#OQ-RC18) in
 [§4](#4-what-yolo-config-migrate-does), [OQ-RC8](#OQ-RC8) in [§5](#5-every-case).
 
-> **In short.** `config.toml` beside no `config.jsonc` is the whole version scheme. One release
-> teaches old yolos the new name; the next reads only it and offers the conversion, which refuses
-> to write unless the config it produces is byte-equal to the one it read.
+> **In short.** `config.toml` beside no `config.jsonc` is the whole version scheme for this move.
+> The next release teaches old yolos the new name; the first TOML release reads both formats for a
+> few releases and offers the conversion, which refuses to write unless the config it produces is
+> byte-equal to the one it read; a later release drops the old reader.
 
 **Reads with:** [`readable-config.md`](readable-config.md) (front door and ledger),
 [`config-user.md`](config-user.md) and [`config-project.md`](config-project.md) (what the files
@@ -61,7 +62,8 @@ Write 4 files, keeping each original as <name>.pre-migrate? [y/N] y
 Written. Nothing else on this machine changed. Next: `yolo check`.
 ```
 
-An older yolo meeting the new file, once it is the release that knows the name:
+A yolo that does not read the new file but knows its name, because the check in
+[§3](#3-the-order-of-releases) step 1 ships in the next release, long before anything reads TOML:
 
 ```console
 $ yolo
@@ -69,15 +71,21 @@ $ yolo
 Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started.
 ```
 
-A new yolo meeting an old file:
+A yolo that reads both formats meeting an old file; `n` launches on the old file exactly as before,
+and the offer repeats at each launch, the way the config-change prompt does:
 
 ```console
 $ yolo
-~/.config/yolo-jail/config.jsonc is in the old format. Convert it now? [y/N]
-  (shows the diff above, writes on y, and continues the launch)
+~/.config/yolo-jail/config.jsonc is in the old format. Convert it now? [y/N] n
+Launching with the old file; this yolo reads it until 0.20. `yolo config migrate` converts it once
+  every machine that shares it runs 0.17 or newer.
 ```
 
-An old key in a new file:
+(`y` shows the diff above, writes, and continues the launch. With no terminal the offer prints as
+one line and the launch continues on the old file. The version numbers are illustrative.)
+
+An old key in a new file, from the same rename table the conversion uses, so nothing is
+maintained for this message alone:
 
 ```console
 $ yolo check
@@ -88,67 +96,85 @@ $ yolo check
 
 ## 2. How a yolo knows which config it has
 
-Three ways to mark a generation, and they are not equivalent. Today there is no version field;
-old files are recognized only by content digests, and an unknown top-level key is already a hard
-error on the host.
+For this move the answer is settled: the format changes
+([OQ-RC2](readable-config.md#decision-ledger), TOML), a format change changes the file name, and
+so the name is the version. `.jsonc` is old, `.toml` is new, and nothing inside either says which
+yolo wrote it. Reviewed 2026-10-25: *"We're moving to TOML, so that's the answer here. The only
+question is, do we have to do something now to prepare for the eventual version 3?"*
 
-```text
-# A  the file name
-~/.config/yolo-jail/config.toml            old yolo: "for a newer yolo: upgrade" (release N), or no config at all (older)
-~/.config/yolo-jail/config.jsonc           new yolo: "old format; convert now?"
+The next shape change will be a change *inside* TOML, which keeps the name, so a yolo has to learn
+from the file itself that it was written for a newer one. This move needs two releases
+([§3](#3-the-order-of-releases)) because today's yolo cannot say "upgrade" when it meets a file it
+does not know; the first TOML release can be built so that the next move needs one. Three things it
+does for that:
 
-# B  a version key, first in a same-named file (only possible if the format stays JSONC)
-{ "yolo": 2, ... }                         old yolo: `config.yolo: unknown key`, naming the key, not the upgrade
+1. **Its reader knows a `format` key** and refuses a value above its own, naming the upgrade. A
+   file with no `format` is format 2, because format 1 is the other file name. Whether migrated
+   files also *write* the key is the question below.
+2. **The rename table is data, not code.** One table of old key → new lines drives the conversion,
+   the refusal in [§1](#1-what-youd-see), and the next conversion, which adds rows.
+3. **Each file name is one constant and one fixture helper**, where today over 400 Go files spell
+   them ([§5](#5-every-case)); the next rename touches the constant.
 
-# C  both: the name now, and a key reserved for the next shape change inside TOML
-yolo = 2
+What a format-3 file does to a format-2 yolo, under either option:
+
+```console
+$ yolo
+~/.config/yolo-jail/config.toml is format 3; this yolo (0.19.0) reads format 2.
+Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started.
 ```
 
-Every surveyed tool that changed its config shape converged on the file name: ESLint's flat config
-is a new file name plus a migrate command; Docker Compose's `version` key switched semantics
-between 2 and 3, confused users for years, and is now ignored with a warning; Ruff kept reading
-old keys forever with a warning and needed neither. A version key earns its place only when the
-*same* file will change shape again within one format.
+1. 💬 <a id="OQ-RC11"></a>**OQ-RC11: Does the first TOML release write the `format` key, or only know it?**
 
-1. 💬 <a id="OQ-RC11"></a>**OQ-RC11: Is the file name the version, or a key inside the file?**
+   You open a migrated `config.toml`. Under A its first line is `[install]`; under B it is
+   `format = 2`, a line that does nothing until the next shape change, which may be years away. A
+   colleague's yolo from before that change behaves the same under both: it refuses a format-3
+   file naming the upgrade.
 
-   You said: *"if we change file names here that would allow us a pretty easy transition plan. We
-   can version it. I suppose we can put a version field in the JSON that we read first."* A
-   colleague on last month's yolo pulls dotfiles migrated on another machine. With a new name,
-   their yolo finds no `config.jsonc` and starts a jail with no packs, unless it is the release
-   that knows the new name and says "upgrade". With a version key in a same-named file, their
-   yolo reads it and fails on the first unknown key, naming the key.
+   ```toml
+   # A  the reader knows `format`; migrate writes nothing; no `format` means 2
+   [install]
+   nix = ["just"]
 
-   - **A — The file name.** No key. A format change has to change the name anyway. The release
-     before the change teaches old yolos the name.
-   - **B — A version key**, `yolo = 2`, first in the file, same name. Only possible if the format
-     stays JSONC.
-   - **C — Both.** The name now, and a key reserved for the next shape change inside TOML.
+   # B  every migrated file starts with it, and the next migration rewrites the number
+   format = 2
 
-   <!-- vantage: question id=OQ-RC11 leaning="A: the name is the version, as ESLint did; a key is added the day a same-format shape change needs one, and not before." -->
+   [install]
+   nix = ["just"]
+   ```
 
-   _Leaning:_ A: the name is the version, as ESLint did; a key is added the day a same-format shape
-   change needs one, and not before.
+   <!-- vantage: question id=OQ-RC11 leaning="A: absence meaning 2 is as exact as writing it, since format 1 is the other file name, and a line nobody acts on for years is a line every reader asks about." -->
+
+   _Leaning:_ A: absence meaning 2 is as exact as writing it, since format 1 is the other file
+   name, and a line nobody acts on for years is a line every reader asks about.
 
    **Answer:**
    > _(empty — fill in when decided)_
 
 ## 3. The order of releases
 
-1. **Release N recognizes the new names and refuses them.** A `config.toml`, `yolo-jail.toml` or
-   a pack folder holding `pack.toml` stops the launch with "this file is for a newer yolo". It
-   changes nothing else, so it ships long before the rest. The pack case matters: without it an
-   older yolo treats a migrated pack as manifest-less and silently stages only its files.
-2. **Release N+1 reads only the new format** and refuses an old file, offering the conversion.
-3. **Every machine that shares dotfiles upgrades to N before any of them migrates**, because one
-   machine's migration rewrites the file every other machine reads.
+1. **The next release knows the new names and refuses them.** A `config.toml`, `yolo-jail.toml`
+   or a pack folder holding `pack.toml` stops the launch with "this file is for a newer yolo". It
+   changes nothing else, so it ships now, before anything else here is built: by the time a file
+   can be migrated, most installed yolos already say "upgrade" instead of starting empty. The pack
+   case matters: without it an older yolo treats a migrated pack as manifest-less and silently
+   stages only its files.
+2. **The first TOML release reads both formats, and keeps doing so for a few releases.** Ruled
+   2026-10-25: *"answering no needs to launch with the old file at least for a few versions. we
+   need to maintain both."* It offers the conversion at launch; `n` launches on the old file as
+   before, and the offer names the release that stops reading it. Both files in one place are
+   still refused ([§5](#5-every-case)); the two readers never merge.
+3. **A later release drops the old reader** and refuses an old file naming `yolo config migrate`.
+4. **Every machine that shares dotfiles upgrades to the first TOML release before any of them
+   migrates**, because one machine's migration rewrites the file every other machine reads. Step
+   2's window is what lets that happen without pressure; the offer says so.
 
 1. 💬 <a id="OQ-RC6"></a>**OQ-RC6: What happens on a machine still running an older yolo?**
 
    A colleague migrates with the new yolo, then runs a jail from an older yolo installed
-   elsewhere, or your Mac is a release behind. The older yolo looks for `config.jsonc`, finds
-   none, and launches a jail with no packs, saying only that it has no coding agent; a migrated
-   local pack it stages as if it had no manifest.
+   elsewhere, or your Mac is a release behind despite the window in step 2. The older yolo looks
+   for `config.jsonc`, finds none, and launches a jail with no packs, saying only that it has no
+   coding agent; a migrated local pack it stages as if it had no manifest.
 
    ```text
    # A  migrate keeps the old file beside the new, marked superseded; an older yolo works, and drifts
@@ -216,7 +242,12 @@ old keys forever with a warning and needed neither. A version key earns its plac
 
 - **Both `config.toml` and `config.jsonc` in one place:** refused, naming both and the command.
   Formats are never merged.
-- **An old key in a new file:** refused, naming the replacement already respelled. No aliases.
+- **An old key in a new file:** refused, naming the replacement already respelled, from the
+  conversion's own rename table. Reviewed 2026-10-25: *"If we have this mapping anyway for the
+  conversion, we might as well use it for nice happy path errors."* No aliases; nothing is
+  maintained for the message alone.
+- **An old file under a yolo that reads both:** read, with the offer at each launch
+  ([§3](#3-the-order-of-releases) step 2).
 - **A project file in a jail:** an agent may run the migration on it.
 - **Shipped packs:** migrated in the commit that changes the reader.
 - **A local pack in the old format:** refused, naming `yolo pack migrate <path>`
@@ -232,12 +263,13 @@ old keys forever with a warning and needed neither. A version key earns its plac
 
 1. 💬 <a id="OQ-RC8"></a>**OQ-RC8: What happens to a pack fetched from someone else's repository that still has an old `pack.json`?**
 
-   A colleague publishes a pack on GitHub and you list it. You upgrade to the release that reads
-   only `pack.toml`; the colleague has not migrated. Today the one fetched pack in your list,
-   `matt-craft`, has no manifest at all, so it is unaffected; a colleague's pack would be.
+   A colleague publishes a pack on GitHub and you list it. The old reader goes
+   ([§3](#3-the-order-of-releases) step 3) and the colleague has not migrated. Today the one
+   fetched pack in your list, `matt-craft`, has no manifest at all, so it is unaffected; a
+   colleague's pack would be.
 
    ```console
-   # A  yolo keeps an old-manifest reader for fetched packs only, converting in memory; two readers
+   # A  yolo keeps the old-manifest reader past the window, for fetched packs only, converting in memory
    $ yolo
    acme/tools: pack.json read in compatibility mode; ask its author to run `yolo pack migrate`.
 
@@ -259,12 +291,14 @@ old keys forever with a warning and needed neither. A version key earns its plac
 
 ## 6. Principles
 
-1. **The name is the version.** `.jsonc` is old, `.toml` is new; nothing inside a file says
-   which yolo wrote it until a same-format shape change needs it.
+1. **The name is the version** for a format change: `.jsonc` is old, `.toml` is new. A change
+   inside TOML is told by the `format` key the first TOML reader already knows.
 2. **A conversion proves equality or writes nothing.**
-3. **No aliases, ever.** An old spelling is refused naming the new one.
-4. **Nothing migrates unasked.** The launch offers; a person answers.
-5. **The step before the break is a release that only knows the names.**
+3. **No aliases, ever.** An old spelling is refused naming the new one, from the table the
+   conversion uses.
+4. **Nothing migrates unasked.** The launch offers; a person answers, and `n` is a launch.
+5. **The step before the break is a release that only knows the names**, shipped now; the break
+   itself comes a few releases after the reader that takes both.
 
 ## Appendix: evidence
 
