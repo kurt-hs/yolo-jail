@@ -89,6 +89,128 @@ func TestPlanEditRemoveCommentedArrayItemsAndKeys(t *testing.T) {
 	}
 }
 
+func TestPlanEditRemovePreservesCommentsInTheEntireDeletionRange(t *testing.T) {
+	cases := []struct {
+		name        string
+		data        string
+		path        []configdoc.Step
+		wantPath    []configdoc.Step
+		want        any
+		removedPath []configdoc.Step
+		comment     string
+	}{
+		{
+			name:     "last array item block comment",
+			data:     `{"items":["a", /* keep-block */ "b"]}`,
+			path:     []configdoc.Step{{Key: "items"}, {Index: 1, IsIndex: true}},
+			wantPath: []configdoc.Step{{Key: "items"}},
+			want:     []any{"a"},
+			comment:  "/* keep-block */",
+		},
+		{
+			name:     "last array item line comment",
+			data:     "{\"items\":[\"a\", // keep-line\n  \"b\"]}",
+			path:     []configdoc.Step{{Key: "items"}, {Index: 1, IsIndex: true}},
+			wantPath: []configdoc.Step{{Key: "items"}},
+			want:     []any{"a"},
+			comment:  "// keep-line",
+		},
+		{
+			name:        "same-line key prefix comment",
+			data:        "{\n  \"before\": 1,\n  /* keep-prefix */ \"remove\": 2,\n  \"after\": 3\n}\n",
+			path:        []configdoc.Step{{Key: "remove"}},
+			wantPath:    []configdoc.Step{{Key: "after"}},
+			want:        3,
+			removedPath: []configdoc.Step{{Key: "remove"}},
+			comment:     "/* keep-prefix */",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			source := []byte(tc.data)
+			plan, err := PlanEdit(source, configdoc.JSONC, Mutation{Action: Remove, Path: tc.path})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertCommentsPreserved(t, source, plan.Updated, configdoc.JSONC)
+			if !bytes.Contains(plan.Updated, []byte(tc.comment)) {
+				t.Fatalf("comment %q missing: %s", tc.comment, plan.Updated)
+			}
+			assertEffective(t, plan.Updated, configdoc.JSONC, tc.wantPath, tc.want)
+			if tc.removedPath != nil {
+				doc, err := configdoc.Parse(plan.Updated, configdoc.JSONC)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := lookup(doc.Values, tc.removedPath); ok {
+					t.Fatalf("removed value remains: %#v", doc.Values)
+				}
+			}
+		})
+	}
+}
+
+func TestApplyRemovePreservesCommentsInTheEntireDeletionRange(t *testing.T) {
+	cases := []struct {
+		name     string
+		data     string
+		path     []configdoc.Step
+		wantPath []configdoc.Step
+		want     any
+		comment  string
+	}{
+		{
+			name:     "last array item interstitial comment",
+			data:     `{"items":["a", /* keep-apply */ "b"]}`,
+			path:     []configdoc.Step{{Key: "items"}, {Index: 1, IsIndex: true}},
+			wantPath: []configdoc.Step{{Key: "items"}},
+			want:     []any{"a"},
+			comment:  "/* keep-apply */",
+		},
+		{
+			name:     "last array item line comment",
+			data:     "{\"items\":[\"a\", // keep-apply-line\n  \"b\"]}",
+			path:     []configdoc.Step{{Key: "items"}, {Index: 1, IsIndex: true}},
+			wantPath: []configdoc.Step{{Key: "items"}},
+			want:     []any{"a"},
+			comment:  "// keep-apply-line",
+		},
+		{
+			name:     "same-line key prefix comment",
+			data:     "{\n  \"before\": 1,\n  /* keep-apply-prefix */ \"remove\": 2,\n  \"after\": 3\n}\n",
+			path:     []configdoc.Step{{Key: "remove"}},
+			wantPath: []configdoc.Step{{Key: "after"}},
+			want:     3,
+			comment:  "/* keep-apply-prefix */",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.jsonc")
+			before := []byte(tc.data)
+			if err := os.WriteFile(path, before, 0600); err != nil {
+				t.Fatal(err)
+			}
+			plan, err := Apply(path, configdoc.JSONC, Mutation{Action: Remove, Path: tc.path}, ApplyOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, plan.Updated) {
+				t.Fatalf("file differs from applied plan: %q != %q", got, plan.Updated)
+			}
+			assertCommentsPreserved(t, before, got, configdoc.JSONC)
+			if !bytes.Contains(got, []byte(tc.comment)) {
+				t.Fatalf("comment %q missing after Apply: %s", tc.comment, got)
+			}
+			assertEffective(t, got, configdoc.JSONC, tc.wantPath, tc.want)
+		})
+	}
+}
+
 func TestConfigEditApplyCommentedSetIsAtomicAndVerifies(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.jsonc")

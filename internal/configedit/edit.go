@@ -183,7 +183,7 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			if err != nil {
 				return nil, err
 			}
-			if hasCommentWithin(doc.Index.Comments(), item) {
+			if hasCommentInRange(doc.Index.Comments(), start, end) {
 				if last.Index > 0 && last.Index < len(items)-1 && end == item.End {
 					nextPath := append(append([]configdoc.Step(nil), parentPath...), configdoc.Step{Index: last.Index + 1, IsIndex: true})
 					next, found, e := doc.Index.Item(nextPath...)
@@ -222,7 +222,7 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			if err != nil {
 				return nil, err
 			}
-			if hasCommentWithin(doc.Index.Comments(), member) {
+			if hasCommentInRange(doc.Index.Comments(), start, end) {
 				replacement = preserveComments(data, start, end, doc.Index.Comments())
 			}
 			obj, ok := parent.(*jsonx.OrderedMap)
@@ -663,6 +663,10 @@ func preserveComments(data []byte, start, end int, comments []configdoc.Span) []
 		}
 	}
 	return out
+}
+
+func hasCommentInRange(comments []configdoc.Span, start, end int) bool {
+	return hasCommentWithin(comments, configdoc.Span{Start: start, End: end})
 }
 
 func hasCommentWithin(comments []configdoc.Span, span configdoc.Span) bool {
