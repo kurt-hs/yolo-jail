@@ -542,6 +542,10 @@ func TestCaptureWiresTheMacosUserBackend(t *testing.T) {
 		t.Fatal("MacosUserRun is nil: the macos-user arm is unwired, so `yolo capture` falls " +
 			"to the pipeline's generic branch-not-wired line (H1 reverted?)")
 	}
+	if seen.JailStdout != nil || seen.SessionStdout != nil {
+		t.Errorf("explicit `yolo capture` must preserve its stdout payload; JailStdout=%T SessionStdout=%T",
+			seen.JailStdout, seen.SessionStdout)
+	}
 
 	// Drive the real closure on its dry-run path. The act sets deps.Out to captureHost's
 	// own stdout writer, so the plan lands in `out`.

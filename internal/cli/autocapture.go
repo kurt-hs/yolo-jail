@@ -183,6 +183,10 @@ func autoCapture(bins []string, platform string, out, errw io.Writer, color bool
 		"installer download\n  per program. Set %s=1 to skip.[/dim]", NoAutoCaptureEnv)
 
 	act := autoCaptureActFor(platform)
+	// The capture jail's pid 1 and installer stdout is launch output too. Keep it on the
+	// same stable teed stderr as the capture presentation; only this automatic act gets
+	// the redirect, so explicit `yolo capture` retains its named stdout payload.
+	act.jailStdout = errw
 	for i, bin := range missing {
 		pr.Printf("[dim]  [%d/%d][/dim] %s", i+1, len(missing), bin)
 		// A capture that stores the program clears its memo inside captureHost, as `yolo capture

@@ -3,12 +3,16 @@ package cli
 import (
 	"bytes"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -289,17 +293,66 @@ func TestALaunchWiresTheAutoCaptureTrigger(t *testing.T) {
 	var jailSeen run.Options
 	captures := 0
 	jail := fakeCaptureJail(t, &jailSeen, probetoolEntries())
-	withFakeCaptureJail(t, func(o run.Options) int { captures++; return jail(o) })
+	prevMacCaptureAct := macCaptureAct
+	macCaptureAct = func(deps macosuser.Deps, _ macosuser.CaptureOptions, _ string, _ bool) int {
+		if deps.Run == nil {
+			t.Error("macos-user capture act did not receive a command runner")
+			return 1
+		}
+		return deps.Run([]string{"/bin/sh", "-c", "printf AUTO-CAPTURE-MACOS-RUNNER-STDOUT"})
+	}
+	t.Cleanup(func() { macCaptureAct = prevMacCaptureAct })
+	withFakeCaptureJail(t, func(o run.Options) int {
+		captures++
+		writeChild := func(w io.Writer, marker string) {
+			if w == nil {
+				w = os.Stdout // run.Options' actual fallback for an unnamed jail/session stdout
+			}
+			if _, err := io.WriteString(w, marker+"\n"); err != nil {
+				t.Errorf("write capture child stdout marker %q: %v", marker, err)
+			}
+		}
+		writeChild(o.JailStdout, "AUTO-CAPTURE-JAIL-STDOUT")
+		writeChild(o.SessionStdout, "AUTO-CAPTURE-SESSION-STDOUT")
+		runtimeName := ""
+		if o.Getenv != nil {
+			runtimeName = o.Getenv("YOLO_RUNTIME")
+		}
+		if runtimeName == "macos-user" {
+			if o.MacosUserRun == nil {
+				t.Error("macos-user capture pipeline did not wire its command runner")
+				return 1
+			}
+			if rc := o.MacosUserRun(jsonx.NewOrderedMap(), "", nil, nil, "", "",
+				macosuser.HomeOverlay{}, macosuser.HostContext{}, true, jsonx.NewOrderedMap(),
+				[]packload.BlockedTool{}, macosuser.JailDaemons{}); rc != 0 {
+				return rc
+			}
+		}
+		return jail(o)
+	})
 
-	// The real closure writes through the launch stderr passed by Run; the test tee stands in
-	// for the terminal and parent launch log independently.
+	// The production closure writes through the launch stderr passed by Run; the test tee stands in
+	// for the terminal and parent launch log independently. The fake pipeline emits through both
+	// actual JailStdout/SessionStdout options and, on macos-user, the composed account command runner.
 	var stderr, parentLog bytes.Buffer
 	presentation := io.MultiWriter(&stderr, &parentLog)
-	output := captureStdout(t, func() {
-		seen.AutoCapture([]string{"probetool"}, capturedPlatform, presentation, false)
-	})
+	var output string
+	for _, platform := range []string{capturedPlatform, "darwin/arm64"} {
+		output += captureStdout(t, func() {
+			seen.AutoCapture([]string{"probetool"}, platform, presentation, false)
+		})
+	}
 	if output != "" {
-		t.Fatalf("auto-capture presentation leaked onto command stdout: %q", output)
+		t.Errorf("auto-capture child stdout leaked into the command payload: %q", output)
+	}
+	for _, marker := range []string{"AUTO-CAPTURE-JAIL-STDOUT", "AUTO-CAPTURE-SESSION-STDOUT",
+		"AUTO-CAPTURE-MACOS-RUNNER-STDOUT"} {
+		for name, got := range map[string]string{"launch stderr": stderr.String(), "parent launch log": parentLog.String()} {
+			if !strings.Contains(got, marker) {
+				t.Errorf("%s missed automatic capture child stdout marker %q", name, marker)
+			}
+		}
 	}
 	for name, got := range map[string]string{"launch stderr": stderr.String(), "parent launch log": parentLog.String()} {
 		if !strings.Contains(got, "auto-capture") || !strings.Contains(got, "captured probetool") {
@@ -307,8 +360,8 @@ func TestALaunchWiresTheAutoCaptureTrigger(t *testing.T) {
 		}
 	}
 
-	if captures != 1 {
-		t.Errorf("the wired closure ran %d capture jails, want 1 — it is wired to "+
+	if captures != 2 {
+		t.Errorf("the wired closure ran %d capture jails, want 2 — it is wired to "+
 			"something that is not the capture act", captures)
 	}
 }
