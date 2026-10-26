@@ -422,61 +422,31 @@ func TestHostRunDeliveryFailureLeavesPlantedFilesAlone(t *testing.T) {
 	}
 }
 
-func TestHostRunRefusesAWritablePathEntry(t *testing.T) {
-	cases := map[string]func(f *hostFixture) string{
-		"empty":     func(*hostFixture) string { return "" },
-		"dot":       func(*hostFixture) string { return "." },
-		"workspace": func(f *hostFixture) string { return filepath.Join(f.ws, "bin") },
-		"state":     func(f *hostFixture) string { return paths.GlobalCache() },
-	}
-	for name, entry := range cases {
-		t.Run(name, func(t *testing.T) {
-			f := newHostFixture(t)
-			bad := entry(f)
-			f.setPath(f.bin, coreutilsDir(t), bad)
-			marker := filepath.Join(f.root, "ran")
-			if rc := f.run(t, "mark", marker); rc != 64 {
-				t.Fatalf("rc %d\n%s", rc, f.termErr(t))
-			}
-			if _, err := os.Lstat(marker); err == nil {
-				t.Fatal("the command ran")
-			}
-			var ref Refusal
-			readJSON(t, filepath.Join(f.onlyRun(t), RefusedFile), &ref)
-			if ref.Step != 9 || ref.Label != "t1" || ref.Next == "" || ref.Workspace != f.ws {
-				t.Fatalf("%+v", ref)
-			}
-			if !strings.Contains(f.termErr(t), "PATH") {
-				t.Fatalf("%s", f.termErr(t))
-			}
-			ev := f.auditEvents(t)
-			if len(ev) != 1 || ev[0].Set != "refused" || ev[0].Outcome != "refused" || ev[0].Reason == "" {
-				t.Fatalf("audit %+v", ev)
-			}
-		})
-	}
-}
-
-// TestHostRunAllowsAPathEntryUnderAStrayYoloMarker: a `.yolo` is a directory some verb made, not
-// evidence that a jail can write the tree above it. The PATH check keys on the workspace this run
-// resolved, so a stray marker under the home — which the maintainer's host carries, and which
-// made every mise install and `~/.local/bin` refuse — no longer stops a run, and no longer asks
-// the human to remove an entry from a shell that will put it back.
-func TestHostRunAllowsAPathEntryUnderAStrayYoloMarker(t *testing.T) {
+// TestHostRunRunsAProgramFromAVenvInsideTheWorkspace is the measured case that ended the PATH
+// audit: a project's own virtualenv sits INSIDE the workspace, so a check that refused "an entry
+// the jail can write" refused the ordinary shell every time. There is no PATH refusal at all now
+// (HX-D32), so the program resolves and runs; the disclosure prints which file that was.
+func TestHostRunRunsAProgramFromAVenvInsideTheWorkspace(t *testing.T) {
 	f := newHostFixture(t)
-	holder := filepath.Join(f.home, "tools", "stray")
-	for _, d := range []string{filepath.Join(holder, ".yolo"), filepath.Join(holder, "bin")} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
+	venv := filepath.Join(f.ws, ".venv", "bin")
+	if err := os.MkdirAll(venv, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	writeScript(t, filepath.Join(holder, "bin", "stray"), `echo stray-ok`)
-	f.setPath(filepath.Join(holder, "bin"), f.bin, coreutilsDir(t))
-	if rc := f.run(t, "stray"); rc != 0 {
+	writeScript(t, filepath.Join(venv, "tool"), `echo venv-ok`)
+	f.setPath(venv, f.bin, coreutilsDir(t))
+	if rc := f.run(t, "tool"); rc != 0 {
 		t.Fatalf("rc %d\n%s", rc, f.termErr(t))
 	}
-	if got := f.termOut(t); got != "stray-ok\n" {
+	if got := f.termOut(t); got != "venv-ok\n" {
 		t.Fatalf("the terminal saw %q", got)
+	}
+	var res Result
+	readJSON(t, filepath.Join(f.onlyRun(t), ResultFile), &res)
+	if want := filepath.Join(venv, "tool"); res.Program != want {
+		t.Fatalf("program %q, want %q", res.Program, want)
+	}
+	if e := f.termErr(t); strings.Contains(e, "PATH") {
+		t.Fatalf("the run still talks about PATH:\n%s", e)
 	}
 }
 
@@ -503,88 +473,6 @@ func TestHostRunAllowsAndSkipsYolosHostWrapperDir(t *testing.T) {
 	readJSON(t, filepath.Join(f.onlyRun(t), ResultFile), &res)
 	if res.Program != filepath.Join(f.bin, "say") {
 		t.Fatalf("program %q, want the real say past the wrapper dir", res.Program)
-	}
-}
-
-// TestHostRunStillRefusesTheRestOfTheStateDir: allowing the wrapper dir allows nothing else under
-// yolo's state directory, which a jail can write through its mounts (the shared cache, here).
-func TestHostRunStillRefusesTheRestOfTheStateDir(t *testing.T) {
-	f := newHostFixture(t)
-	cache := paths.GlobalCache()
-	if err := os.MkdirAll(cache, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	f.setPath(paths.WrapDir(), f.bin, coreutilsDir(t), cache)
-	if rc := f.run(t, "say", "hi"); rc != 64 {
-		t.Fatalf("rc %d\n%s", rc, f.termErr(t))
-	}
-	want := "inside yolo's state directory " + paths.GlobalStorage() + ", which a jail can write"
-	if !strings.Contains(f.termErr(t), want) {
-		t.Fatalf("want %q in\n%s", want, f.termErr(t))
-	}
-}
-
-// TestPathEntryProblemJudgesAManagedLinkByWhereItLeads: a name inside the managed dir that is a
-// link to elsewhere in the state directory is refused for where it resolves.
-func TestPathEntryProblemJudgesAManagedLinkByWhereItLeads(t *testing.T) {
-	state := evalTemp(t)
-	managed := filepath.Join(state, "bin")
-	cache := filepath.Join(state, "cache")
-	for _, d := range []string{managed, cache} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	link := filepath.Join(managed, "wrap")
-	if err := os.Symlink(cache, link); err != nil {
-		t.Fatal(err)
-	}
-	if why := pathEntryProblem(link, []string{state}, []string{managed}, ""); !strings.Contains(why, "state directory") {
-		t.Fatalf("a managed link into the cache was allowed: %q", why)
-	}
-	if why := pathEntryProblem(filepath.Join(managed, "block"), []string{state}, []string{managed}, ""); why != "" {
-		t.Fatalf("a managed dir was refused: %q", why)
-	}
-}
-
-// TestPathEntryProblemGivesALinkedManagedDirNoExemption: when the managed dir is itself a link
-// (<state>/bin -> <state>/cache), the exemption would follow it into the jail-writable cache, so
-// it is withdrawn: an entry through the link and the cache named directly are both refused.
-func TestPathEntryProblemGivesALinkedManagedDirNoExemption(t *testing.T) {
-	state := evalTemp(t)
-	cache := filepath.Join(state, "cache")
-	if err := os.MkdirAll(filepath.Join(cache, "wrap"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	managed := filepath.Join(state, "bin")
-	if err := os.Symlink(cache, managed); err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range []string{filepath.Join(managed, "wrap"), filepath.Join(cache, "wrap")} {
-		if why := pathEntryProblem(entry, []string{state}, []string{managed}, ""); !strings.Contains(why, "state directory") {
-			t.Errorf("%s was allowed through a linked managed dir: %q", entry, why)
-		}
-	}
-}
-
-// TestPathEntryProblemAllowsTheManagedDirUnderALinkedHome: a HOME reached through a link
-// (Silverblue's /home -> /var/home) leaves the managed dir where it says it is, so it is allowed
-// by either spelling.
-func TestPathEntryProblemAllowsTheManagedDirUnderALinkedHome(t *testing.T) {
-	root := evalTemp(t)
-	realHome := filepath.Join(root, "var", "home")
-	if err := os.MkdirAll(filepath.Join(realHome, "state", "bin", "wrap"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Join(root, "var", "home"), filepath.Join(root, "home")); err != nil {
-		t.Fatal(err)
-	}
-	state := filepath.Join(root, "home", "state")
-	managed := filepath.Join(state, "bin")
-	for _, entry := range []string{filepath.Join(managed, "wrap"), filepath.Join(realHome, "state", "bin", "wrap")} {
-		if why := pathEntryProblem(entry, []string{state}, []string{managed}, ""); why != "" {
-			t.Errorf("%s was refused: %q", entry, why)
-		}
 	}
 }
 

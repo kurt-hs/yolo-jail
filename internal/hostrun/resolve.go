@@ -5,17 +5,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/hostwrap"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
-
-// defaultStateDirs are yolo's own state directories, which a jail-facing process may write.
-func defaultStateDirs() []string {
-	return []string{paths.GlobalStorage(), filepath.Dir(paths.UserConfigPath())}
-}
 
 func within(p, dir string) bool {
 	if dir == "" {
@@ -36,94 +29,6 @@ func withinAny(p string, dirs []string) bool {
 		}
 	}
 	return false
-}
-
-// resolveExisting is p with its symlinks resolved as far as it exists: the nearest existing
-// ancestor resolved, the missing rest joined on lexically.
-func resolveExisting(p string) string {
-	p = filepath.Clean(p)
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	parent := filepath.Dir(p)
-	if parent == p {
-		return p
-	}
-	return filepath.Join(resolveExisting(parent), filepath.Base(p))
-}
-
-// trustedManagedDirs returns the spellings of each managed dir that is really where it says it
-// is: inside a state dir, and resolving to the same place inside that state dir resolved. A
-// managed dir that is itself a link (say <state>/bin -> <state>/cache) would carry the exemption
-// to whatever it points at, so it gets none. Both sides are resolved, so a symlinked HOME
-// (/home -> /var/home) still matches. Each trusted dir is returned as spelled and resolved.
-func trustedManagedDirs(stateDirs, managedDirs []string) []string {
-	var out []string
-	for _, m := range managedDirs {
-		m = filepath.Clean(m)
-		for _, s := range stateDirs {
-			s = filepath.Clean(s)
-			if s == "" || !within(m, s) || m == s {
-				continue
-			}
-			rel, _ := filepath.Rel(s, m)
-			rm := resolveExisting(m)
-			if rm == filepath.Join(resolveExisting(s), rel) {
-				out = append(out, m, rm)
-			}
-			break
-		}
-	}
-	return out
-}
-
-// pathEntryProblem says why a PATH entry may supply jail-written code, or "" when it cannot.
-// Every entry is checked, searched or not, because the child inherits PATH (HX-D32).
-//
-// THE WORKSPACE IS THE TEST, AND A `.yolo` MARKER IS NOT. This refused any entry under a
-// directory HOLDING a `.yolo`, on the theory that the marker said a jail could write there. It
-// does not: a `.yolo` is a directory some verb made, and every creator of one refuses the three
-// directories that may never be workspaces (paths.EnsureWorkspaceStateDir). What a jail can
-// actually write is the workspace this run resolved — every backend binds it read-write — plus
-// yolo's own state directories. The marker rule refused every PATH entry under a home holding a
-// stray `~/.yolo`, mise's installs and `~/.local/bin` included, for a tree no jail has ever been
-// mounted on, and it printed a remedy ("remove it from this shell's PATH") that the mise or
-// direnv shell which produced the entry cannot carry out. workspace is the resolved workspace
-// from step 6, which is a fact about this run rather than an inference from what is on disk.
-//
-// managedDirs are yolo's host-managed directories (hostpath.ManagedDirs: the generated bin tree,
-// which holds the host launch wrappers a user is asked to PREPEND to PATH). They sit inside the
-// state directory, but no backend mounts them into a jail, so an entry in one is not refused for
-// being in the state directory — provided the managed dir is not itself a link out of its place
-// (trustedManagedDirs), in which case it is exempt from nothing. Each spelling of the entry is
-// judged on its own: a name inside the managed dir that is a link to elsewhere in the state
-// directory is still refused.
-func pathEntryProblem(entry string, stateDirs, managedDirs []string, workspace string) string {
-	trusted := trustedManagedDirs(stateDirs, managedDirs)
-	if entry == "" {
-		return "an empty entry, which means the current directory"
-	}
-	if !filepath.IsAbs(entry) {
-		return "a relative entry, which follows the current directory"
-	}
-	forms := []string{filepath.Clean(entry)}
-	if r, err := filepath.EvalSymlinks(entry); err == nil && r != forms[0] {
-		forms = append(forms, r)
-	}
-	for _, p := range forms {
-		if workspace != "" && withinAny(p, []string{workspace}) {
-			return "inside the workspace " + workspace + ", which the jail can write"
-		}
-		if slices.ContainsFunc(trusted, func(d string) bool { return within(p, d) }) {
-			continue
-		}
-		for _, s := range stateDirs {
-			if withinAny(p, []string{s}) {
-				return "inside yolo's state directory " + s
-			}
-		}
-	}
-	return ""
 }
 
 // lookProgram resolves argv0 over pathVal the way a host launch resolves its target

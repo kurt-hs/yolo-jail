@@ -50,11 +50,11 @@ type HostEnv struct {
 	Version   string
 	SpoolCap  int64
 	Heartbeat time.Duration
-	// StateDirs are yolo's own state directories, refused as PATH entries; nil is the real ones.
-	StateDirs []string
-	// ManagedDirs are yolo's host-managed directories inside StateDirs, which no jail mounts:
-	// allowed as PATH entries and skipped when the program is resolved (HX-D32, HE-D5); nil is
-	// the real ones (hostpath.ManagedDirs).
+	// ManagedDirs are yolo's host-managed directories (hostpath.ManagedDirs): the generated bin
+	// tree, which holds the host launch wrappers a user is asked to prepend to PATH. The program
+	// lookup SKIPS them, as a host launch resolves its target (HE-D5), so a wrapper never reads
+	// as the program it wraps. They are not a refusal: no PATH entry is refused at all (HX-D32).
+	// Nil is the real ones.
 	ManagedDirs []string
 }
 
@@ -85,9 +85,6 @@ func (e HostEnv) withDefaults() HostEnv {
 	}
 	if e.Heartbeat <= 0 {
 		e.Heartbeat = 10 * time.Second
-	}
-	if e.StateDirs == nil {
-		e.StateDirs = defaultStateDirs()
 	}
 	if e.ManagedDirs == nil {
 		e.ManagedDirs = hostpath.ManagedDirs()
@@ -171,17 +168,15 @@ func (h *hostRun) run() int {
 			"Run it without `yolo host-run` if you need it yourself.")
 	}
 
-	// Step 9: every PATH entry, then the program.
+	// Step 9: the program, resolved over the caller's PATH and printed in the disclosure. There
+	// is no PATH AUDIT here any more, and that is deliberate rather than an omission (HX-D32,
+	// amended 2026-10-26): the entry a jail could write is the rule, not the exception — a venv
+	// or `bin/` under the workspace, a direnv or mise entry, yolo's own state — so auditing PATH
+	// refused the ordinary case every time and asked for a remedy the shell puts back. PATH is
+	// not a control this side of the paste either: the human's own shell, a wrapper, a shell
+	// function and an `exec -a` all decide what runs, which is why the disclosure shows the
+	// resolved program instead of trying to veto entries.
 	pathVal, _ := lookupEnv(h.environ, "PATH")
-	entries := filepath.SplitList(pathVal)
-	for _, e := range entries {
-		if why := pathEntryProblem(e, h.env.StateDirs, h.env.ManagedDirs, h.workspace); why != "" {
-			return h.deliverRefusal(9,
-				fmt.Sprintf("your PATH holds %s, %s, which a jail can write", shquote.QuoteDisplay(e), why),
-				"Ask the human to remove that entry from PATH in the shell they ran the line in (or to open a fresh terminal without it), then to run the same line again.",
-				"Remove it from this shell's PATH and run the line again.")
-		}
-	}
 	program, lookErr := lookProgram(h.line.Argv[0], pathVal, h.startDir, h.env.ManagedDirs)
 
 	// Step 10: the run directory.

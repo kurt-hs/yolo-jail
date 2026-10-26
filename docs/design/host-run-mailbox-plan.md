@@ -56,8 +56,9 @@ gate fails outside the task's scope.
   run directory; it creates nothing), `paths.ReadRegularFileBeneath` (every jail-side read),
   `os.Root.Mkdir`, `Rename`, `RemoveAll`, `OpenFile`.
 - **Scope:** `paths.WorkspaceScopeBreach` is already inside the walk; nothing extra to call.
-- **Paths:** `paths.WorkspaceStateDir(ws)` for `<ws>/.yolo`; `paths.GlobalStorage()` and
-  `filepath.Dir(paths.UserConfigPath())` are "yolo's state directories" for the `PATH` refusal.
+- **Paths:** `paths.WorkspaceStateDir(ws)` for `<ws>/.yolo`. (There was a `PATH` refusal that
+  named `paths.GlobalStorage()` and `filepath.Dir(paths.UserConfigPath())` as "yolo's state
+  directories"; it is deleted, [HX-D32](host-run-mailbox.md#HX-D32).)
 - **Display:** `termsafe.HasUnsafe` and `termsafe.Unsafe` (rune check), `termsafe.VisibleLines`
   (printed streams), `shquote.Join` (the ready line), `shquote.JoinDisplay` (`runs:`).
 - **TTY:** `tty.IsTerminalFile` (`internal/tty/tty.go:23`).
@@ -220,10 +221,9 @@ RFC 3339 UTC. Field order and Go type names are cheap and yours.
 - **Settled, do not re-open:** steps 7 to 10 and everything after them in
   [design §4.3](host-run-mailbox.md#43-what-the-host-does): `.yolo` absent refuses naming a
   launch; `host-run` made 0700 with `Root.Mkdir`, opened link-refusing; the `gh` credential form
-  (step 8) and the `PATH` check (step 9) deliver `refused.json` in their own run directory; every
-  `PATH` entry is checked, searched or not, because the child inherits `PATH` (a relative or
-  empty entry, an entry with an ancestor holding a `.yolo` directory, or one inside
-  `paths.GlobalStorage()` or `filepath.Dir(paths.UserConfigPath())`); the run directory is built
+  (step 8) delivers `refused.json` in its own run directory; step 9 only resolves the program and
+  refuses nothing (the `PATH` audit it used to carry is deleted — [HX-D32](host-run-mailbox.md#HX-D32));
+  the run directory is built
   as `.<id>.tmp` holding `request.json` and `heartbeat`, then renamed to `<id>`; then prune
   (entries matching the id grammar or its `.<id>.tmp` form, id time over 24 h, `RemoveAll`
   beneath the held root, failure is one warning); disclosure exactly as the design's block,
