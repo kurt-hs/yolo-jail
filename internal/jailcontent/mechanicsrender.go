@@ -62,6 +62,8 @@ func renderExistingBuiltin(name string, facts FactSheet) ([]byte, error) {
 		return nil, err
 	}
 	text := string(body)
+	text = strings.ReplaceAll(text, "# Configuring the Jail", "# Configuring the environment")
+	text = strings.ReplaceAll(text, "# Diagnose the Jail", "# Diagnose this environment")
 	workspace := facts.WorkspacePath
 	if workspace == "" {
 		workspace = "the workspace"
@@ -150,18 +152,16 @@ func renderExistingBuiltin(name string, facts FactSheet) ([]byte, error) {
 		text = replaceSection(text, "## 6. \"My fix isn't taking effect\" → you're running stale code", "## 7. Orphans and logs",
 			"## 6. My fix isn't taking effect\n\nRun `yolo config drift` to see pending changes, then read the **jail-mechanics** skill for this jail's applied state and next steps.\n\n")
 	}
-	text = strings.ReplaceAll(text, "# Configuring the Jail", "# Configuring the environment")
-	text = strings.ReplaceAll(text, "# Diagnose the Jail", "# Diagnose this environment")
 	return []byte(text), nil
 }
 
-// substituteBuiltinPaths rewrites embedded prose before fact values are inserted, keeping supplied paths literal.
+// substituteBuiltinPaths rewrites embedded prose without reprocessing inserted fact values.
 func substituteBuiltinPaths(text, workspace, home string) string {
-	text = strings.ReplaceAll(text, "/workspace", workspace)
+	replacements := []string{"/workspace", workspace}
 	if home != "" {
-		text = strings.ReplaceAll(text, "/home/agent", home)
+		replacements = append(replacements, "/home/agent", home)
 	}
-	return text
+	return strings.NewReplacer(replacements...).Replace(text)
 }
 
 func replaceSection(content, start, end, replacement string) string {

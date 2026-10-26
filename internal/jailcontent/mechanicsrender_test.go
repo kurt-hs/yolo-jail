@@ -89,6 +89,44 @@ func TestRenderBuiltinSkillsKeepsNativeFactPathsLiteral(t *testing.T) {
 	}
 }
 
+func TestRenderBuiltinSkillsKeepsCrossPlaceholderFactsLiteral(t *testing.T) {
+	workspace := "/Users/alice/home/agent/project"
+	config := workspace + "/yolo-jail.jsonc"
+	localConfig := workspace + "/# Configuring the Jail"
+	log := workspace + "/.yolo/# Diagnose the Jail.log"
+	files, err := RenderBuiltinSkills(FactSheet{
+		HostWorkspace:          workspace,
+		WorkspacePath:          workspace,
+		ConfigPath:             config,
+		WorkspaceConfigPresent: true,
+		LocalConfigPresent:     true,
+		LocalConfigPath:        localConfig,
+		LogPath:                log,
+		Briefing: BriefingInput{
+			Mechanism: "macos-user",
+			Home:      "/Users/shared/jail",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := joinRendered(files)
+	for _, literal := range []string{workspace, config, localConfig, log} {
+		if !strings.Contains(all, literal) {
+			t.Errorf("rendered skills do not preserve supplied path literally %q:\n%s", literal, all)
+		}
+	}
+	for _, corrupted := range []string{
+		"/Users/alice/Users/shared/jail/project",
+		workspace + "/# Configuring the environment",
+		workspace + "/.yolo/# Diagnose this environment.log",
+	} {
+		if strings.Contains(all, corrupted) {
+			t.Errorf("renderer reprocessed literal fact %q", corrupted)
+		}
+	}
+}
+
 func TestRendererRepairsAppliedFactGuidance(t *testing.T) {
 	facts := FactSheet{
 		HostWorkspace: "/Users/test/project", WorkspacePath: "/Users/test/project",
