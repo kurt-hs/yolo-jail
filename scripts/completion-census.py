@@ -24,15 +24,20 @@ import sys
 import tempfile
 from pathlib import Path
 
+from go_packages import package_patterns
+
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "scripts" / "completion-readers.json"
 
 
 def go_packages():
-    """(packages with tests, every package directory), for both GOOS values' package sets."""
+    """(packages with tests, every active Git-visible package directory)."""
+    patterns = package_patterns(ROOT)
+    if not patterns:
+        return [], set()
     out = subprocess.check_output(
-        ["go", "list", "-e", "-f", "{{.ImportPath}}\t{{.Dir}}\t{{len .TestGoFiles}}\t{{len .XTestGoFiles}}",
-         "./..."], cwd=ROOT, text=True)
+        ["go", "list", "-f", "{{.ImportPath}}\t{{.Dir}}\t{{len .TestGoFiles}}\t{{len .XTestGoFiles}}",
+         *patterns], cwd=ROOT, text=True)
     pkgs, dirs = [], set()
     for line in out.splitlines():
         ip, d, t, x = line.split("\t")

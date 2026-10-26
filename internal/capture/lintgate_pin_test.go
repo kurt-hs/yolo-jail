@@ -17,6 +17,7 @@ package capture
 // pins the thing the recipe is for: that no file in the tree is left outside every pass.
 
 import (
+	"fmt"
 	"go/build"
 	"os"
 	"path/filepath"
@@ -95,38 +96,99 @@ func justRecipeBody(t *testing.T, name string) string {
 
 // TestLintRecipeRunsStaticcheckForEveryLintedGOOS is the call-site pin.
 //
-// Delete the `GOOS=darwin staticcheck` line and this test fails — which is the whole point:
-// nothing else in the repo notices, because no Go code calls a `just` recipe. `go vet` is
-// pinned alongside it because it is analyzed per-GOOS in exactly the same way and would go
-// blind in exactly the same silence.
-func TestLintRecipeRunsStaticcheckForEveryLintedGOOS(t *testing.T) {
-	body := justRecipeBody(t, "lint")
+// It accepts only the direct `GOOS=<os> <tool>` form or the exact Git-aware wrapper
+// `GOOS=<os> python3 scripts/go_packages.py run <tool>` form. A pass removed from the
+// production `lint` recipe makes this fail; comments and unrelated commands cannot stand in
+// for the call site.
+func lintRecipePassErrors(body string) []string {
+	counts := make(map[string]int)
+	var errors []string
+	invocation := regexp.MustCompile(`(?:^|\s)(?:staticcheck|go\s+vet)(?:\s|$)`)
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if comment := strings.IndexByte(line, '#'); comment >= 0 {
+			line = strings.TrimSpace(line[:comment])
+		}
+		if !invocation.MatchString(line) {
+			continue
+		}
 
+		matched := false
+		for _, goos := range lintedGOOS {
+			for _, tool := range []string{"staticcheck", "go vet"} {
+				direct := regexp.QuoteMeta(tool)
+				wrapped := `python3 scripts/go_packages\.py run ` + direct
+				want := regexp.MustCompile(`^GOOS=` + regexp.QuoteMeta(goos) + `\s+(?:` + direct + `|` + wrapped + `)(?:\s|$)`)
+				if want.MatchString(line) {
+					counts[goos+"/"+tool]++
+					matched = true
+				}
+			}
+		}
+		if !matched {
+			errors = append(errors, fmt.Sprintf("unexpected lint command %q; each analyzer pass must name its GOOS and use the direct tool or exact Git-aware wrapper", line))
+		}
+	}
 	for _, goos := range lintedGOOS {
 		for _, tool := range []string{"staticcheck", "go vet"} {
-			want := regexp.MustCompile(`(?m)^\s*GOOS=` + goos + `\s+` + regexp.QuoteMeta(tool) + `\b`)
-			if !want.Match([]byte(body)) {
-				t.Errorf("the `lint` recipe no longer runs `%s` under GOOS=%s.\n"+
-					"A build-tagged file is type-checked and analyzed only under the GOOS "+
-					"that selects it, so dropping a pass makes every file behind that "+
-					"constraint unlinted — silently, with the gate still green. That is "+
-					"GitHub issue #42, which reached a macOS contributor before it reached "+
-					"CI. Restore the pass, or remove %q from lintedGOOS and say why in the "+
-					"Justfile.", tool, goos, goos)
+			key := goos + "/" + tool
+			if counts[key] != 1 {
+				errors = append(errors, fmt.Sprintf("expected exactly one %s pass for GOOS=%s, found %d", tool, goos, counts[key]))
 			}
 		}
 	}
+	return errors
+}
 
-	// A bare invocation means "whatever GOOS this machine happens to be", which is the
-	// drift the explicit passes exist to remove: on a Mac it silently retargets the pass
-	// that is supposed to be the linux one.
-	for _, tool := range []string{"staticcheck", "go vet"} {
-		bare := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(tool) + `\b`)
-		if bare.Match([]byte(body)) {
-			t.Errorf("the `lint` recipe runs a bare `%s` again. Every pass must name its "+
-				"GOOS, or `just lint` analyzes a different set of files depending on whose "+
-				"laptop it runs on.", tool)
-		}
+func TestLintRecipeRunsStaticcheckForEveryLintedGOOS(t *testing.T) {
+	body := justRecipeBody(t, "lint")
+	for _, problem := range lintRecipePassErrors(body) {
+		t.Errorf("the `lint` recipe no longer preserves every GOOS analyzer pass. A build-tagged file is type-checked and analyzed only under the GOOS that selects it, so dropping a pass makes files behind that constraint silently unlinted (GitHub issue #42). Restore the pass, or remove a GOOS from lintedGOOS and say why in the Justfile: %s", problem)
+	}
+}
+
+func TestLintRecipePassMatcherRejectsRegressions(t *testing.T) {
+	goodWrapped := strings.Join([]string{
+		"GOOS=linux python3 scripts/go_packages.py run go vet",
+		"GOOS=linux python3 scripts/go_packages.py run staticcheck",
+		"GOOS=darwin python3 scripts/go_packages.py run go vet",
+		"GOOS=darwin python3 scripts/go_packages.py run staticcheck -checks=inherit,-SA4023",
+	}, "\n")
+	goodDirect := strings.Join([]string{
+		"GOOS=linux go vet",
+		"GOOS=linux staticcheck",
+		"GOOS=darwin go vet",
+		"GOOS=darwin staticcheck -checks=inherit,-SA4023",
+	}, "\n")
+	for name, body := range map[string]string{"wrapped": goodWrapped, "direct": goodDirect} {
+		t.Run(name, func(t *testing.T) {
+			if problems := lintRecipePassErrors(body); len(problems) != 0 {
+				t.Fatalf("valid lint recipe rejected: %v", problems)
+			}
+		})
+	}
+
+	firstPass := "GOOS=linux python3 scripts/go_packages.py run staticcheck"
+	cases := map[string]string{
+		"wrong GOOS":          strings.Replace(goodWrapped, firstPass, "GOOS=freebsd python3 scripts/go_packages.py run staticcheck", 1),
+		"missing GOOS":        strings.Replace(goodWrapped, firstPass, "python3 scripts/go_packages.py run staticcheck", 1),
+		"wrong tool":          strings.Replace(goodWrapped, firstPass, "GOOS=linux python3 scripts/go_packages.py run fake-linter", 1),
+		"bare direct tool":    strings.Replace(goodWrapped, firstPass, "staticcheck", 1),
+		"bare wrapped tool":   strings.Replace(goodWrapped, firstPass, "python3 scripts/go_packages.py run staticcheck", 1),
+		"commented fake call": strings.Replace(goodWrapped, firstPass, "# "+firstPass, 1),
+	}
+	for _, pass := range strings.Split(goodWrapped, "\n") {
+		cases["deleted pass: "+pass] = strings.Replace(goodWrapped, pass, "", 1)
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if problems := lintRecipePassErrors(body); len(problems) == 0 {
+				t.Fatalf("invalid lint recipe accepted: %s", name)
+			}
+		})
 	}
 }
 

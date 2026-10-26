@@ -1,13 +1,15 @@
 ---
 status: current
 stage: CURRENT
-verified: 2026-10-16
-verified_commit: 8e65f344
+verified: 2026-10-26
+verified_commit: 6365c0d9
 covers:
   - scripts/completion-check.py
   - scripts/test-completion-check.py
   - scripts/completion-census.py
   - scripts/completion-readers.json
+  - scripts/go_packages.py
+  - scripts/test-go-packages.py
   - scripts/vantage-check.sh
 tags: [testing, tooling, completion]
 summary: "How `just done` checks a finished task without rewriting it: it refuses a dirty tree, finds the nearest verified ancestor shared by every worktree, and runs only what the change since then can reach — lint for changed Go packages and their importers, short tests for the changed packages, the tests recorded as reading a changed file, and the document checks — or the full `just check-ci` when anything is unproven. The landing gate is unchanged."
@@ -15,7 +17,7 @@ summary: "How `just done` checks a finished task without rewriting it: it refuse
 
 # Change-aware completion — what `just done` checks, and why it never rewrites
 
-**Status:** Verified 2026-10-16 against `8e65f344`. Graduated from the design doc
+**Status:** Verified 2026-10-26 against `6365c0d9`. Graduated from the design doc
 `docs/reference/change-aware-completion.md`, which git history keeps. MEASURED: every route on a
 synthetic repository (`scripts/test-completion-check.py`, run by `lint-ci`), and the wall times in
 [Measured on 2026-10-09](#measured-on-2026-10-09).
@@ -32,6 +34,8 @@ launch-path change, the full integration suite ([AGENTS.md, Workflow](../../AGEN
 | :--- | :--- |
 | The command `just done` runs | `scripts/completion-check.py` (`Store`, `GLOBAL_FILES`, `GLOBAL_PREFIXES`, `GO_ENV_KEYS`, `LINT_PASSES`) |
 | Its route tests, on a synthetic repository | `scripts/test-completion-check.py` |
+| Shared Git-aware package enumeration | `scripts/go_packages.py` (recipes, completion graph and census) |
+| Package-selection regression tests | `scripts/test-go-packages.py` |
 | The reader census, and its output | `scripts/completion-census.py` → `scripts/completion-readers.json` |
 | The pinned Markdown checker | `scripts/vantage-check.sh` |
 | The recipe | `done` in the `Justfile` |
@@ -81,7 +85,10 @@ names what ran, what was inherited from the baseline, and what `just done` never
    `scripts/completion-readers.json` itself ([CAC-D17](#CAC-D17)). Otherwise only:
    - `go vet` and staticcheck, for both GOOS values, on the changed packages and every package
      whose build or tests import them (each GOOS's own import graph), and `go test -short` on the
-     changed packages alone ([CAC-D18](#CAC-D18));
+     changed packages alone ([CAC-D18](#CAC-D18)); package directories come from Git-tracked Go
+     files (even if ignored) and non-ignored untracked Go files, with Go applying build
+     constraints. Ignored files still participate inside a selected real package, but an
+     ignored-only package does not select a directory;
    - the individual tests recorded as **reading** a changed path, or listing a directory that
      gained or lost a direct entry ([CAC-D10](#CAC-D10)), and on every change every **scanning**
      test ([CAC-D15](#CAC-D15));
@@ -103,9 +110,16 @@ record writers, not editors.
 Imports do not explain a test that reads a file: a citation test reads documents, a golden test
 reads fixtures, and no import graph shows either. So the reader evidence is
 [`scripts/completion-readers.json`](../../scripts/completion-readers.json), written by
-[`scripts/completion-census.py`](../../scripts/completion-census.py). The census runs every test
-once, alone, with Go's `-test.testlogfile` — the log `go test` itself uses to invalidate its cache —
-and keeps each test's reads of files that belong to no package or to another package.
+[`scripts/completion-census.py`](../../scripts/completion-census.py). The Justfile's Linux/Darwin
+lint and Go test recipes, the selector's Go graph and the census use `scripts/go_packages.py` to
+start from Git-visible Go source directories, so an ignored extra package cannot introduce an
+unrelated missing dependency into the gate. This is a directory-selection boundary, not a file
+filter: Go still compiles ignored extra Go files that share a selected package directory. The
+census runs every test once, alone, with Go's `-test.testlogfile` — the log `go test` itself uses
+to invalidate its cache — and keeps each test's reads of files that belong to no package or to
+another package. Git-aware package selection is used in a checkout; the Go-only lint and test recipes
+retain standard `./...` behavior in a source archive. Change-aware completion and the reader census
+still require Git metadata for their change and read selection.
 
 A **scanning test** *(a term this design coined)* is one whose recorded reads include a whole-kind
 pattern (`D/*`, `D/*.E`) or whose listings include a whole tree (`D/**`). What it reads moves with

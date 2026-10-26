@@ -84,6 +84,7 @@ class FrontDoor(unittest.TestCase):
         r = self.repo
         (r / "scripts").mkdir(parents=True)
         shutil.copy(FRONT_DOOR, r / "scripts" / "completion-check.py")
+        shutil.copy(HERE / "go_packages.py", r / "scripts" / "go_packages.py")
         (r / "scripts" / "completion-readers.json").write_text(json.dumps(READERS))
         for script in ("vantage-check.sh", "test-changelog-section.sh"):
             self.fake_script(r / "scripts" / script)
@@ -231,6 +232,19 @@ class FrontDoor(unittest.TestCase):
         # The retired pin tool (docs/reference/pack-binaries.md OQ-BP8) is not run.
         self.assertFalse([c for c in self.ran(calls, "go", "run") if "./tools/pack-binaries" in c["argv"]])
         self.assertEqual(self.ran(calls, "just"), [])
+
+    def test_ignored_external_package_does_not_poison_the_go_graph(self):
+        self.verified()
+        (self.repo / ".git" / "info" / "exclude").write_text("/scratch/\\n")
+        self.write("scratch/yolo-packs/matt/skills/headful-browser/references/client.go",
+                   'package references\\nimport _ "github.com/gorilla/websocket"\\n')
+        self.write("a/a.go", "package a\\n\\nfunc A() int { return 2 }\\n")
+        self.commit("go with ignored external package")
+        rc, out, calls = self.done()
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("go list", out)
+        self.assertTrue(self.ran(calls, "go", "test", "-short", "example.com/m/a"))
+        self.assertFalse(self.ran(calls, "just", "check-ci"))
 
     def test_unformatted_go_fails_without_rewriting_it(self):
         self.verified()
@@ -427,6 +441,7 @@ class CallSites(unittest.TestCase):
 
     def test_lint_ci_runs_these_tests(self):
         _, body = just_recipe("lint-ci")
+        self.assertIn("python3 scripts/test-go-packages.py", body)
         self.assertIn("python3 scripts/test-completion-check.py", body)
 
     def test_the_markdown_checker_is_pinned(self):

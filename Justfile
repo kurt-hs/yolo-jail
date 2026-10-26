@@ -235,20 +235,20 @@ cachix-push CACHE="yolo-jail":
 
 # Run all tests (Go unit + Go container integration suite)
 test:
-    go test -short ./...
+    python3 scripts/go_packages.py run go test -short
     # YOLO_TEST_REAL_PACK_INSTALLS keeps the tests that install a shipped pack's program
     # from its VENDOR. CI does not set it on the push path — that question is asked on a
     # `packs/**` change and weekly instead, because no commit can cause a vendor's release
     # to break (docs/reference/agent-install-in-ci.md#three-triggers-matched-to-three-causes). A local full run wants
     # everything, so this recipe asks for it.
-    YOLO_TEST_REAL_PACK_INSTALLS=1 go test -count=1 -timeout 0 ./integration
+    YOLO_TEST_REAL_PACK_INSTALLS=1 python3 scripts/go_packages.py run go test -count=1 -timeout 0 -- ./integration
 
 # Run fast tests only (skip container integration tests).
 # -timeout is per PACKAGE: internal/cli alone takes about seven minutes on a CI
 # runner, close enough to go test's default of ten that a slower runner trips it
 # with no test hung.
 test-fast:
-    go test -short -timeout=20m ./...
+    python3 scripts/go_packages.py run go test -short -timeout=20m
 
 # Run linter (Go: vet + staticcheck) ONCE PER BUILD CONFIGURATION THIS TREE
 # TARGETS — not once per machine.
@@ -308,10 +308,10 @@ test-fast:
 #
 # Run linter (Go: vet + staticcheck), once per GOOS this tree targets.
 lint:
-    GOOS=linux go vet ./...
-    GOOS=linux staticcheck ./...
-    GOOS=darwin go vet ./...
-    GOOS=darwin staticcheck -checks=inherit,-SA4023 ./...
+    GOOS=linux python3 scripts/go_packages.py run go vet
+    GOOS=linux python3 scripts/go_packages.py run staticcheck
+    GOOS=darwin python3 scripts/go_packages.py run go vet
+    GOOS=darwin python3 scripts/go_packages.py run staticcheck -checks=inherit,-SA4023
 
 # ONE COPY OF THE LINT COMMANDS, reached by dependency rather than restated: the
 # landing gate (`check-ci`) and the interactive recipe (`check`) have to run the same
@@ -339,7 +339,9 @@ lint-ci: lint
     # test-fast under check-ci's [parallel]; the script says why.
     python3 scripts/test-vantage-check.py
     scripts/vantage-check.sh userguide/
-    # `just done`'s change-aware front door: its routes, and that `done` still calls it.
+    # The Git-aware Go package boundary and `just done`'s front door are regression-tested,
+    # including their production call sites.
+    python3 scripts/test-go-packages.py
     python3 scripts/test-completion-check.py
     # The matched launcher snapshot, install-publication and wrapper regressions are permanent
     # lint-ci coverage, and therefore run under check-ci too.

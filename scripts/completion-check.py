@@ -35,6 +35,8 @@ import sys
 import time
 from pathlib import Path
 
+from go_packages import package_patterns
+
 SCHEMA = 1
 READERS_FILE = "scripts/completion-readers.json"
 
@@ -166,11 +168,17 @@ def changed(root, base):
 
 
 def go_graph(root, goos):
-    """{import path: package} for the module under one GOOS. None when the graph has an error
-    other than a package with no files for this GOOS — an unknown graph is a full run."""
+    """{import path: package} from the Git-visible module under one GOOS. None when the graph
+    has an error other than a package with no files for this GOOS."""
     env = dict(os.environ, GOOS=goos)
+    try:
+        patterns = package_patterns(root, env=env)
+    except (OSError, RuntimeError):
+        return None
+    if not patterns:
+        return {}
     r = subprocess.run(["go", "list", "-e", "-json=ImportPath,Dir,Deps,TestImports,XTestImports,"
-                        "Error,DepsErrors,GoFiles,TestGoFiles,XTestGoFiles", "./..."],
+                        "Error,DepsErrors,GoFiles,TestGoFiles,XTestGoFiles", *patterns],
                        cwd=root, env=env, capture_output=True)
     if r.returncode != 0:
         return None
@@ -341,7 +349,7 @@ def plan_selective(root, base, entries, readers):
         for goos in ("linux", "darwin"):
             g = go_graph(root, goos)
             if g is None:
-                plan.full.append(f"`GOOS={goos} go list ./...` reports an error")
+                plan.full.append(f"`GOOS={goos} go list` reports an error")
                 return plan
             graphs[goos] = g
     pkg_dirs = {p["rel"]: ip for g in graphs.values() for ip, p in g.items()}
