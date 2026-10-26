@@ -62,15 +62,6 @@ func renderExistingBuiltin(name string, facts FactSheet) ([]byte, error) {
 		return nil, err
 	}
 	text := string(body)
-	if name == "diagnosing-the-jail" {
-		if facts.LogPath != "" {
-			text = strings.ReplaceAll(text, "/workspace/.yolo/startup.log", "{{.LogPath}}")
-			text = strings.ReplaceAll(text, "<your workspace>/.yolo/startup.log", "{{.LogPath}}")
-		} else {
-			text = strings.ReplaceAll(text, "/workspace/.yolo/startup.log", "the workspace startup log")
-			text = strings.ReplaceAll(text, "<your workspace>/.yolo/startup.log", "the workspace startup log")
-		}
-	}
 	workspace := facts.WorkspacePath
 	if workspace == "" {
 		workspace = "the workspace"
@@ -84,19 +75,24 @@ func renderExistingBuiltin(name string, facts FactSheet) ([]byte, error) {
 		if facts.Briefing.Mechanism == "macos-user" {
 			text = strings.ReplaceAll(text, "Use this when a change must be **baked into how the jail is built** so it", "Use this when a change must be part of the permanent environment configuration so it")
 			text = replaceSection(text, "## Two representative edits (then run `yolo check --no-build`)", "## Some files in your home are GENERATED — don't hand-edit them", "## Two representative edits (then run `yolo check --no-build`)\n\nUse **jail-mechanics** for the exact current package delivery and change steps.\n\n")
-			workspace := facts.WorkspacePath
-			if workspace == "" {
-				workspace = "the applied workspace path"
-			}
-			text = replaceSection(text, "### 1. The directory you launch from IS `/workspace`.", "### 2. A `mounts` entry lands at `/ctx/<basename>` — of the RESOLVED path", "### Workspace path\n\nThis workspace is the host directory `"+workspace+"`; it is not a container bind mount.\n\n")
 			text = replaceSection(text, "### 2. A `mounts` entry lands at `/ctx/<basename>` — of the RESOLVED path", "### 3. A string `mounts` entry is read-only, and `:ro` is NOT a suffix you write", "")
 			text = replaceSection(text, "### 3. A string `mounts` entry is read-only, and `:ro` is NOT a suffix you write", "### 4. An in-jail `yolo check` CANNOT judge a `mounts` path", "")
 			text = replaceSection(text, "### 4. An in-jail `yolo check` CANNOT judge a `mounts` path", "### 6. Host `~` is NOT jail `/home/agent` — dotfiles do not project into the jail", "")
 			text = replaceSection(text, "### 5. Networking: name the DIRECTION before you touch a port key", "### 6. Host `~` is NOT jail `/home/agent` — dotfiles do not project into the jail", "")
 			text = replaceSection(text, "### 6. Host `~` is NOT jail `/home/agent` — dotfiles do not project into the jail", "## Don't guess at keys — the schema lives in the CLI", "")
+			text = substituteBuiltinPaths(text, workspace, facts.Briefing.Home)
+			start := strings.Replace("### 1. The directory you launch from IS `/workspace`.", "/workspace", workspace, 1)
+			appliedWorkspace := facts.WorkspacePath
+			if appliedWorkspace == "" {
+				appliedWorkspace = "the applied workspace path"
+			}
+			text = replaceSection(text, start, "## Don't guess at keys — the schema lives in the CLI", "### Workspace path\n\nThis workspace is the host directory `"+appliedWorkspace+"`; it is not a container bind mount.\n\n")
 		} else if networkSharesHost(appliedNetworkMode(facts)) {
 			text = replaceSection(text, "### 5. Networking: name the DIRECTION before you touch a port key", "### 6. Host `~` is NOT jail `/home/agent` — dotfiles do not project into the jail",
 				"### 5. Networking: this jail shares the host network stack\n\nThis jail uses host networking. Its processes share the host network stack, including loopback; there is no separate jail loopback and container port mappings do not apply.\n\n")
+		}
+		if facts.Briefing.Mechanism != "macos-user" {
+			text = substituteBuiltinPaths(text, workspace, facts.Briefing.Home)
 		}
 		if facts.ConfigPath != "" {
 			userConfig := facts.UserConfigPath
@@ -119,12 +115,9 @@ func renderExistingBuiltin(name string, facts FactSheet) ([]byte, error) {
 			text = replaceSection(text, "### Which file — and how the layers merge", "## Two representative edits (then run `yolo check --no-build`)",
 				"### Which file — and how the layers merge\n\nThe user-scope configuration is `"+userConfig+"`. The workspace configuration this launch reads is `"+facts.ConfigPath+"` (`"+configName(facts)+"`). "+state+" "+localState+" The user config is the machine-wide base; workspace files add project-specific settings.\n\n")
 		}
-		home := facts.Briefing.Home
-		if home != "" {
-			text = strings.ReplaceAll(text, "/home/agent", home)
-		}
 	}
 	if name == "diagnosing-the-jail" {
+		text = substituteBuiltinPaths(text, workspace, facts.Briefing.Home)
 		log := facts.LogPath
 		if log == "" {
 			log = "the workspace's .yolo/startup.log"
@@ -159,19 +152,16 @@ func renderExistingBuiltin(name string, facts FactSheet) ([]byte, error) {
 	}
 	text = strings.ReplaceAll(text, "# Configuring the Jail", "# Configuring the environment")
 	text = strings.ReplaceAll(text, "# Diagnose the Jail", "# Diagnose this environment")
-	if facts.Briefing.Home != "" {
-		text = strings.ReplaceAll(text, "/home/agent", facts.Briefing.Home)
+	return []byte(text), nil
+}
+
+// substituteBuiltinPaths rewrites embedded prose before fact values are inserted, keeping supplied paths literal.
+func substituteBuiltinPaths(text, workspace, home string) string {
+	text = strings.ReplaceAll(text, "/workspace", workspace)
+	if home != "" {
+		text = strings.ReplaceAll(text, "/home/agent", home)
 	}
-	text = strings.ReplaceAll(text, "/workspace", "{{.WorkspacePath}}")
-	t, err := template.New(name).Parse(text)
-	if err != nil {
-		return nil, err
-	}
-	var rendered bytes.Buffer
-	if err := t.Execute(&rendered, struct{ WorkspacePath, LogPath string }{workspace, facts.LogPath}); err != nil {
-		return nil, err
-	}
-	return rendered.Bytes(), nil
+	return text
 }
 
 func replaceSection(content, start, end, replacement string) string {

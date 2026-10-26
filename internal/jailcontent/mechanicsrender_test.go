@@ -31,6 +31,64 @@ func TestWorkspaceConfigRecipeRendersOnlySuppliedCooperativeCPUFacts(t *testing.
 	}
 }
 
+func TestRenderBuiltinSkillsKeepsNativeFactPathsLiteral(t *testing.T) {
+	workspace := "/Users/alice/workspace/project"
+	config := workspace + "/project/yolo-jail.jsonc"
+	localConfig := workspace + "/local-{{.WorkspacePath}}.jsonc"
+	userConfig := "/Users/alice/.config/yolo-jail/{{.WorkspacePath}}.jsonc"
+	home := "/Users/alice/home/agent/{{.WorkspacePath}}"
+	log := workspace + "/.yolo/{{.LogPath}}.log"
+	files, err := RenderBuiltinSkills(FactSheet{
+		HostWorkspace:          workspace,
+		WorkspacePath:          workspace,
+		ConfigPath:             config,
+		WorkspaceConfigPresent: true,
+		LocalConfigPresent:     true,
+		LocalConfigPath:        localConfig,
+		UserConfigPath:         userConfig,
+		LogPath:                log,
+		Briefing: BriefingInput{
+			Mechanism:  "macos-user",
+			Home:       home,
+			ConfigName: "yolo-jail.jsonc",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := joinRendered(files)
+	for _, literal := range []string{workspace, config, localConfig, userConfig, log} {
+		if !strings.Contains(all, literal) {
+			t.Errorf("rendered skills do not preserve supplied path literally %q:\n%s", literal, all)
+		}
+	}
+	for _, corrupted := range []string{
+		"/Users/alice/Users/alice/workspace/project",
+		"/Users/alice/home/agent/" + workspace,
+		"/Users/alice/home/agent/" + log,
+		workspace + "/local-" + workspace + ".jsonc",
+		"/Users/alice/.config/yolo-jail/" + workspace + ".jsonc",
+		workspace + "/.yolo/" + log + ".log",
+	} {
+		if strings.Contains(all, corrupted) {
+			t.Errorf("renderer reprocessed literal fact %q", corrupted)
+		}
+	}
+
+	containerFiles, err := RenderBuiltinSkills(FactSheet{
+		WorkspacePath: workspace,
+		ConfigPath:    config,
+		Briefing:      BriefingInput{Mechanism: "podman", Home: home},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containerText := joinRendered(containerFiles)
+	if !strings.Contains(containerText, home) || strings.Contains(containerText, "/Users/alice/home/agent/"+workspace) {
+		t.Errorf("renderer did not preserve supplied home path literally %q:\n%s", home, containerText)
+	}
+}
+
 func TestRendererRepairsAppliedFactGuidance(t *testing.T) {
 	facts := FactSheet{
 		HostWorkspace: "/Users/test/project", WorkspacePath: "/Users/test/project",
