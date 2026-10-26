@@ -360,7 +360,13 @@ func orderedTableKeys(doc *configdoc.Document, path []configdoc.Step, table map[
 	positions := make(map[string]int, len(keys))
 	for _, key := range keys {
 		memberPath := append(append([]configdoc.Step(nil), path...), configdoc.Step{Key: key})
-		span, ok, err := doc.Index.Value(memberPath...)
+		span, ok, err := doc.Index.Table(memberPath...)
+		if err != nil || !ok {
+			span, ok, err = doc.Index.Member(memberPath...)
+		}
+		if err != nil || !ok {
+			span, ok, err = doc.Index.Value(memberPath...)
+		}
 		if err != nil || !ok {
 			positions[key] = len(doc.Bytes) + len(keys)
 			continue

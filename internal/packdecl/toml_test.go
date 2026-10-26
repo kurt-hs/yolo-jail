@@ -132,6 +132,44 @@ func TestDecodeTOMLGroupedManifestNormalizesAccessorsAndMetadata(t *testing.T) {
 	}
 }
 
+func TestDecodeTOMLProviderModelAndVariantOrderFollowsHeaders(t *testing.T) {
+	data := []byte(`[providers.meta.models.zulu]
+name = "Zulu"
+[providers.meta.models.alpha]
+name = "Alpha"
+[providers.meta.variants.zulu]
+model = "zulu-model"
+[providers.meta.variants.alpha]
+model = "alpha-model"
+`)
+	m, problems := DecodeTOML(data)
+	if len(problems) != 0 {
+		t.Fatalf("DecodeTOML: %v", problems)
+	}
+	providers := m.Providers()
+	if len(providers) != 1 {
+		t.Fatalf("providers = %#v, want one", providers)
+	}
+	if got, want := providers[0].ModelOrder, []string{"zulu", "alpha"}; !equalStrings(got, want) {
+		t.Errorf("model declaration order = %v, want authored order %v", got, want)
+	}
+	if got, want := providers[0].VariantOrder, []string{"zulu", "alpha"}; !equalStrings(got, want) {
+		t.Errorf("variant declaration order = %v, want authored order %v", got, want)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestDecodeTOMLReadersKeepStrictUseAndTolerantContracts(t *testing.T) {
 	newer := []byte("[[skills]]\nfrom = \"skills\"\ninto = \".sample/skills\"\nnewer_field = true\n")
 	if _, problems := DecodeTOML(newer); len(problems) == 0 || !strings.Contains(strings.Join(problems, "\n"), `unknown field "newer_field"`) {
