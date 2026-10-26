@@ -60,6 +60,7 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 	parent, parentOK := lookup(root, parentPath)
 	start, end := 0, 0
 	var replacement []byte
+	var hunks []Hunk
 	noop := false
 	switch m.Action {
 	case Set:
@@ -69,9 +70,6 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		}
 		if !ok {
 			return nil, fmt.Errorf("cannot set missing config value")
-		}
-		if hasCommentWithin(doc.Index.Comments(), span) {
-			return nil, fmt.Errorf("cannot replace a value containing comments without deleting them")
 		}
 		old, _ := lookup(root, path)
 		normalized, err := semanticValue(m.Value, format)
@@ -84,9 +82,20 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			break
 		}
 		start, end = span.Start, span.End
-		replacement, err = configdoc.EncodeValue(m.Value, format)
-		if err != nil {
-			return nil, err
+		if hasCommentWithin(doc.Index.Comments(), span) {
+			hunks, err = planCommentedSet(doc, path, old, normalized)
+			if err != nil {
+				return nil, err
+			}
+			normalized = orderedLike(old, normalized)
+			if len(hunks) == 0 {
+				noop = true
+			}
+		} else {
+			replacement, err = configdoc.EncodeValue(m.Value, format)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if !setValue(root, path, normalized) {
 			return nil, fmt.Errorf("cannot set config value")
@@ -158,7 +167,7 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		setValue(root, path, append(append([]any(nil), items...), normalized))
 	case Remove:
 		if last.IsIndex {
-			_, ok, e := doc.Index.Item(path...)
+			item, ok, e := doc.Index.Item(path...)
 			if e != nil {
 				return nil, e
 			}
@@ -174,6 +183,24 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			if err != nil {
 				return nil, err
 			}
+			if hasCommentWithin(doc.Index.Comments(), item) {
+				if last.Index > 0 && last.Index < len(items)-1 && end == item.End {
+					nextPath := append(append([]configdoc.Step(nil), parentPath...), configdoc.Step{Index: last.Index + 1, IsIndex: true})
+					next, found, e := doc.Index.Item(nextPath...)
+					if e != nil || !found {
+						return nil, fmt.Errorf("cannot locate following array item")
+					}
+					comma := findComma(data, item.End, next.Start, doc.Index.Comments())
+					if comma < 0 {
+						return nil, fmt.Errorf("cannot locate following array separator")
+					}
+					end = comma + 1
+				}
+				replacement = preserveComments(data, start, end, doc.Index.Comments())
+				if last.Index > 0 && last.Index < len(items)-1 {
+					replacement = append(replacement, ',')
+				}
+			}
 			setValue(root, parentPath, append(append([]any(nil), items[:last.Index]...), items[last.Index+1:]...))
 		} else {
 			member, ok, e := doc.Index.Member(path...)
@@ -187,9 +214,6 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			if !parentOK {
 				return nil, fmt.Errorf("remove parent does not exist")
 			}
-			if hasCommentWithin(doc.Index.Comments(), member) {
-				return nil, fmt.Errorf("cannot remove a value containing comments without deleting them")
-			}
 			if format == configdoc.TOML {
 				start, end, replacement, err = removeTOMLMember(data, member)
 			} else {
@@ -197,6 +221,9 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			}
 			if err != nil {
 				return nil, err
+			}
+			if hasCommentWithin(doc.Index.Comments(), member) {
+				replacement = preserveComments(data, start, end, doc.Index.Comments())
 			}
 			obj, ok := parent.(*jsonx.OrderedMap)
 			if !ok {
@@ -209,7 +236,10 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 	}
 	updated := append([]byte(nil), data...)
 	if !noop {
-		updated = splice(data, start, end, replacement)
+		updated = applyHunks(data, hunks)
+		if len(hunks) == 0 {
+			updated = splice(data, start, end, replacement)
+		}
 		planned, err := configdoc.Parse(updated, format)
 		if err != nil {
 			return nil, fmt.Errorf("planned splice does not parse: %w", err)
@@ -218,10 +248,13 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			return nil, fmt.Errorf("planned splice changes effective document values: expected %#v, got %#v", root, planned.Values)
 		}
 	}
+	planHunks := hunks
+	if len(planHunks) == 0 {
+		planHunks = []Hunk{{Start: start, End: end, Before: append([]byte(nil), data[start:end]...), After: append([]byte(nil), replacement...)}}
+	}
 	return &Plan{
 		Format: format, Original: append([]byte(nil), data...), Updated: updated,
-		Noop: noop, Expected: root,
-		Hunks: []Hunk{{Start: start, End: end, Before: append([]byte(nil), data[start:end]...), After: append([]byte(nil), replacement...)}},
+		Noop: noop, Expected: root, Hunks: planHunks,
 	}, nil
 }
 
@@ -514,6 +547,124 @@ func semanticValue(value any, format configdoc.Format) (any, error) {
 	return value, nil
 }
 
+func planCommentedSet(doc *configdoc.Document, path []configdoc.Step, old, next any) ([]Hunk, error) {
+	var hunks []Hunk
+	var walk func([]configdoc.Step, any, any) error
+	walk = func(at []configdoc.Step, before, after any) error {
+		if reflect.DeepEqual(before, after) {
+			return nil
+		}
+		span, ok, err := doc.Index.Value(at...)
+		if err != nil || !ok {
+			return fmt.Errorf("cannot locate value while preserving comments")
+		}
+		comments := doc.Index.Comments()
+		if hasCommentWithin(comments, span) {
+			oldMap, oldIsMap := before.(*jsonx.OrderedMap)
+			newMap, newIsMap := after.(*jsonx.OrderedMap)
+			if oldIsMap && newIsMap && sameKeys(oldMap, newMap) {
+				for _, key := range oldMap.Keys() {
+					oldValue, _ := oldMap.Get(key)
+					newValue, _ := newMap.Get(key)
+					if err := walk(appendStep(at, configdoc.Step{Key: key}), oldValue, newValue); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			oldItems, oldArray := before.([]any)
+			newItems, newArray := after.([]any)
+			if oldArray && newArray && len(oldItems) == len(newItems) {
+				for i := range oldItems {
+					if err := walk(appendStep(at, configdoc.Step{Index: i, IsIndex: true}), oldItems[i], newItems[i]); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			return fmt.Errorf("cannot replace a commented config value with a different structure without relocating comments")
+		}
+		replacement, err := configdoc.EncodeValue(after, doc.Format)
+		if err != nil {
+			return err
+		}
+		hunks = append(hunks, Hunk{Start: span.Start, End: span.End, Before: append([]byte(nil), doc.Bytes[span.Start:span.End]...), After: replacement})
+		return nil
+	}
+	if err := walk(path, old, next); err != nil {
+		return nil, err
+	}
+	return hunks, nil
+}
+
+func orderedLike(before, after any) any {
+	oldMap, oldIsMap := before.(*jsonx.OrderedMap)
+	newMap, newIsMap := after.(*jsonx.OrderedMap)
+	if oldIsMap && newIsMap && sameKeys(oldMap, newMap) {
+		out := jsonx.NewOrderedMap()
+		for _, key := range oldMap.Keys() {
+			oldValue, _ := oldMap.Get(key)
+			newValue, _ := newMap.Get(key)
+			out.Set(key, orderedLike(oldValue, newValue))
+		}
+		return out
+	}
+	oldItems, oldArray := before.([]any)
+	newItems, newArray := after.([]any)
+	if oldArray && newArray && len(oldItems) == len(newItems) {
+		out := make([]any, len(newItems))
+		for i := range newItems {
+			out[i] = orderedLike(oldItems[i], newItems[i])
+		}
+		return out
+	}
+	return after
+}
+
+func sameKeys(a, b *jsonx.OrderedMap) bool {
+	if a.Len() != b.Len() {
+		return false
+	}
+	for _, key := range a.Keys() {
+		if _, ok := b.Get(key); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func appendStep(path []configdoc.Step, step configdoc.Step) []configdoc.Step {
+	return append(append([]configdoc.Step(nil), path...), step)
+}
+
+func applyHunks(data []byte, hunks []Hunk) []byte {
+	updated := append([]byte(nil), data...)
+	for i := len(hunks) - 1; i >= 0; i-- {
+		h := hunks[i]
+		updated = splice(updated, h.Start, h.End, h.After)
+	}
+	return updated
+}
+
+func preserveComments(data []byte, start, end int, comments []configdoc.Span) []byte {
+	var out []byte
+	for i := start; i < end; i++ {
+		keep := data[i] == ' ' || data[i] == '\t' || data[i] == '\r' || data[i] == '\n'
+		if !keep {
+			for _, comment := range comments {
+				if i >= comment.Start && i < comment.End {
+					keep = true
+					break
+				}
+			}
+		}
+		if keep {
+			out = append(out, data[i])
+		}
+	}
+	return out
+}
+
 func hasCommentWithin(comments []configdoc.Span, span configdoc.Span) bool {
 	for _, comment := range comments {
 		if comment.Start < span.End && comment.End > span.Start {
@@ -533,9 +684,6 @@ func removeArrayItem(doc *configdoc.Document, parent []configdoc.Step, index int
 	item, found, err := doc.Index.Item(path...)
 	if err != nil || !found {
 		return 0, 0, nil, fmt.Errorf("cannot locate array item")
-	}
-	if hasCommentWithin(doc.Index.Comments(), item) {
-		return 0, 0, nil, fmt.Errorf("cannot remove an array value containing comments without deleting them")
 	}
 	if len(items) <= 1 {
 		return item.Start, item.End, nil, nil
