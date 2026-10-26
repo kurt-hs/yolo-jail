@@ -62,7 +62,7 @@ func ParseFrom(raw, dir string) (Addr, error) {
 		return Addr{}, fmt.Errorf("pack address %q: a relative locator names a repository directory, "+
 			"and has no //subdirectory — write the path to the repository's root", raw)
 	}
-	ref, err := refFromQuery(raw, query)
+	ref, err := refFromQuery(raw, query, false)
 	if err != nil {
 		return Addr{}, err
 	}

@@ -566,3 +566,141 @@ func TestWithLockSerialisesLockfileWriters(t *testing.T) {
 		t.Errorf("lockfile has %d entries after %d concurrent writers, want all of them", len(l.Packs), n)
 	}
 }
+
+func TestRefreshPreservesLegacyMandatoryRefSemantics(t *testing.T) {
+	store := &Store{Dir: t.TempDir(), Getenv: noStagedTree}
+	outcomes, err := store.Refresh([]RefreshPack{{Name: "legacy", Source: "git+https://example.invalid/acme/tools"}}, RefreshOptions{
+		LockPath: filepath.Join(t.TempDir(), "packs.lock.json"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Err == nil || !strings.Contains(outcomes[0].Err.Error(), "missing required ?ref=") {
+		t.Fatalf("legacy unpinned source outcome = %+v; want unchanged mandatory-ref refusal", outcomes)
+	}
+}
+
+func TestRefreshRefusesOmittedRefWithoutLockfile(t *testing.T) {
+	store := &Store{Dir: t.TempDir(), Getenv: noStagedTree}
+	outcomes, err := store.Refresh([]RefreshPack{{Name: "tools", Source: "git+https://example.invalid/acme/tools", AllowDefaultRef: true}}, RefreshOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Err == nil || !strings.Contains(outcomes[0].Err.Error(), "no lockfile to pin") {
+		t.Fatalf("lockless omitted ref outcome = %+v", outcomes)
+	}
+}
+
+func TestRefreshPinsOmittedRemoteDefaultUntilForcedUpdate(t *testing.T) {
+	remote := filepath.Join(t.TempDir(), "packs.git")
+	work := filepath.Join(t.TempDir(), "work")
+	gitIn(t, t.TempDir(), "init", "--bare", "--initial-branch=trunk", remote)
+	gitIn(t, t.TempDir(), "init", "--initial-branch=trunk", work)
+	first := commitFile(t, work, "pack.json", `{"name":"tools"}`)
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "fetch", work, "refs/heads/trunk:refs/heads/trunk")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
+
+	store := &Store{Dir: t.TempDir(), Getenv: noStagedTree}
+	lockPath := filepath.Join(t.TempDir(), "packs.lock.json")
+	source := "git+file://" + filepath.ToSlash(remote)
+	refresh := func(force bool) Outcome {
+		t.Helper()
+		outcomes, err := store.Refresh([]RefreshPack{{Name: "acme/tools", Source: source, AllowDefaultRef: true}}, RefreshOptions{
+			Force: force, LockPath: lockPath, Now: func() time.Time { return time.Unix(1_800_000_000, 0) },
+		})
+		if err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+		return outcomes[0]
+	}
+
+	initial := refresh(false)
+	if initial.Err != nil || initial.Commit != first || initial.Ref != "trunk" || !initial.Fetched {
+		t.Fatalf("initial default resolution = %+v; want trunk at %s", initial, first)
+	}
+	locked, err := LoadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := locked.Get("acme/tools")
+	if !ok || entry.Source != source || entry.Ref != "trunk" || entry.Commit != first {
+		t.Fatalf("lock entry = %+v, want source as authored + resolved trunk and commit", entry)
+	}
+
+	// Make the remote advertise a different branch and commit. A normal resolution uses
+	// the lock's commit and neither re-reads HEAD nor fetches the moved default.
+	second := commitFile(t, work, "new.txt", "next branch\n")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "fetch", work, "refs/heads/trunk:refs/heads/next")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "symbolic-ref", "HEAD", "refs/heads/next")
+	offline := remote + ".offline"
+	if err := os.Rename(remote, offline); err != nil {
+		t.Fatal(err)
+	}
+	restored := false
+	t.Cleanup(func() {
+		if !restored {
+			_ = os.Rename(offline, remote)
+		}
+	})
+	cached := refresh(false)
+	if err := os.Rename(offline, remote); err != nil {
+		t.Fatal(err)
+	}
+	restored = true
+	if cached.Err != nil || cached.Commit != first || cached.Ref != "trunk" || cached.Fetched {
+		t.Fatalf("cached default resolution = %+v; want the locked trunk commit without fetching (remote next=%s)", cached, second)
+	}
+
+	updated := refresh(true)
+	if updated.Err != nil || updated.Commit != second || updated.Ref != "next" || !updated.Fetched {
+		t.Fatalf("forced update = %+v; want new advertised branch next at %s", updated, second)
+	}
+	locked, err = LoadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok = locked.Get("acme/tools")
+	if !ok || entry.Ref != "next" || entry.Commit != second || entry.Source != source {
+		t.Fatalf("updated lock entry = %+v", entry)
+	}
+	addr, err := ParsePackAddress(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr.Ref = entry.Commit
+	resolved, err := store.ResolveExisting(addr, "acme/tools")
+	if err != nil || resolved.Commit != second {
+		t.Fatalf("resolve through locked default commit = %+v, %v", resolved, err)
+	}
+}
+
+func TestRefreshRefusesMissingRemoteDefaultWithoutInventingMain(t *testing.T) {
+	remote := filepath.Join(t.TempDir(), "empty-default.git")
+	work := filepath.Join(t.TempDir(), "work")
+	gitIn(t, t.TempDir(), "init", "--bare", "--initial-branch=trunk", remote)
+	gitIn(t, t.TempDir(), "init", "--initial-branch=trunk", work)
+	commit := commitFile(t, work, "pack.json", `{"name":"tools"}`)
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "fetch", work, "refs/heads/trunk:refs/heads/trunk")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "symbolic-ref", "HEAD", "refs/heads/missing")
+
+	lockPath := filepath.Join(t.TempDir(), "packs.lock.json")
+	store := &Store{Dir: t.TempDir(), Getenv: noStagedTree}
+	source := "git+file://" + filepath.ToSlash(remote)
+	outcomes, err := store.Refresh([]RefreshPack{{Name: "tools", Source: source, AllowDefaultRef: true}}, RefreshOptions{LockPath: lockPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Err == nil || !strings.Contains(outcomes[0].Err.Error(), "did not advertise a symbolic default branch") {
+		t.Fatalf("missing HEAD outcome = %+v", outcomes)
+	}
+	if strings.Contains(outcomes[0].Err.Error(), "main") {
+		t.Errorf("missing HEAD silently fell back to a conventional branch: %v", outcomes[0].Err)
+	}
+	lock, err := LoadLock(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := lock.Get("tools"); ok {
+		t.Errorf("missing remote HEAD wrote a lock entry for fixture commit %s", commit)
+	}
+}

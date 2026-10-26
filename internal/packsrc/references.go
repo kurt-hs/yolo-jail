@@ -26,10 +26,12 @@ type SourceDefinition struct {
 // the physical source address; Name is the author-facing handle and never comes from
 // a manifest. LocalPath is set only for local references.
 type PackReference struct {
-	Source    string
-	Name      string
-	LocalPath string
-	Origin    string
+	Source          string
+	Name            string
+	SourceID        string
+	LocalPath       string
+	AllowDefaultRef bool
+	Origin          string
 }
 
 // ParseSourceDefinitions validates the raw pack_sources table without loading any
@@ -80,12 +82,16 @@ func ParseSourceDefinitions(raw any) (map[string]SourceDefinition, error) {
 // ParsePackReference resolves an authored source handle or direct-git table using
 // already parsed definitions. localRoot and home are supplied by the caller so this
 // function has no ambient config or credential reads.
-func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot, home, origin string) (PackReference, error) {
+func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot, home, origin string,
+	shippedNames map[string]bool) (PackReference, error) {
 	if text, ok := raw.(string); ok {
 		if text == "" || strings.TrimSpace(text) != text {
 			return PackReference{}, fmt.Errorf("%s: expected a non-empty pack handle", origin)
 		}
 		if !strings.Contains(text, "/") {
+			if shippedNames[text] {
+				return PackReference{Source: "embedded:" + text, Name: text, SourceID: "shipped", Origin: origin}, nil
+			}
 			return PackReference{}, fmt.Errorf("%s: only shipped packs may be named without a source", origin)
 		}
 		parts := strings.Split(text, "/")
@@ -98,7 +104,7 @@ func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot,
 			}
 			path := filepath.Join(localRoot, parts[1])
 			return PackReference{Source: "file://" + filepath.ToSlash(path), Name: text,
-				LocalPath: path, Origin: origin}, nil
+				SourceID: "local", LocalPath: path, Origin: origin}, nil
 		}
 		def, ok := sources[parts[0]]
 		if !ok {
@@ -108,9 +114,10 @@ func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot,
 			root := expandTilde(def.Path, home)
 			path := filepath.Join(root, parts[1])
 			return PackReference{Source: "file://" + filepath.ToSlash(path), Name: text,
-				LocalPath: path, Origin: origin}, nil
+				SourceID: def.Name, LocalPath: path, Origin: origin}, nil
 		}
-		return PackReference{Source: gitPackAddress(def.Repo, parts[1], ""), Name: text, Origin: origin}, nil
+		return PackReference{Source: gitPackAddress(def.Repo, parts[1], ""), Name: text,
+			SourceID: def.Name, AllowDefaultRef: true, Origin: origin}, nil
 	}
 
 	obj, ok := raw.(Object)
@@ -143,7 +150,8 @@ func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot,
 	if err != nil {
 		return PackReference{}, fmt.Errorf("%s.git: %w", origin, err)
 	}
-	return PackReference{Source: gitPackAddress(repo, "", ref), Name: name, Origin: origin}, nil
+	return PackReference{Source: gitPackAddress(repo, "", ref), Name: name,
+		SourceID: repo, AllowDefaultRef: ref == "", Origin: origin}, nil
 }
 
 // LocalDirectoryIdentity resolves a local pack directory through symlinks when it
@@ -183,7 +191,9 @@ func normalizeRepository(raw string) (string, error) {
 		s = strings.TrimPrefix(s, "git+")
 	}
 	u, err := url.Parse(s)
-	if err != nil || u.Host == "" || u.Path == "" || (u.Scheme != "https" && u.Scheme != "ssh" && u.Scheme != "http" && u.Scheme != "file") {
+	if err != nil || (u.Scheme != "file" && u.Host == "") || u.Path == "" ||
+		(u.Scheme != "https" && u.Scheme != "ssh" && u.Scheme != "http" && u.Scheme != "file") ||
+		(u.Scheme == "file" && !filepath.IsAbs(u.Path)) {
 		return "", fmt.Errorf("expected an ssh, https, http, or file git repository URL")
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
@@ -202,10 +212,10 @@ func ownerRepositoryName(repo string) (string, error) {
 		return "", err
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 2 {
+	if len(parts) != 2 {
 		return "", fmt.Errorf("direct git packs must use an owner/repository URL")
 	}
-	owner, repository := parts[len(parts)-2], strings.TrimSuffix(parts[len(parts)-1], ".git")
+	owner, repository := parts[0], strings.TrimSuffix(parts[1], ".git")
 	if !validHandleSegment(owner) || !validHandleSegment(repository) {
 		return "", fmt.Errorf("direct git packs must use an owner/repository URL")
 	}

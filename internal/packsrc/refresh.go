@@ -12,6 +12,10 @@ package packsrc
 //	a ref git could not look up (a local rev-parse           never fetch for it; report
 //	timed out or git failed)                                 the failure (FetchErr)
 //
+// An omitted pack ref is pinned differently: install/update resolves the advertised
+// remote HEAD, records its branch and commit, and ordinary launches use that commit
+// without re-reading HEAD. A source with no lockfile is refused rather than floated.
+//
 // Anything else that resolves (an abbreviated SHA, HEAD) never triggers a fetch, since it
 // does not name itself as moving. (HEAD is symbolic, so it still follows its branch when
 // the mirror is fetched for another pack; that move is disclosed like any other.)
@@ -52,6 +56,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -89,6 +94,10 @@ func LaunchStore(dir string) *Store {
 type RefreshPack struct {
 	Name   string
 	Source string
+	// AllowDefaultRef opts this producer into the readable pack-source contract:
+	// Refresh resolves the remote's advertised HEAD and pins its commit. Legacy
+	// address callers leave it false and retain Parse's mandatory-ref semantics.
+	AllowDefaultRef bool
 }
 
 // RefreshOptions tunes one Refresh call.
@@ -184,18 +193,49 @@ func (s *Store) Refresh(packs []RefreshPack, opts RefreshOptions) ([]Outcome, er
 	if interval <= 0 {
 		interval = BranchRefreshInterval
 	}
+	var previous *Lock
+	if opts.LockPath != "" && !opts.Force {
+		var err error
+		previous, err = LoadLock(opts.LockPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	outcomes := make([]Outcome, len(packs))
 	var items []refreshItem
 	addrs := make([]Addr, len(packs))
 	for i, p := range packs {
 		outcomes[i].Name = p.Name
-		a, err := Parse(p.Source)
+		parse := Parse
+		if p.AllowDefaultRef {
+			parse = ParsePackAddress
+		}
+		a, err := parse(p.Source)
 		if err != nil {
 			outcomes[i].Err = err
 			continue
 		}
+		if a.Kind == KindGit && a.Ref == "" && !p.AllowDefaultRef {
+			outcomes[i].Err = fmt.Errorf("pack %s: omitted ?ref= is only supported for readable source entries", p.Name)
+			continue
+		}
+		if a.Kind == KindGit && a.Ref == "" && opts.LockPath == "" {
+			outcomes[i].Err = fmt.Errorf("pack %s omits ?ref= but has no lockfile to pin the remote default branch — provide a lockfile or write an explicit ref", p.Name)
+			continue
+		}
+		if a.Kind == KindGit && a.Ref == "" && previous != nil {
+			if locked, ok := previous.Get(p.Name); ok && locked.Source == p.Source &&
+				locked.Ref != "" && locked.Commit != "" {
+				// An omitted ref is a commit pin, not a floating branch. Normal launches
+				// use the exact locked commit and never ask the remote whether HEAD moved.
+				a.Ref = locked.Commit
+				outcomes[i].Ref = locked.Ref
+			}
+		}
 		addrs[i] = a
-		outcomes[i].Ref = a.Ref
+		if outcomes[i].Ref == "" {
+			outcomes[i].Ref = a.Ref
+		}
 		if a.IsLocal() {
 			outcomes[i].Err = fmt.Errorf("pack %s is local (%s): there is nothing to fetch", p.Name, a.Path)
 			continue
@@ -242,7 +282,7 @@ func (s *Store) Refresh(packs []RefreshPack, opts RefreshOptions) ([]Outcome, er
 // sameContent reports whether a lockfile source names the same repository and subdirectory
 // as a, whatever its ref.
 func sameContent(lockedSource string, a Addr) bool {
-	la, err := Parse(lockedSource)
+	la, err := ParsePackAddress(lockedSource)
 	return err == nil && !la.IsLocal() && la.Repo == a.Repo && la.Path == a.Path
 }
 
@@ -271,6 +311,32 @@ func (s *Store) refreshGrouped(items []refreshItem, outcomes []Outcome, force bo
 	for _, repo := range order {
 		s.refreshMirror(repo, groups[repo], outcomes, force, now, interval, waiting)
 	}
+}
+
+func (s *Store) remoteDefaultBranch(b budget, repo string) (string, error) {
+	out, err := s.runIn(b, "", "ls-remote", "--symref", "--", repo, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("could not read remote default branch for %s: %w — write an explicit ?ref= branch, tag, or commit", repo, err)
+	}
+	var target string
+	var head bool
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 3 && fields[0] == "ref:" && fields[2] == "HEAD" {
+			target = fields[1]
+		}
+		if len(fields) == 2 && fields[1] == "HEAD" && isFullSHA(fields[0]) {
+			head = true
+		}
+	}
+	if !head || !strings.HasPrefix(target, "refs/heads/") {
+		return "", fmt.Errorf("remote %s did not advertise a symbolic default branch — write an explicit ?ref= branch, tag, or commit", repo)
+	}
+	ref := strings.TrimPrefix(target, "refs/heads/")
+	if _, err := refFromQuery("remote default branch", "ref="+url.QueryEscape(ref), false); err != nil {
+		return "", fmt.Errorf("remote %s advertised an invalid default branch %q: %w", repo, ref, err)
+	}
+	return ref, nil
 }
 
 // refreshMirror is Refresh for every pack on one repository, under that mirror's lock.
@@ -307,6 +373,27 @@ func (s *Store) refreshMirror(repo string, items []refreshItem, outcomes []Outco
 	defer unlock()
 	b, cancel := s.newBudget()
 	defer cancel()
+
+	// Resolve each unpinned source from the remote's advertised symbolic HEAD while
+	// holding the mirror lock. No conventional branch name is assumed. Once written,
+	// the lock's commit prevents later launches from re-reading HEAD until Force/update.
+	resolved := make([]refreshItem, 0, len(items))
+	for _, item := range items {
+		if item.addr.Ref == "" {
+			ref, err := s.remoteDefaultBranch(b, item.addr.Repo)
+			if err != nil {
+				outcomes[item.idx].Err = err
+				continue
+			}
+			item.addr.Ref = ref
+			outcomes[item.idx].Ref = ref
+		}
+		resolved = append(resolved, item)
+	}
+	items = resolved
+	if len(items) == 0 {
+		return
+	}
 
 	mirror := s.mirrorPath(repo)
 	addrs := make([]Addr, len(items))
