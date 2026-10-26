@@ -382,11 +382,14 @@ A launch keeps its stream shape — a process narrated in time — and adopts th
 without the report layout. **Share the vocabulary, not the layout:** the launch does not get a
 verdict block, and the report does not get a progress stream.
 
-**For container launches, every launcher-owned line in the table below is written to stderr.** The
-container launcher's stdout carries the jailed command's output (`yolo run -- cmd | jq`) and the few
-outputs that are a verb's payload, which the doc comment on `attachLaunchLog`
-([`launchlog.go`](../../internal/cli/run/launchlog.go)) lists. Both streams are still teed to
-`.yolo/launch.log`.
+**For container launches, lines the launcher presents in the table below are written to stderr.**
+The container launcher's stdout carries the jailed command's output (`yolo run -- cmd | jq`) and the
+few outputs that are a verb's payload, which the doc comment on `attachLaunchLog`
+([`launchlog.go`](../../internal/cli/run/launchlog.go)) lists. The launcher's stdout and stderr
+presentation streams are teed to `.yolo/launch.log`; ordinary container command/session stdout and
+stderr use the process's real streams and are outside that tee. Automatic-capture's named
+installer-session stdout/stderr are separately routed through that tee by its caller; that narrower
+routing does not include ordinary session output.
 
 > [!NOTE]
 > This complete stderr-routing contract does not cover native `macos-user` orchestration, whose
