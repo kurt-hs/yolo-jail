@@ -1,6 +1,7 @@
 package packsrc
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,111 @@ func TestParsePackReferenceAllowsOnlyKnownShippedBareName(t *testing.T) {
 	}
 	if _, err := ParsePackReference("not-shipped", nil, "", "/home/user", "config.packs[1]", nil); err == nil {
 		t.Fatal("an unshipped bare name was accepted")
+	}
+}
+
+func TestParseNamedGitSourceAcceptsHostlessFileURL(t *testing.T) {
+	definitions := jsonx.NewOrderedMap()
+	git := jsonx.NewOrderedMap()
+	git.Set("git", "file:///tmp/yolo-packs.git")
+	definitions.Set("acme", git)
+
+	sources, err := ParseSourceDefinitions(definitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := ParsePackReference("acme/tools", sources, "", "/home/user", "config.packs[0]", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr, err := ParsePackAddress(ref.Source)
+	if err != nil || addr.Repo != "file:///tmp/yolo-packs" || addr.Path != "tools" || !ref.AllowDefaultRef {
+		t.Fatalf("hostless file source = %+v, parsed %+v, %v", ref, addr, err)
+	}
+}
+
+func TestParseNamedGitSourceRefFlowsThroughRefreshAndLock(t *testing.T) {
+	remote := filepath.Join(t.TempDir(), "packs.git")
+	work := filepath.Join(t.TempDir(), "work")
+	gitIn(t, t.TempDir(), "init", "--bare", "--initial-branch=trunk", remote)
+	gitIn(t, t.TempDir(), "init", "--initial-branch=trunk", work)
+	commit := commitFile(t, work, "pack.toml", "name = \\\"tools\\\"\\n")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "fetch", work, "refs/heads/trunk:refs/heads/trunk")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "--work-tree="+work, "tag", "v1.2.3", commit)
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "update-ref", "refs/heads/alice/review", commit)
+
+	for _, tc := range []struct {
+		name string
+		ref  string
+	}{
+		{name: "branch", ref: "alice/review"},
+		{name: "tag", ref: "v1.2.3"},
+		{name: "commit", ref: commit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			definitions := jsonx.NewOrderedMap()
+			git := jsonx.NewOrderedMap()
+			git.Set("git", "file://"+filepath.ToSlash(remote))
+			git.Set("ref", tc.ref)
+			definitions.Set("acme", git)
+			sources, err := ParseSourceDefinitions(definitions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref, err := ParsePackReference("acme/tools", sources, "", "/home/user", "config.packs[0]", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantSource := "git+file://" + filepath.ToSlash(remote) + "//tools?ref=" + url.QueryEscape(tc.ref)
+			if ref.Source != wantSource || ref.AllowDefaultRef {
+				t.Fatalf("named git reference = %+v, want source %q with default-ref disabled", ref, wantSource)
+			}
+			addr, err := ParsePackAddress(ref.Source)
+			if err != nil || addr.Ref != tc.ref {
+				t.Fatalf("parsed named address = %+v, %v; want ref %q", addr, err, tc.ref)
+			}
+
+			store := &Store{Dir: t.TempDir(), Getenv: noStagedTree}
+			lockPath := filepath.Join(t.TempDir(), "packs.lock.json")
+			outcomes, err := store.Refresh([]RefreshPack{{Name: ref.Name, Source: ref.Source, AllowDefaultRef: ref.AllowDefaultRef}}, RefreshOptions{LockPath: lockPath})
+			if err != nil || len(outcomes) != 1 || outcomes[0].Err != nil || outcomes[0].Commit != commit || outcomes[0].Ref != tc.ref {
+				t.Fatalf("Refresh = %+v, %v; want %s at %s", outcomes, err, tc.ref, commit)
+			}
+			lock, err := LoadLock(lockPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, ok := lock.Get(ref.Name)
+			if !ok || entry.Source != ref.Source || entry.Ref != tc.ref || entry.Commit != commit {
+				t.Fatalf("lock entry = %+v, want exact authored source/ref and commit %s", entry, commit)
+			}
+			addr.Ref = entry.Commit
+			resolved, err := store.ResolveExisting(addr, ref.Name)
+			if err != nil || resolved.Commit != commit {
+				t.Fatalf("lock consumer ResolveExisting = %+v, %v; want %s", resolved, err, commit)
+			}
+		})
+	}
+}
+
+func TestParseSourceDefinitionsRejectsCredentialURLAndRawQuery(t *testing.T) {
+	for _, raw := range []string{
+		"https://user:secret@example.com/acme/yolo-packs",
+		"https://example.com/acme/yolo-packs?ref=main",
+		"https://example.com/acme/yolo-packs#fragment",
+		"file://relative/repo.git",
+		"ftp://example.com/acme/yolo-packs",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			definitions := jsonx.NewOrderedMap()
+			git := jsonx.NewOrderedMap()
+			git.Set("git", raw)
+			definitions.Set("acme", git)
+			if _, err := ParseSourceDefinitions(definitions); err == nil {
+				t.Fatalf("accepted invalid repository URL %q", raw)
+			}
+		})
 	}
 }
 
