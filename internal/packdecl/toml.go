@@ -267,6 +267,16 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 						delete(copyFields, "set")
 					}
 				}
+				if kind == KindProgram {
+					if err := normalizeProgramDefaults(copyFields); err != nil {
+						problems = append(problems, formatManifestLocation(loc, err.Error()))
+						continue
+					}
+				} else if kind == KindState {
+					if _, authored := copyFields["scope"]; !authored {
+						copyFields["scope"] = "workspace"
+					}
+				}
 				replace, err := takeReplace(copyFields)
 				if err != nil {
 					problems = append(problems, formatManifestLocation(loc, "replace: "+err.Error()))
@@ -288,6 +298,64 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 		out["contributes"] = contributes
 	}
 	return out, groups, problems, skipped
+}
+
+// normalizeProgramDefaults lowers grouped TOML's concise host package hints and pack-tree
+// executable default into the legacy Contribution shape; it never supplies a delivery via.
+func normalizeProgramDefaults(fields map[string]any) error {
+	bin, _ := fields["bin"].(string)
+	install, hasInstall := fields["install"]
+	delete(fields, "install")
+	if _, isFork := fields["fork_of"]; isFork {
+		if hasInstall {
+			return fmt.Errorf("install is not available on a source fork")
+		}
+		return nil
+	}
+
+	packages := make(map[string]string, len(installManagers)+1)
+	defaultPackage := bin
+	if hasInstall {
+		switch value := install.(type) {
+		case string:
+			defaultPackage = value
+		case map[string]any:
+			for _, manager := range sortedKeys(value) {
+				packageName, ok := value[manager].(string)
+				if !ok {
+					return fmt.Errorf("install.%s must be a string", manager)
+				}
+				if manager == "default" {
+					defaultPackage = packageName
+					continue
+				}
+				if !installManagerNames[manager] {
+					return fmt.Errorf("install has unknown manager %q (use default, brew, apt, dnf, pacman, nix, or brew-cask)", manager)
+				}
+				packages[manager] = packageName
+			}
+		default:
+			return fmt.Errorf("install must be a string or table")
+		}
+	}
+	for _, manager := range installManagers {
+		if _, overridden := packages[manager]; !overridden {
+			packages[manager] = defaultPackage
+		}
+	}
+	fields["install_hints"] = packages
+	if fields["via"] == "pack" {
+		if _, authored := fields["run"]; !authored {
+			fields["run"] = bin
+		}
+	}
+	return nil
+}
+
+var installManagers = []string{"brew", "apt", "dnf", "pacman", "nix"}
+
+var installManagerNames = map[string]bool{
+	"brew": true, "apt": true, "dnf": true, "pacman": true, "nix": true, "brew-cask": true,
 }
 
 func isGroupedKind(group string, value any) bool {
@@ -317,6 +385,8 @@ func groupedRename(kind Kind, fields map[string]any) (*fieldRename, string) {
 	scope := ""
 	if kind == KindConfigOverlay {
 		scope = "overlay"
+	} else if kind == KindProgram {
+		scope = "program"
 	}
 	for _, key := range sortedKeys(fields) {
 		if rename, ok := renamedFieldInScope(scope, key); ok {
