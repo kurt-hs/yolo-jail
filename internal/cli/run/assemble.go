@@ -1076,27 +1076,14 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	runCmd = append(runCmd, o.hostLayerEnv(in)...)
 
 	// --- PACK-DECLARED briefings ---
-	// Same Apple-Container single-file-mount limitation as yolo-user-env.sh: AC
-	// materializes the staged briefing into ws_state. Skipping the container branch
-	// silently dropped every briefing on that backend.
-	//
-	// The destination list and the staging filename both come from briefingdest.go, which is
-	// the ONE place either is computed — refreshJailBriefings writes through the same two
-	// functions. That coupling used to be a comment saying the names must match, and a
-	// mismatch is silent: a missing bind source for a FILE is not an error the way a missing
-	// dir is, so the jail simply comes up with a blank briefing (docs/reference/agent-briefings.md#ba-r2).
-	//
-	// The DEDUP-BY-DESTINATION that used to sit here is in briefingDestinations now, for the
-	// same reason: `briefing` is CombineConcat — several packs contributing prose at one path
-	// is designed behavior, and the composed staging file already holds all of it — but podman
-	// rejects a duplicate mount destination and kills the boot, so exactly one bind per path
-	// may be emitted. Keeping that rule beside the write half is what makes the file that is
-	// composed and the file that is mounted the same file by construction.
+	// Apple Container copies these into ws_state after the launch's applied facts
+	// have refreshed their staged bytes. Assembly must not copy the preceding
+	// launch's briefing (or nothing on a fresh launch) before that producer runs.
+	// Podman instead binds the shared staging file read-only; its contents are
+	// refreshed before the container starts.
 	for _, d := range briefingDestinations(in.packs) {
 		staged := filepath.Join(in.agentsPath, briefingStagingName(d.Into))
-		if rt == "container" {
-			acMaterialize(staged, d.Into, in.wsState)
-		} else {
+		if rt != "container" {
 			runCmd = append(runCmd, "-v", staged+":/home/agent/"+d.Into+":ro")
 		}
 	}

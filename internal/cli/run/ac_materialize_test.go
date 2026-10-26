@@ -10,19 +10,12 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
-// TestAppleContainerMaterializesSingleFiles is the regression for the AC
-// single-file-mount workaround: on runtime=container,
-// yolo-user-env.sh and each agent's briefing must be COPIED into ws_state (so
-// the ws_state:/home/agent parent mount exposes them) rather than bind-mounted
-// as single files (which Apple Container silently drops). A prior version only
-// handled the rt!="container" mount branch, so on AC every env_sources var and
-// every briefing silently vanished.
-//
-// yolo-user-env.sh's copy is no longer the ASSEMBLER's: deliverChannel writes it (with
-// the per-agent env files) at its in-home path on every entry, so an attach re-delivers
-// it too — TestAppleContainerWritesOwnerOnlyAgentFilesAtTheJailsPath pins that write.
-// What this test still pins for it is the other half: the assembly binds neither.
-func TestAppleContainerMaterializesSingleFiles(t *testing.T) {
+// TestAppleContainerLeavesBriefingsForThePostRefreshDelivery pins the assembler half of the
+// producer-order contract. Apple Container's home copy is made by runContainer only after
+// refreshJailBriefings has written current applied facts; assembling argv cannot copy a prior
+// launch's bytes or silently leave a fresh launch empty.
+
+func TestAppleContainerLeavesBriefingsForThePostRefreshDelivery(t *testing.T) {
 	ws := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -35,7 +28,7 @@ func TestAppleContainerMaterializesSingleFiles(t *testing.T) {
 	if err := os.MkdirAll(wsState, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Pre-stage the source file the assembler materializes.
+	// A stale staging file must not be copied before the refresh producer runs.
 	agentsPath := filepath.Join(ws, "agents")
 	if err := os.MkdirAll(agentsPath, 0o755); err != nil {
 		t.Fatal(err)
@@ -82,9 +75,10 @@ func TestAppleContainerMaterializesSingleFiles(t *testing.T) {
 	if briefDest == "" {
 		t.Fatal("the claude pack declares no briefing mount")
 	}
-	materializedBrief := filepath.Join(wsState, briefDest)
-	if b, err := os.ReadFile(materializedBrief); err != nil || string(b) != "# briefing\n" {
-		t.Errorf("briefing not materialized into ws_state: err=%v content=%q", err, string(b))
+	if b, err := os.ReadFile(filepath.Join(wsState, briefDest)); err == nil {
+		t.Errorf("assembly copied a briefing before refresh: %q", b)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat pre-refresh briefing destination: %v", err)
 	}
 	// 2. NO single-file -v mount for either (that's the AC bug being avoided), and no
 	// bind of the per-agent directory, which deliverChannel writes in-home on this backend.

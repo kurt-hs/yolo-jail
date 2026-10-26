@@ -1,13 +1,16 @@
 package run
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -94,6 +97,19 @@ func hostServiceSocketEnvVar(serviceName string) string {
 // container start while the host side re-ensures its daemons on every later attach.
 func hostServiceEndpointPath(serviceName string) string {
 	return paths.JailHostServicesDir + "/" + serviceName + paths.ServiceEndpointExt
+}
+
+// materializeAppleContainerBriefings copies this launch's refreshed briefing files into the
+// Apple Container home. It runs only after refreshJailBriefings succeeds, so a fresh jail
+// cannot miss the file and a replacement launch cannot receive the prior briefing.
+func materializeAppleContainerBriefings(packs []*packload.Pack, agentsPath, wsState string) error {
+	for _, d := range briefingDestinations(packs) {
+		src := filepath.Join(agentsPath, briefingStagingName(d.Into))
+		if err := copyFileBeneath(src, wsState, d.Into); err != nil {
+			return fmt.Errorf("copy refreshed briefing %q into Apple Container home: %w", d.Into, err)
+		}
+	}
+	return nil
 }
 
 // acMaterialize copies src into ws_state/target_rel for Apple Container. is_dir=false here

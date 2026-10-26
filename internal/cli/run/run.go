@@ -2292,6 +2292,14 @@ func (o *Options) runContainer(cfg *jsonx.OrderedMap, rt, repoRoot, cname string
 		lock.Close()
 		return 1
 	}
+	if rt == "container" { // parity: HonoredBy — Apple Container copies into its home bind; Podman binds the staged file
+		if err := materializeAppleContainerBriefings(staged.packs, agentsPath, wsState); err != nil {
+			out.printf("[bold red]could not deliver the Apple Container briefing: %s — check that the workspace's .yolo/home is writable, then rerun `yolo`[/bold red]", richtext.Escape(err.Error()))
+			discardUnheldSkeleton(cname, in.homeSkeleton)
+			lock.Close()
+			return 1
+		}
+	}
 	if err := o.recordLaunchCtxMounts(in); err != nil {
 		out.printf("[yellow]Warning: live context mounts are off for this jail: %s. A `mounts` change "+
 			"will need `yolo stop`, then `yolo`.[/yellow]", richtext.Escape(err.Error()))
