@@ -7,6 +7,7 @@ package run
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -363,6 +364,39 @@ func TestARetiredStateDirExitIsNotRestarted(t *testing.T) {
 	}
 	if how := h.end.how(); !strings.Contains(how, "state directory was retired") {
 		t.Errorf("the end's account is %q, want the retirement", how)
+	}
+}
+
+// A SERVICE STARTED UNDER THE PROGRESS LINE still reports supervisor and teardown lines through
+// the launch's underlying stderr tee. The progress line is temporary; a daemon can outlive the
+// step, and its supervisor and the stop closure must not keep writing to the finished line.
+func TestSupervisorAndTeardownOutputSurviveProgressLine(t *testing.T) {
+	f := newSupervisedFixture(t)
+	fastHostDaemonRestarts(t, 5*time.Millisecond, 10*time.Second, 5)
+	f.o.Stdout = io.Discard
+	f.o.Stderr = teeLog{w: f.terminal, log: f.launch}
+	f.o.ServiceTermGrace = 25 * time.Millisecond
+
+	spec := jsonx.NewOrderedMap()
+	spec.Set("command", []any{"sh", "-c", `echo $$ >> "$PIDS"; : > "$1"; if [ "$(wc -l < "$PIDS")" -eq 1 ]; then sleep 0.2; exit 3; fi; trap '' TERM; while :; do sleep 1; done`, "progress", "{socket}"})
+	env := jsonx.NewOrderedMap()
+	env.Set("PIDS", f.pids)
+	spec.Set("env", env)
+	var h loopholeDaemon
+	if !f.o.withStderrProgress("Starting host services", func() bool {
+		var ok bool
+		h, ok = f.o.startExternalService("progress", spec, t.TempDir(), "", "", nil)
+		return ok
+	}) {
+		t.Fatalf("the service never came up:\n%s", f.terminal.String())
+	}
+	t.Cleanup(func() { h.stop() })
+	if !waitFor(10*time.Second, func() bool { return strings.Contains(f.launch.String(), "restart 1 of 5") }) {
+		t.Fatalf("the supervisor line did not reach launch.log after progress ended:\n%s", f.launch.String())
+	}
+	h.stop()
+	if !strings.Contains(f.launch.String(), "ignored SIGTERM for 25ms") {
+		t.Errorf("the teardown warning did not reach launch.log after progress ended:\n%s", f.launch.String())
 	}
 }
 
