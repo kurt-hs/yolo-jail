@@ -3,7 +3,7 @@ title: "The Mac Claude login session: the credential view works on the Mac where
 date: 2026-10-25
 status: open
 tags: [lab-report, macos, macos-user, claude, credentials, oauth, broker, evidence]
-summary: "The runbook mac-claude-login-session.md, run on the maintainer's Mac. Account mode, `yolo host` and (with two workarounds) self mode all read the credential view and adopt a refreshed or corrected file mid-session, so Claude on a Mac reads the file and not the Keychain when yolo points it there. Self mode as shipped cannot start Claude, and writes the view where Claude does not read it. A sandbox /login cannot save in account mode, a host /login goes to a Keychain entry named for the store, and a Mac /logout deletes the view file, which the broker does not count as a sign-out."
+summary: "The runbook mac-claude-login-session.md, run on the maintainer's Mac. Account mode, `yolo host` and (with two workarounds) self mode all read the credential view and adopt a refreshed or corrected file mid-session, so Claude on a Mac reads the file and not the Keychain when yolo points it there. Self mode as shipped cannot start Claude, and writes the view where Claude does not read it. A sandbox /login cannot save in account mode because `security` hangs as `_yolojail` and Claude skips its file fallback on a timeout; a fail-fast `security` shim on PATH made a /login enroll the machine through the view. A host /login goes to a Keychain entry named for the store, and a Mac /logout deletes the view file, which the broker does not count as a sign-out."
 ---
 
 # The Mac Claude login session, 2026-10-24 to 25
@@ -44,7 +44,7 @@ That was followed by a `view: wrote` line for each view.
 **Reading works and sign-in does not.** A Mac cannot create or remove the machine's login through
 a view:
 
-- **C1:** a sandbox `/login` cannot save.
+- **C1:** a sandbox `/login` cannot save, because `security` hangs as `_yolojail`. A fail-fast `security` shim fixes it ([defect 3](#3-a-sandbox-login-cannot-save-in-account-mode-with-the-view-on-or-off-c1)).
 - **H4:** a host `/login` saves to the Keychain.
 - **C2:** a `/logout` is not recognized.
 
@@ -93,14 +93,56 @@ store at the view.
 OAuth error: Couldn't save your login. If your Mac's keychain is locked, unlock it and log in again.
 ```
 
-Claude runs as `_yolojail`, which has no unlocked login keychain, and it did not fall back to the
-file. Unlocking the maintainer's keychain changed nothing.
-
 This makes runbook Step 0.3 ("`/login` once in a sandbox `claude`") impossible in account mode. The
-machine was enrolled through a podman jail instead.
+machine was enrolled through a podman jail instead. Unlocking the maintainer's keychain changed
+nothing.
 
-**Decision:** whether account mode's documented way in is a Linux jail's `/login`, or whether
-`_yolojail` needs a keychain.
+**Cause, measured on 2026-10-25.** It is not the file, and Claude Code does not require a Keychain:
+
+- **Claude's save path, read from the 2.1.310 bundle.**
+  - On macOS it writes the Keychain by running `security` through a PATH lookup, as
+    `security -i` with `add-generic-password -U -a … -s … -X <hex>` on stdin.
+  - It writes the credentials file only when the Keychain failure is not *transient*. The outcome
+    names `plaintext_fallback_used`, `primary_transient_skip_fallback` and
+    `keychain_locked_skip_fallback` are all in the bundle.
+  - A failure is transient when `security` timed out (`transient: c.timedOut`), or when it returned
+    the locked exit code while the Keychain already held the item. The sign-in then throws exactly
+    *"Couldn't save your login. If your Mac's keychain is locked…"*
+    (`if ("transient" in o && o.transient === !0 …) throw new Rr(O()==="macos" ? D : C)`).
+- **As `_yolojail`, `security add-generic-password` hangs.** A dummy item had been stuck for more
+  than 2 minutes when it was checked, and was then interrupted. `_yolojail` has no default keychain
+  (`security default-keychain` returns *"A default keychain could not be found"* at once, exit 1).
+  Reads fail fast too (a missing item exits 44). So Claude's write times out, counts as transient,
+  and the file fallback is skipped.
+- **The file is writable.** As `_yolojail`, a create and a rename in `~/.claude` worked, and
+  `test -w` on the view passed. The view is `-rw------- matt _yolojail`, and the inherited ACL grants
+  `group:_yolojail` read, write, delete and append.
+
+**Experiment: a `security` shim makes `/login` enroll the machine through the view.** The shim was
+put first on the sandbox's PATH. It failed only `add-generic-password`, in both forms (`-i` with
+the command on stdin, and argv), at once:
+
+```text
+security: SecKeychainItemCreateFromContent: A default keychain could not be found.
+```
+
+It exited 50 and passed every other command to `/usr/bin/security`.
+
+The maintainer's `/login` in that account-mode view session then succeeded, and within a minute
+the broker logged:
+
+```text
+enrollment: …/cv-mac/.yolo/home/claude/.credentials.json carries a refresh token (rt=265820b8), a /login in that jail; redeeming it once as the machine's login
+enrollment: adopted the /login in …/cv-mac/.yolo/home/claude/.credentials.json as the machine's login (rt 265820b8 -> 761f6344, at -> 6e848f61)
+```
+
+The view went back to `refresh token: absent` at `6e848f61`, the canonical refresh token became
+`761f6344`, and the session answered `say ok` on the stripped view. That is CL-D4's enrollment,
+working on a Mac.
+
+**Decision:** whether yolo ships a fail-fast `security` shim on the PATH of the Claude it starts on
+macOS, generated as the blockers are. Which commands it should fail is below, under [what a
+fix needs](#what-a-fix-needs).
 
 ### 4. A host `/login` with the view on goes to the Keychain (H4)
 
@@ -138,6 +180,22 @@ requires `!st.missing && st.root != nil && st.oauth == nil`, a file that remains
 
 **Decision:** whether a view that the broker wrote and later found missing counts as a `/logout`
 on darwin.
+
+## What a fix needs
+
+The shim answers defect 3 as measured. The questions it leaves are unmeasured:
+
+- **Where.** Account mode needs it, and the measurement is above. Self mode's profile denies the
+  Keychain already, so whether `security` fails fast or hangs there is untested. On the host
+  (defect 4) the Keychain works, so `add-generic-password` succeeds and Claude never reaches the
+  file. A host shim would have to fail writes on purpose.
+- **Reads.** H4 left a `Claude Code-credentials-5d0efea8` entry in the maintainer's Keychain, named
+  for the host store. Whether Claude reads that entry before the store's file was not measured. H1
+  ran before the entry existed. If Claude reads it first, a host shim must also make
+  `find-generic-password` for that service report "not found", or a stale Keychain login shadows
+  the view.
+- **`/logout`** (defect 5) is the broker's to fix, not the shim's. Claude deletes the file, so the
+  broker has to read a missing file it once wrote as a sign-out.
 
 ## Smaller findings
 
