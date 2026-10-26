@@ -49,6 +49,21 @@ func TestJSONCIndexFindsArrayNestedValue(t *testing.T) {
 	}
 }
 
+func TestJSONCUnrelatedDuplicateDoesNotPoisonLookup(t *testing.T) {
+	source := []byte(`{"duplicate":1,"duplicate":2,"wanted":3}`)
+	doc, err := Parse(source, JSONC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	span, ok, err := doc.Index.Value(Step{Key: "wanted"})
+	if err != nil || !ok || string(source[span.Start:span.End]) != "3" {
+		t.Fatalf("unrelated duplicate lookup %q, %v, %v", source[span.Start:span.End], ok, err)
+	}
+	if _, _, err := doc.Index.Value(Step{Key: "duplicate"}); err == nil {
+		t.Fatal("lookup of duplicated requested key did not report ambiguity")
+	}
+}
+
 func TestTOMLIndexFindsQuotedDottedKeysAndBoundaries(t *testing.T) {
 	source := []byte("# top\n[providers]\n[providers.\"my.provider\"]\nmodels.\"id.with.dots\" = [{ name = \"one\" }, { name = \"two\" }] # tail\n")
 	doc, err := Parse(source, TOML)
@@ -94,6 +109,18 @@ func TestIndexRejectsDuplicateKeysAndRetainsUnattachedComments(t *testing.T) {
 	comments := doc.Index.Comments()
 	if len(comments) != 3 || string(source[comments[0].Start:comments[0].End]) != "# before" || string(source[comments[2].Start:comments[2].End]) != "# after" {
 		t.Fatalf("comments = %#v", comments)
+	}
+}
+
+func TestTOMLCommentsInsideStringsAreNotComments(t *testing.T) {
+	source := []byte("basic = \"inside # basic\"\nliteral = 'inside # literal'\nmultibasic = \"\"\"first # multiline\nsecond\"\"\"\nmultiliteral = '''first # literal multiline\nsecond''' # actual\n# trailing actual\n")
+	doc, err := Parse(source, TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	comments := doc.Index.Comments()
+	if len(comments) != 2 || string(source[comments[0].Start:comments[0].End]) != "# actual" || string(source[comments[1].Start:comments[1].End]) != "# trailing actual" {
+		t.Fatalf("TOML comment spans: %#v", comments)
 	}
 }
 
@@ -247,6 +274,14 @@ func TestPositionUsesUTF8CharacterColumns(t *testing.T) {
 	line, col := doc.Index.Position(span.Start + 3)
 	if line != 1 || col != 10 {
 		t.Fatalf("position after UTF-8 rune = %d:%d", line, col)
+	}
+	line, col = doc.Index.Position(len(doc.Bytes) + 20)
+	if line != 2 || col != 1 {
+		t.Fatalf("clamped position = %d:%d, want 2:1", line, col)
+	}
+	line, col = doc.Index.Position(-1)
+	if line != 1 || col != 1 {
+		t.Fatalf("negative position = %d:%d, want 1:1", line, col)
 	}
 }
 

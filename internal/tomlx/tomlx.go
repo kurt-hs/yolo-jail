@@ -194,6 +194,13 @@ func convertTOMLValueOrdered(value any, order []toml.Key, prefix toml.Key) any {
 				}
 				out[i] = orderedMapFromMetadata(m, prefix, remaining[:n])
 				remaining = remaining[n:]
+			} else if nested, ok := item.([]any); ok {
+				n := metadataNestedMapCount(nested)
+				if n > len(remaining) {
+					n = len(remaining)
+				}
+				out[i] = convertTOMLValueOrdered(nested, remaining[:n], prefix)
+				remaining = remaining[n:]
 			} else {
 				out[i] = convertTOMLValue(item)
 			}
@@ -252,29 +259,44 @@ func metadataLeafCount(value any) int {
 	case map[string]any:
 		count := 0
 		for _, child := range v {
-			count += metadataLeafCount(child)
+			switch child.(type) {
+			case map[string]any:
+				count += 1 + metadataLeafCount(child)
+			case []any, []map[string]any:
+				count += 1 + metadataNestedMapCount(child)
+			default:
+				count++
+			}
 		}
 		if count == 0 {
 			return 1
 		}
 		return count
-	case []any:
-		count := 1
-		for _, child := range v {
-			if _, ok := child.(map[string]any); ok {
-				count += metadataLeafCount(child)
-			}
-		}
-		return count
-	case []map[string]any:
-		count := 1
-		for _, child := range v {
-			count += metadataLeafCount(child)
-		}
-		return count
+	case []any, []map[string]any:
+		return 1 + metadataNestedMapCount(v)
 	default:
 		return 1
 	}
+}
+
+func metadataNestedMapCount(value any) int {
+	count := 0
+	switch v := value.(type) {
+	case []any:
+		for _, child := range v {
+			switch child.(type) {
+			case map[string]any:
+				count += metadataLeafCount(child)
+			case []any, []map[string]any:
+				count += metadataNestedMapCount(child)
+			}
+		}
+	case []map[string]any:
+		for _, child := range v {
+			count += metadataLeafCount(child)
+		}
+	}
+	return count
 }
 
 func trimExactPath(order []toml.Key, prefix toml.Key) []toml.Key {
