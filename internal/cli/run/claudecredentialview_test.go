@@ -205,7 +205,7 @@ func TestMacosUserViewNoticeReflectsMeasuredEnrollmentLimits(t *testing.T) {
 		want string
 		fn   func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error)
 	}{
-		{name: "self registration error", mode: macosuser.ModeSelf, want: "session-TMPDIR workaround", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+		{name: "self registration error", mode: macosuser.ModeSelf, want: "session-TMPDIR and Claude store-path workarounds", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
 			return oauthbroker.RegisterResult{}, os.ErrPermission
 		}},
 		{name: "self no canonical login", mode: macosuser.ModeSelf, want: "session TMPDIR", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {

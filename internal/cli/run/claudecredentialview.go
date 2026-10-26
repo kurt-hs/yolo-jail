@@ -85,9 +85,10 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 	if err != nil {
 		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: Warned — native self enrollment depended on the separate session-TMPDIR workaround
 			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
-				"(%s); native self-mode /login enrolled only after Claude was started with a "+
-				"session-TMPDIR workaround, which this launcher does not yet set. Relaunch with "+
-				"YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the existing view-off path.[/yellow]", err.Error())
+				"(%s); native self-mode /login adopted the view with session-TMPDIR and Claude "+
+				"store-path workarounds. This launcher now aligns the view path but does not yet "+
+				"set session TMPDIR. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the "+
+				"existing view-off path.[/yellow]", err.Error())
 		} else if rt == "macos-user" { // parity: Warned — account-mode Keychain writes hang; the launch recommends view-off rather than /login
 			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
 				"(%s); account-mode /login has a measured Keychain write hang. Relaunch with "+
@@ -105,10 +106,10 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 	}
 	if !res.Wrote {
 		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: Warned — self enrollment was measured only with the separate session-TMPDIR workaround
-			out.print("[dim]Claude: this machine has no Claude login yet; self-mode /login enrolled " +
-				"a view in the native test only after using Claude's session TMPDIR, which this " +
-				"launcher does not yet provide. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 " +
-				"to use the existing view-off path.[/dim]")
+			out.print("[dim]Claude: this machine has no Claude login yet; native self-mode /login " +
+				"adopted a view only with session-TMPDIR and Claude store-path workarounds. This " +
+				"launcher now aligns the view path but does not yet set session TMPDIR. Relaunch " +
+				"with YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the existing view-off path.[/dim]")
 		} else if rt == "macos-user" { // parity: Warned — account-mode Keychain writes hang; the launch recommends view-off rather than /login
 			out.print("[dim]Claude: this machine has no Claude login yet; account-mode /login has a " +
 				"measured Keychain write hang. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 " +
