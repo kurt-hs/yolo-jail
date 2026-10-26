@@ -1,0 +1,742 @@
+// Package configedit plans byte-preserving edits to human-authored config documents.
+package configedit
+
+import (
+	"bytes"
+	"fmt"
+	"reflect"
+	"strconv"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+)
+
+// Action selects the byte splice to plan.
+type Action uint8
+
+// Edit actions supported by the splice planner.
+const (
+	Set Action = iota + 1
+	Add
+	Append
+	Remove
+)
+
+// Mutation identifies one key or array path and the value it sets, adds, or appends.
+type Mutation struct {
+	Action Action
+	Path   []configdoc.Step
+	Value  any
+}
+
+// Hunk records one exact byte-range replacement in the original document.
+type Hunk struct {
+	Start, End    int
+	Before, After []byte
+}
+
+// Plan is an immutable splice candidate; Original and Updated are owned copies.
+type Plan struct {
+	Format            configdoc.Format
+	Original, Updated []byte
+	Hunks             []Hunk
+	Noop              bool
+	Expected          any
+}
+
+// PlanEdit locates a value through configdoc's positioned index and changes only its bytes.
+func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
+	doc, err := configdoc.Parse(data, format)
+	if err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if len(m.Path) == 0 {
+		return nil, fmt.Errorf("config edit path is empty")
+	}
+	root := cloneMap(doc.Values)
+	path := m.Path
+	parentPath := path[:len(path)-1]
+	last := path[len(path)-1]
+	parent, parentOK := lookup(root, parentPath)
+	start, end := 0, 0
+	var replacement []byte
+	noop := false
+	switch m.Action {
+	case Set:
+		span, ok, e := doc.Index.Value(path...)
+		if e != nil {
+			return nil, e
+		}
+		if !ok {
+			return nil, fmt.Errorf("cannot set missing config value")
+		}
+		start, end = span.Start, span.End
+		if hasCommentWithin(doc.Index.Comments(), span) {
+			return nil, fmt.Errorf("cannot replace a value containing comments without deleting them")
+		}
+		old, _ := lookup(root, path)
+		if reflect.DeepEqual(old, m.Value) {
+			noop = true
+			break
+		}
+		replacement, err = configdoc.EncodeValue(m.Value, format)
+		if err != nil {
+			return nil, err
+		}
+		if !setValue(root, path, m.Value) {
+			return nil, fmt.Errorf("cannot set config value")
+		}
+	case Add:
+		if last.IsIndex {
+			return nil, fmt.Errorf("add path must end in a key")
+		}
+		if !parentOK && format == configdoc.TOML {
+			start, end, replacement, err = addTOMLTable(doc, root, path, m.Value)
+			if err != nil {
+				return nil, err
+			}
+			break
+		}
+		if !parentOK {
+			return nil, fmt.Errorf("add parent does not exist")
+		}
+		obj, ok := parent.(*jsonx.OrderedMap)
+		if !ok {
+			return nil, fmt.Errorf("add parent is not an object")
+		}
+		if _, exists := obj.Get(last.Key); exists {
+			noop = true
+			break
+		}
+		start, end, replacement, err = insertMember(doc, parentPath, last.Key, m.Value)
+		if err != nil {
+			return nil, err
+		}
+		obj.Set(last.Key, m.Value)
+	case Append:
+		span, ok, e := doc.Index.Value(path...)
+		if e != nil {
+			return nil, e
+		}
+		if !ok {
+			return nil, fmt.Errorf("cannot append to missing config value")
+		}
+		v, ok := lookup(root, path)
+		if !ok {
+			return nil, fmt.Errorf("cannot append to missing config value")
+		}
+		items, ok := v.([]any)
+		if !ok {
+			return nil, fmt.Errorf("append target is %T, not an array", v)
+		}
+		for _, item := range items {
+			if reflect.DeepEqual(item, m.Value) {
+				noop = true
+				break
+			}
+		}
+		if noop {
+			break
+		}
+		start, end, replacement, err = appendArray(doc, path, span, items, m.Value)
+		if err != nil {
+			return nil, err
+		}
+		setValue(root, path, append(append([]any(nil), items...), m.Value))
+	case Remove:
+		if last.IsIndex {
+			_, ok, e := doc.Index.Item(path...)
+			if e != nil {
+				return nil, e
+			}
+			if !ok {
+				noop = true
+				break
+			}
+			items, ok := parent.([]any)
+			if !ok || last.Index < 0 || last.Index >= len(items) {
+				return nil, fmt.Errorf("remove target is not an array item")
+			}
+			start, end, replacement, err = removeArrayItem(doc, parentPath, last.Index)
+			if err != nil {
+				return nil, err
+			}
+			setValue(root, parentPath, append(append([]any(nil), items[:last.Index]...), items[last.Index+1:]...))
+		} else {
+			member, ok, e := doc.Index.Member(path...)
+			if e != nil {
+				return nil, e
+			}
+			if !ok {
+				noop = true
+				break
+			}
+			if !parentOK {
+				return nil, fmt.Errorf("remove parent does not exist")
+			}
+			if hasCommentWithin(doc.Index.Comments(), member) {
+				return nil, fmt.Errorf("cannot remove a value containing comments without deleting them")
+			}
+			if format == configdoc.TOML {
+				start, end, replacement, err = removeTOMLMember(data, member)
+			} else {
+				start, end, replacement, err = removeJSONMember(doc, member, parentPath)
+			}
+			if err != nil {
+				return nil, err
+			}
+			obj, ok := parent.(*jsonx.OrderedMap)
+			if !ok {
+				return nil, fmt.Errorf("remove parent is not an object")
+			}
+			obj.Delete(last.Key)
+		}
+	default:
+		return nil, fmt.Errorf("unknown config edit action %d", m.Action)
+	}
+	updated := append([]byte(nil), data...)
+	if !noop {
+		updated = splice(data, start, end, replacement)
+	}
+	return &Plan{
+		Format: format, Original: append([]byte(nil), data...), Updated: updated,
+		Noop: noop, Expected: root,
+		Hunks: []Hunk{{Start: start, End: end, Before: append([]byte(nil), data[start:end]...), After: append([]byte(nil), replacement...)}},
+	}, nil
+}
+
+func insertMember(doc *configdoc.Document, parent []configdoc.Step, key string, value any) (int, int, []byte, error) {
+	encoded, err := configdoc.EncodeValue(value, doc.Format)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	if doc.Format == configdoc.JSONC {
+		span, ok, err := doc.Index.Table(parent...)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if !ok && len(parent) == 0 {
+			span = configdoc.Span{0, len(doc.Bytes)}
+			ok = true
+		}
+		if !ok {
+			return 0, 0, nil, fmt.Errorf("JSONC parent is not an object")
+		}
+		return insertJSONMember(doc, span, parent, key, encoded)
+	}
+	if _, ok := lookup(doc.Values, parent); !ok {
+		return 0, 0, nil, fmt.Errorf("TOML parent table does not exist")
+	}
+	span, ok, err := doc.Index.Table(parent...)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	if ok && span.Start < len(doc.Bytes) && doc.Bytes[span.Start] == '{' {
+		tableValue, _ := lookup(doc.Values, parent)
+		table, valid := tableValue.(*jsonx.OrderedMap)
+		if !valid {
+			return 0, 0, nil, fmt.Errorf("inline TOML table parent is invalid")
+		}
+		name := tomlKey(key)
+		close := span.End - 1
+		if table.Len() == 0 {
+			return close, close, []byte(name + " = " + string(encoded)), nil
+		}
+		keys := table.Keys()
+		path := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Key: keys[len(keys)-1]})
+		last, found, e := doc.Index.Value(path...)
+		if e != nil || !found {
+			return 0, 0, nil, fmt.Errorf("cannot locate last inline TOML key")
+		}
+		return last.End, last.End, []byte(", " + name + " = " + string(encoded)), nil
+	}
+	end := len(doc.Bytes)
+	if ok {
+		end = span.End
+	}
+	name := tomlKey(key)
+	text := []byte(name + " = " + string(encoded) + newlineOf(doc.Bytes))
+	if end > 0 && doc.Bytes[end-1] != '\n' {
+		text = append([]byte(newlineOf(doc.Bytes)), text...)
+	}
+	return end, end, text, nil
+}
+func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []configdoc.Step, key string, value []byte) (int, int, []byte, error) {
+	data := doc.Bytes
+	open, close := table.Start, table.End-1
+	for open < close && data[open] != '{' {
+		open++
+	}
+	if open >= close || data[close] != '}' {
+		return 0, 0, nil, fmt.Errorf("JSONC object span is malformed")
+	}
+	v, ok := lookup(doc.Values, parent)
+	obj, valid := v.(*jsonx.OrderedMap)
+	if !ok || !valid {
+		return 0, 0, nil, fmt.Errorf("JSONC parent is not an object")
+	}
+	name := strconv.Quote(key)
+	multiline := bytes.Contains(data[open:close], []byte("\n")) || bytes.Contains(data[open:close], []byte("\r"))
+	if obj.Len() == 0 {
+		if multiline {
+			return open + 1, open + 1, []byte(newlineOf(data) + inferIndent(data, open) + "  " + name + ": " + string(value)), nil
+		}
+		return open + 1, open + 1, []byte("\n  " + name + ": " + string(value) + "\n"), nil
+	}
+	keys := obj.Keys()
+	lastPath := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Key: keys[len(keys)-1]})
+	last, ok, err := doc.Index.Value(lastPath...)
+	if err != nil || !ok {
+		return 0, 0, nil, fmt.Errorf("cannot locate last JSONC member: %v", err)
+	}
+	if multiline {
+		indent := inferIndent(data, last.Start)
+		lineEnd := lineEndAt(data, last.End)
+		commentAt := last.End
+		for commentAt < lineEnd && (data[commentAt] == ' ' || data[commentAt] == '\t') {
+			commentAt++
+		}
+		if commentAt+1 < lineEnd && data[commentAt] == '/' && (data[commentAt+1] == '/' || data[commentAt+1] == '*') {
+			end := lineEnd
+			if end < len(data) && data[end] == '\r' {
+				end++
+			}
+			if end < len(data) && data[end] == '\n' {
+				end++
+			}
+			comma := findComma(data, last.End, lineEnd, doc.Index.Comments())
+			var out []byte
+			if comma < 0 {
+				out = append(out, ',')
+			}
+			out = append(out, data[last.End:end]...)
+			out = append(out, []byte(indent+name+": "+string(value)+newlineOf(data))...)
+			return last.End, end, out, nil
+		}
+		return last.End, last.End, []byte("," + newlineOf(data) + indent + name + ": " + string(value)), nil
+	}
+	return last.End, last.End, []byte(", " + name + ": " + string(value)), nil
+}
+func addTOMLTable(doc *configdoc.Document, root *jsonx.OrderedMap, path []configdoc.Step, value any) (int, int, []byte, error) {
+	if len(path) < 2 {
+		return 0, 0, nil, fmt.Errorf("new TOML parent table is incomplete")
+	}
+	keys := make([]string, len(path))
+	for i, s := range path {
+		if s.IsIndex {
+			return 0, 0, nil, fmt.Errorf("new TOML table path cannot contain array indices")
+		}
+		keys[i] = s.Key
+	}
+	current := any(root)
+	for _, key := range keys[:len(keys)-1] {
+		m, ok := current.(*jsonx.OrderedMap)
+		if !ok {
+			return 0, 0, nil, fmt.Errorf("TOML parent %q is not a table", key)
+		}
+		next, exists := m.Get(key)
+		if !exists {
+			break
+		}
+		current = next
+	}
+	encoded, err := configdoc.EncodeValue(value, doc.Format)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	out := make([]byte, 0)
+	if len(doc.Bytes) > 0 {
+		if doc.Bytes[len(doc.Bytes)-1] != '\n' {
+			out = append(out, []byte(newlineOf(doc.Bytes))...)
+		}
+		out = append(out, []byte(newlineOf(doc.Bytes))...)
+	}
+	out = append(out, '[')
+	for i, key := range keys[:len(keys)-1] {
+		if i > 0 {
+			out = append(out, '.')
+		}
+		out = append(out, []byte(tomlKey(key))...)
+	}
+	out = append(out, ']')
+	out = append(out, []byte(newlineOf(doc.Bytes))...)
+	out = append(out, []byte(tomlKey(keys[len(keys)-1])+" = ")...)
+	out = append(out, encoded...)
+	out = append(out, []byte(newlineOf(doc.Bytes))...)
+	current = any(root)
+	for _, key := range keys[:len(keys)-1] {
+		m := current.(*jsonx.OrderedMap)
+		next, exists := m.Get(key)
+		if !exists {
+			next = jsonx.NewOrderedMap()
+			m.Set(key, next)
+		}
+		child, ok := next.(*jsonx.OrderedMap)
+		if !ok {
+			return 0, 0, nil, fmt.Errorf("TOML parent %q is not a table", key)
+		}
+		current = child
+	}
+	current.(*jsonx.OrderedMap).Set(keys[len(keys)-1], value)
+	return len(doc.Bytes), len(doc.Bytes), out, nil
+}
+
+func appendArray(doc *configdoc.Document, path []configdoc.Step, span configdoc.Span, items []any, value any) (int, int, []byte, error) {
+	encoded, err := configdoc.EncodeValue(value, doc.Format)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	data := doc.Bytes
+	open, close := span.Start, span.End-1
+	if open < 0 || close < open || data[open] != '[' || data[close] != ']' {
+		return 0, 0, nil, fmt.Errorf("array span is malformed")
+	}
+	if len(items) == 0 {
+		if bytes.Contains(data[open:close], []byte("\n")) {
+			return close, close, []byte("  " + string(encoded) + newlineOf(data) + inferIndent(data, close)), nil
+		}
+		return close, close, encoded, nil
+	}
+	lastPath := append(append([]configdoc.Step(nil), path...), configdoc.Step{Index: len(items) - 1, IsIndex: true})
+	last, ok, err := doc.Index.Item(lastPath...)
+	if err != nil || !ok {
+		return 0, 0, nil, fmt.Errorf("cannot locate last array item")
+	}
+	for _, comment := range doc.Index.Comments() {
+		if comment.Start < last.End || comment.Start >= close {
+			continue
+		}
+		lineEnd := lineEndAt(data, comment.End)
+		end := lineEnd
+		if end < len(data) && data[end] == '\r' {
+			end++
+		}
+		if end < len(data) && data[end] == '\n' {
+			end++
+		}
+		closeLine := lineStartAt(data, close)
+		if end > closeLine {
+			continue
+		}
+		comma := findComma(data, last.End, comment.Start, doc.Index.Comments())
+		var out []byte
+		if comma < 0 {
+			out = append(out, ',')
+		}
+		out = append(out, data[last.End:closeLine]...)
+		out = append(out, []byte(inferIndent(data, last.Start)+string(encoded)+newlineOf(data))...)
+		return last.End, closeLine, out, nil
+	}
+	sep := []byte(", ")
+	if bytes.Contains(data[open:close], []byte("\n")) {
+		sep = []byte("," + newlineOf(data) + inferIndent(data, last.Start))
+	}
+	return last.End, last.End, append(sep, encoded...), nil
+}
+func hasCommentWithin(comments []configdoc.Span, span configdoc.Span) bool {
+	for _, comment := range comments {
+		if comment.Start < span.End && comment.End > span.Start {
+			return true
+		}
+	}
+	return false
+}
+
+func removeArrayItem(doc *configdoc.Document, parent []configdoc.Step, index int) (int, int, []byte, error) {
+	v, ok := lookup(doc.Values, parent)
+	items, valid := v.([]any)
+	if !ok || !valid || index < 0 || index >= len(items) {
+		return 0, 0, nil, fmt.Errorf("array item does not exist")
+	}
+	path := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Index: index, IsIndex: true})
+	item, found, err := doc.Index.Item(path...)
+	if err != nil || !found {
+		return 0, 0, nil, fmt.Errorf("cannot locate array item")
+	}
+	if hasCommentWithin(doc.Index.Comments(), item) {
+		return 0, 0, nil, fmt.Errorf("cannot remove an array value containing comments without deleting them")
+	}
+	if len(items) <= 1 {
+		return item.Start, item.End, nil, nil
+	}
+	if index == 0 {
+		end := item.End
+		for end < len(doc.Bytes) && (doc.Bytes[end] == ' ' || doc.Bytes[end] == '\t') {
+			end++
+		}
+		if end < len(doc.Bytes) && doc.Bytes[end] == ',' {
+			end++
+		}
+		return item.Start, end, nil, nil
+	}
+	priorPath := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Index: index - 1, IsIndex: true})
+	prior, found, err := doc.Index.Item(priorPath...)
+	if err != nil || !found {
+		return 0, 0, nil, fmt.Errorf("cannot locate prior array item")
+	}
+	comma := findComma(doc.Bytes, prior.End, item.Start, doc.Index.Comments())
+	if comma < 0 {
+		return 0, 0, nil, fmt.Errorf("cannot locate array separator")
+	}
+	if index == len(items)-1 {
+		end := item.End
+		for end < len(doc.Bytes) && (doc.Bytes[end] == ' ' || doc.Bytes[end] == '\t') {
+			end++
+		}
+		return comma, end, nil, nil
+	}
+	nextPath := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Index: index + 1, IsIndex: true})
+	next, found, err := doc.Index.Item(nextPath...)
+	if err != nil || !found {
+		return 0, 0, nil, fmt.Errorf("cannot locate following array item")
+	}
+	commaAfter := findComma(doc.Bytes, item.End, next.Start, doc.Index.Comments())
+	if commaAfter < 0 {
+		return 0, 0, nil, fmt.Errorf("cannot locate following array separator")
+	}
+	for _, c := range doc.Index.Comments() {
+		if c.Start >= comma && c.End <= next.Start {
+			return comma, item.End, append([]byte(nil), doc.Bytes[comma+1:item.Start]...), nil
+		}
+	}
+	end := next.Start
+	spacing := append([]byte(nil), doc.Bytes[commaAfter+1:end]...)
+	return comma, end, append([]byte(","), spacing...), nil
+}
+func removeJSONMember(doc *configdoc.Document, member configdoc.Span, parentPath []configdoc.Step) (int, int, []byte, error) {
+	data := doc.Bytes
+	v, ok := lookup(doc.Values, parentPath)
+	obj, valid := v.(*jsonx.OrderedMap)
+	if !ok || !valid {
+		return 0, 0, nil, fmt.Errorf("JSONC parent is not an object")
+	}
+	line := lineStartAt(data, member.Start)
+	end := lineEndAt(data, member.End)
+	if end < len(data) && data[end] == '\r' {
+		end++
+	}
+	if end < len(data) && data[end] == '\n' {
+		end++
+	}
+	comment := false
+	for _, c := range doc.Index.Comments() {
+		if c.Start >= member.End && c.Start < lineEndAt(data, member.End) {
+			comment = true
+			break
+		}
+	}
+	trailing := []byte(nil)
+	if comment {
+		trailing = append([]byte(nil), data[member.End:end]...)
+	}
+	commaAfter := findComma(data, member.End, lineEndAt(data, member.End), doc.Index.Comments())
+	if commaAfter >= 0 {
+		if comment {
+			idx := commaAfter - member.End
+			trailing = append(trailing[:idx], trailing[idx+1:]...)
+		}
+		return line, end, trailing, nil
+	}
+	key := findMemberKey(doc, parentPath, member)
+	keys := obj.Keys()
+	for i, k := range keys {
+		if k != key || i == 0 {
+			continue
+		}
+		pp := append(append([]configdoc.Step(nil), parentPath...), configdoc.Step{Key: keys[i-1]})
+		prior, found, e := doc.Index.Value(pp...)
+		if e != nil || !found {
+			return 0, 0, nil, fmt.Errorf("cannot locate preceding JSONC member")
+		}
+		comma := findComma(data, prior.End, member.Start, doc.Index.Comments())
+		if comma >= 0 {
+			repl := append([]byte(nil), data[comma+1:line]...)
+			repl = append(repl, trailing...)
+			return comma, end, repl, nil
+		}
+		break
+	}
+	return line, end, trailing, nil
+}
+func removeTOMLMember(data []byte, member configdoc.Span) (int, int, []byte, error) {
+	start := lineStartAt(data, member.Start)
+	indentEnd := start
+	for indentEnd < len(data) && (data[indentEnd] == ' ' || data[indentEnd] == '\t') {
+		indentEnd++
+	}
+	end := member.End
+	for end < len(data) && data[end] != '\n' && data[end] != '\r' {
+		if data[end] == '#' {
+			return start, end, append(append([]byte(nil), data[start:indentEnd]...), data[member.End:end]...), nil
+		}
+		end++
+	}
+	if end < len(data) && data[end] == '\r' {
+		end++
+	}
+	if end < len(data) && data[end] == '\n' {
+		end++
+	}
+	return start, end, nil, nil
+}
+func findMemberKey(doc *configdoc.Document, parent []configdoc.Step, member configdoc.Span) string {
+	v, _ := lookup(doc.Values, parent)
+	obj, _ := v.(*jsonx.OrderedMap)
+	if obj == nil {
+		return ""
+	}
+	for _, k := range obj.Keys() {
+		p := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Key: k})
+		s, ok, _ := doc.Index.Member(p...)
+		if ok && s.Start == member.Start {
+			return k
+		}
+	}
+	return ""
+}
+func findComma(data []byte, start, end int, comments []configdoc.Span) int {
+	for i := start; i < end; i++ {
+		if data[i] != ',' {
+			continue
+		}
+		inside := false
+		for _, c := range comments {
+			if i >= c.Start && i < c.End {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			return i
+		}
+	}
+	return -1
+}
+func lookup(root any, path []configdoc.Step) (any, bool) {
+	cur := root
+	for _, s := range path {
+		if s.IsIndex {
+			a, ok := cur.([]any)
+			if !ok || s.Index < 0 || s.Index >= len(a) {
+				return nil, false
+			}
+			cur = a[s.Index]
+		} else {
+			m, ok := cur.(*jsonx.OrderedMap)
+			if !ok {
+				return nil, false
+			}
+			v, ok := m.Get(s.Key)
+			if !ok {
+				return nil, false
+			}
+			cur = v
+		}
+	}
+	return cur, true
+}
+func setValue(root any, path []configdoc.Step, v any) bool {
+	if len(path) == 0 {
+		return false
+	}
+	p, ok := lookup(root, path[:len(path)-1])
+	if !ok {
+		return false
+	}
+	s := path[len(path)-1]
+	if s.IsIndex {
+		a, ok := p.([]any)
+		if !ok || s.Index < 0 || s.Index >= len(a) {
+			return false
+		}
+		a[s.Index] = v
+		return true
+	}
+	m, ok := p.(*jsonx.OrderedMap)
+	if !ok {
+		return false
+	}
+	m.Set(s.Key, v)
+	return true
+}
+func cloneMap(m *jsonx.OrderedMap) *jsonx.OrderedMap {
+	n := jsonx.NewOrderedMap()
+	if m != nil {
+		for _, k := range m.Keys() {
+			v, _ := m.Get(k)
+			n.Set(k, cloneValue(v))
+		}
+	}
+	return n
+}
+func cloneValue(v any) any {
+	switch x := v.(type) {
+	case *jsonx.OrderedMap:
+		return cloneMap(x)
+	case []any:
+		y := make([]any, len(x))
+		for i, v := range x {
+			y[i] = cloneValue(v)
+		}
+		return y
+	case map[string]any:
+		y := make(map[string]any, len(x))
+		for k, v := range x {
+			y[k] = cloneValue(v)
+		}
+		return y
+	default:
+		return v
+	}
+}
+func splice(data []byte, start, end int, repl []byte) []byte {
+	out := make([]byte, 0, len(data)-(end-start)+len(repl))
+	out = append(out, data[:start]...)
+	out = append(out, repl...)
+	out = append(out, data[end:]...)
+	return out
+}
+func newlineOf(b []byte) string {
+	if bytes.Contains(b, []byte("\r\n")) {
+		return "\r\n"
+	}
+	return "\n"
+}
+func lineStartAt(b []byte, n int) int {
+	if n > len(b) {
+		n = len(b)
+	}
+	for n > 0 && b[n-1] != '\n' {
+		n--
+	}
+	return n
+}
+func lineEndAt(b []byte, n int) int {
+	for n < len(b) && b[n] != '\n' && b[n] != '\r' {
+		n++
+	}
+	return n
+}
+func inferIndent(b []byte, n int) string {
+	start := lineStartAt(b, n)
+	i := start
+	for i < len(b) && (b[i] == ' ' || b[i] == '\t') {
+		i++
+	}
+	return string(b[start:i])
+}
+func tomlKey(s string) string {
+	if s != "" {
+		ok := true
+		for _, r := range s {
+			if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return s
+		}
+	}
+	return strconv.Quote(s)
+}
