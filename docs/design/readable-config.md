@@ -12,7 +12,7 @@ vantage:
 
 # Config that reads right the first time: the front door
 
-**Status:** 2026-10-25. Nothing is built. Thirty-nine rulings recorded ([ledger](#decision-ledger));
+**Status:** 2026-10-25. Nothing is built. Forty rulings recorded ([ledger](#decision-ledger));
 four questions open, each in the document that shows its file. Evidence verified at
 `fa13f42d9` against this repository, the effective user config this jail inherited, the 21
 shipped packs, and the maintainer's twelve packs.
@@ -57,7 +57,7 @@ seed; incomplete while any question is open).
 | Document | The file it shows | Its questions |
 | :--- | :--- | :--- |
 | [`config-user.md`](config-user.md) | `~/.config/yolo-jail/config.toml` and `config.d/`: packs, logins, which setup each agent runs on, the conventions | [OQ-RC21](config-user.md#OQ-RC21) a public repository outside the scope |
-| [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC7](config-project.md#OQ-RC7) saying "off" with no `null` |
+| [`config-project.md`](config-project.md) | `yolo-jail.toml` and `.local`: install, requests, mounts, ports, env, turning things off | [OQ-RC7](config-project.md#OQ-RC7) a table-valued thing says "not here": `off = true` inside it, or `"off"` in its place |
 | [`config-commands.md`](config-commands.md) | the command each "edit your config" message prints, what it does to the file, and the format underneath | none; approved |
 | [`config-migration.md`](config-migration.md) | the new file names, the release order, the migrate transcript | none; approved |
 | [`pack-manifests.md`](pack-manifests.md) | the maintainer's twelve packs, before and after | [OQ-RC19](pack-manifests.md#OQ-RC19) the manifest shape · [OQ-RC5](pack-manifests.md#OQ-RC5) manifests in the same break |
@@ -89,6 +89,7 @@ seed; incomplete while any question is open).
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| <a id="RC-D23"></a>RC-D23 | **A reserved string never stands where a string is a legal value.** Review comments on `env.AWS_PROFILE = "off"`: *"this is problematic. now you can't set that var to 'off' literally"*, and on `mcp_servers.tavily = "off"`: *"this is possible and I think I like it, as long as a string isn't a valid setting to begin with."* A variable is unset by `env.unset`, a list cleared by `[]`, an agent left alone by `"native"`; [OQ-RC7](config-project.md#OQ-RC7) narrows to the table-valued case | 2026-10-25 | [`config-project.md` §3](config-project.md#3-the-local-file-and-turning-something-off) | — |
 | OQ-RC17 | **The project file's shape is approved: `[install]`, `mounts`, `[machine]`, `[env]`, `[requests.*]`.** Ruled by taking the leaning: *"Approve: each section names what the project decides, and the two string traps become keys."* Same round, on a bare `mounts` under `[install]` (*"but this wouldn't be under [install]?"*) and `[[mounts]]` beside it (*"this just an alt syntax for the { ...} form?"*): one top-level list before the first section, a path or a table per entry; `[[mounts]]` is the same key and a file uses one spelling | 2026-10-25 | [`config-project.md` §1](config-project.md#1-the-file) | — |
 | OQ-RC8 | **One manifest reader: a fetched pack still on `pack.json` after the old reader is gone is refused, naming the author's `yolo pack migrate` and the fork.** Ruled by taking the leaning: *"B: one reader; no fetched pack in use today has a manifest, and the refusal names both ways forward."* The maintainer: *"I think I'm the only one that has any packs that could be shared, and I will be converting them immediately."* | 2026-10-25 | [`config-migration.md` §5](config-migration.md#5-every-case) | — |
 | OQ-RC18 | **The migration does all of it: proves equality, rewrites in place, keeps comments in order, drops defaults and folds facts, respells the records, runs once on request.** Ruled by taking the leaning: *"A: the equality check is what makes the folds safe, and a conversion that leaves the shrinking for later leaves the misreadings in place for as long."* The item deleting a leftover `config.lua` was dropped the same round (*"what is config.lua and why does it matter?"*): never read ([OQ-LT1](../reference/pack-system.md#oq-lt1)), so not the migration's | 2026-10-25 | [`config-migration.md` §4](config-migration.md#4-what-yolo-config-migrate-does) | — |

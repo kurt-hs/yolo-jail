@@ -3,7 +3,7 @@ title: "A project's file: what it installs, what it asks for, and what it turns 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC7 (§3, saying off with no null)"
+next: "Rule OQ-RC7 (§3, how a table-valued thing says not here: off = true inside it, or = \"off\" as its value)"
 tags: [config, workspace, install, grants, mounts, design]
 summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. Each section ends with its question; a section with none is approved. Part of the readable-config redesign."
 ---
@@ -158,40 +158,45 @@ resources = { memory = "32g" }
 ```
 
 Config lists merge by union, so a lower layer can add to a list and never remove from it; "off"
-has to be a word on the thing. What that word is, and how the other places `null` is used today
-are spelled, is the question.
+has to be a word on the thing. Today one `null` does every removal; TOML has none, so each kind of
+thing gets its own spelling, and most are settled ([RC-D23](readable-config.md#RC-D23)):
 
-1. 💬 <a id="OQ-RC7"></a>**OQ-RC7: How does a TOML file say "remove" or "not this one", with no `null`?**
+```toml
+[env]
+unset = ["AWS_PROFILE"]           # a variable: a string is a legal value, so "off" can never be one
+                                  # (reviewed: "now you can't set that var to 'off' literally")
+[requests.github]
+repos = []                        # a list: empty clears it
+[active_provider]
+claude = "native"                 # an agent left to itself: the one reserved word, ruled under OQ-RC20
+```
 
-   Your config adds the `tavily` MCP server. In one project you don't want it, so today that
-   project writes `"mcp_servers": {"tavily": null}`. The same `null` today keeps claude on its own
-   login, unsets `AWS_PROFILE`, clears a `repos` list, removes a model fact, and disables a lower
-   layer's value in an include. TOML has no `null`, so each needs a spelling a cold reader
-   understands, and `yolo config unset` needs one it can write.
+A reserved string is allowed only where a string is never a legal value. That leaves the
+table-valued things your config declares and a project does not want, an MCP server today and a
+provider tomorrow; the per-workspace pack switch is a file yolo writes, not this one.
+
+1. 💬 <a id="OQ-RC7"></a>**OQ-RC7: How does a project say "not here" about a table-valued thing: a key inside it, or a string in its place?**
+
+   Your config declares the `tavily` MCP server as a table. In one project you don't want it.
 
    ```toml
-   # A  a word where each thing lives
+   # A  a key inside the table
    [mcp_servers.tavily]
    off = true
-   [env]
-   unset = ["AWS_PROFILE"]
-   [active_provider]
-   claude = "native"                 # left to itself; the one reserved word
-   [requests.github]
-   repos = []                        # an empty list clears a list
 
-   # B  one reserved string, valid wherever a value may be removed  (a reserved string, which principle 5 rules out)
+   # B  a string where the table would be; legal because a server is never a string
    mcp_servers.tavily = "off"
-   env.AWS_PROFILE = "off"
-
-   # C  one top-level list of removals, far from the things removed
-   remove = ["mcp_servers.tavily", "env.AWS_PROFILE"]
    ```
 
-   <!-- vantage: question id=OQ-RC7 leaning="A: a word at the place, each saying what it does; off = true is the same word a workspace uses to turn a pack off, and an unset command has one thing to write per case." -->
+   Under B the one rule is: a string where a table is expected is refused unless it is exactly
+   `"off"`. `yolo config unset mcp_servers.tavily --local` writes one line under B and three under
+   A.
 
-   _Leaning:_ A: a word at the place, each saying what it does; `off = true` is the same word a
-   workspace uses to turn a pack off, and an unset command has one thing to write per case.
+   <!-- vantage: question id=OQ-RC7 leaning="B, which you said you like: one line that reads at a glance, unambiguous wherever the value is a table, and a one-line diff from unset; A's only edge is sharing the word with the pack switch file, which yolo writes." -->
+
+   _Leaning:_ B, which you said you like: one line that reads at a glance, unambiguous wherever
+   the value is a table, and a one-line diff from `unset`; A's only edge is sharing the word with
+   the pack switch file, which yolo writes.
 
    **Answer:**
    > _(empty — fill in when decided)_
@@ -203,7 +208,8 @@ are spelled, is the question.
 2. **A project file is the agent's to edit**, so nothing user-scope is accepted here, and the
    refusal names the file it belongs in.
 3. **A direction is a key, not a position in a string.**
-4. **Off is a word at the place**, never a `null`.
+4. **Off is a word at the place**, never a `null`, and never a string where a string could be a
+   value.
 5. **No file is the common case.**
 
 ## Appendix: evidence
