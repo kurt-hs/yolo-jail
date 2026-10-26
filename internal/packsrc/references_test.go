@@ -89,19 +89,21 @@ func TestParseNamedGitSourceRefFlowsThroughRefreshAndLock(t *testing.T) {
 	work := filepath.Join(t.TempDir(), "work")
 	gitIn(t, t.TempDir(), "init", "--bare", "--initial-branch=trunk", remote)
 	gitIn(t, t.TempDir(), "init", "--initial-branch=trunk", work)
-	commit := commitFile(t, work, "pack.toml", "name = \\\"tools\\\"\\n")
+	first := commitFile(t, work, "tools/pack.toml", "name = \"tools\"\n")
 	gitIn(t, t.TempDir(), "--git-dir="+remote, "fetch", work, "refs/heads/trunk:refs/heads/trunk")
 	gitIn(t, t.TempDir(), "--git-dir="+remote, "symbolic-ref", "HEAD", "refs/heads/trunk")
-	gitIn(t, t.TempDir(), "--git-dir="+remote, "--work-tree="+work, "tag", "v1.2.3", commit)
-	gitIn(t, t.TempDir(), "--git-dir="+remote, "update-ref", "refs/heads/alice/review", commit)
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "tag", "v1.2.3", first)
+	second := commitFile(t, work, "tools/next.txt", "next release\n")
+	gitIn(t, t.TempDir(), "--git-dir="+remote, "fetch", work, "HEAD:refs/heads/alice/review")
 
 	for _, tc := range []struct {
-		name string
-		ref  string
+		name   string
+		ref    string
+		commit string
 	}{
-		{name: "branch", ref: "alice/review"},
-		{name: "tag", ref: "v1.2.3"},
-		{name: "commit", ref: commit},
+		{name: "branch", ref: "alice/review", commit: second},
+		{name: "tag", ref: "v1.2.3", commit: first},
+		{name: "commit", ref: second, commit: second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			definitions := jsonx.NewOrderedMap()
@@ -117,7 +119,7 @@ func TestParseNamedGitSourceRefFlowsThroughRefreshAndLock(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantSource := "git+file://" + filepath.ToSlash(remote) + "//tools?ref=" + url.QueryEscape(tc.ref)
+			wantSource := "git+file://" + strings.TrimSuffix(filepath.ToSlash(remote), ".git") + "//tools?ref=" + url.QueryEscape(tc.ref)
 			if ref.Source != wantSource || ref.AllowDefaultRef {
 				t.Fatalf("named git reference = %+v, want source %q with default-ref disabled", ref, wantSource)
 			}
@@ -129,21 +131,21 @@ func TestParseNamedGitSourceRefFlowsThroughRefreshAndLock(t *testing.T) {
 			store := &Store{Dir: t.TempDir(), Getenv: noStagedTree}
 			lockPath := filepath.Join(t.TempDir(), "packs.lock.json")
 			outcomes, err := store.Refresh([]RefreshPack{{Name: ref.Name, Source: ref.Source, AllowDefaultRef: ref.AllowDefaultRef}}, RefreshOptions{LockPath: lockPath})
-			if err != nil || len(outcomes) != 1 || outcomes[0].Err != nil || outcomes[0].Commit != commit || outcomes[0].Ref != tc.ref {
-				t.Fatalf("Refresh = %+v, %v; want %s at %s", outcomes, err, tc.ref, commit)
+			if err != nil || len(outcomes) != 1 || outcomes[0].Err != nil || outcomes[0].Commit != tc.commit || outcomes[0].Ref != tc.ref {
+				t.Fatalf("Refresh = %+v, %v; want %s at %s", outcomes, err, tc.ref, tc.commit)
 			}
 			lock, err := LoadLock(lockPath)
 			if err != nil {
 				t.Fatal(err)
 			}
 			entry, ok := lock.Get(ref.Name)
-			if !ok || entry.Source != ref.Source || entry.Ref != tc.ref || entry.Commit != commit {
-				t.Fatalf("lock entry = %+v, want exact authored source/ref and commit %s", entry, commit)
+			if !ok || entry.Source != ref.Source || entry.Ref != tc.ref || entry.Commit != tc.commit {
+				t.Fatalf("lock entry = %+v, want exact authored source/ref and commit %s", entry, tc.commit)
 			}
 			addr.Ref = entry.Commit
 			resolved, err := store.ResolveExisting(addr, ref.Name)
-			if err != nil || resolved.Commit != commit {
-				t.Fatalf("lock consumer ResolveExisting = %+v, %v; want %s", resolved, err, commit)
+			if err != nil || resolved.Commit != tc.commit {
+				t.Fatalf("lock consumer ResolveExisting = %+v, %v; want %s", resolved, err, tc.commit)
 			}
 		})
 	}

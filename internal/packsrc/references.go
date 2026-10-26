@@ -20,6 +20,7 @@ type SourceDefinition struct {
 	Name string
 	Path string // local tree root, or empty for a git tree
 	Repo string // normalized git repository URL, or empty for a local tree
+	Ref  string // authored git ref, or empty to pin the repository's advertised default
 }
 
 // PackReference is one pack named through the readable source vocabulary. Source is
@@ -60,19 +61,28 @@ func ParseSourceDefinitions(raw any) (map[string]SourceDefinition, error) {
 			def.Path = v
 		default:
 			obj, ok := value.(Object)
-			if !ok || len(obj.Keys()) != 1 {
-				return nil, fmt.Errorf("pack_sources.%s: expected a local path or { git = URL }", name)
+			if !ok || len(obj.Keys()) == 0 {
+				return nil, fmt.Errorf("pack_sources.%s: expected a local path or { git = URL, ref = REF }", name)
+			}
+			for _, key := range obj.Keys() {
+				if key != "git" && key != "ref" {
+					return nil, fmt.Errorf("pack_sources.%s.%s: unknown git source field", name, key)
+				}
 			}
 			rawGit, has := obj.Get("git")
 			git, isString := rawGit.(string)
 			if !has || !isString {
-				return nil, fmt.Errorf("pack_sources.%s: expected a local path or { git = URL }", name)
+				return nil, fmt.Errorf("pack_sources.%s: expected a local path or { git = URL, ref = REF }", name)
+			}
+			ref, err := explicitRef(obj, "pack_sources."+name)
+			if err != nil {
+				return nil, err
 			}
 			repo, err := normalizeRepository(git)
 			if err != nil {
 				return nil, fmt.Errorf("pack_sources.%s.git: %w", name, err)
 			}
-			def.Repo = repo
+			def.Repo, def.Ref = repo, ref
 		}
 		out[name] = def
 	}
@@ -116,8 +126,8 @@ func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot,
 			return PackReference{Source: "file://" + filepath.ToSlash(path), Name: text,
 				SourceID: def.Name, LocalPath: path, Origin: origin}, nil
 		}
-		return PackReference{Source: gitPackAddress(def.Repo, parts[1], ""), Name: text,
-			SourceID: def.Name, AllowDefaultRef: true, Origin: origin}, nil
+		return PackReference{Source: gitPackAddress(def.Repo, parts[1], def.Ref), Name: text,
+			SourceID: def.Name, AllowDefaultRef: def.Ref == "", Origin: origin}, nil
 	}
 
 	obj, ok := raw.(Object)
@@ -134,13 +144,9 @@ func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot,
 	if !has || !isString {
 		return PackReference{}, fmt.Errorf("%s: expected { git = URL }", origin)
 	}
-	ref := ""
-	if rawRef, hasRef := obj.Get("ref"); hasRef {
-		var valid bool
-		ref, valid = rawRef.(string)
-		if !valid || strings.TrimSpace(ref) != ref || ref == "" {
-			return PackReference{}, fmt.Errorf("%s.ref: expected a non-empty string", origin)
-		}
+	ref, err := explicitRef(obj, origin)
+	if err != nil {
+		return PackReference{}, err
 	}
 	repo, err := normalizeRepository(git)
 	if err != nil {
@@ -182,6 +188,18 @@ func validHandleSegment(s string) bool {
 	return true
 }
 
+func explicitRef(obj Object, origin string) (string, error) {
+	rawRef, hasRef := obj.Get("ref")
+	if !hasRef {
+		return "", nil
+	}
+	ref, valid := rawRef.(string)
+	if !valid || strings.TrimSpace(ref) != ref || ref == "" {
+		return "", fmt.Errorf("%s.ref: expected a non-empty string", origin)
+	}
+	return ref, nil
+}
+
 func normalizeRepository(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" || s != raw {
@@ -191,10 +209,12 @@ func normalizeRepository(raw string) (string, error) {
 		s = strings.TrimPrefix(s, "git+")
 	}
 	u, err := url.Parse(s)
-	if err != nil || (u.Scheme != "file" && u.Host == "") || u.Path == "" ||
+	if err != nil || u.Path == "" ||
 		(u.Scheme != "https" && u.Scheme != "ssh" && u.Scheme != "http" && u.Scheme != "file") ||
-		(u.Scheme == "file" && !filepath.IsAbs(u.Path)) {
-		return "", fmt.Errorf("expected an ssh, https, http, or file git repository URL")
+		(u.Scheme == "file" && (u.Host != "" || !filepath.IsAbs(u.Path))) ||
+		(u.Scheme != "file" && u.Host == "") ||
+		hasPasswordUserinfo(u.User) {
+		return "", fmt.Errorf("expected an ssh, https, http, or absolute file git repository URL without embedded credentials")
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("source repository URL takes no query or fragment")
@@ -204,6 +224,14 @@ func normalizeRepository(raw string) (string, error) {
 		return "", fmt.Errorf("repository URL must name a repository")
 	}
 	return u.String(), nil
+}
+
+func hasPasswordUserinfo(user *url.Userinfo) bool {
+	if user == nil {
+		return false
+	}
+	_, password := user.Password()
+	return password
 }
 
 func ownerRepositoryName(repo string) (string, error) {
