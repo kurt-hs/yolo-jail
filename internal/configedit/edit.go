@@ -70,20 +70,25 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		if !ok {
 			return nil, fmt.Errorf("cannot set missing config value")
 		}
-		start, end = span.Start, span.End
 		if hasCommentWithin(doc.Index.Comments(), span) {
 			return nil, fmt.Errorf("cannot replace a value containing comments without deleting them")
 		}
 		old, _ := lookup(root, path)
-		if reflect.DeepEqual(old, m.Value) {
+		normalized, err := semanticValue(m.Value, format)
+		if err != nil {
+			return nil, err
+		}
+		if reflect.DeepEqual(old, normalized) {
 			noop = true
+			start, end = span.Start, span.End
 			break
 		}
+		start, end = span.Start, span.End
 		replacement, err = configdoc.EncodeValue(m.Value, format)
 		if err != nil {
 			return nil, err
 		}
-		if !setValue(root, path, m.Value) {
+		if !setValue(root, path, normalized) {
 			return nil, fmt.Errorf("cannot set config value")
 		}
 	case Add:
@@ -112,7 +117,11 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		if err != nil {
 			return nil, err
 		}
-		obj.Set(last.Key, m.Value)
+		normalized, err := semanticValue(m.Value, format)
+		if err != nil {
+			return nil, err
+		}
+		obj.Set(last.Key, normalized)
 	case Append:
 		span, ok, e := doc.Index.Value(path...)
 		if e != nil {
@@ -129,8 +138,12 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		if !ok {
 			return nil, fmt.Errorf("append target is %T, not an array", v)
 		}
+		normalized, err := semanticValue(m.Value, format)
+		if err != nil {
+			return nil, err
+		}
 		for _, item := range items {
-			if reflect.DeepEqual(item, m.Value) {
+			if reflect.DeepEqual(item, normalized) {
 				noop = true
 				break
 			}
@@ -142,7 +155,7 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		if err != nil {
 			return nil, err
 		}
-		setValue(root, path, append(append([]any(nil), items...), m.Value))
+		setValue(root, path, append(append([]any(nil), items...), normalized))
 	case Remove:
 		if last.IsIndex {
 			_, ok, e := doc.Index.Item(path...)
@@ -197,6 +210,13 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 	updated := append([]byte(nil), data...)
 	if !noop {
 		updated = splice(data, start, end, replacement)
+		planned, err := configdoc.Parse(updated, format)
+		if err != nil {
+			return nil, fmt.Errorf("planned splice does not parse: %w", err)
+		}
+		if !reflect.DeepEqual(planned.Values, root) {
+			return nil, fmt.Errorf("planned splice changes effective document values: expected %#v, got %#v", root, planned.Values)
+		}
 	}
 	return &Plan{
 		Format: format, Original: append([]byte(nil), data...), Updated: updated,
@@ -263,7 +283,11 @@ func insertMember(doc *configdoc.Document, parent []configdoc.Step, key string, 
 }
 func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []configdoc.Step, key string, value []byte) (int, int, []byte, error) {
 	data := doc.Bytes
-	open, close := table.Start, table.End-1
+	open, close := table.Start, table.End
+	for close > open && (data[close-1] == ' ' || data[close-1] == '\t' || data[close-1] == '\r' || data[close-1] == '\n') {
+		close--
+	}
+	close--
 	for open < close && data[open] != '{' {
 		open++
 	}
@@ -289,31 +313,61 @@ func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []co
 	if err != nil || !ok {
 		return 0, 0, nil, fmt.Errorf("cannot locate last JSONC member: %v", err)
 	}
-	if multiline {
-		indent := inferIndent(data, last.Start)
-		lineEnd := lineEndAt(data, last.End)
-		commentAt := last.End
-		for commentAt < lineEnd && (data[commentAt] == ' ' || data[commentAt] == '\t') {
-			commentAt++
+	var trailingComment configdoc.Span
+	foundComment := false
+	for _, comment := range doc.Index.Comments() {
+		if comment.Start >= last.End && comment.Start < close {
+			trailingComment = comment
+			foundComment = true
 		}
-		if commentAt+1 < lineEnd && data[commentAt] == '/' && (data[commentAt+1] == '/' || data[commentAt+1] == '*') {
-			end := lineEnd
-			if end < len(data) && data[end] == '\r' {
-				end++
+	}
+	if foundComment {
+		indent := inferIndent(data, last.Start)
+		if !multiline {
+			if trailingComment.Start+1 >= trailingComment.End || data[trailingComment.Start+1] != '*' {
+				return 0, 0, nil, fmt.Errorf("cannot insert after a single-line JSONC line comment")
 			}
-			if end < len(data) && data[end] == '\n' {
-				end++
-			}
-			comma := findComma(data, last.End, lineEnd, doc.Index.Comments())
+			commaBefore := findComma(data, last.End, trailingComment.Start, doc.Index.Comments())
+			commaAfter := findComma(data, trailingComment.End, close, doc.Index.Comments())
 			var out []byte
-			if comma < 0 {
+			if commaBefore < 0 && commaAfter < 0 {
 				out = append(out, ',')
 			}
-			out = append(out, data[last.End:end]...)
-			out = append(out, []byte(indent+name+": "+string(value)+newlineOf(data))...)
+			out = append(out, data[last.End:trailingComment.End]...)
+			end := trailingComment.End
+			if commaBefore < 0 && commaAfter >= 0 {
+				out = append(out, data[end:commaAfter+1]...)
+				end = commaAfter + 1
+			}
+			spaceStart := end
+			for end < close && (data[end] == ' ' || data[end] == '\t') {
+				out = append(out, data[end])
+				end++
+			}
+			if end == spaceStart {
+				out = append(out, ' ')
+			}
+			out = append(out, []byte(name+": "+string(value))...)
 			return last.End, end, out, nil
 		}
-		return last.End, last.End, []byte("," + newlineOf(data) + indent + name + ": " + string(value)), nil
+		end := lineEndAt(data, trailingComment.End)
+		if end < len(data) && data[end] == '\r' {
+			end++
+		}
+		if end < len(data) && data[end] == '\n' {
+			end++
+		}
+		comma := findComma(data, last.End, end, doc.Index.Comments())
+		var out []byte
+		if comma < 0 {
+			out = append(out, ',')
+		}
+		out = append(out, data[last.End:end]...)
+		out = append(out, []byte(indent+name+": "+string(value)+newlineOf(data))...)
+		return last.End, end, out, nil
+	}
+	if multiline {
+		return last.End, last.End, []byte("," + newlineOf(data) + inferIndent(data, last.Start) + name + ": " + string(value)), nil
 	}
 	return last.End, last.End, []byte(", " + name + ": " + string(value)), nil
 }
@@ -327,6 +381,10 @@ func addTOMLTable(doc *configdoc.Document, root *jsonx.OrderedMap, path []config
 			return 0, 0, nil, fmt.Errorf("new TOML table path cannot contain array indices")
 		}
 		keys[i] = s.Key
+	}
+	normalized, err := semanticValue(value, configdoc.TOML)
+	if err != nil {
+		return 0, 0, nil, err
 	}
 	current := any(root)
 	for _, key := range keys[:len(keys)-1] {
@@ -377,7 +435,7 @@ func addTOMLTable(doc *configdoc.Document, root *jsonx.OrderedMap, path []config
 		}
 		current = child
 	}
-	current.(*jsonx.OrderedMap).Set(keys[len(keys)-1], value)
+	current.(*jsonx.OrderedMap).Set(keys[len(keys)-1], normalized)
 	return len(doc.Bytes), len(doc.Bytes), out, nil
 }
 
@@ -433,6 +491,29 @@ func appendArray(doc *configdoc.Document, path []configdoc.Step, span configdoc.
 	}
 	return last.End, last.End, append(sep, encoded...), nil
 }
+func semanticValue(value any, format configdoc.Format) (any, error) {
+	encoded, err := configdoc.EncodeValue(value, format)
+	if err != nil {
+		return nil, err
+	}
+	var source []byte
+	if format == configdoc.JSONC {
+		source = append([]byte(`{"value":`), encoded...)
+		source = append(source, '}')
+	} else {
+		source = append([]byte("value = "), encoded...)
+	}
+	doc, err := configdoc.Parse(source, format)
+	if err != nil {
+		return nil, fmt.Errorf("parse encoded value: %w", err)
+	}
+	value, ok := doc.Values.Get("value")
+	if !ok {
+		return nil, fmt.Errorf("encoded value was not retained")
+	}
+	return value, nil
+}
+
 func hasCommentWithin(comments []configdoc.Span, span configdoc.Span) bool {
 	for _, comment := range comments {
 		if comment.Start < span.End && comment.End > span.Start {

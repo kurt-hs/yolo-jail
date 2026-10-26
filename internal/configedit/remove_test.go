@@ -21,6 +21,19 @@ func TestPlanEditRemoveTOMLKeyRetainsItsInlineComment(t *testing.T) {
 	}
 }
 
+func TestPlanEditCreatesTOMLTableWithParsedNumericValue(t *testing.T) {
+	plan, err := PlanEdit(nil, configdoc.TOML, Mutation{Action: Add, Path: []configdoc.Step{{Key: "runtime"}, {Key: "count"}}, Value: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(plan.Updated), "[runtime]\ncount = 3\n"; got != want {
+		t.Fatalf("want %q, got %q", want, got)
+	}
+	if _, err := configdoc.Parse(plan.Updated, configdoc.TOML); err != nil {
+		t.Fatalf("numeric table invalid: %v", err)
+	}
+}
+
 func TestPlanEditCreatesTableUsingExistingCRLFStyle(t *testing.T) {
 	source := []byte("name = 'workspace'\r\n")
 	p, err := PlanEdit(source, configdoc.TOML, Mutation{Action: Add, Path: []configdoc.Step{{Key: "providers"}, {Key: "bedrock"}, {Key: "region"}}, Value: "us-east-1"})
