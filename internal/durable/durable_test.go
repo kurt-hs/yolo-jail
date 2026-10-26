@@ -1,6 +1,7 @@
 package durable
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,33 @@ func TestEnsureCreatesTheDirOnceAndKeepsWhatIsThere(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(got, "note")); string(b) != "mine" {
 		t.Fatal("Ensure disturbed the directory's contents")
+	}
+}
+
+// TestEnsureRefusesTheHomeAndCreatesNothing is the measured artifact: a `~/.yolo/durable` on
+// a host, which no launch can justify because the home may never be a workspace
+// (paths.WorkspaceScopeBreach). The refusal is the CHOKEPOINT's, so this fails if Ensure ever
+// stops routing the directory through it — and the directory must not exist afterwards, since
+// the stray `.yolo` is the artifact and not a symptom.
+func TestEnsureRefusesTheHomeAndCreatesNothing(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	// Both spellings: a trailing separator must not slip past the containment comparison.
+	for _, ws := range []string{home, home + string(filepath.Separator)} {
+		got, err := Ensure(ws)
+		if err == nil {
+			t.Fatalf("Ensure(%q) succeeded and returned %q; the home may never hold a .yolo", ws, got)
+		}
+		var breach *paths.ScopeBreach
+		if !errors.As(err, &breach) {
+			t.Fatalf("Ensure(%q) error = %T (%v), want a *paths.ScopeBreach", ws, err, err)
+		}
+		if _, statErr := os.Lstat(filepath.Join(home, ".yolo")); !os.IsNotExist(statErr) {
+			t.Fatalf("Ensure(%q) created %s (stat err: %v)", ws, filepath.Join(home, ".yolo"), statErr)
+		}
 	}
 }
 

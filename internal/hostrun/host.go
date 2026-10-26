@@ -175,7 +175,7 @@ func (h *hostRun) run() int {
 	pathVal, _ := lookupEnv(h.environ, "PATH")
 	entries := filepath.SplitList(pathVal)
 	for _, e := range entries {
-		if why := pathEntryProblem(e, h.env.StateDirs, h.env.ManagedDirs); why != "" {
+		if why := pathEntryProblem(e, h.env.StateDirs, h.env.ManagedDirs, h.workspace); why != "" {
 			return h.deliverRefusal(9,
 				fmt.Sprintf("your PATH holds %s, %s, which a jail can write", shquote.QuoteDisplay(e), why),
 				"Ask the human to remove that entry from PATH in the shell they ran the line in (or to open a fresh terminal without it), then to run the same line again.",
@@ -292,12 +292,15 @@ func (h *hostRun) disclose(id, program string, lookErr error) {
 	} else {
 		fmt.Fprintf(&b, "  program:  %s\n", vis(program))
 	}
+	// The start directory is inside the workspace by construction (step 6 walked up to it from
+	// here), so this note fires for it on every run; withinAny is what keeps that a fact rather
+	// than an assumption when a caller hands RunHost a pair that disagrees.
 	in := vis(h.startDir)
-	if yoloAncestor(h.startDir) != "" {
+	if withinAny(h.startDir, []string{h.workspace}) {
 		in += "  (agent-writable: .git/config, .envrc, mise.toml here take effect on your host)"
 	}
 	fmt.Fprintf(&b, "  in:       %s\n", in)
-	if words := agentWritableArgs(h.line.Argv[1:], h.startDir); len(words) > 0 {
+	if words := agentWritableArgs(h.line.Argv[1:], h.startDir, h.workspace); len(words) > 0 {
 		fmt.Fprintf(&b, "  paths:    %s %s agent-writable, and flags such as -C, --git-dir, --work-tree or --prefix make a program act there\n",
 			shquote.JoinDisplay(words), map[bool]string{true: "is", false: "are"}[len(words) == 1])
 	}

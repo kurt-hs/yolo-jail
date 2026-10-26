@@ -12,22 +12,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// yoloAncestor returns the nearest directory at or above dir that holds a `.yolo`, or "".
-// A `.yolo` marks a workspace a jail can write, so anything beneath its holder is
-// agent-writable (HX-D32, HX-D33).
-func yoloAncestor(dir string) string {
-	for d := filepath.Clean(dir); ; {
-		if _, err := os.Lstat(filepath.Join(d, ".yolo")); err == nil {
-			return d
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return ""
-		}
-		d = parent
-	}
-}
-
 // defaultStateDirs are yolo's own state directories, which a jail-facing process may write.
 func defaultStateDirs() []string {
 	return []string{paths.GlobalStorage(), filepath.Dir(paths.UserConfigPath())}
@@ -96,14 +80,25 @@ func trustedManagedDirs(stateDirs, managedDirs []string) []string {
 // pathEntryProblem says why a PATH entry may supply jail-written code, or "" when it cannot.
 // Every entry is checked, searched or not, because the child inherits PATH (HX-D32).
 //
+// THE WORKSPACE IS THE TEST, AND A `.yolo` MARKER IS NOT. This refused any entry under a
+// directory HOLDING a `.yolo`, on the theory that the marker said a jail could write there. It
+// does not: a `.yolo` is a directory some verb made, and every creator of one refuses the three
+// directories that may never be workspaces (paths.EnsureWorkspaceStateDir). What a jail can
+// actually write is the workspace this run resolved — every backend binds it read-write — plus
+// yolo's own state directories. The marker rule refused every PATH entry under a home holding a
+// stray `~/.yolo`, mise's installs and `~/.local/bin` included, for a tree no jail has ever been
+// mounted on, and it printed a remedy ("remove it from this shell's PATH") that the mise or
+// direnv shell which produced the entry cannot carry out. workspace is the resolved workspace
+// from step 6, which is a fact about this run rather than an inference from what is on disk.
+//
 // managedDirs are yolo's host-managed directories (hostpath.ManagedDirs: the generated bin tree,
 // which holds the host launch wrappers a user is asked to PREPEND to PATH). They sit inside the
 // state directory, but no backend mounts them into a jail, so an entry in one is not refused for
 // being in the state directory — provided the managed dir is not itself a link out of its place
 // (trustedManagedDirs), in which case it is exempt from nothing. Each spelling of the entry is
 // judged on its own: a name inside the managed dir that is a link to elsewhere in the state
-// directory is still refused, and the .yolo check applies to every entry regardless.
-func pathEntryProblem(entry string, stateDirs, managedDirs []string) string {
+// directory is still refused.
+func pathEntryProblem(entry string, stateDirs, managedDirs []string, workspace string) string {
 	trusted := trustedManagedDirs(stateDirs, managedDirs)
 	if entry == "" {
 		return "an empty entry, which means the current directory"
@@ -116,8 +111,8 @@ func pathEntryProblem(entry string, stateDirs, managedDirs []string) string {
 		forms = append(forms, r)
 	}
 	for _, p := range forms {
-		if h := yoloAncestor(p); h != "" {
-			return "inside " + h + ", which holds a .yolo"
+		if workspace != "" && withinAny(p, []string{workspace}) {
+			return "inside the workspace " + workspace + ", which the jail can write"
 		}
 		if slices.ContainsFunc(trusted, func(d string) bool { return within(p, d) }) {
 			continue
@@ -192,9 +187,10 @@ func lookupEnv(environ []string, name string) (string, bool) {
 	return val, ok
 }
 
-// agentWritableArgs returns the argv words that name an existing path inside a directory
-// holding `.yolo`, relative words read against startDir (HX-D33).
-func agentWritableArgs(words []string, startDir string) []string {
+// agentWritableArgs returns the argv words that name an existing path inside the workspace,
+// relative words read against startDir (HX-D33). The workspace is the tree a jail can write,
+// so it is the note's subject; a `.yolo` marker somewhere above a path is not evidence of one.
+func agentWritableArgs(words []string, startDir, workspace string) []string {
 	var out []string
 	for _, w := range words {
 		if w == "" {
@@ -207,7 +203,7 @@ func agentWritableArgs(words []string, startDir string) []string {
 		if _, err := os.Lstat(p); err != nil {
 			continue
 		}
-		if yoloAncestor(p) != "" {
+		if workspace != "" && withinAny(p, []string{workspace}) {
 			out = append(out, w)
 		}
 	}

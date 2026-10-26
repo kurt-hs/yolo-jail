@@ -76,11 +76,14 @@ agent is told too.
 - **Invisible or control characters in the command.** They could make what yolo prints differ
   from what runs. yolo names the word and the character, never the raw text.
 - **A `gh` command that prints your GitHub token**, such as `gh auth token`.
-- **A `PATH` the jail could write to.** An empty or relative entry, or one inside a project
-  directory or yolo's own state, could swap in a different program. Remove it from that shell.
-  yolo's own folder of generated host programs, `~/.local/share/yolo-jail/bin`, is allowed,
-  since no jail can write it. That includes the host wrapper folder, `bin/wrap`. yolo looks past
-  that folder for the program, so `gh` runs your real `gh`, not a wrapper.
+- **A `PATH` the jail could write to.** An empty or relative entry, or one inside the project
+  you are running the command for, or inside yolo's own state, could swap in a different program.
+  Remove it from that shell. yolo's own folder of generated host programs,
+  `~/.local/share/yolo-jail/bin`, is allowed, since no jail can write it. That includes the host
+  wrapper folder, `bin/wrap`. yolo looks past that folder for the program, so `gh` runs your real
+  `gh`, not a wrapper. A `.yolo` directory somewhere above a `PATH` entry says nothing about
+  this: it is a leftover from a command, not a sign that a jail can write there, so your mise
+  installs and `~/.local/bin` are fine.
 - **A link the jail planted where yolo writes.** yolo will not write through it.
 
 ## Where results live

@@ -45,8 +45,9 @@ func writeScript(t *testing.T, path, body string) {
 	}
 }
 
-// coreutilsDir is the resolved directory of `sleep`, which the fake programs use; a test skips
-// where it sits under a directory holding `.yolo` (the PATH check would refuse it).
+// coreutilsDir is the resolved directory of `sleep`, which the fake programs use. It needs no
+// skip for a directory holding a `.yolo`: that marker is not what the PATH check refuses (see
+// pathEntryProblem), so a machine carrying one no longer makes these tests unrunnable.
 func coreutilsDir(t *testing.T) string {
 	t.Helper()
 	p, err := exec.LookPath("sleep")
@@ -54,11 +55,7 @@ func coreutilsDir(t *testing.T) string {
 		t.Skip("no sleep on PATH")
 	}
 	p, _ = filepath.EvalSymlinks(p)
-	d := filepath.Dir(p)
-	if yoloAncestor(d) != "" {
-		t.Skipf("%s sits under a directory holding .yolo", d)
-	}
-	return d
+	return filepath.Dir(p)
 }
 
 func newHostFixture(t *testing.T) *hostFixture {
@@ -430,13 +427,7 @@ func TestHostRunRefusesAWritablePathEntry(t *testing.T) {
 		"empty":     func(*hostFixture) string { return "" },
 		"dot":       func(*hostFixture) string { return "." },
 		"workspace": func(f *hostFixture) string { return filepath.Join(f.ws, "bin") },
-		"yolo-holder": func(f *hostFixture) string {
-			h := filepath.Join(f.home, ".yolo-holder")
-			os.MkdirAll(filepath.Join(h, ".yolo"), 0o755)
-			os.MkdirAll(filepath.Join(h, "bin"), 0o755)
-			return filepath.Join(h, "bin")
-		},
-		"state": func(f *hostFixture) string { return paths.GlobalCache() },
+		"state":     func(f *hostFixture) string { return paths.GlobalCache() },
 	}
 	for name, entry := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -463,6 +454,29 @@ func TestHostRunRefusesAWritablePathEntry(t *testing.T) {
 				t.Fatalf("audit %+v", ev)
 			}
 		})
+	}
+}
+
+// TestHostRunAllowsAPathEntryUnderAStrayYoloMarker: a `.yolo` is a directory some verb made, not
+// evidence that a jail can write the tree above it. The PATH check keys on the workspace this run
+// resolved, so a stray marker under the home — which the maintainer's host carries, and which
+// made every mise install and `~/.local/bin` refuse — no longer stops a run, and no longer asks
+// the human to remove an entry from a shell that will put it back.
+func TestHostRunAllowsAPathEntryUnderAStrayYoloMarker(t *testing.T) {
+	f := newHostFixture(t)
+	holder := filepath.Join(f.home, "tools", "stray")
+	for _, d := range []string{filepath.Join(holder, ".yolo"), filepath.Join(holder, "bin")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeScript(t, filepath.Join(holder, "bin", "stray"), `echo stray-ok`)
+	f.setPath(filepath.Join(holder, "bin"), f.bin, coreutilsDir(t))
+	if rc := f.run(t, "stray"); rc != 0 {
+		t.Fatalf("rc %d\n%s", rc, f.termErr(t))
+	}
+	if got := f.termOut(t); got != "stray-ok\n" {
+		t.Fatalf("the terminal saw %q", got)
 	}
 }
 
@@ -525,10 +539,10 @@ func TestPathEntryProblemJudgesAManagedLinkByWhereItLeads(t *testing.T) {
 	if err := os.Symlink(cache, link); err != nil {
 		t.Fatal(err)
 	}
-	if why := pathEntryProblem(link, []string{state}, []string{managed}); !strings.Contains(why, "state directory") {
+	if why := pathEntryProblem(link, []string{state}, []string{managed}, ""); !strings.Contains(why, "state directory") {
 		t.Fatalf("a managed link into the cache was allowed: %q", why)
 	}
-	if why := pathEntryProblem(filepath.Join(managed, "block"), []string{state}, []string{managed}); why != "" {
+	if why := pathEntryProblem(filepath.Join(managed, "block"), []string{state}, []string{managed}, ""); why != "" {
 		t.Fatalf("a managed dir was refused: %q", why)
 	}
 }
@@ -547,7 +561,7 @@ func TestPathEntryProblemGivesALinkedManagedDirNoExemption(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range []string{filepath.Join(managed, "wrap"), filepath.Join(cache, "wrap")} {
-		if why := pathEntryProblem(entry, []string{state}, []string{managed}); !strings.Contains(why, "state directory") {
+		if why := pathEntryProblem(entry, []string{state}, []string{managed}, ""); !strings.Contains(why, "state directory") {
 			t.Errorf("%s was allowed through a linked managed dir: %q", entry, why)
 		}
 	}
@@ -568,7 +582,7 @@ func TestPathEntryProblemAllowsTheManagedDirUnderALinkedHome(t *testing.T) {
 	state := filepath.Join(root, "home", "state")
 	managed := filepath.Join(state, "bin")
 	for _, entry := range []string{filepath.Join(managed, "wrap"), filepath.Join(realHome, "state", "bin", "wrap")} {
-		if why := pathEntryProblem(entry, []string{state}, []string{managed}); why != "" {
+		if why := pathEntryProblem(entry, []string{state}, []string{managed}, ""); why != "" {
 			t.Errorf("%s was refused: %q", entry, why)
 		}
 	}

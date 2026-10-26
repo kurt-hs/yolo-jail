@@ -113,9 +113,12 @@ RFC 3339 UTC. Field order and Go type names are cheap and yours.
   **`TestUsageListsEveryParsedFlag`** (`:207`) apply to the new verb: `yolo host-run --help`
   answers help and the usage names every parsed flag. A `--help` **after** `--` is argv, as in
   `TestGHHelpAfterTheSeparatorIsForwarded`.
-- **The dev jail's own `PATH` fails the `PATH` check**: `~/.yolo/bin/block` sits under a home
-  holding `.yolo`. Unit and integration tests set `PATH` explicitly (a temp `bin/` with a fake
-  program, or the resolved directory of `true`), never inherit it.
+- **The dev jail's own `PATH` must not be inherited by a test**, because what it holds is not
+  knowable from here: a `bin/` inside the workspace or in yolo's state fails the `PATH` check.
+  Unit and integration tests set `PATH` explicitly (a temp `bin/` with a fake program, or the
+  resolved directory of `true`), never inherit it. (When this was written the check also refused
+  any entry under a `.yolo`-holding directory, so a home carrying a marker failed it; that clause
+  is deleted, see [HX-D32](host-run-mailbox.md#HX-D32).)
 - **The host form runs nothing with `YOLO_VERSION` set**, and the jail exports it. `InJail` tests
   for a non-empty value, so unit tests use `t.Setenv("YOLO_VERSION", "")`; the integration
   subprocess drops the name from its `Env`.
