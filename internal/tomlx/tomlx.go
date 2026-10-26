@@ -16,6 +16,8 @@ package tomlx
 import (
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -98,7 +100,7 @@ func DecodeOrdered(data []byte) (*jsonx.OrderedMap, error) {
 					if processedValues[id] {
 						break
 					}
-					cur.Set(p, convertTOMLValueOrdered(val, keys[keyIndex+1:], key))
+					cur.Set(p, convertTOMLValueOrdered(val, keys[keyIndex:], key))
 					processedValues[id] = true
 				}
 			} else {
@@ -130,18 +132,13 @@ func rawMapAt(root map[string]any, path toml.Key) (map[string]any, bool) {
 }
 
 func joinKey(k toml.Key) string {
-	return "\x00" + join(k, "\x00")
-}
-
-func join(parts []string, sep string) string {
-	out := ""
-	for i, p := range parts {
-		if i > 0 {
-			out += sep
-		}
-		out += p
+	var encoded strings.Builder
+	for _, part := range k {
+		encoded.WriteString(strconv.Itoa(len(part)))
+		encoded.WriteByte(':')
+		encoded.WriteString(part)
 	}
-	return out
+	return encoded.String()
 }
 
 // ensureChild returns the *jsonx.OrderedMap at key, creating it if absent.
@@ -184,6 +181,20 @@ func convertTOMLValueOrdered(value any, order []toml.Key, prefix toml.Key) any {
 	switch values := value.(type) {
 	case []any:
 		out := make([]any, len(values))
+		if segments := arrayTableMetadataSegments(order, prefix); len(segments) > 1 {
+			for i, item := range values {
+				if i >= len(segments) {
+					out[i] = convertTOMLValue(item)
+					continue
+				}
+				if row, ok := item.(map[string]any); ok {
+					out[i] = orderedMapFromMetadata(row, prefix, segments[i])
+				} else {
+					out[i] = convertTOMLValue(item)
+				}
+			}
+			return out
+		}
 		remaining := order
 		for i, item := range values {
 			if m, ok := item.(map[string]any); ok {
@@ -297,6 +308,39 @@ func metadataNestedMapCount(value any) int {
 		}
 	}
 	return count
+}
+
+func arrayTableMetadataSegments(order []toml.Key, prefix toml.Key) [][]toml.Key {
+	var starts []int
+	for i, path := range order {
+		if equalTOMLKey(path, prefix) {
+			starts = append(starts, i)
+		}
+	}
+	if len(starts) < 2 {
+		return nil
+	}
+	segments := make([][]toml.Key, len(starts))
+	for i, start := range starts {
+		end := len(order)
+		if i+1 < len(starts) {
+			end = starts[i+1]
+		}
+		segments[i] = order[start:end]
+	}
+	return segments
+}
+
+func equalTOMLKey(left, right toml.Key) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func trimExactPath(order []toml.Key, prefix toml.Key) []toml.Key {

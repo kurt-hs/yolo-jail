@@ -192,6 +192,50 @@ func TestDecodeOrderedPreservesInlineTablesInsideArrayTables(t *testing.T) {
 	}
 }
 
+func TestDecodeOrderedPreservesRepeatedNestedArrayTableAuthoredOrder(t *testing.T) {
+	source := []byte("[[fruit]]\nname = \"apple\"\n[[fruit.variety]]\nname = \"green\"\ntail = 1\n[[fruit.variety]]\nname = \"red\"\ntail = 2\n[[fruit]]\ntail = 3\nname = \"banana\"\n")
+	values, err := DecodeOrdered(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fruits, _ := values.Get("fruit")
+	rows, ok := fruits.([]any)
+	if !ok || len(rows) != 2 {
+		t.Fatalf("fruit = %#v", fruits)
+	}
+	banana := rows[1].(*jsonx.OrderedMap)
+	if got := banana.Keys(); !reflect.DeepEqual(got, []string{"tail", "name"}) {
+		t.Fatalf("second fruit field order = %v, want [tail name]", got)
+	}
+	varieties, _ := rows[0].(*jsonx.OrderedMap).Get("variety")
+	children, ok := varieties.([]any)
+	if !ok || len(children) != 2 {
+		t.Fatalf("first fruit varieties = %#v", varieties)
+	}
+	for i, child := range children {
+		if got := child.(*jsonx.OrderedMap).Keys(); !reflect.DeepEqual(got, []string{"name", "tail"}) {
+			t.Errorf("variety %d field order = %v, want [name tail]", i, got)
+		}
+	}
+}
+
+func TestDecodeOrderedNULKeyDoesNotCollideWithDottedPath(t *testing.T) {
+	values, err := DecodeOrdered([]byte("\"a\\u0000b\" = 1\na.b = 2\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := values.Get("a\x00b"); !ok || got != int64(1) {
+		t.Fatalf("quoted NUL key = %#v, %v; want 1", got, ok)
+	}
+	a, ok := values.Get("a")
+	if !ok {
+		t.Fatal("dotted path root a was lost")
+	}
+	b, ok := a.(*jsonx.OrderedMap).Get("b")
+	if !ok || b != int64(2) {
+		t.Fatalf("dotted value a.b = %#v, %v; want 2", b, ok)
+	}
+}
 func TestDecodeBasic(t *testing.T) {
 	m, err := Decode([]byte("[a]\nb = 1\nc = \"x\"\n"))
 	if err != nil {
