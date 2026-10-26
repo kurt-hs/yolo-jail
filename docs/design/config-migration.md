@@ -3,7 +3,7 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC6 (§3), OQ-RC18 (§4) and OQ-RC8 (§5)"
+next: "Rule OQ-RC8 (§5, a fetched pack in the old format)"
 tags: [config, migration, versioning, release, design]
 summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Each section ends with its question. Part of the readable-config redesign."
 ---
@@ -14,10 +14,10 @@ summary: "How a yolo knows which config it has, the order of releases, what `yol
 leanings.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-how-a-yolo-knows-which-config-it-has)
-is approved; [§3](#3-the-order-of-releases) to [§5](#5-every-case) each end with their question.
+to [§4](#4-what-yolo-config-migrate-does) are approved; [§5](#5-every-case) ends with the one
+question left.
 
-**Needs your ruling:** [OQ-RC6](#OQ-RC6) in [§3](#3-the-order-of-releases), [OQ-RC18](#OQ-RC18) in
-[§4](#4-what-yolo-config-migrate-does), [OQ-RC8](#OQ-RC8) in [§5](#5-every-case).
+**Needs your ruling:** [OQ-RC8](#OQ-RC8) in [§5](#5-every-case).
 
 > **In short.** `config.toml` beside no `config.jsonc` is the whole version scheme for this move.
 > The next release reads both formats, and keeps the old reader for a few releases; it offers the
@@ -44,7 +44,6 @@ Found 4 files in the old format:
   ~/code/yolo-jail/yolo-jail.jsonc                        (133 lines)
 Not found here (listed in config.jsonc): ~/.dotfiles/tag-personal/config/yolo-jail/personal.jsonc.
   Run `yolo config migrate` on a machine that has it.
-Also found: ~/.config/yolo-jail/config.lua, 0 bytes. The transform that read it is gone; it will be deleted.
 
 --- ~/.config/yolo-jail/config.jsonc
 +++ ~/.config/yolo-jail/config.toml
@@ -146,34 +145,11 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 3. **Every machine that shares dotfiles upgrades to the TOML release before any of them
    migrates**, because one machine's migration rewrites the file every other machine reads, and a
    yolo older than that release starts empty on a migrated file. Step 1's window is what lets
-   that happen without pressure; the offer says so.
-
-1. 💬 <a id="OQ-RC6"></a>**OQ-RC6: What happens on a machine still running an older yolo?**
-
-   A colleague migrates with the new yolo, then runs a jail from an older yolo installed
-   elsewhere, or your Mac is a release behind despite the window in step 1. The older yolo looks
-   for `config.jsonc`, finds none, and launches a jail with no packs, saying only that it has no
-   coding agent; a migrated local pack it stages as if it had no manifest. No release can reach
-   it first: TOML ships next.
-
-   ```text
-   # A  migrate keeps the old file beside the new; an older yolo works off it, and the two drift
-   config.toml
-   config.jsonc        # superseded by config.toml on 2026-11-02; the TOML release reads only config.toml when both exist
-
-   # B  migrate renames the old file; an older yolo starts empty and says so; the rename back is one mv
-   config.toml
-   config.jsonc.pre-migrate
-   ```
-
-   <!-- vantage: question id=OQ-RC6 leaning="B: the window is for upgrading every machine first, the offer says so, and a machine that fell behind has the one-mv way back; A leaves two files that read differently on different machines." -->
-
-   _Leaning:_ B: the window is for upgrading every machine first, the offer says so, and a machine
-   that fell behind has the one-`mv` way back; A leaves two files that read differently on
-   different machines.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+   that happen without pressure; the offer says so. A machine that fell behind anyway has the
+   `<name>.pre-migrate` copy the migration leaves ([§4](#4-what-yolo-config-migrate-does)), one
+   `mv` from working again. Reviewed 2026-10-25, on whether anything more was open here:
+   *"Haven't we solved this from all the other rulings?"* Yes
+   ([OQ-RC6](readable-config.md#decision-ledger)).
 
 ## 4. What `yolo config migrate` does
 
@@ -193,29 +169,16 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
    this every migrated workspace meets a full-file approval prompt once, and a launch with no
    terminal is refused until someone answers. A record it cannot read is left, and that workspace
    prompts once, which the output says.
-6. **Deletes a zero-byte `config.lua`** and names it; refuses a non-empty one, naming it.
-7. **Runs once, on request.** The launch offers it; nothing runs it unasked. On the host for the
+6. **Runs once, on request.** The launch offers it; nothing runs it unasked. On the host for the
    user files; in a jail only for the project's.
 
-1. 💬 <a id="OQ-RC18"></a>**OQ-RC18: Is what the migration does approved?**
-
-   You run `yolo config migrate` on a work machine and see the transcript in [§1](#1-what-youd-see):
-   four files found, one named as missing with the command to run elsewhere, a zero-byte
-   `config.lua` to delete, one diff summary per file, the equality line, the records respelled,
-   and the `y/N`. The seven behaviors above are what produces it; each can be vetoed alone.
-
-   - **A — Approve all seven.**
-   - **B — Approve, except:** name the behavior to change (for instance, do not fold facts or drop
-     defaults; convert the spelling only, and leave the shrinking to a later `yolo config tidy`).
-   - **C — Convert nothing automatically**; print the new files and let the person save them.
-
-   <!-- vantage: question id=OQ-RC18 leaning="A: the equality check is what makes the folds safe, and a conversion that leaves the shrinking for later leaves the misreadings in place for as long." -->
-
-   _Leaning:_ A: the equality check is what makes the folds safe, and a conversion that leaves the
-   shrinking for later leaves the misreadings in place for as long.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+Approved 2026-10-25 ([OQ-RC18](readable-config.md#decision-ledger)): *"the equality check is
+what makes the folds safe, and a conversion that leaves the shrinking for later leaves the
+misreadings in place for as long."* An earlier item had the migration delete a leftover
+`~/.config/yolo-jail/config.lua`; it was dropped in the same review round. That file fed a Lua
+transform that rewrote the composed agent config after merging, removed with no deprecation
+window ([OQ-LT1](../reference/pack-system.md#oq-lt1)); a leftover is never read, and a migration
+that deletes a file it does not convert is code written for nobody.
 
 ## 5. Every case
 
@@ -232,7 +195,8 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 - **Shipped packs:** migrated in the commit that changes the reader.
 - **A local pack in the old format:** refused, naming `yolo pack migrate <path>`
   ([`pack-manifests.md`](pack-manifests.md#5-the-migration)).
-- **A yolo older than this change:** [OQ-RC6](#OQ-RC6).
+- **A yolo older than the TOML release:** starts empty on a migrated file; nothing reaches it
+  ([§3](#3-the-order-of-releases)).
 - **Files only yolo reads** stay JSON in the new vocabulary; a drift report says `allow.git.push`,
   never `brokered.git.grants`. The jail's inherited copy of the user config becomes TOML.
 - **An error in a new file** names `file:line:col` and the key.
@@ -301,7 +265,8 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 - **Manifests at yolo ≤ 0.11.1 are decoded strictly**, so any new manifest field refuses the pack;
   a new manifest shape is a new file name however it is done, and an older yolo meeting a folder
   with only `pack.toml` treats it as manifest-less (`matt-craft` is that today).
-- **A zero-byte `~/.config/yolo-jail/config.lua` exists on at least one machine**; the Lua
-  transform that read it is gone (`internal/config/inherit.go`).
+- **A zero-byte `~/.config/yolo-jail/config.lua` exists on at least one machine.** The Lua
+  transform that read it is gone and the file is never read
+  ([OQ-LT1](../reference/pack-system.md#oq-lt1)); the migration leaves it alone.
 - **Include paths are relative to the including file**, and one starting with `~` or `/` is
   refused (`internal/config/load.go`); the migration respells each entry in place.
