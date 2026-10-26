@@ -22,9 +22,8 @@ package hostskills
 //     than restated here. Since S1 a same-named skill from two packs is a refusal, not a win for
 //     the later one, and since OQ-NC11 the jail composes through this package too (ComposeInto),
 //     so the refusal and the tiers are the same in a jail.
-//   - BUILT-INS ARE STILL NOT WRITTEN TO A REAL HOME. The jail's layer 1 is yolo's own
-//     jail-oriented skills (configuring-the-jail, diagnosing-the-jail); on the host they describe an
-//     environment the user is not in. The difference is deliberate and predates this file.
+//   - Generated host built-ins use a distinct core-owned identity in the same composition and
+//     ownership record; they are not selected/configured packs and cannot be adopted as user files.
 //   - TIERS DO NOT COLLAPSE, and that is the answer to the question §6a-2 left open. What a tier
 //     decides is now only how the destination TOOL invokes a skill (`/<pack>:<name>` under a
 //     per-pack subtree vs `/<name>` in a flat dir) and therefore what shape yolo writes — not
@@ -79,6 +78,10 @@ import (
 // writers with different notions of what a path means, is how the briefing record got every
 // composed destination retired as a dropped pack's output.
 
+// GeneratedOwner is the provenance identity for built-in skills rendered by yolo itself. It is
+// deliberately not a pack name and is never inserted into a configured-pack set.
+const GeneratedOwner = "yolo:generated-skills"
+
 // Layer is ONE pack's contribution to ONE destination, in composition order.
 type Layer struct {
 	// Pack is the contributing pack's name. At a namespaced destination it is also the subtree
@@ -86,6 +89,8 @@ type Layer struct {
 	Pack string
 	// Description goes into the namespaced plugin manifest.
 	Description string
+	// Generated marks a core-generated contribution, whose ownership identity is not a pack.
+	Generated bool
 	// Tier is the PACK's own tier — its opt-in to namespacing, identical at every destination
 	// this pack reaches (S1/S2). It used to be the CONTRIBUTION's, which meant one pack could be
 	// namespaced in one home and flat in another, so what the user thinks of as one skill had two
@@ -912,11 +917,15 @@ func writeLayer(dir string, l Layer, req ComposeRequest, preOwned map[string]boo
 			return out, err
 		}
 	}
+	owner := l.Pack
+	if l.Generated {
+		owner = GeneratedOwner
+	}
 	if len(l.Sources) == 0 {
 		return out, nil
 	}
 	res, err := Deliver(Request{
-		Pack: l.Pack, Description: l.Description, Sources: l.Sources, SkipSources: pluginDirs,
+		Pack: l.Pack, Owner: owner, Description: l.Description, Sources: l.Sources, SkipSources: pluginDirs,
 		SkillsDir: dir, Tier: l.Tier,
 		Composed: req.Composed, Legacy: req.Legacy, PreOwned: preOwned, Claimed: want,
 		ArchiveRoot: req.ArchiveRoot, Stamp: req.Stamp, Observe: observe,
@@ -954,7 +963,8 @@ func retireComposed(dir string, want map[string]string, req ComposeRequest, obse
 		if _, composed := want[path]; composed {
 			continue
 		}
-		if owner, _ := req.Composed.Owner(path); !req.Configured[owner] {
+		owner, _ := req.Composed.Owner(path)
+		if owner != GeneratedOwner && !req.Configured[owner] {
 			continue // R1's, not ours — see above
 		}
 		if _, err := os.Lstat(path); err != nil {

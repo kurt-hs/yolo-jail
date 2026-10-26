@@ -12,6 +12,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -199,15 +201,32 @@ func TestAnAssertThatDeclinesTheRetireSaysWhatStays(t *testing.T) {
 		home := retireWaitingHome(t)
 		selectPacksWith(t, home, "", `,"host_management":"own","host_wrappers":false`)
 
-		// The first --assert with `packs` empty also retires the composed briefing, unasked.
+		// The first --assert with `packs` empty also retires the composed briefing and the three
+		// generated skills, unasked. The generated skills are yolo-owned destinations, not dropped-
+		// pack output; only dropme's two paths remain waiting for an explicit retire answer.
 		_, report := applyWith(t, true, strings.NewReader("n\n"))
-		if got, want := verdictLine(report), "No packs configured — nothing to apply; 1 destination(s) "+
+		if got, want := verdictLine(report), "No packs configured — nothing to apply; 4 destination(s) "+
 			"retired, and "+stays; got != want {
 			t.Errorf("the first verdict is\n%q\nwant\n%q\n%s", got, want, report)
+		}
+		if want := "3 retired skills changed · 1 briefing destination changed · 1 destination already in sync"; !strings.Contains(report, want) {
+			t.Errorf("the four retired destinations are not the three generated skills and briefing: want %q\n%s", want, report)
+		}
+		for rel, want := range map[string]string{
+			".claude/skills/demo/SKILL.md": "---\nname: demo\ndescription: d\n---\nDemo body.\n",
+			".claude/bin/pick.sh":          "#!/bin/sh\necho pick\n",
+		} {
+			got, err := os.ReadFile(filepath.Join(home, rel))
+			if err != nil || string(got) != want {
+				t.Errorf("declining generated-skill/briefing retirement changed dropped-pack path %s: %q (%v)", rel, got, err)
+			}
 		}
 		_, report = applyWith(t, true, strings.NewReader("n\n"))
 		if got, want := verdictLine(report), "No packs configured — nothing to apply; "+stays; got != want {
 			t.Errorf("the second verdict is\n%q\nwant\n%q\n%s", got, want, report)
+		}
+		if strings.Contains(report, "retired skills changed") || strings.Contains(report, "briefing destination changed") {
+			t.Errorf("the second invocation retired generated skills or the briefing again:\n%s", report)
 		}
 		if strings.Contains(report, "nothing left to retire") {
 			t.Errorf("an --assert that kept a dropped pack's paths says nothing is left to retire:\n%s", report)

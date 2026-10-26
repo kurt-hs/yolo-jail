@@ -237,9 +237,25 @@ func TestHostLaunchOfAPinnedForkBuildsItAndRunsTheFloorsCopy(t *testing.T) {
 		t.Errorf("build receipts = %+v", builds)
 	}
 	installHome := filepath.Dir(filepath.Dir(filepath.Dir(rec.Entry)))
-	if cfg, _ := os.ReadFile(filepath.Join(installHome, ".npm-global", "lib", "node_modules", "forkcli",
-		"config.json")); strings.Contains(string(cfg), "/home/agent") {
-		t.Errorf("the floor's copy still names the jail's home: %s", cfg)
+	floorProgramHome := filepath.Join(paths.HostFloorDir(), "programs", "forkcli")
+	if rel, err := filepath.Rel(floorProgramHome, installHome); err != nil || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Errorf("the copied install home %q is not beneath this floor's forkcli root %q (relative path %q, err %v)",
+			installHome, floorProgramHome, rel, err)
+	}
+	cfgPath := filepath.Join(installHome, ".npm-global", "lib", "node_modules", "forkcli", "config.json")
+	cfg, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Errorf("reading the floor's fork copy config %q: %v", cfgPath, err)
+	} else {
+		var config struct {
+			Root string `json:"root"`
+		}
+		if err := json.Unmarshal(cfg, &config); err != nil {
+			t.Errorf("decoding the floor's fork copy config %q: %v", cfgPath, err)
+		} else if want := filepath.Join(installHome, ".npm-global", "lib", "node_modules", "forkcli"); config.Root != want {
+			t.Errorf("the floor's copy names root %q, want this copied install root %q", config.Root, want)
+		}
 	}
 	if calls := dist.NpmCalls("install"); len(calls) != 0 {
 		t.Errorf("the floor installed the base's npm package for a forked program: %v", calls)

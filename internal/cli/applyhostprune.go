@@ -92,10 +92,9 @@ func pruneDroppedPackOutput(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	manPath := hostSkillsManifestPath()
 	man, err := hostskills.LoadManifest(manPath)
 	// The COMPOSED skills record is merged in read-only, and merging is what keeps ruling R1 true for
-	// `skills` after §6a-2. Its owner is a real pack name for exactly this reason (see compose.go's
-	// record comment), so the scan below needs no new concept — but it is a different FILE, and
-	// without reading it a composed skill's pack could leave `packs` and its skills would stay
-	// loadable forever, which is the defect this whole file exists to fix.
+	// `skills` after §6a-2. Composed entries normally name the composing pack; the generated
+	// built-in suite has its own exact core identity and is excluded below, so it is never
+	// mistaken for a configured pack or a dropped pack.
 	//
 	// Read-only, and that asymmetry is deliberate: retiring a path here also has to FORGET it, and
 	// the forget belongs to the record that named it. So the composed half is merged for the SCAN
@@ -241,8 +240,8 @@ func saveHostSkillsManifest(pr richtext.Printer, man *hostskills.Manifest, path 
 // into paths that are still THERE (a confirmation, an archive) and records whose path has
 // already vanished (bookkeeping only).
 //
-// Two sources of ownership evidence, in that priority order, because tier A and tier B record
-// ownership in different places by design:
+// ownership in different places by design. The generated-suite identity is skipped by exact
+// equality; all real pack ownership continues through the existing dropped-pack checks:
 //
 //   - the MANIFEST, which is authoritative: it holds an absolute dest and its owning pack, so
 //     it answers this question without the dropped pack's manifest or source tree — which may
@@ -272,7 +271,7 @@ func droppedPackOrphans(man, composed *hostskills.Manifest, candidates []*packlo
 		}
 		for dest, owner := range m.Entries {
 			recorded[dest] = true
-			if configured[owner] {
+			if owner == hostskills.GeneratedOwner || configured[owner] {
 				continue
 			}
 			// Namespaced is read off the PATH, not inferred from which record named it. The

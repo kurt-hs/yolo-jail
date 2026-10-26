@@ -28,12 +28,7 @@ package cli
 // Steps 1 and 2 must not run in observe: a dry run writes nothing, so there is nothing to
 // confirm, and the migration is reported as `would move` instead.
 //
-// The two host-notch decisions that predate composition and survive it:
-//
-//   - Built-ins are NOT written to a real home. yolo's own skills (configuring-the-jail,
-//     diagnosing-the-jail) are about being inside a jail; on the host they
-//     are noise at best and misleading at worst. The jail still stages them as its layer 1.
-//   - The user's OWN skills tree is not a source. In a jail, PrepareSkills layers the host's
+// The user's OWN skills tree is not a source. In a jail, PrepareSkills layers the host's
 //     ~/.<agent>/skills in last so a local skill outranks a pack's. At the host that tree IS
 //     the destination — and since §6a-2 it is not a layer at all: it MOVES into the local pack,
 //     which is composed last and therefore holds exactly the precedence that layer used to.
@@ -46,7 +41,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/changetiming"
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostskills"
+	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -54,6 +52,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 	"github.com/mschulkind-oss/yolo-jail/internal/treedigest"
 )
+
+var renderHostBuiltinSkills = jailcontent.RenderBuiltinSkills
 
 // hostSkillsManifestPath is where the pre-composition PER-ENTRY provenance record lives. Under
 // the state dir (not the config dir) because it is yolo's own bookkeeping about what it did,
@@ -148,7 +148,7 @@ func localPackSkillsPath(home string) string {
 func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 	loaded, candidates []*packload.Pack, active, configured map[string]bool, complete bool,
 	home, stamp string, write bool, reload func() []*packload.Pack, lsp *jsonx.OrderedMap,
-	survey *hostApplySurvey) int {
+	userCfg *jsonx.OrderedMap, survey *hostApplySurvey) int {
 	composedPath := hostComposedSkillsManifestPath(home)
 	composed, err := hostskills.LoadManifest(composedPath)
 	if err != nil {
@@ -182,6 +182,14 @@ func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 
 	rc := 0
 	dests := hostskills.ComposeHostSkills(loaded, home)
+	generatedRoot, generatedCleanup, generatedOK := prepareHostBuiltinSkills(pr, userCfg, loaded, dests)
+	defer generatedCleanup()
+	if !generatedOK {
+		return 0
+	}
+	if generatedRoot != "" {
+		dests = addHostBuiltinLayer(dests, generatedRoot)
+	}
 	reportSkillDestinations(pr, dests)
 	// THE S1 REFUSAL, and it comes BEFORE the adoption gate rather than after. Two packs both
 	// claiming one skill NAME at an unnamespaced destination is fatal, so nothing this apply
@@ -272,6 +280,9 @@ func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 						active[p.Name], configured[p.Name] = true, true
 					}
 					dests = hostskills.ComposeHostSkills(loaded, home)
+					if generatedRoot != "" {
+						dests = addHostBuiltinLayer(dests, generatedRoot)
+					}
 					// RE-CHECKED, because the pack set just changed: the migration created the
 					// local pack, whose freshly-adopted skill can share a name with a shared
 					// pack's. Refusing here leaves the migrated content where it is — in the local
@@ -329,6 +340,121 @@ func applyHostSkills(pr richtext.Printer, out io.Writer, stdin io.Reader,
 		}
 	}
 	return rc
+}
+
+func addHostBuiltinLayer(dests []hostskills.Destination, root string) []hostskills.Destination {
+	for i := range dests {
+		dests[i].Layers = append(dests[i].Layers, hostskills.Layer{
+			Pack: "yolo built-in skills", Generated: true,
+			Sources: []string{filepath.Join(root, fmt.Sprintf("destination-%d", i))},
+		})
+	}
+	return dests
+}
+
+// prepareHostBuiltinSkills materializes the generated host suite as the final composition layer.
+// On a render error it snapshots the prior generated trees instead, so the normal ownership and
+// retirement lifecycle leaves the last successful suite in place.
+func prepareHostBuiltinSkills(pr richtext.Printer, userCfg *jsonx.OrderedMap, packs []*packload.Pack,
+	dests []hostskills.Destination) (string, func(), bool) {
+	workspace, _ := os.Getwd()
+	if resolved, err := filepath.EvalSymlinks(workspace); err == nil {
+		workspace = resolved
+	}
+	facts := jailcontent.FactSheet{
+		Host: true, HostWorkspace: workspace, WorkspacePath: workspace,
+		UserConfigPath: paths.UserConfigPath(), LogPath: run.HostLaunchLogPath(),
+		SkillsDelivery: "the generated suite and selected packs are composed by `yolo host apply`",
+	}
+	if userCfg != nil {
+		for _, key := range userCfg.Keys() {
+			if row, err := changetiming.Classify(key, changetiming.Context{Backend: changetiming.Host}); err == nil {
+				facts.Timing = append(facts.Timing, row)
+			}
+		}
+	}
+	for _, pack := range packs {
+		if pack != nil {
+			facts.Packs = append(facts.Packs, pack.Name)
+		}
+	}
+	files, renderErr := renderHostBuiltinSkills(facts)
+	root, err := os.MkdirTemp("", "yolo-host-skills-")
+	if err != nil {
+		pr.Printf("  [yellow]⚠ skills: generated host suite unavailable (%v); keep the previous suite and rerun `yolo host apply`[/yellow]", err)
+		return "", func() {}, false
+	}
+	if renderErr != nil {
+		pr.Printf("  [yellow]⚠ skills: could not render generated host suite (%v); keeping the previous suite. Fix the renderer/build and rerun `yolo host apply`.[/yellow]", renderErr)
+		for i, dest := range dests {
+			target := filepath.Join(root, fmt.Sprintf("destination-%d", i))
+			preserved := true
+			for _, name := range []string{"configuring-the-jail", "diagnosing-the-jail", "jail-mechanics"} {
+				if err := copyHostSkillTree(filepath.Join(dest.Dir, name), filepath.Join(target, name)); err != nil && !os.IsNotExist(err) {
+					pr.Printf("  [yellow]⚠ skills: could not preserve prior %s suite: %v[/yellow]", name, err)
+					preserved = false
+				}
+			}
+			if !preserved {
+				return root, func() { _ = os.RemoveAll(root) }, false
+			}
+		}
+	} else {
+		for i := range dests {
+			target := filepath.Join(root, fmt.Sprintf("destination-%d", i))
+			for rel, body := range files {
+				if filepath.IsAbs(rel) || strings.HasPrefix(filepath.Clean(rel), ".."+string(filepath.Separator)) || filepath.Clean(rel) == ".." {
+					pr.Printf("  [yellow]⚠ skills: invalid generated path %q; keeping the previous suite. Rerun `yolo host apply` after fixing the renderer.[/yellow]", rel)
+					return root, func() { _ = os.RemoveAll(root) }, false
+				}
+				path := filepath.Join(target, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					pr.Printf("  [yellow]⚠ skills: could not stage generated suite (%v); keeping the previous suite. Rerun `yolo host apply`.[/yellow]", err)
+					return root, func() { _ = os.RemoveAll(root) }, false
+				}
+				if err := os.WriteFile(path, body, 0o644); err != nil {
+					pr.Printf("  [yellow]⚠ skills: could not stage generated suite (%v); keeping the previous suite. Rerun `yolo host apply`.[/yellow]", err)
+					return root, func() { _ = os.RemoveAll(root) }, false
+				}
+			}
+		}
+	}
+	return root, func() { _ = os.RemoveAll(root) }, true
+}
+
+// copyHostSkillTree preserves a prior generated skill tree for the renderer-failure fallback.
+func copyHostSkillTree(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(dst, rel)
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+				return err
+			}
+			return os.Symlink(target, to)
+		}
+		if info.IsDir() {
+			return os.MkdirAll(to, info.Mode().Perm())
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(to, data, info.Mode().Perm())
+	})
 }
 
 // reportSkillAdoptions names every entry about to become yolo-owned and what becomes of it.

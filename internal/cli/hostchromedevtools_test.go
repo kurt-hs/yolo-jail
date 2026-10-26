@@ -43,7 +43,21 @@ func hostApplyAssert(t *testing.T) string {
 	return out.String() + errw.String()
 }
 
+func hostConfigNamesJailHome(raw []byte, hostHome string) bool {
+	// Under the verification TMPDIR, hostHome itself can start with the same literal the jail
+	// uses. Ignore that exact host root and catch only a separate jail-home reference.
+	return strings.Contains(strings.ReplaceAll(string(raw), filepath.Clean(hostHome), ""), "/home/agent")
+}
+
 func TestYoloHostApplyWritesTheChromeDevtoolsServerForEveryAgent(t *testing.T) {
+	controlHome := filepath.Join("/home/agent", "tmp-host-home")
+	if hostConfigNamesJailHome([]byte(filepath.Join(controlHome, hostChromeWrapperRel)), controlHome) {
+		t.Fatal("the negative jail-home guard rejects a legitimate host wrapper under /home/agent")
+	}
+	if !hostConfigNamesJailHome([]byte("/home/agent/.claude/CLAUDE.md"), controlHome) {
+		t.Fatal("the negative jail-home guard missed a jail-only path under a host root in /home/agent")
+	}
+
 	home := hostComputedHome(t, chromeHostConfig(""))
 	dist := withTestFloor(t)
 	dist.Publish("chrome-devtools-mcp", "1.2.3", "bin=chrome-devtools-mcp")
@@ -66,10 +80,13 @@ func TestYoloHostApplyWritesTheChromeDevtoolsServerForEveryAgent(t *testing.T) {
 	}
 	for _, file := range []string{".claude.json", ".copilot/mcp-config.json", ".codex/config.toml"} {
 		raw, _ := os.ReadFile(filepath.Join(home, file))
-		for _, jailOnly := range []string{"--no-sandbox", "--headless", "/home/agent"} {
+		for _, jailOnly := range []string{"--no-sandbox", "--headless"} {
 			if strings.Contains(string(raw), jailOnly) {
 				t.Errorf("%s carries the jail-only %q at the host", file, jailOnly)
 			}
+		}
+		if hostConfigNamesJailHome(raw, home) {
+			t.Errorf("%s carries a jail-home path outside the host home %q: %s", file, home, raw)
 		}
 	}
 	if _, err := os.Stat(wrapper); err != nil {

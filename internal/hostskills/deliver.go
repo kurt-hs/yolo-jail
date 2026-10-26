@@ -186,10 +186,12 @@ type Request struct {
 	Pack string
 	// Description is the pack's description, written into the tier-A plugin manifest.
 	Description string
+	// Owner is the provenance identity recorded for this delivery. Usually it is Pack;
+	// generated core content uses a distinct identity that is not a configured pack.
+	Owner string
 	// Sources are the directories to read skills from, in precedence order (later wins on
-	// a same-named skill), each containing one subdir per skill. Built-ins are deliberately
-	// NOT included by the caller for a host render: yolo's own jail-oriented skills are
-	// noise in a real home.
+	// a same-named skill), each containing one subdir per skill. Host built-ins enter this
+	// same ownership-aware path as a distinct generated layer, not as a configured pack.
 	Sources []string
 	// SkipSources are absolute source paths to leave out even when they sit inside a Source.
 	// Today that means a WRAPPED PLUGIN's subtree (plugin.go): it is delivered verbatim as a
@@ -531,7 +533,11 @@ func ownedHere(req Request, dest string) bool {
 // The claim set is populated even in OBSERVE (a later layer must resolve the same way in both
 // postures); the record is not, since the caller only persists it after a real write.
 func claim(req Request, dest string) {
-	claimPath(req.Composed, req.Claimed, dest, req.Pack, req.Observe)
+	owner := req.Owner
+	if owner == "" {
+		owner = req.Pack
+	}
+	claimPath(req.Composed, req.Claimed, dest, owner, req.Observe)
 }
 
 // claimPath is claim over the fields rather than the Request, so the plugin delivery — whose
