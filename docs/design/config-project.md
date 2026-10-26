@@ -3,7 +3,7 @@ title: "A project's file: what it installs, what it asks for, and what it turns 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC17 (§1, the file's shape) and OQ-RC7 (§3, saying off with no null)"
+next: "Rule OQ-RC7 (§3, saying off with no null)"
 tags: [config, workspace, install, grants, mounts, design]
 summary: "The project config as annotated files, today and proposed: install, needs, mounts, ports, environment, and the local file. Each section ends with its question; a section with none is approved. Part of the readable-config redesign."
 ---
@@ -13,12 +13,10 @@ summary: "The project config as annotated files, today and proposed: install, ne
 **Status:** 2026-10-25. Nothing is built. The "today" files are this repository's and a composite
 team project's.
 
-**How to read this.** [§1](#1-the-file) is the file and ends with the question that approves its
-shape; [§2](#2-no-file-at-all) is approved already; [§3](#3-the-local-file-and-turning-something-off)
-ends with the one question about spelling "off".
+**How to read this.** [§1](#1-the-file) is the file, approved; [§2](#2-no-file-at-all) is approved;
+[§3](#3-the-local-file-and-turning-something-off) ends with the one question about spelling "off".
 
-**Needs your ruling:** [OQ-RC17](#OQ-RC17) in [§1](#1-the-file), [OQ-RC7](#OQ-RC7) in
-[§3](#3-the-local-file-and-turning-something-off).
+**Needs your ruling:** [OQ-RC7](#OQ-RC7) in [§3](#3-the-local-file-and-turning-something-off).
 
 > **In short.** A project file says what the project needs, inside what your own config allows,
 > and most projects need no file at all.
@@ -77,15 +75,14 @@ Today:
 Proposed:
 
 ```toml
+mounts = [                                # read-only unless `write = true`, which only your config may say
+  "~/code/acme-shared",                   # a bare path lands at /ctx/acme-shared, as today
+  { host = "~/x", at = "/ctx/x" },        # one list; an entry is a path or a table
+]
+
 [install]
 nix = ["postgresql", "just"]
 mise = { node = "22", python = "3.12" }   # "3.12" stays a string
-
-mounts = ["~/code/acme-shared"]           # read-only; a bare path with no colon is still legal
-
-[[mounts]]
-host = "~/x"
-at = "/ctx/x"                             # read-only unless `write = true`, which only your config may say
 
 [machine]
 gpu = true                                # warns and starts without one on a machine that has none
@@ -106,7 +103,10 @@ new_branches = true                       # branches of its own, never main; eac
 ```
 
 A direction is a key, not a position in a string: `{ host = 8000, jail = 8000 }` where today's
-`"8000:8000"` and `forward_host_ports` run opposite ways. A project requests; your config says
+`"8000:8000"` and `forward_host_ports` run opposite ways. `mounts` is one top-level list and sits
+before the first section, because in TOML a bare key after `[install]` belongs to `install`; TOML
+also spells an array of tables as `[[mounts]]` blocks, the same key, but a file may use only one
+spelling for it, so the table entry above is written inline. A project requests; your config says
 what may be requested. A request outside that is not an error: two people on one repository may
 allow different things, so the one who does not sees it reported and skipped, and the jail runs
 without it:
@@ -121,29 +121,10 @@ Nothing that decides where inference goes or what a jail may do with your logins
 here, because this file is the agent's to edit; `yolo check` refuses such a key naming the file
 it belongs in.
 
-1. 💬 <a id="OQ-RC17"></a>**OQ-RC17: Is the project file's shape approved?**
-
-   An agent in a jail opens the project's file to add a tool, or a teammate opens it to see what
-   the project needs. Today they meet 121 lines of template comments around 12 live ones, two
-   port lists that run in opposite directions, a mount string that is parsed on colons, and a
-   `brokered` block. The file above is the proposal, section by section; each can be vetoed
-   alone.
-
-   ```toml
-   [install]          # nix and mise, where today's packages and mise_tools were
-   mounts / [[mounts]] # a bare path, or a table with host and at
-   [machine]          # gpu, resources, ports, forward, where today's four top-level keys were
-   [env]              # files, set, unset, where today's one mixed list was
-   [requests.*]       # what this project requests, from your allow's on_request list
-   ```
-
-   <!-- vantage: question id=OQ-RC17 leaning="Approve: each section names what the project decides, and the two string traps become keys." -->
-
-   _Leaning:_ Approve: each section names what the project decides, and the two string traps
-   become keys.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+Approved 2026-10-25 ([OQ-RC17](readable-config.md#decision-ledger)): *"each section names what
+the project decides, and the two string traps become keys."* The mount lines were corrected in the
+same round, from a bare `mounts` that had landed under `[install]` and a second spelling of the
+same key, to the one list above.
 
 ## 2. No file at all
 
