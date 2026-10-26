@@ -142,7 +142,7 @@ working on a Mac.
 
 **Decision:** whether yolo ships a fail-fast `security` shim on the PATH of the Claude it starts on
 macOS, generated as the blockers are. Which commands it should fail is below, under [what a
-fix needs](#what-a-fix-needs).
+fix needs](#what-a-fix-needs-four-follow-up-measurements-2026-10-25).
 
 ### 4. A host `/login` with the view on goes to the Keychain (H4)
 
@@ -163,7 +163,7 @@ names for H1, met here on the save side.
 Before the `/login`, with the store empty, the session's banner read `API Usage Billing`, so it had
 found some other credential. Which one was not traced.
 
-That entry is still in the maintainer's login keychain. This session did not delete it.
+That entry then shadowed the host view (follow-up test 2) and was deleted, with the maintainer's approval.
 
 **Decision:** whether the host enrollment line is wrong on macOS, or yolo should enroll from that
 Keychain entry.
@@ -181,19 +181,49 @@ requires `!st.missing && st.root != nil && st.oauth == nil`, a file that remains
 **Decision:** whether a view that the broker wrote and later found missing counts as a `/logout`
 on darwin.
 
-## What a fix needs
+## What a fix needs: four follow-up measurements, 2026-10-25
 
-The shim answers defect 3 as measured. The questions it leaves are unmeasured:
+All four ran at `482763948`, with no yolo code changed.
 
-- **Where.** Account mode needs it, and the measurement is above. Self mode's profile denies the
-  Keychain already, so whether `security` fails fast or hangs there is untested. On the host
-  (defect 4) the Keychain works, so `add-generic-password` succeeds and Claude never reaches the
-  file. A host shim would have to fail writes on purpose.
-- **Reads.** H4 left a `Claude Code-credentials-5d0efea8` entry in the maintainer's Keychain, named
-  for the host store. Whether Claude reads that entry before the store's file was not measured. H1
-  ran before the entry existed. If Claude reads it first, a host shim must also make
-  `find-generic-password` for that service report "not found", or a stale Keychain login shadows
-  the view.
+| # | Question | Result |
+| :- | :--- | :--- |
+| 1 | Does `security add-generic-password` hang in **self** mode? | **No.** It fails in 1 s, exit 152 (*"Unable to obtain authorization for this operation"*). That is a non-transient failure, which Claude follows with its file fallback. |
+| 2 | Does the host store's Keychain entry shadow the host view? | **Yes.** With a wrong token in the store's file, host Claude (`CLAUDE_SECURESTORAGE_CONFIG_DIR` at the store) still answered `ok`, from `Claude Code-credentials-5d0efea8`. Claude reads that entry first, and the file only when there is none. H1 passed only because the entry did not exist yet. |
+| 3 | Does a self-mode `/login` enroll through the view, with **no** shim? | **Yes**, with `CLAUDE_CODE_TMPDIR=$TMPDIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR=$HOME/claude` (defects 1 and 2): `enrollment: adopted the /login in …/cv-mac-self/… (rt 77250749 -> 556088b1)`, and the view stripped. |
+| 4 | Does a host `/login` enroll through the view with a read and write shim? | **Yes.** See below. |
+
+Between tests 2 and 4, the stale `Claude Code-credentials-5d0efea8` entry was deleted, with the
+maintainer's approval.
+
+**Test 4's shim** was first on the PATH of `yolo host -- claude`, and the PATH prefix survives the
+launch. For any service named `Claude Code-credentials-*`:
+
+- `find-generic-password` and `delete-generic-password` report "could not be found" (exit 44);
+- `add-generic-password`, in both forms, fails with "A default keychain could not be found"
+  (exit 50).
+
+Everything else goes to `/usr/bin/security`, so the maintainer's own `Claude Code-credentials`
+entry still answers.
+
+**Test 4's result:** host Claude started as `Claude Team` from the view. A `/login` in the session
+logged two `add-generic-password … -s "Claude Code-credentials-5d0efea8"` attempts, both refused,
+then saved to the store's file:
+
+```text
+enrollment: adopted the /login in …/host-agents/claude/.credentials.json as the machine's login (rt 4f2fbde1 -> b19a5542, at -> dbd3eb36)
+```
+
+No Keychain entry was created, and the session answered `say ok` afterwards. Claude also looked up
+`Claude Code-5d0efea8` (no `-credentials`, apparently an API-key slot); the shim passed that
+through, and no such entry exists.
+
+**What a fix covers, as measured:**
+
+- **Account mode:** a `security` shim that fails writes fast. A shim that hides reads is untested
+  there and probably unnecessary, because `_yolojail` has no keychain to read.
+- **Self mode:** no shim, but defects 1 and 2: Claude's temp dir, and pointing the store at the view.
+- **Host with the view on:** a shim that hides both reads and writes for the store's
+  `Claude Code-credentials-<hash>` service, and leaves the user's own entry alone.
 - **`/logout`** (defect 5) is the broker's to fix, not the shim's. Claude deletes the file, so the
   broker has to read a missing file it once wrote as a sign-out.
 
@@ -238,7 +268,7 @@ The shim answers defect 3 as measured. The questions it leaves are unmeasured:
 
 - `~/.local/bin/yolo` is a deployed launcher at `482763948`. It was the **dev** launcher before
   this session; `just deploy-dev` restores that.
-- The Keychain entry `Claude Code-credentials-5d0efea8` from H4.
+- The Keychain entry `Claude Code-credentials-5d0efea8` from H4 was deleted after the follow-up test 2, with the maintainer's approval.
 - The machine's shared login is restored through a podman-jail `/login`
   ([below](#the-machines-login-afterwards)).
 - Test workspaces `/Users/Shared/yolo/cv-mac`, `cv-mac-self`, `cv-mac-a`, `cv-mac-b`,
