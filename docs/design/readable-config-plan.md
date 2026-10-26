@@ -689,21 +689,31 @@ caches. No env override is used for ordinary focused gates. Automated test harne
 normal temporary fixture HOME/workspace directories; this does not relax the developer's manual
 matched-build fence below.
 
-**Final combined gate:** Root grants one serial activation lease only after committed handoffs,
-source equality with the 91f3 HIGH-reviewed foundation, and a clean integrated tree. The targeted
-HIGH review already passed on that source; do not replay it. No whole-tree or completion gate runs
-before the lease. The combined integration suite runs once on final activation. Root's `just done`
-completion receipt remains owed after main landing: run `env -u TMPDIR -u NODE_OPTIONS just done`
-once on the clean landed candidate, record the commands it actually selects, and retain its output.
-If full `check-ci` has already run on this exact candidate, do not repeat it. If `just done` selects
-only a completion subset and full `check-ci` has not already run on this candidate, also run
-`env -u TMPDIR -u NODE_OPTIONS just check-ci` once. Inspect observed output; do not speculate or
-prohibit both commands. Preserve ordinary HOME and shared-cache defaults; remove TMPDIR/NODE_OPTIONS
-only for the authorized final completion invocations.
+**Current foundation+docs checkpoint (this handoff):** Root grants the serial lease for this
+checkpoint only after committed handoffs, source equality with the 91f3 HIGH-reviewed foundation and
+a clean candidate; that HIGH review is complete and must not be replayed. This source-equality and
+review evidence do not predicate the future full-redesign activation tree, which will include later
+accepted changes, and are not perpetual review certification. Only after Root grants the lease, run
+`env -u TMPDIR -u NODE_OPTIONS just done` once on the clean candidate before handing it to Root for
+main landing; record the commands actually selected and retain the output. If `just done` selects only
+a completion subset and full `check-ci` has not already run on this exact candidate, also run
+`env -u TMPDIR -u NODE_OPTIONS just check-ci` once. If `just done` selects full `check-ci`, do not
+duplicate it. Preserve ordinary HOME and shared-cache defaults; remove TMPDIR/NODE_OPTIONS only for
+these authorized completion invocations.
+
+**Future final combined activation gate:** Root grants one serial activation lease only after committed
+handoffs and a clean integrated tree; no fixed equality with 91f3 or additional paid HIGH review is
+required. Run `env -u TMPDIR -u NODE_OPTIONS just check-ci` and the combined integration suite once on
+the final activation tree. Root's separate `just done` completion receipt remains owed after main
+landing: run `env -u TMPDIR -u NODE_OPTIONS just done` once on the clean landed candidate, record the
+commands it actually selects, and retain its output. No whole-tree or completion gate runs before the
+lease. Preserve ordinary HOME and shared-cache defaults; remove TMPDIR/NODE_OPTIONS only for the
+authorized completion invocations.
 
 ```bash
-# Root-authorized final activation only, on the clean integrated candidate.
-# Run the combined slow suite once; targeted integration cases run by their owner.
+# Root-authorized future final activation only, on the clean integrated candidate.
+# Mandatory landing gates: whole-tree check-ci and combined slow suite once; targeted integration cases run by their owner.
+env -u TMPDIR -u NODE_OPTIONS just check-ci
 go test -count=1 -timeout 0 ./integration
 # Manual matched-bundle build: preserve normal HOME/shared Go caches; use durable paths.
 mkdir -p /workspace/.yolo/durable/readable-config/tmp /workspace/.yolo/durable/readable-config/bundle-home
@@ -716,8 +726,6 @@ uvx vantage-check index
 scripts/vantage-check.sh userguide/
 # Root-owned completion receipt after main landing; record commands selected:
 env -u TMPDIR -u NODE_OPTIONS just done
-# If this selected only a completion subset and full check-ci has not run on this candidate:
-env -u TMPDIR -u NODE_OPTIONS just check-ci
 ```
 
 - Builders run only integration tests reading their seam, e.g. packs/packfetch/profiles_options/
