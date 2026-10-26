@@ -75,22 +75,20 @@ Today, 56 lines: three programs with five install hints each, a files entry, an 
   "config": { "managed": { "fileSuggestion": { "type": "command", "command": "~/.claude/bin/file-suggestion.sh" } } } }
 ```
 
-Proposed, `pack.toml`, 14 lines, with `bin/` moved to `home/.claude/bin/`:
+Proposed, `pack.toml`, with `bin/` moved to `home/.claude/bin/`:
 
 ```toml
 description = "Matt's fd|fzf custom file finder for Claude Code's @-file completion."
 
 [[program]]
 bin = "fd"
-install = { default = "fd", apt = "fd-find", dnf = "fd-find" }   # the package name every manager gets, and the two that differ
+install = { apt = "fd-find", dnf = "fd-find" }   # the package is the bin name unless a manager differs
 
 [[program]]
-bin = "fzf"
-install = "fzf"
+bin = "fzf"                                      # no install line: every manager calls it fzf
 
 [[program]]
 bin = "jq"
-install = "jq"
 
 [[overlay]]
 surface = "claude/settings"
@@ -157,8 +155,10 @@ writes its own file from these rows.
 
 Approved 2026-10-25, all six levers ([OQ-RC19](readable-config.md#decision-ledger)): *"the four
 smallest packs become folders, and the two largest keep every fact in a fifth of the lines."* The
-install hint's `default` key was named in the same round, from `all` (*"what does all mean
-here?"*): it is the package name every manager gets, beside the managers that differ.
+install hint was settled in the same round (*"what does all mean here?"* … *"I like default, not
+all, and then also have it just default to the bin name if not given"*): the package name is the
+bin name unless written; `install = "ripgrep"` names it for every manager, and a table names only
+the managers that differ, with `default` for the rest.
 
 ## 5. The migration
 
@@ -183,7 +183,7 @@ beside `yolo config migrate`, and a later release reads only the new ones
 3. **A contribution states only what it changes.** Lists add and objects merge; `replace = true`
    says otherwise.
 4. **A model is declared once, in yolo's shape, for every agent.**
-5. **The obvious is not written.** One install hint when every manager agrees; `codec` from the
+5. **The obvious is not written.** No install hint when the package is the bin name; `codec` from the
    extension; `scope = "workspace"` and `run = bin` as defaults. Shipped packs keep the
    per-manager form, which keeps the test that every shipped hint cites its source.
 6. **A pack is named by where it comes from**, never by its manifest
@@ -236,7 +236,7 @@ more repetitive; the prose baseline is `what-yolo-is.md` cut to the same size.
 | `meta-muse`'s six model rows | 2,608 | **0.18** | — |
 
 The small packs are not repetitive; their trouble is per-line noise. The repetition is the
-extension copies and the model rows. Before and after: `matt-fzf` 56 → 14 lines; the 25
+extension copies and the model rows. Before and after: `matt-fzf` 56 lines → the file in [§2](#2-a-pack-with-programs-matt-fzf); the 25
 extension copies 127 → 30 as a list entry, or 0 under `home/`; `matt` whole 15,264 minified
 bytes → 5,315 with P1 and P2. The ratio cannot be the target: a reshaped file compresses *worse*
 because the repeats gzip was discarding are gone, so the scorecard is lines a person reads, facts
