@@ -3,9 +3,9 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: in-review
 stage: DESIGN
-next: "Rule OQ-RC8 (§5, a fetched pack in the old format)"
+next: "Every question is ruled; the build hand-off is the implementation plan seeded in readable-config-plan.md"
 tags: [config, migration, versioning, release, design]
-summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Each section ends with its question. Part of the readable-config redesign."
+summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Every section is ruled. Part of the readable-config redesign."
 ---
 
 # Moving to the new config: the file name is the version, and one command converts everything
@@ -14,10 +14,8 @@ summary: "How a yolo knows which config it has, the order of releases, what `yol
 leanings.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-how-a-yolo-knows-which-config-it-has)
-to [§4](#4-what-yolo-config-migrate-does) are approved; [§5](#5-every-case) ends with the one
-question left.
-
-**Needs your ruling:** [OQ-RC8](#OQ-RC8) in [§5](#5-every-case).
+to [§5](#5-every-case) are approved. Nothing here is open; the rulings are in the
+[ledger](readable-config.md#decision-ledger).
 
 > **In short.** `config.toml` beside no `config.jsonc` is the whole version scheme for this move.
 > The next release reads both formats, and keeps the old reader for a few releases; it offers the
@@ -203,35 +201,16 @@ that deletes a file it does not convert is code written for nobody.
 - **The repository's own references:** over 400 Go files name the old file names, and only the
   workspace name has a constant; one fixture helper is what stops the next format change from
   touching 400 files (in the seed).
-- **A fetched pack in the old format:** the one case left open.
+- **A fetched pack in the old format**, once the old reader is gone: refused, naming the two ways
+  forward; there is one reader. Ruled 2026-10-25 ([OQ-RC8](readable-config.md#decision-ledger)):
+  *"This is fine because I think I'm the only one that has any packs that could be shared, and I
+  will be converting them immediately."*
 
-1. 💬 <a id="OQ-RC8"></a>**OQ-RC8: What happens to a pack fetched from someone else's repository that still has an old `pack.json`?**
-
-   A colleague publishes a pack on GitHub and you list it. The old reader goes
-   ([§3](#3-the-order-of-releases) step 2) and the colleague has not migrated. Today the one
-   fetched pack in your list, `matt-craft`, has no manifest at all, so it is unaffected; a
-   colleague's pack would be.
-
-   ```console
-   # A  yolo keeps the old-manifest reader past the window, for fetched packs only, converting in memory
-   $ yolo
-   acme/tools: pack.json read in compatibility mode; ask its author to run `yolo pack migrate`.
-
-   # B  refuse, naming the two ways forward; one reader
-   $ yolo
-   acme/tools (https://github.com/acme/tools) has a pack.json this yolo no longer reads.
-     Ask its author to run `yolo pack migrate`, or fork it and run that yourself. Nothing was started.
-
-   # C  B, after one release of A with a warning
-   ```
-
-   <!-- vantage: question id=OQ-RC8 leaning="B: one reader; no fetched pack in use today has a manifest, and the refusal names both ways forward." -->
-
-   _Leaning:_ B: one reader; no fetched pack in use today has a manifest, and the refusal names
-   both ways forward.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+  ```console
+  $ yolo
+  acme/tools (https://github.com/acme/tools) has a pack.json this yolo no longer reads.
+    Ask its author to run `yolo pack migrate`, or fork it and run that yourself. Nothing was started.
+  ```
 
 ## 6. Principles
 

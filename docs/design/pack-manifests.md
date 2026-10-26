@@ -191,7 +191,8 @@ writes its own file from these rows.
 `yolo pack migrate <path>` rewrites the manifest, keeps comments as the config migration does,
 moves plain-copy `files` entries into `home/` or a pi package folder, and uses `git mv` in a
 checkout, so history follows. A local pack in the old format is refused naming the command; a
-fetched one is [OQ-RC8](config-migration.md#OQ-RC8). A yolo of 0.11.1 or earlier refuses any new
+fetched one is refused once the old reader is gone, naming the author's migration and the fork
+([OQ-RC8](readable-config.md#decision-ledger)). A yolo of 0.11.1 or earlier refuses any new
 manifest field outright, so a new manifest shape is a new file name however it is done.
 
 1. 💬 <a id="OQ-RC5"></a>**OQ-RC5: Should pack manifests change in the same breaking change as the configs?**
