@@ -17,14 +17,14 @@ const readableConfigFormat = 2
 
 // loadConfigFile dispatches by the selected filename. Legacy JSONC/JSON reads stay on their
 // existing decoder and error path; TOML goes through the shared positioned document contract.
-func loadConfigFile(path, label string, strict bool, warn Warn, record bool, at readAt) (*jsonx.OrderedMap, *srcFile, *srcNode, error) {
+func loadConfigFile(path, label string, strict bool, warn Warn, record bool, scope SchemaScope, at readAt) (*jsonx.OrderedMap, *srcFile, *srcNode, error) {
 	if strings.EqualFold(filepath.Ext(path), ".toml") {
-		return loadTOMLConfigFile(path, label, strict, warn, record, at)
+		return loadTOMLConfigFile(path, label, strict, warn, record, scope, at)
 	}
 	return loadJSONCFile(path, label, strict, warn, record, at)
 }
 
-func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool, at readAt) (*jsonx.OrderedMap, *srcFile, *srcNode, error) {
+func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool, scope SchemaScope, at readAt) (*jsonx.OrderedMap, *srcFile, *srcNode, error) {
 	if warn == nil {
 		warn = defaultWarn
 	}
@@ -45,6 +45,9 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 		return nil, nil, nil, err
 	}
 	if err := consumeReadableFormat(doc.Values, label); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := validateReadableTOML(doc.Values, scope, label, doc.Index); err != nil {
 		return nil, nil, nil, err
 	}
 	file := &srcFile{path: path, data: data, format: configdoc.TOML, document: doc,
@@ -169,11 +172,11 @@ func loadUserConfigFragments(dir string, strict bool, warn Warn, seen map[string
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		fragment, node, loadErr := loadWithIncludes(path, path, strict, warn, seen, record, readAt{})
+		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{})
 		if loadErr != nil {
 			return nil, nil, loadErr
 		}
-		merged, mergedNode = mergeConfig(merged, fragment, mergedNode, node)
+		merged, mergedNode = mergeReadableConfig(merged, fragment, mergedNode, node, nil)
 	}
 	return merged, mergedNode, nil
 }
@@ -183,6 +186,6 @@ func mergeUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir str
 	if err != nil {
 		return nil, nil, err
 	}
-	merged, node := mergeConfig(base, fragments, baseNode, fragmentNode)
+	merged, node := mergeReadableConfig(base, fragments, baseNode, fragmentNode, nil)
 	return merged, node, nil
 }
