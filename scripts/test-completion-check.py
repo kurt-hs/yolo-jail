@@ -417,6 +417,208 @@ def load_census():
 
 
 class Census(unittest.TestCase):
+    def git_fixture(self, with_git=True, ignore=".yolo/\n"):
+        temp = Path(tempfile.mkdtemp(prefix="completion-census-source-test-")).resolve()
+        self.addCleanup(shutil.rmtree, temp, True)
+        root = temp / "repo"
+        root.mkdir()
+        (root / "pkg").mkdir()
+        (root / "pkg" / "pkg_test.go").write_text("package pkg\n")
+        real = root / "internal" / "cli" / "run"
+        real.mkdir(parents=True)
+        (real / "tracked.json").write_text("{}\n")
+        docs = root / "docs"
+        docs.mkdir()
+        (docs / "config.json").write_text("{}\n")
+        if with_git:
+            (root / ".gitignore").write_text(ignore)
+            subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Fixture"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "fixture@example.invalid"], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "fixture"], check=True)
+        census = load_census()
+        previous_root = census.ROOT
+        census.ROOT = root
+        self.addCleanup(setattr, census, "ROOT", previous_root)
+        return census, root
+
+    def test_ignored_generated_directory_entries_do_not_become_reader_dependencies(self):
+        census, root = self.git_fixture()
+        transient = root / "internal" / "cli" / "run" / ".yolo"
+        transient.mkdir()
+        (transient / ".gitignore").write_text("*\n")
+        (transient / "housekeeping.log").write_text("generated during another test\n")
+        log = "\n".join([
+            f"open {transient / '.gitignore'}",
+            f"open {transient}",  # A testlog open of a directory records ReadDir membership.
+            f"open {transient / 'housekeeping.log'}",
+            f"stat {transient}",
+            f"stat {transient.parent}",
+            f"open {transient.parent / 'tracked.json'}",
+            f"stat {root / 'docs'}",
+            f"open {root / 'docs' / 'config.json'}",
+        ])
+        opened, listed, stats = census.parse_log(log, root / "pkg", {"pkg"})
+        self.assertEqual(opened, {"internal/cli/run/tracked.json", "docs/config.json"})
+        self.assertEqual(listed, {"internal/cli/run", "docs"})
+        self.assertEqual(stats, set())
+
+    def test_child_only_ignore_rules_preserve_real_directory_and_gitignore_dependencies(self):
+        census, root = self.git_fixture(ignore="")
+        transient = root / "internal" / "cli" / "run" / ".yolo"
+        transient.mkdir()
+        ignore_file = transient / ".gitignore"
+        ignore_file.write_text("*\n")
+        parent = transient.parent
+        prefix = "\n".join([
+            f"open {ignore_file}",
+            f"open {transient}",  # A testlog open of a directory records ReadDir membership.
+            f"stat {transient}",
+            f"stat {parent}",
+            f"open {parent / 'tracked.json'}",
+        ])
+        before = census.parse_log(prefix, root / "pkg", {"pkg"})
+        housekeeping = transient / "housekeeping.log"
+        housekeeping.write_text("ignored by the nested .gitignore\n")
+        after = census.parse_log(prefix + f"\nopen {housekeeping}", root / "pkg", {"pkg"})
+        self.assertEqual(after, before)
+        opened, listed, stats = after
+        self.assertEqual(opened, {"internal/cli/run/tracked.json"})
+        self.assertEqual(listed, {"internal/cli/run"})
+        self.assertEqual(stats, set())
+
+    def test_force_tracked_file_under_ignored_name_remains_a_reader_dependency(self):
+        census, root = self.git_fixture()
+        tracked = root / "internal" / "cli" / "run" / ".yolo"
+        tracked.mkdir()
+        (tracked / "keep.json").write_text("tracked despite ignore\n")
+        subprocess.run(["git", "-C", str(root), "add", "-f", "internal/cli/run/.yolo/keep.json"], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "force tracked ignored file"], check=True)
+        (tracked / "keep.json").unlink()  # Cached tracking preserves an observed absence too.
+        log = f"open {tracked / 'keep.json'}\nstat {tracked}"
+        opened, listed, _ = census.parse_log(log, root / "pkg", {"pkg"})
+        self.assertEqual(opened, {"internal/cli/run/.yolo/keep.json"})
+        self.assertEqual(listed, {"internal/cli/run/.yolo"})
+
+    def test_missing_nonignored_optional_path_remains_a_dependency(self):
+        census, root = self.git_fixture()
+        missing = root / "internal" / "cli" / "optional" / "config.json"
+        opened, listed, stats = census.parse_log(
+            f"stat {missing}", root / "pkg", {"pkg"})
+        self.assertEqual(opened, set())
+        self.assertEqual(listed, set())
+        self.assertEqual(stats, {"internal/cli/optional/config.json"})
+
+    def test_nonignored_untracked_dependency_is_preserved(self):
+        census, root = self.git_fixture()
+        visibility = census.GitVisibility(root)  # The actual collector snapshots before tests run.
+        untracked = root / "assets"
+        untracked.mkdir()
+        (untracked / "local.json").write_text("visible untracked dependency\n")
+        opened, listed, _ = census.parse_log(
+            f"open {untracked / 'local.json'}\nstat {untracked}", root / "pkg", {"pkg"}, visibility)
+        self.assertEqual(opened, {"assets/local.json"})
+        self.assertEqual(listed, {"assets"})
+
+    def test_non_git_archive_keeps_conservative_directory_coverage(self):
+        census, root = self.git_fixture(with_git=False)
+        ignored_like = root / "pkg" / ".yolo"
+        ignored_like.mkdir()
+        (ignored_like / "housekeeping.log").write_text("archive has no ignore authority\n")
+        opened, listed, _ = census.parse_log(
+            f"open {ignored_like / 'housekeeping.log'}\nstat {ignored_like}", root / "other", set())
+        self.assertEqual(opened, {"pkg/.yolo/housekeeping.log"})
+        self.assertEqual(listed, {"pkg/.yolo"})
+
+    def test_git_inventory_errors_fail_closed(self):
+        from unittest import mock
+        census, root = self.git_fixture()
+        failed = subprocess.CompletedProcess([], 128, stdout=b"", stderr=b"bad Git index")
+        with mock.patch.object(census.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(census.CensusError, "Git source inventory failed"):
+                census.GitVisibility(root)
+
+    def test_go_package_and_import_loading_errors_are_actionable(self):
+        from unittest import mock
+        census = load_census()
+        with mock.patch.object(census, "package_patterns", side_effect=RuntimeError("bad module graph")):
+            with self.assertRaisesRegex(census.CensusError, "repair the Go package graph.*rerun scripts/completion-census.py"):
+                census.go_packages()
+        failure = subprocess.CalledProcessError(1, ["go", "list"], stderr=b"missing import")
+        with mock.patch.object(census, "package_patterns", return_value=["./pkg"]), \
+             mock.patch.object(census.subprocess, "check_output", side_effect=failure):
+            with self.assertRaisesRegex(census.CensusError, "go list failed.*missing import") as caught:
+                census.go_packages()
+            self.assertIn("rerun scripts/completion-census.py", str(caught.exception))
+
+    def test_test_listing_failures_and_timeouts_are_fatal(self):
+        from unittest import mock
+        census = load_census()
+        failed = subprocess.CompletedProcess([], 23, stdout="", stderr="list failed")
+        with mock.patch.object(census.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(census.CensusError, "Go test listing failed"):
+                census.list_tests(Path("fixture.test"), Path.cwd())
+        with mock.patch.object(census.subprocess, "run", side_effect=subprocess.TimeoutExpired("list", 2)):
+            with self.assertRaisesRegex(census.CensusError, "timed out"):
+                census.list_tests(Path("fixture.test"), Path.cwd())
+
+    def test_test_failures_and_timeouts_are_fatal(self):
+        from unittest import mock
+        census = load_census()
+        failed = subprocess.CompletedProcess([], 23, stdout="", stderr="assertion failed")
+        with mock.patch.object(census.subprocess, "run", return_value=failed):
+            with self.assertRaisesRegex(census.CensusError, "Go test fixture TestFixture failed"):
+                census.run_test(Path("fixture.test"), Path("fixture"), "TestFixture", Path("missing.log"))
+        with mock.patch.object(census.subprocess, "run", side_effect=subprocess.TimeoutExpired("test", 2)):
+            with self.assertRaisesRegex(census.CensusError, "timed out"):
+                census.run_test(Path("fixture.test"), Path("fixture"), "TestFixture", Path("missing.log"))
+
+    def test_main_propagates_real_collector_phase_failures_without_writing_partial_output(self):
+        from unittest import mock
+        phases = ("build-fail", "build-timeout", "list-fail", "list-timeout",
+                  "test-fail", "test-timeout", "git-error", "success")
+        for phase in phases:
+            with self.subTest(phase=phase):
+                census, root = self.git_fixture()
+                (root / "pkg" / "pkg_test.go").write_text("package pkg\n")
+                out = root / "generated.json"
+                out.write_text("preserve prior generated artifact\n")
+                real_run = subprocess.run
+
+                def fake_run(command, **kwargs):
+                    if command[0] == "git":
+                        if phase == "git-error" and "ls-files" in command:
+                            return subprocess.CompletedProcess(command, 128, stdout=b"", stderr=b"bad index")
+                        return real_run(command, **kwargs)
+                    args = command
+                    stage = ("build" if args[0] == "go" else
+                             "list" if "-test.list" in args else
+                             "test" if "-test.run" in args else "unknown")
+                    if phase == f"{stage}-timeout":
+                        raise subprocess.TimeoutExpired(command, 2)
+                    if phase == f"{stage}-fail":
+                        return subprocess.CompletedProcess(command, 23, stdout="", stderr="fixture failure")
+                    if stage == "list":
+                        return subprocess.CompletedProcess(command, 0, stdout="TestFixture\n", stderr="")
+                    if stage == "test":
+                        logfile = next(arg.split("=", 1)[1] for arg in args if arg.startswith("-test.testlogfile="))
+                        Path(logfile).write_text(f"open {root / 'docs' / 'config.json'}\n")
+                    return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+                with mock.patch.object(census, "ROOT", root), mock.patch.object(census, "OUT", out), \
+                     mock.patch.object(census, "go_packages",
+                                       return_value=([("fixture/pkg", root / "pkg")], {"pkg"})), \
+                     mock.patch.dict(os.environ, {"CENSUS_JOBS": "1"}), \
+                     mock.patch.object(census.subprocess, "run", side_effect=fake_run):
+                    if phase == "success":
+                        census.main()
+                        self.assertEqual(json.loads(out.read_text())["readers"], {"pkg": {"TestFixture": 0}})
+                    else:
+                        with self.assertRaises(census.CensusError):
+                            census.main()
+                        self.assertEqual(out.read_text(), "preserve prior generated artifact\n")
+
     def test_a_read_in_a_subpackage_of_the_tests_own_directory_is_kept(self):
         census = load_census()
         root = census.ROOT
