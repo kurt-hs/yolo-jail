@@ -175,6 +175,45 @@ context = 32000
 	}
 }
 
+func TestGroupedProgramDefaultsIncludePackTreeHostHintsAndRunBin(t *testing.T) {
+	const grouped = `[[program]]
+bin = "fixture-tool"
+via = "pack"
+from = "tools/fixture-tool"
+build = "make fixture-tool"
+`
+	for readerName, decode := range map[string]func([]byte) (*Manifest, []string, []string){
+		"strict": func(data []byte) (*Manifest, []string, []string) {
+			manifest, problems := DecodeTOML(data)
+			return manifest, problems, nil
+		},
+		"use":      DecodeTOMLForUse,
+		"tolerant": DecodeTOMLTolerant,
+	} {
+		manifest, problems, skipped := decode([]byte(grouped))
+		if len(problems) != 0 || len(skipped) != 0 {
+			t.Fatalf("%s valid pack-tree defaults rejected: problems=%v skipped=%v", readerName, problems, skipped)
+		}
+		contributions := manifest.Contributions()
+		if len(contributions) != 1 || contributions[0].Run != "fixture-tool" {
+			t.Errorf("%s run default = %#v, want bin", readerName, contributions)
+		}
+		wantHints := map[string]string{"brew": "fixture-tool", "apt": "fixture-tool", "dnf": "fixture-tool", "pacman": "fixture-tool", "nix": "fixture-tool"}
+		install := manifest.InstallContributions()
+		if len(install) != 1 || !reflect.DeepEqual(install[0].InstallHints, wantHints) {
+			t.Errorf("%s install hints = %#v, want accepted manager defaults including via=pack", readerName, install)
+		}
+	}
+	legacy, problems := Decode([]byte(`{"contributes":[{"kind":"program","bin":"fixture-tool","via":"pack","from":"tools/fixture-tool","run":"fixture-tool","build":"make fixture-tool"}]}`))
+	if len(problems) != 0 {
+		t.Fatalf("legacy public sparse pack-tree control rejected: %v", problems)
+	}
+	legacyInstall := legacy.InstallContributions()
+	if len(legacyInstall) != 1 || len(legacyInstall[0].InstallHints) != 0 {
+		t.Fatalf("legacy sparse install hints changed: %#v", legacyInstall)
+	}
+}
+
 func TestLegacySparseInstallHintsRemainDistinctFromGroupedManagerDefaults(t *testing.T) {
 	legacy, problems := Decode([]byte(`{"contributes":[{"kind":"program","bin":"fixture-tool","via":"npm","package":"fixture-tool","install_hints":{"custom":"vendor-tool","brew":"brew-tool"}}]}`))
 	if len(problems) != 0 {
@@ -347,6 +386,19 @@ func TestGroupedTOMLMatchesLegacyPublicContributionReaders(t *testing.T) {
 
 func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 	t.Helper()
+	// The fixture-built row has no legacy install hints. Its grouped declaration omits
+	// install, so this comparison expects the accepted grouped bin-name default rather
+	// than pretending the legacy public reader synthesized that fact. The raw legacy
+	// absence remains asserted by TestGroupedProgramDefaultsIncludePackTreeHostHintsAndRunBin.
+	legacyWithGroupedDefaults := *old
+	legacyWithGroupedDefaults.Contributes = append([]Contribution(nil), old.Contributes...)
+	for i := range legacyWithGroupedDefaults.Contributes {
+		c := &legacyWithGroupedDefaults.Contributes[i]
+		if c.Kind == KindProgram && c.Bin == "fixture-built" {
+			c.InstallHints = map[string]string{"brew": c.Bin, "apt": c.Bin, "dnf": c.Bin, "pacman": c.Bin, "nix": c.Bin}
+		}
+	}
+	old = &legacyWithGroupedDefaults
 	want, have := old.Contributions(), got.Contributions()
 	if len(want) != len(have) {
 		t.Fatalf("%s Contributions count=%d, want %d", reader, len(have), len(want))

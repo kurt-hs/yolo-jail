@@ -41,13 +41,18 @@ import (
 //
 // Problems name a contribution by its index in pack.json, whatever was skipped before it.
 func DecodeForUse(data []byte) (m *Manifest, problems, skipped []string) {
+	m, problems, skipped, _ = decodeForUseWithIndexes(data)
+	return m, problems, skipped
+}
+
+func decodeForUseWithIndexes(data []byte) (m *Manifest, problems, skipped []string, retainedIndexes []int) {
 	clean, err := cleanJSON5(data)
 	if err != nil {
-		return nil, []string{ManifestName + ": " + err.Error()}, nil
+		return nil, []string{ManifestName + ": " + err.Error()}, nil, nil
 	}
 	var man Manifest
 	if err := json.Unmarshal(clean, &man); err != nil {
-		return nil, []string{ManifestName + ": " + err.Error()}, nil
+		return nil, []string{ManifestName + ": " + err.Error()}, nil, nil
 	}
 	man.setLegacyOrigin()
 	fields, skipped := unknownFields(clean)
@@ -84,7 +89,7 @@ func DecodeForUse(data []byte) (m *Manifest, problems, skipped []string) {
 	}
 	problems = append(man.retiredFieldProblems(), man.installHintProblems()...)
 	problems = append(problems, man.Validate()...)
-	return &man, relabelContributions(problems, index), skipped
+	return &man, relabelContributions(problems, index), skipped, index
 }
 
 // serviceSkipped is the index of the first `service` contribution a read skipped: was, or i when

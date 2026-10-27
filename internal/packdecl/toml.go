@@ -146,28 +146,30 @@ func decodeTOML(data []byte, mode manifestReadMode) (*Manifest, []string, []stri
 	}
 	var m *Manifest
 	var skipped []string
+	var retainedIndexes []int
 	switch mode {
 	case manifestStrict:
-		var strict []string
-		m, strict = Decode(encoded)
-		problems = strict
+		m, problems = Decode(encoded)
+		if m != nil {
+			retainedIndexes = make([]int, len(m.Contributes))
+			for i := range retainedIndexes {
+				retainedIndexes[i] = i
+			}
+		}
 	case manifestUse:
-		m, problems, skipped = DecodeForUse(encoded)
+		m, problems, skipped, retainedIndexes = decodeForUseWithIndexes(encoded)
 	case manifestTolerant:
-		m, problems, skipped = DecodeTolerant(encoded)
+		m, problems, skipped, retainedIndexes = decodeTolerantWithIndexes(encoded)
 	}
 	if m == nil {
 		return nil, locateTOMLProblems(problems, groups, root, doc), append(preSkipped, locateTOMLProblems(skipped, groups, root, doc)...)
 	}
 	m.Origin = ManifestOrigin{Format: ManifestFormatTOML, File: ManifestTOMLName}
-	usedGroups := make(map[int]bool, len(groups))
-	skippedGroups := groupedSkippedIndexes(skipped)
-	for i := range m.Contributes {
-		entry, groupIndex, ok := matchGroupedContribution(m.Contributes[i], groups, usedGroups, skippedGroups)
-		if !ok {
+	for i, groupIndex := range retainedIndexes {
+		if i >= len(m.Contributes) || groupIndex < 0 || groupIndex >= len(groups) {
 			continue
 		}
-		usedGroups[groupIndex] = true
+		entry := groups[groupIndex]
 		m.Contributes[i].Origin = m.Origin
 		m.Contributes[i].Location = entry.location
 		m.Contributes[i].Replace = entry.replace
@@ -340,43 +342,37 @@ func normalizeProgramDefaults(fields map[string]any) error {
 		return nil
 	}
 
-	if !hasInstall && fields["via"] == ViaPack {
-		// A pack-tree program has no host package recipe by default. In particular, do not
-		// turn its bin name into a host install hint when lowering the grouped default.
-		delete(fields, "install_hints")
-	} else {
-		packages := make(map[string]string, len(installManagers)+1)
-		defaultPackage := bin
-		if hasInstall {
-			switch value := install.(type) {
-			case string:
-				defaultPackage = value
-			case map[string]any:
-				for _, manager := range sortedKeys(value) {
-					packageName, ok := value[manager].(string)
-					if !ok {
-						return fmt.Errorf("install.%s must be a string", manager)
-					}
-					if manager == "default" {
-						defaultPackage = packageName
-						continue
-					}
-					if !installManagerNames[manager] {
-						return fmt.Errorf("install has unknown manager %q (use default, brew, apt, dnf, pacman, nix, or brew-cask)", manager)
-					}
-					packages[manager] = packageName
+	packages := make(map[string]string, len(installManagers)+1)
+	defaultPackage := bin
+	if hasInstall {
+		switch value := install.(type) {
+		case string:
+			defaultPackage = value
+		case map[string]any:
+			for _, manager := range sortedKeys(value) {
+				packageName, ok := value[manager].(string)
+				if !ok {
+					return fmt.Errorf("install.%s must be a string", manager)
 				}
-			default:
-				return fmt.Errorf("install must be a string or table")
+				if manager == "default" {
+					defaultPackage = packageName
+					continue
+				}
+				if !installManagerNames[manager] {
+					return fmt.Errorf("install has unknown manager %q (use default, brew, apt, dnf, pacman, nix, or brew-cask)", manager)
+				}
+				packages[manager] = packageName
 			}
+		default:
+			return fmt.Errorf("install must be a string or table")
 		}
-		for _, manager := range installManagers {
-			if _, overridden := packages[manager]; !overridden {
-				packages[manager] = defaultPackage
-			}
-		}
-		fields["install_hints"] = packages
 	}
+	for _, manager := range installManagers {
+		if _, overridden := packages[manager]; !overridden {
+			packages[manager] = defaultPackage
+		}
+	}
+	fields["install_hints"] = packages
 	if fields["via"] == "pack" {
 		if _, authored := fields["run"]; !authored {
 			fields["run"] = bin
@@ -994,58 +990,6 @@ func cloneMap(input map[string]any) map[string]any {
 	out := make(map[string]any, len(input))
 	for key, value := range input {
 		out[key] = value
-	}
-	return out
-}
-
-func matchGroupedContribution(c Contribution, groups []groupedContribution, used, skipped map[int]bool) (groupedContribution, int, bool) {
-	want, err := json.Marshal(c)
-	for i, group := range groups {
-		if used[i] || skipped[i] || group.kind != c.Kind {
-			continue
-		}
-		data, marshalErr := json.Marshal(group.value)
-		if err == nil && marshalErr == nil {
-			var candidate Contribution
-			if json.Unmarshal(data, &candidate) == nil {
-				got, candidateErr := json.Marshal(candidate)
-				if candidateErr == nil && bytes.Equal(want, got) {
-					return group, i, true
-				}
-			}
-		}
-	}
-	// A tolerant reader may trim one unknown enum value (for example an endpoint's
-	// wire_api) while retaining the contribution. For that case, fall back to the
-	// declaration identity, but never let a skipped group take the retained row's metadata.
-	for i, group := range groups {
-		if used[i] || skipped[i] || group.kind != c.Kind {
-			continue
-		}
-		if stringValue(group.value["name"]) != c.Name || stringValue(group.value["bin"]) != c.Bin || stringValue(group.value["surface"]) != c.Surface || stringValue(group.value["from"]) != c.From || stringValue(group.value["path"]) != c.Path || stringValue(group.value["hook"]) != c.Hook || stringValue(group.value["provider"]) != c.Provider {
-			continue
-		}
-		return group, i, true
-	}
-	return groupedContribution{}, -1, false
-}
-
-func groupedSkippedIndexes(notes []string) map[int]bool {
-	out := make(map[int]bool)
-	for _, note := range notes {
-		start := strings.Index(note, "contributes[")
-		if start < 0 {
-			continue
-		}
-		start += len("contributes[")
-		end := strings.IndexByte(note[start:], ']')
-		if end < 0 {
-			continue
-		}
-		index, err := strconv.Atoi(note[start : start+end])
-		if err == nil {
-			out[index] = true
-		}
 	}
 	return out
 }
