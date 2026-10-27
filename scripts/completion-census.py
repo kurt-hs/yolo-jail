@@ -249,8 +249,13 @@ def checked_run(command, cwd, timeout, description):
         raise CensusError(f"could not run {description}: {exc}; repair the toolchain and rerun "
                           "scripts/completion-census.py") from exc
     if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip() or f"exit status {result.returncode}"
-        raise CensusError(f"{description} failed: {detail}; fix the failing test/collector and rerun "
+        stdout = result.stdout if result.stdout else "<empty>"
+        stderr = result.stderr if result.stderr else "<empty>"
+        detail = (f"command argv: {result.args!r}\n"
+                  f"direct return code: {result.returncode}\n"
+                  f"stdout (verbatim):\n{stdout}\n"
+                  f"stderr (verbatim):\n{stderr}")
+        raise CensusError(f"{description} failed:\n{detail}; fix the failing test/collector and rerun "
                           "scripts/completion-census.py")
     return result
 

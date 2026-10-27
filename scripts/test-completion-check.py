@@ -563,6 +563,53 @@ class Census(unittest.TestCase):
             with self.assertRaisesRegex(census.CensusError, "timed out"):
                 census.list_tests(Path("fixture.test"), Path.cwd())
 
+    def test_checked_run_reports_mixed_stream_failure_and_stream_controls(self):
+        from unittest import mock
+        census = load_census()
+        mixed = [sys.executable, "-c",
+                 "import sys; print('  assertion from stdout  '); print('  listener from stderr  ', file=sys.stderr); sys.exit(23)"]
+        with self.assertRaises(census.CensusError) as caught:
+            census.checked_run(mixed, HERE, 10, "mixed-stream fixture")
+        detail = str(caught.exception)
+        self.assertIn("stdout (verbatim):\n  assertion from stdout  \n", detail)
+        self.assertIn("stderr (verbatim):\n  listener from stderr  \n", detail)
+        self.assertIn(f"command argv: {mixed!r}", detail)
+        self.assertIn("direct return code: 23", detail)
+        self.assertIn("fix the failing test/collector and rerun scripts/completion-census.py", detail)
+
+        controls = (
+            ([sys.executable, "-c", "print('  stdout only  '); raise SystemExit(4)"],
+             "  stdout only  \n", "", 4),
+            ([sys.executable, "-c", "import sys; print('  stderr only  ', file=sys.stderr); raise SystemExit(5)"],
+             "", "  stderr only  \n", 5),
+            ([sys.executable, "-c", "raise SystemExit(6)"], "", "", 6),
+        )
+        for command, stdout, stderr, returncode in controls:
+            with self.subTest(returncode=returncode):
+                with self.assertRaises(census.CensusError) as caught:
+                    census.checked_run(command, HERE, 10, "stream control")
+                detail = str(caught.exception)
+                self.assertIn(f"command argv: {command!r}", detail)
+                self.assertIn(f"direct return code: {returncode}", detail)
+                self.assertIn("stdout (verbatim):\n" + (stdout if stdout else "<empty>"), detail)
+                self.assertIn("stderr (verbatim):\n" + (stderr if stderr else "<empty>"), detail)
+
+        success = [sys.executable, "-c",
+                   "import sys; print('  success stdout  '); print('  success stderr  ', file=sys.stderr)"]
+        result = census.checked_run(success, HERE, 10, "successful stream control")
+        self.assertEqual(result.args, success)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "  success stdout  \n")
+        self.assertEqual(result.stderr, "  success stderr  \n")
+
+        negative = subprocess.CompletedProcess(["fixture"], -9, stdout="out\n", stderr="err\n")
+        with mock.patch.object(census.subprocess, "run", return_value=negative):
+            with self.assertRaises(census.CensusError) as caught:
+                census.checked_run(["fixture"], HERE, 10, "negative return control")
+        self.assertIn("command argv: ['fixture']", str(caught.exception))
+        self.assertIn("direct return code: -9", str(caught.exception))
+        self.assertNotIn("SIGKILL", str(caught.exception))
+
     def test_test_failures_and_timeouts_are_fatal(self):
         from unittest import mock
         census = load_census()
