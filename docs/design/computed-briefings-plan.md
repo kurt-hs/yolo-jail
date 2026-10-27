@@ -1,23 +1,24 @@
 ---
 title: "Computed briefings: implementation plan (seed)"
-date: 2026-10-24
+date: 2026-10-27
 status: draft
 stage: SKETCH
+next: "Complete this tree-grounded implementation plan before implementation"
 depends-on: [computed-briefings.md#OQ-CB1]
 tags: [briefing, packs, derive, plan]
 ---
 
 # Computed briefings: implementation plan (seed)
 
-**Status:** 2026-10-24 — seeded during design; not a hand-off, and incomplete until the design is
-accepted. Nothing may be built from it while it is a seed.
+**Status:** 2026-10-27 — the owner rulings are recorded, but this remains a seed, not a
+hand-off. The planner must verify these notes against the current tree and complete the
+implementation plan before implementation; nothing may be built from this seed.
 
 **Precedence:** [`computed-briefings.md`](computed-briefings.md) wins on behavior. Entries here
 are only what the design work surfaced; the planner checks each against the tree at a stamped
 commit.
 
-Blocked on [OQ-CB1](computed-briefings.md#OQ-CB1): whether facts come from core or from a
-publishing pack shapes the access table's builder.
+The three owner decisions are in the design's [Decision Ledger](computed-briefings.md#decision-ledger).
 
 ## Notes surfaced during design
 

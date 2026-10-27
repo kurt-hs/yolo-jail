@@ -1,24 +1,25 @@
 ---
 title: "A briefing that knows what this jail may push: computed pack prose"
-date: 2026-10-24
-status: in-review
-stage: DESIGN
-next: "Rule OQ-CB1 (who supplies the facts a pack's briefing reads); OQ-CB2 and OQ-CB3 follow, and none of them needs code first"
+date: 2026-10-27
+status: accepted
+stage: DECIDED
+next: "Complete the implementation plan against the current tree"
 tags: [briefing, packs, derive, lua, broker, grants, git, design]
-summary: "The maintainer wants each workspace's agent told exactly how to finish a change — commit only, push to a named branch, or push a new branch — according to the git grants approved for that workspace, from the maintainer's own pack and not from a built-in. This doc proposes a third derive registration, a briefing producer that returns Markdown, whose output takes a named slot in its pack's briefing section, and a new core-owned fact table describing what this jail may do with the user's logins, which a pack reads only after declaring which source it reads."
+summary: "Core supplies approved facts directly; producers see named facts, not full config, and producer failures abort the composition and invoking operation."
 vantage:
   status-chip: true
 ---
 
 # A briefing that knows what this jail may push: computed pack prose
 
-**Status:** 2026-10-24. Nothing is built. Every claim about the tree was checked against
-`3aba3dad3` on that date.
+**Status:** 2026-10-27. The three owner rulings are recorded; nothing is built. The system facts
+retained here were checked against the 2026-10-24 snapshot (`3aba3dad3`); this docs-only update
+did not re-audit implementation claims.
 
-> **In short.** A pack's briefing should be computable from the facts of this launch the same way
-> its config surfaces already are, by one more registration in its `derive.lua`. The facts it
-> needs about git are already decided by core at the approval gate, so core should hand them over
-> as a named, declared input, not have one pack publish them for another.
+> **In short.** A pack's briefing producer reads approved core facts directly through named,
+> declared inputs. Producers see named facts, not the effective config; a pack may later use its
+> own typed settings when a real need appears. A producer failure is fatal to the composition
+> and the operation that invoked it.
 
 **Why it matters.** The maintainer, 2026-10-24: *"I'm gonna have certain workspaces where it's
 allowed, certain where it's not, and I want to be able to have a briefing that tells the agent
@@ -27,20 +28,21 @@ don't want to give them an if statement in a briefing file."* Today the maintain
 rules say *"just keep committing to the branch you're on"* in every jail, whatever that jail may
 push.
 
-**The shape.** A **briefing producer** in a pack's `derive.lua`, declared by a `briefing` line in
-its manifest that also names the **access source** it reads. Core composes the producer's output
-into the pack's section, at both notches, from the grants the approval gate passed.
+**The shape.** A **briefing producer** in a pack's `derive.lua` reads approved core facts only
+through named, declared inputs and composes its Markdown into the pack's section. Core composes
+it at each existing briefing trigger.
 
-**Cost.** A third Lua registration and a second derive caller on the host, and briefing
-composition that now reads the broker's scope files and working set.
+**Cost.** A third Lua registration and a second derive caller on the host, plus composition that
+reads the broker's scope files and working set. A producer error aborts that invocation rather
+than delivering incomplete briefing text.
 
 **Start at [§3](#3-the-proposed-shape)**, then the worked example in
 [§4](#4-worked-example-the-maintainers-finishing-rules).
 
-**Needs your ruling:** [OQ-CB1](#OQ-CB1), [OQ-CB2](#OQ-CB2), [OQ-CB3](#OQ-CB3).
+**Needs your ruling:** None.
 
 **Reads with:** [`computed-briefings-plan.md`](computed-briefings-plan.md) (the implementation
-plan's seed: not a hand-off, incomplete until this design is accepted),
+plan's seed; not a hand-off until completed against the current tree),
 [`readable-config.md`](readable-config.md) (renames the grant config this design reads; the
 dependency is in [§3.2](#32-what-a-producer-reads)), [`git-broker.md`](git-broker.md) (what each
 git grant lets a push do).
@@ -67,11 +69,11 @@ git grant lets a push do).
 - **Briefing producer** *(coined here)*: a function a pack registers with `yolo.briefing(name, fn)`
   that returns Markdown for one briefing destination. It is not a surface derive: it produces
   prose for a briefing, never a config value.
-- **Access table** *(coined here)*: `ctx.access`, the facts a briefing producer may read about what
-  this launch's brokers will do with the user's logins, keyed by brokered source. It is not the
+- **Access table** *(coined here)*: `ctx.access`, the core-owned facts a briefing producer may
+  read about what this launch's brokers will do with the user's logins, keyed by brokered source.
+  A pack reads the facts directly; they are not published by another pack. The table is not the
   config: it holds what the gate approved and the broker applies, not what a config file asks for.
-- **Access source** *(coined here)*: one key of the access table, which is a brokered source's
-  name.
+- **Access source** *(coined here)*: one key of the access table, which is a brokered source's name.
 
 ## 1. The verdict
 
@@ -92,10 +94,10 @@ before it reads. Four reasons carry it:
    checkable, as the
    [stringly-typed references principle](../reference/stringly-typed-references-principle.md)
    requires.
-4. **The briefing advises and the broker enforces.** Text that is stale, missing or wrong can never
-   let an agent push what the broker refuses. That is what makes it acceptable to compose this
-   text from launch-time facts and to let a broken script degrade rather than refuse
-   ([OQ-CB3](#OQ-CB3)).
+4. **The briefing advises; the broker enforces.** Producer text never changes broker authority.
+   A producer failure is nevertheless fatal to its composition and invocation: the agent must not
+   receive a briefing with intended computed instructions missing, stale, partial, or replaced
+   by fallback prose.
 
 ## 2. What exists today
 
@@ -176,8 +178,9 @@ flowchart LR
 ### 3.1 The briefing producer
 
 - **Registration.** `yolo.briefing(name, fn)` in `derive.lua`. `name` is a lower-case slug; `fn`
-  receives the producer ctx ([§3.2](#32-what-a-producer-reads)) and returns a Markdown string, or
-  `nil` or `""` to contribute nothing to that destination.
+  receives the producer ctx ([§3.2](#32-what-a-producer-reads)) and returns a Markdown string.
+  An empty string contributes nothing to that destination; every other return must be a string
+  ([§3.6](#36-failure-modes)).
 - **Declaration.** Each producer is declared by a `briefing` content line in the pack manifest:
 
   ```jsonc
@@ -203,8 +206,8 @@ flowchart LR
 - **Called once per destination.** The ctx carries the destination's agent identity, so one
   producer can word the same rule differently for claude and pi. Destinations are deduplicated by
   path first, as today.
-- **Output limits.** A string, at most 64 KiB per call. Anything else (a table, a number, a larger
-  string) is a producer error ([§3.6](#36-failure-modes)).
+- **Output limits.** A string, at most 64 KiB per call. `nil`, any other non-string value, or a
+  larger string is a producer error ([§3.6](#36-failure-modes)).
 - **Lint and footprint.** `yolo pack lint` lists a producer under `delivers:` as
   `derive:finishing → claude, pi (reads access: git, optional)`, so the delivery is visible before
   any launch ([P6](../reference/pack-system.md#briefing-p6)).
@@ -255,8 +258,11 @@ Rules:
   the host, in the same binary that composes, so the jail-image skew that once broke surface
   derives does not arise for them.
 
-The surface-derive tables (`mcp_servers`, `providers` and the rest) are **not** in the producer
-ctx. Whether more of the config should be is [OQ-CB2](#OQ-CB2).
+The producer ctx contains its destination and only the named core facts declared for it. It
+never includes the whole effective config or the surface-derive tables. Add named core facts
+only when a real case appears; use a pack's own typed settings for pack-specific needs when a
+real case warrants them. Neither access to the whole config nor a pack-published fact API is
+part of this design.
 
 ### 3.3 Declaring the read
 
@@ -276,8 +282,8 @@ it reads, and it cannot add a source.
   unselected pack. Those are the principle's two questions, kept apart
   ([two questions](../reference/stringly-typed-references-principle.md#a-reference-asks-two-questions-and-only-one-of-them-is-optional)).
 
-Whether a consumer should instead name a **producing pack** that publishes facts of its own is
-[OQ-CB1](#OQ-CB1).
+A consumer declares each core-owned source it reads directly; no pack-published fact API is
+part of the design.
 
 ### 3.4 When it renders, and how fresh it is
 
@@ -322,7 +328,7 @@ per-project text there would mean writing into each repository, which
 
 | Failure | What happens | Who finds out |
 | :--- | :--- | :--- |
-| Lua error, timeout, or a non-string or oversized return | **provisional, [OQ-CB3](#OQ-CB3):** the launch goes ahead; the slot holds one fixed line saying this pack's computed rules failed to render and to ask the human before pushing; the launch prints the error with file and line and names `yolo pack lint` | the human at launch, and the agent, in its briefing |
+| Lua error, timeout, `nil` or any other non-string return, or oversized return | Fatal: the invoking operation aborts; no computed text from the failed composition is published, and no stale, partial, or fallback briefing is delivered. | The error names the pack file and line and gives `yolo pack lint` as the repair step. A fresh launch starts no agent; attach aborts without stopping the already-running jail; live `yolo config apply` or `yolo host apply` reports failure. |
 | `reads` names an unknown source | refused, with did-you-mean | the human at launch or at `yolo host apply` |
 | `reads` names a source whose pack is unselected, without `optional` | refused, naming the pack to select or `"optional": true` | the human at launch |
 | A producer reads an undeclared source | the producer's Lua error, handled like any other | as the first row |
@@ -424,7 +430,8 @@ No `if` reaches the agent: each one reads a single instruction.
 | A derived `files` contribution writing the text | Rejected: `files` lands in typed slots, not in briefing destinations, and the briefing composer owns those files whole. |
 | Core writes the push rule into the jail-managed body | Rejected as the answer: the wording is the maintainer's house rule, not a fact about the jail. A factual line there could complement it later. |
 | An environment variable (`YOLO_GIT_PUSH=…`) the prose tells the agent to read | Rejected: that is the `if` moved into the agent's head. |
-| The producing pack publishes facts (`yolo.publish`) and the consumer names that pack | Open, as [OQ-CB1](#OQ-CB1) option B. |
+| The producing pack publishes facts (`yolo.publish`) and the consumer names that pack | Rejected: the facts are core-owned, so the consumer declares and reads them directly; a proxying pack API adds no owner or need. |
+| Give the producer the whole effective config | Rejected: this exposes requested config instead of only approved facts and turns config spellings into pack interfaces. |
 | Re-render inside the jail when grants change | Rejected: the briefing is a read-only mount composed on the host, and the agent has already read it. |
 
 ## 7. What this does not do
@@ -435,8 +442,11 @@ No `if` reaches the agent: each one reads a single instruction.
 - **No change to the shipped git pack's prose.** That pack's own `briefing/git.md` could become a
   producer that states the actual grants. That is a follow-on, not this design.
 - **No per-workspace text at the host notch** ([§3.5](#35-parity)).
-- **No pack-to-pack API.** Unless [OQ-CB1](#OQ-CB1) rules otherwise, no pack reads another pack's
-  values.
+- **No pack-to-pack fact API.** Core supplies approved facts directly; no pack publishes them
+  for another pack to consume.
+- **No whole-config access.** A producer reads only named core facts declared for it. A pack may
+  use its own typed settings when a real need appears; that does not make the full effective
+  config available.
 - **No authority.** Nothing a producer writes changes what the broker allows.
 - **No producers for skills or files.** Briefings only.
 
@@ -447,7 +457,8 @@ No `if` reaches the agent: each one reads a single instruction.
 | Attach gets slower: a Lua VM per declaring pack, on every invocation | One VM session per pack per composition, invoking the producer per destination, under the existing 5-second budget. Packs that declare no `derive` line cost nothing. |
 | The jail and host composers drift in what they hand a producer | Both build the ctx from one function. The existing jail/host briefing parity test (`briefingparity_test.go`) gains a producer case. |
 | A stale briefing leads an agent to try a push that is refused | Safe by construction: the broker refuses, and the git pack's prose already says to read the reason and not retry. |
-| The access table freezes broker vocabulary into a pack API | It speaks what the broker does (`push_new_branches`), not config spellings, and it grows only additively. |
+| A pack-specific need later requires producer input | Keep it in that pack's typed settings when a real case appears; do not expose the whole effective config or invent a publish API now. |
+| A producer fails and its computed instructions would be absent | Fail the invoking composition/operation, publish no computed text, and give the pack author a file/line diagnostic plus `yolo pack lint`; never deliver fallback prose. |
 | A pack author reads a fact that is wrong at the host notch | The host row is explicit: `running = false` with a sentence, and `ctx.notch` says which notch. |
 
 ## 9. What done looks like
@@ -462,8 +473,10 @@ No `if` reaches the agent: each one reads a single instruction.
 - `"reads": [{"access": "gti"}]` refuses the launch with a did-you-mean naming `git`.
 - `yolo pack lint` on the `matt` pack lists `derive:finishing` with its audience and its reads,
   and refuses a registration with no declaring line.
-- A producer that raises a Lua error behaves as [OQ-CB3](#OQ-CB3) is ruled, and the launch output
-  names the file and line.
+- A producer that raises a Lua error, times out, or returns an invalid value fails the relevant
+  operation as specified in [§3.6](#36-failure-modes): a fresh launch starts no agent;
+  attach, live apply and host apply report failure; no computed text from the failed composition
+  is published. Its diagnostic names the file and line and recommends `yolo pack lint`.
 
 ## 10. What I would build, in order
 
@@ -475,79 +488,10 @@ No `if` reaches the agent: each one reads a single instruction.
 3. **Re-composition at `yolo config apply`.** Small, and it closes the mid-jail gap for new
    sessions.
 
-## 11. Open questions
-
-1. 💬 <a id="OQ-CB1"></a>**OQ-CB1: Should a pack read git facts from core, or from the git pack itself?**
-
-   The maintainer's `matt` pack wants to know whether this workspace may push. The facts it needs
-   (which grants the human approved at launch, and which branches the workspace already created)
-   are decided by core at the approval gate, enforced by the broker, and written to files the git
-   pack never touches. Today no pack can read them, and the maintainer suggested that their pack
-   "reference that I am going to read values from another pack", the one with the git grants.
-
-   - **A — Core hands over the facts, and the pack names the source.** The manifest line says
-     `"reads": [{"access": "git"}]`; the producer sees `ctx.access.git`. One kind of fact today,
-     and no pack-to-pack interface to keep stable.
-   - **B — The git pack publishes, and the consumer names the git pack.** The git pack would get a
-     `yolo.publish` registration that copies out the facts core handed it, and any pack could
-     publish anything. That is more general, but the only known case is facts the git pack does
-     not own, and a published shape becomes an API between two pack authors.
-
-   <!-- vantage: question id=OQ-CB1 leaning="A. The one real case is core's own facts, so publishing would only copy them through a pack. Reopen B when a pack holds a fact core does not." -->
-
-   _Leaning:_ A. The one real case is core's own facts, so publishing would only copy them through
-   a pack. Reopen B when a pack holds a fact core does not.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-2. 💬 <a id="OQ-CB2"></a>**OQ-CB2: Should a briefing script see the whole config, or only named facts?**
-
-   The maintainer said the briefing should be built "from whatever config, in a fully custom way".
-   Today the producer would see three things: the notch, the agent, and what the brokers will do.
-   Suppose the maintainer later wants the text to depend on the selected provider, or on a key
-   they invented.
-
-   - **A — Named facts only.** Each new need is a new core table, added when a real case appears.
-     A config rename (such as the readable-config redesign's) never breaks a script.
-   - **B — The whole effective config, read-only.** Anything is reachable today, but every config
-     key becomes an interface a pack depends on. The readable-config rewrite would break every
-     script that read `brokered`. It would also show what the human asked for rather than what was
-     approved, which is the error the briefing body's rules exist to prevent.
-   - **C — Named facts plus the pack's own settings.** A pack could declare typed settings and
-     read its own values, the way loopholes already declare settings. A "fully custom" switch would
-     then be the pack author's key, not a core one.
-
-   <!-- vantage: question id=OQ-CB2 leaning="A now, with C as the route for a pack's own knobs when a case appears. B makes the config's spelling a pack API and shows requested rather than approved grants." -->
-
-   _Leaning:_ A now, with C as the route for a pack's own knobs when a case appears. B makes the
-   config's spelling a pack API and shows requested rather than approved grants.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
-3. 💬 <a id="OQ-CB3"></a>**OQ-CB3: Should a broken briefing script stop the jail from starting?**
-
-   The maintainer edits `matt/derive.lua`, makes a typo, and runs `yolo` in a workspace. The
-   finishing producer raises a Lua error. A surface derive error today is loud and leaves no
-   partial output. For a briefing, the question is what the agent and the human get.
-
-   - **A — Refuse the launch**, printing the error with file and line. Nothing starts until the
-     script is fixed, in every workspace that selects the pack, attaches included.
-   - **B — Start, and say so in two places.** The finishing section is replaced by one line telling
-     the agent its pack's computed rules failed and to ask the human before pushing. The launch
-     prints the error with file and line and names `yolo pack lint`. The broker still refuses any
-     push it was not granted.
-
-   <!-- vantage: question id=OQ-CB3 leaning="B. The text only advises, and the broker still enforces every grant, so a missing section cannot let an agent do more. Refusing would block every jail over a typo in prose." -->
-
-   _Leaning:_ B. The text only advises, and the broker still enforces every grant, so a missing
-   section cannot let an agent do more. Refusing would block every jail over a typo in prose.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
 ## Decision Ledger
 
 | ID | Ruling / Decision | Date | Settled in | Built |
 | :--- | :--- | :--- | :--- | :--- |
+| <a id="OQ-CB1"></a>[OQ-CB1](#decision-ledger) | Core supplies approved facts directly through named, declared reads; no pack-published proxy API | 2026-10-27 | [§3.2 What a producer reads](#32-what-a-producer-reads) | — |
+| <a id="OQ-CB2"></a>[OQ-CB2](#decision-ledger) | Producers receive named facts, not the whole effective config; pack-owned typed settings may be added when a real need appears | 2026-10-27 | [§3.2 What a producer reads](#32-what-a-producer-reads) | — |
+| <a id="OQ-CB3"></a>[OQ-CB3](#decision-ledger) | Producer Lua error, timeout, invalid return, or oversized return is fatal to its composition and invoking operation; no stale, partial, or fallback briefing is delivered | 2026-10-27 | [§3.6 Failure modes](#36-failure-modes) | — |
