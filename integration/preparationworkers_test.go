@@ -455,8 +455,12 @@ func validLiveLinuxProcessState(state string) bool {
 
 func validateStopTarget(home string, p homeProcess, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
 	snapshot, err := probes.inspect(p.pid)
-	if err != nil {
-		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: %w", p, err)
+	return validateStopTargetObservation(home, p, snapshot, err, probes)
+}
+
+func validateStopTargetObservation(home string, p homeProcess, snapshot stopProcessSnapshot, inspectErr error, probes stopProcessProbes) (stopProcessSnapshot, bool, error) {
+	if inspectErr != nil {
+		return stopProcessSnapshot{}, false, fmt.Errorf("revalidating %s before signalling: %w", p, inspectErr)
 	}
 	if snapshot.gone {
 		return snapshot, false, nil
@@ -872,14 +876,31 @@ func waitStopTargetGone(home string, p homeProcess, deadline time.Time, probes s
 	}
 }
 
-// freshOwnedProcessAfterExitProof permits only a newly bracketed HOME match for the same
-// readable identity and classifiable argv to leave the wait-only exiting set; no prior HOME or
-// PF_EXITING observation substitutes for that current positive ownership proof.
-func freshOwnedProcessAfterExitProof(home string, exiting homeProcess, listed []homeProcess, probes stopProcessProbes) bool {
+type exitAdoptionDisposition uint8
+
+const (
+	exitAdoptionNotApplicable exitAdoptionDisposition = iota
+	exitAdoptionAdopted
+	exitAdoptionGone
+	exitAdoptionFailed
+)
+
+type exitAdoptionResult struct {
+	disposition exitAdoptionDisposition
+	observed    bool
+	snapshot    stopProcessSnapshot
+	err         error
+}
+
+// freshOwnedProcessAfterExitProof attempts adoption only when the retained proof is otherwise
+// complete and its readable stat lacks PF_EXITING. Once that attempt begins, failures are fatal;
+// they must not be replaced by a later observation through the ordinary retained-proof path.
+func freshOwnedProcessAfterExitProof(home string, exiting homeProcess, listed []homeProcess, probes stopProcessProbes) exitAdoptionResult {
+	notApplicable := func() exitAdoptionResult { return exitAdoptionResult{disposition: exitAdoptionNotApplicable} }
 	if exiting.statErr != nil || exiting.startTime == "" || exiting.lateHomeErr != nil || probes.home == nil ||
 		(!exiting.homeMatched && !errors.Is(exiting.homeErr, errHomeEnvironmentCleared)) ||
 		(exiting.homeErr != nil && !errors.Is(exiting.homeErr, errHomeEnvironmentCleared)) {
-		return false
+		return notApplicable()
 	}
 	var current *homeProcess
 	for i := range listed {
@@ -887,43 +908,92 @@ func freshOwnedProcessAfterExitProof(home string, exiting homeProcess, listed []
 			continue
 		}
 		if current != nil {
-			return false
+			return notApplicable()
 		}
 		current = &listed[i]
 	}
 	if current == nil || current.exiting || current.statErr != nil || current.argsErr != nil ||
 		current.startTime != exiting.startTime || current.homeErr != nil || current.lateHomeErr != nil ||
 		!current.homeMatched || len(current.args) == 0 {
-		return false
+		return notApplicable()
 	}
 
-	legacy, err := probes.inspect(exiting.pid)
-	if err != nil || legacy.gone || legacy.startTime != exiting.startTime ||
-		legacy.lateStartTimeErr != nil || !legacy.lateStartTimeFound ||
+	legacy, inspectErr := probes.inspect(exiting.pid)
+	if inspectErr != nil {
+		return exitAdoptionResult{
+			disposition: exitAdoptionFailed,
+			err:         fmt.Errorf("revalidating %s before signalling: %w", exiting, inspectErr),
+		}
+	}
+	if legacy.gone {
+		return exitAdoptionResult{disposition: exitAdoptionGone}
+	}
+	if legacy.startTime != exiting.startTime || legacy.lateStartTimeErr != nil || !legacy.lateStartTimeFound ||
 		legacy.lateStartTime != exiting.startTime || len(legacy.args) != 0 ||
 		legacy.stateErr != nil || !legacy.stateFound || !validLiveLinuxProcessState(legacy.state) ||
 		legacy.flagsErr != nil || !legacy.flagsFound || legacy.flags&linuxPFExiting != 0 {
-		return false
+		return exitAdoptionResult{disposition: exitAdoptionNotApplicable, observed: true, snapshot: legacy}
 	}
 
-	matchesSnapshot := func(snapshot stopProcessSnapshot) bool {
-		return !snapshot.gone && snapshot.startTime == exiting.startTime &&
-			snapshot.lateStartTimeErr == nil && snapshot.lateStartTimeFound &&
-			snapshot.lateStartTime == exiting.startTime &&
-			snapshot.stateErr == nil && snapshot.stateFound && validLiveLinuxProcessState(snapshot.state) &&
-			snapshot.flagsErr == nil && snapshot.flagsFound && snapshot.flags&linuxPFExiting == 0 &&
-			len(snapshot.args) > 0 && slices.Equal(snapshot.args, current.args)
+	adoptionFailure := func(phase string, err error) exitAdoptionResult {
+		return exitAdoptionResult{
+			disposition: exitAdoptionFailed,
+			err:         fmt.Errorf("revalidating exiting process identity for %s during fresh HOME adoption (%s): %w", exiting, phase, err),
+		}
 	}
+	validateAdoptionSnapshot := func(snapshot stopProcessSnapshot) error {
+		switch {
+		case snapshot.startTime == "":
+			return errors.New("current process identity is unavailable")
+		case snapshot.startTime != exiting.startTime:
+			return errors.New("pid now names a different process")
+		case snapshot.lateStartTimeErr != nil || !snapshot.lateStartTimeFound:
+			return errors.New("post-argv process starttime is unavailable")
+		case snapshot.lateStartTime != exiting.startTime:
+			return errors.New("post-argv process identity changed")
+		case snapshot.stateErr != nil || !snapshot.stateFound || !validLiveLinuxProcessState(snapshot.state):
+			return errors.New("current process state is not a valid live state")
+		case snapshot.flagsErr != nil || !snapshot.flagsFound:
+			return errors.New("current process flags are unavailable")
+		case snapshot.flags&linuxPFExiting != 0:
+			return errors.New("current stat still proves PF_EXITING")
+		case len(snapshot.args) == 0:
+			return errors.New("current process arguments are unavailable")
+		case !slices.Equal(snapshot.args, current.args):
+			return errors.New("current arguments differ from the fresh HOME listing")
+		default:
+			return nil
+		}
+	}
+
 	before, err := probes.inspect(exiting.pid)
-	if err != nil || !matchesSnapshot(before) {
-		return false
+	if err != nil {
+		return adoptionFailure("pre-HOME identity inspection", err)
+	}
+	if before.gone {
+		return exitAdoptionResult{disposition: exitAdoptionGone}
+	}
+	if err := validateAdoptionSnapshot(before); err != nil {
+		return adoptionFailure("pre-HOME identity inspection", err)
 	}
 	matches, err := probes.home(exiting.pid, home)
-	if err != nil || !matches {
-		return false
+	if err != nil {
+		return adoptionFailure("fresh HOME observation", err)
+	}
+	if !matches {
+		return adoptionFailure("fresh HOME observation", fmt.Errorf("process no longer has HOME=%s", home))
 	}
 	after, err := probes.inspect(exiting.pid)
-	return err == nil && matchesSnapshot(after)
+	if err != nil {
+		return adoptionFailure("post-HOME identity inspection", err)
+	}
+	if after.gone {
+		return exitAdoptionResult{disposition: exitAdoptionGone}
+	}
+	if err := validateAdoptionSnapshot(after); err != nil {
+		return adoptionFailure("post-HOME identity inspection", err)
+	}
+	return exitAdoptionResult{disposition: exitAdoptionAdopted}
 }
 
 func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, probes stopProcessProbes) ([]string, error) {
@@ -936,15 +1006,37 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 		listed := probes.list(home)
 		var retained []homeProcess
 		heldPIDs := map[int]bool{}
+		relistAfterGone := false
 		for _, p := range exiting {
-			if freshOwnedProcessAfterExitProof(home, p, listed, probes) {
+			adoption := freshOwnedProcessAfterExitProof(home, p, listed, probes)
+			switch adoption.disposition {
+			case exitAdoptionAdopted:
 				continue
+			case exitAdoptionGone:
+				relistAfterGone = true
+				heldPIDs[p.pid] = true
+				continue
+			case exitAdoptionFailed:
+				return stopped, adoption.err
+			case exitAdoptionNotApplicable:
+			default:
+				return stopped, fmt.Errorf("revalidating exiting process identity for %s: unknown HOME adoption result", p)
 			}
-			snapshot, live, err := validateStopTarget(home, p, probes)
+
+			var snapshot stopProcessSnapshot
+			var live bool
+			var err error
+			if adoption.observed {
+				snapshot, live, err = validateStopTargetObservation(home, p, adoption.snapshot, nil, probes)
+			} else {
+				snapshot, live, err = validateStopTarget(home, p, probes)
+			}
 			if err != nil {
 				return stopped, err
 			}
 			if !live {
+				relistAfterGone = true
+				heldPIDs[p.pid] = true
 				continue
 			}
 			if !snapshot.exiting {
@@ -981,6 +1073,11 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 			listed = current
 		}
 		if len(listed) == 0 && len(retained) == 0 {
+			exiting = exiting[:0]
+			if relistAfterGone && !relistedPastBound {
+				relistedPastBound = !time.Now().Before(deadline)
+				continue
+			}
 			return stopped, nil
 		}
 
@@ -1011,7 +1108,7 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 			if len(exiting) == 0 {
 				// A process left the revalidated listing: inspect the HOME again, so another one
 				// spawned before that departure is stopped or reported, including one past the bound.
-				if needsRelist && !relistedPastBound {
+				if (needsRelist || relistAfterGone) && !relistedPastBound {
 					relistedPastBound = !time.Now().Before(deadline)
 					continue
 				}
@@ -2410,6 +2507,49 @@ func TestStopHomeProcessesFreshPromotionKeepsScratchRemoverWaitOnly(t *testing.T
 	}
 }
 
+func TestStopHomeProcessesRelistsAfterCandidateGoneDuringAdoption(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5160
+	const startTime = "876553"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeErr: cleared}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/bin/worker", "--owned"}, startTime: startTime,
+		homeMatched: true,
+	}
+	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{unconfirmed}
+			}
+			if listCalls == 2 {
+				return []homeProcess{confirmed}
+			}
+			return nil
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			if inspectCalls == 1 {
+				return exitingStopSnapshot(startTime), nil
+			}
+			return stopProcessSnapshot{gone: true}, nil
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			return false, cleared
+		},
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if err != nil || len(stopped) != 0 || listCalls != 3 || inspectCalls != 2 || homeCalls != 1 || killCalls != 0 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want a fresh HOME census after the retained identity disappears",
+			stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+	}
+}
+
 func TestStopHomeProcessesDoesNotPromoteRetainedExitWithoutFreshPositiveHOME(t *testing.T) {
 
 	const home = "/test/home"
@@ -2592,7 +2732,185 @@ func TestStopHomeProcessesDoesNotPromoteRetainedExitWithoutFreshPositiveHOME(t *
 	}
 }
 
+func TestStopHomeProcessesPreservesFailedAdoptionInspection(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5158
+	const startTime = "876551"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeErr: cleared}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/bin/worker", "--owned"}, startTime: startTime,
+		homeMatched: true,
+	}
+	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{unconfirmed}
+			}
+			if listCalls == 2 {
+				return []homeProcess{confirmed}
+			}
+			return nil
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				return exitingStopSnapshot(startTime), nil
+			case 2:
+				return stopProcessSnapshot{}, syscall.EIO
+			default:
+				return stopProcessSnapshot{gone: true}, nil
+			}
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			return false, cleared
+		},
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if !errors.Is(err, syscall.EIO) || len(stopped) != 0 || inspectCalls != 2 || homeCalls != 1 || killCalls != 0 {
+		t.Fatalf("stop=%v, %v (inspections=%d HOME=%d signals=%d); want the first adoption EIO preserved without retry or signal",
+			stopped, err, inspectCalls, homeCalls, killCalls)
+	}
+}
+
+func TestStopHomeProcessesDoesNotReplaceInvalidLegacyAdoptionEvidence(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5161
+	const startTime = "876554"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeErr: cleared}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/bin/worker", "--owned"}, startTime: startTime,
+		homeMatched: true,
+	}
+	cases := []struct {
+		name   string
+		mutate func(*stopProcessSnapshot)
+	}{
+		{name: "flags unreadable", mutate: func(s *stopProcessSnapshot) { s.flagsFound = false; s.flagsErr = syscall.EACCES }},
+		{name: "invalid state", mutate: func(s *stopProcessSnapshot) { s.state = "?" }},
+		{name: "starttime changed", mutate: func(s *stopProcessSnapshot) { s.startTime = "replacement" }},
+		{name: "post-argv identity unavailable", mutate: func(s *stopProcessSnapshot) { s.lateStartTimeFound = false }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			legacy := exitingStopSnapshot(startTime)
+			legacy.flags = 0
+			tc.mutate(&legacy)
+			listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{unconfirmed}
+					}
+					if listCalls == 2 {
+						return []homeProcess{confirmed}
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					inspectCalls++
+					switch inspectCalls {
+					case 1, 3:
+						return exitingStopSnapshot(startTime), nil
+					case 2:
+						return legacy, nil
+					default:
+						return stopProcessSnapshot{gone: true}, nil
+					}
+				},
+				home: func(int, string) (bool, error) {
+					homeCalls++
+					return false, cleared
+				},
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+
+			stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+			if err == nil || len(stopped) != 0 || inspectCalls != 2 || homeCalls != 1 || killCalls != 0 {
+				t.Fatalf("stop=%v, %v (inspections=%d HOME=%d signals=%d); want the first invalid legacy proof to fail before the later valid proof",
+					stopped, err, inspectCalls, homeCalls, killCalls)
+			}
+		})
+	}
+}
+
+func TestStopHomeProcessesPreservesFailedAdoptionHOMEObservation(t *testing.T) {
+
+	const home = "/test/home"
+	const pid = 5159
+	const startTime = "876552"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeErr: cleared}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/bin/worker", "--owned"}, startTime: startTime,
+		homeMatched: true,
+	}
+	live := func() stopProcessSnapshot {
+		return stopProcessSnapshot{
+			args: slices.Clone(confirmed.args), startTime: startTime,
+			state: "S", stateFound: true, flagsFound: true,
+			lateStartTime: startTime, lateStartTimeFound: true,
+		}
+	}
+	legacyProofWithoutPF := exitingStopSnapshot(startTime)
+	legacyProofWithoutPF.flags = 0
+	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			if listCalls == 1 {
+				return []homeProcess{unconfirmed}
+			}
+			if listCalls == 2 {
+				return []homeProcess{confirmed}
+			}
+			return nil
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				return exitingStopSnapshot(startTime), nil
+			case 2:
+				return legacyProofWithoutPF, nil
+			case 3:
+				return live(), nil
+			case 4:
+				return exitingStopSnapshot(startTime), nil
+			default:
+				return stopProcessSnapshot{gone: true}, nil
+			}
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			if homeCalls == 1 {
+				return false, cleared
+			}
+			if homeCalls == 2 {
+				return false, errHomeOwnershipChanged
+			}
+			return false, cleared
+		},
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if !errors.Is(err, errHomeOwnershipChanged) || len(stopped) != 0 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
+		t.Fatalf("stop=%v, %v (inspections=%d HOME=%d signals=%d); want the failed adoption HOME observation preserved before later valid exit proof",
+			stopped, err, inspectCalls, homeCalls, killCalls)
+	}
+}
+
 func TestStopHomeProcessesRetainedExitMustKeepKernelEvidence(t *testing.T) {
+
 	const home = "/test/home"
 	const startTime = "876547"
 	listed := homeProcess{pid: 5154, ppid: 1, startTime: startTime, homeMatched: true}
