@@ -51,7 +51,9 @@ import (
 	"os/exec"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -145,12 +147,14 @@ const (
 	StageExited          = "exited"
 	StageDrainDone       = "drain_done"
 	StageTermiosRestored = "termios_restored"
-	// StageSuspended and StageResumed bracket a ^Z self-suspend. The suspend is
-	// how a user gets out of a lingering client (^Z, then `kill %1`, or
-	// `kill -9 %1`), and a SIGKILL records nothing after it — so the log has to
-	// hold the suspend itself, written as it happens.
-	StageSuspended = "suspended"
-	StageResumed   = "resumed"
+	// StageSuspended and StageResumed bracket a ^Z self-suspend attempt. StageSuspended is a
+	// historical marker emitted only after the targeted SIGTSTP syscall returns (ignored or
+	// after continuation); a process killed while stopped emits nothing, and this marker is
+	// not an acknowledgment that the kernel actually stopped it. External observers own that
+	// proof.
+	StageSuspended       = "suspended"
+	StageResumed         = "resumed"
+	StageCancelRequested = "cancel_requested"
 )
 
 // StageHook observes the proxy's own transitions as they happen. It must not
@@ -181,7 +185,14 @@ const KeyCtrlC = "ctrl-c"
 // optional, and none may block or panic its way into the pump (each call is
 // recover-wrapped).
 type Observer struct {
-	Stage StageHook
+	Stage              StageHook
+	suspendBoundary    func(uint64)
+	ownsTTY            func(int) bool
+	beforeSuspend      func()
+	afterSuspendCommit func()
+	cancelWake         <-chan os.Signal
+	outputSink         *outputSink
+	run                *session
 	// Input sees every chunk read from the host stdin and forwarded to the child:
 	// its LENGTH, and — for a chunk that is exactly one ^C, as a raw 0x03 or a
 	// kitty/modifyOtherKeys escape — KeyCtrlC. NEVER the content: what a user
@@ -281,15 +292,22 @@ func termiosMode(t *unix.Termios) string {
 // them owns the end of the run. Every host-termios write after the start goes through it
 // under mu: the terminate's restore, and the SIGCONT re-raw, which must never land after it.
 type session struct {
-	mu    sync.Mutex
-	state sessionState
-	// restored is closed once a proxy returning on its own has put the host terminal back,
-	// so a terminate that lost the race to it returns only after the terminal is cooked.
-	restored chan struct{}
-	inFd     int
-	cooked   *unix.Termios // nil on the plain path, which has no terminal to put back
-	c        *exec.Cmd
-	hook     StageHook
+	mu                 sync.Mutex
+	state              sessionState
+	restored           chan struct{}
+	childDone          chan struct{}
+	childOnce          sync.Once
+	childLifecycle     atomic.Uint32
+	killOnce           sync.Once
+	suspended          bool
+	ownsTTY            func(int) bool
+	beforeSuspend      func()
+	afterSuspendCommit func()
+	output             *outputSink
+	inFd               int
+	cooked             *unix.Termios // nil on the plain path, which has no terminal to put back
+	c                  *exec.Cmd
+	hook               StageHook
 }
 
 type sessionState int
@@ -301,7 +319,7 @@ const (
 )
 
 func newSession(inFd int, cooked *unix.Termios, c *exec.Cmd, hook StageHook) *session {
-	return &session{restored: make(chan struct{}), inFd: inFd, cooked: cooked, c: c, hook: hook}
+	return &session{restored: make(chan struct{}), childDone: make(chan struct{}), ownsTTY: ownsTerminal, inFd: inFd, cooked: cooked, c: c, hook: hook}
 }
 
 // terminate is the proxy's half of a signal teardown. It returns true exactly once, to the
@@ -313,6 +331,7 @@ func newSession(inFd int, cooked *unix.Termios, c *exec.Cmd, hook StageHook) *se
 // its own: the child has exited and the caller is carrying on, so the signal is not the
 // proxy's to act on any more. That one waits for the proxy's own restore first.
 func (s *session) terminate() bool {
+	s.requestCancel()
 	s.mu.Lock()
 	switch s.state {
 	case sessionReturning:
@@ -325,8 +344,11 @@ func (s *session) terminate() bool {
 	}
 	s.state = sessionTerminating
 	signal.Ignore(syscall.SIGTTOU, syscall.SIGTTIN)
-	if s.cooked != nil && ownsTerminal(s.inFd) {
-		restoreTerminal(s.inFd, s.cooked)
+	if s.output != nil {
+		s.output.cancel()
+	}
+	if s.cooked != nil && s.ownsTTY(s.inFd) {
+		restoreTerminalForCancellation(s.inFd, s.cooked, s.output)
 	}
 	s.mu.Unlock()
 	if s.cooked != nil {
@@ -352,16 +374,105 @@ func (s *session) claimReturn() bool {
 func (s *session) reRaw() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.state == sessionRunning {
+	if s.state == sessionRunning && !s.cancellationPublished() {
 		setRaw(s.inFd, s.cooked)
+		s.suspended = false
+		s.clearSuspendStop()
 	}
+}
+
+func (s *session) isSuspended() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state == sessionRunning && s.suspended
 }
 
 // kill SIGKILLs the child, TARGETED at its pid: a runtime client that outlived its container
 // ignores the SIGTERM a shell sends the job's group (the podman client forwards it to a
 // container that is gone), and an exit would leave it running with nobody waiting on it. An
 // error means it already exited.
-func (s *session) kill() { _ = s.c.Process.Kill() }
+func (s *session) kill() {
+	s.killOnce.Do(func() { _ = s.c.Process.Kill() })
+	<-s.childDone
+}
+
+func (s *session) requestCancel() {
+	s.updateChildLifecycle(lifecycleCancelled)
+}
+
+func (s *session) childHasExited() bool {
+	return s.childLifecycle.Load()&lifecycleChildExited != 0
+}
+
+func (s *session) cancellationPublished() bool {
+	return s.childLifecycle.Load()&lifecycleCancelled != 0
+}
+
+func (s *session) cancellationOrExitPublished() bool {
+	return s.childLifecycle.Load()&(lifecycleCancelled|lifecycleChildExited) != 0
+}
+
+func (s *session) commitSuspendStop() bool {
+	return s.childLifecycle.CompareAndSwap(0, lifecycleStopCommitted)
+}
+
+// claimSuspendSignal is the final exclusive atomic stop decision. It orders a
+// suspension attempt against later cancellation/reaping; it does not mean the
+// kernel accepted SIGTSTP or that this process actually stopped.
+func (s *session) claimSuspendSignal() bool {
+	return s.childLifecycle.CompareAndSwap(lifecycleStopCommitted, lifecycleStopCommitted|lifecycleStopClaimed)
+}
+
+func (s *session) clearSuspendStop() {
+	const stopBits = lifecycleStopCommitted | lifecycleStopClaimed
+	for {
+		state := s.childLifecycle.Load()
+		cleared := state &^ stopBits
+		if state == cleared || s.childLifecycle.CompareAndSwap(state, cleared) {
+			return
+		}
+	}
+}
+
+func (s *session) updateChildLifecycle(bit uint32) {
+	for {
+		state := s.childLifecycle.Load()
+		if s.childLifecycle.CompareAndSwap(state, state|bit) {
+			return
+		}
+	}
+}
+
+const (
+	lifecycleChildExited uint32 = 1 << iota
+	lifecycleCancelled
+	lifecycleStopCommitted // provisional eligibility; not the stop decision
+	lifecycleStopClaimed   // final ordering point for one targeted SIGTSTP attempt
+)
+
+func (s *session) childReaped() {
+	s.updateChildLifecycle(lifecycleChildExited)
+	s.childOnce.Do(func() { close(s.childDone) })
+}
+
+func (s *session) canDrainOutput() bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state == sessionRunning && !s.suspended && s.ownsTTY(s.inFd)
+}
+
+func (s *session) canReadInput() bool {
+	if s == nil {
+		return true
+	}
+	if s.cancellationOrExitPublished() {
+		return false
+	}
+	return s.canDrainOutput()
+}
 
 // Handle is a running child's half of a caller-owned signal teardown (Observer.Arm). Its
 // methods are safe from any goroutine, and harmless once the run is over.
@@ -401,15 +512,15 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		setWinsize(slave, ws)
 	}
 
+	ptyFile := os.NewFile(uintptr(slave), "pty-slave")
 	c := obs.command(cmd)
-	c.Stdin, c.Stdout, c.Stderr = os.NewFile(uintptr(slave), "pty-slave"),
-		os.NewFile(uintptr(slave), "pty-slave"), os.NewFile(uintptr(slave), "pty-slave")
+	c.Stdin, c.Stdout, c.Stderr = ptyFile, ptyFile, ptyFile
 	if err := c.Start(); err != nil {
+		_ = ptyFile.Close()
 		unix.Close(master)
-		unix.Close(slave)
 		return 0, err
 	}
-	unix.Close(slave) // parent uses only the master end
+	_ = ptyFile.Close() // one owner for the slave fd; avoid competing finalizers after fd reuse
 	mode := &ptyMode{master: master}
 	if obs.Pty != nil {
 		func() {
@@ -425,6 +536,8 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 	// Raw mode on the host TTY.
 	setRaw(inFd, cooked)
 
+	sink := &outputSink{fd: 1}
+	obs.outputSink = sink
 	restoreCooked := func() { restoreTerminal(inFd, cooked) }
 
 	// The run's teardown state. Whichever arm acts first owns the exit: it kills the child
@@ -434,6 +547,15 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 	// child has exited and the return is under way is not an arm's to act on
 	// (session.terminate).
 	sess := newSession(inFd, cooked, c, hook)
+	if obs.ownsTTY != nil {
+		sess.ownsTTY = obs.ownsTTY
+	}
+	sess.beforeSuspend = obs.beforeSuspend
+	sess.afterSuspendCommit = obs.afterSuspendCommit
+	sess.output = sink
+	obs.run = sess
+	// Reap before exposing a kill-waiting Handle to the synchronous Arm callback.
+	exitedCh := reapChild(c, sess)
 	callerArms := obs.Arm != nil
 	if callerArms {
 		func() {
@@ -453,6 +575,12 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		signal.Notify(sigCh, syscall.SIGWINCH, syscall.SIGCONT, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM)
 	}
 	defer signal.Stop(sigCh)
+	if !callerArms {
+		cancelWake := make(chan os.Signal, 8)
+		signal.Notify(cancelWake, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM)
+		defer signal.Stop(cancelWake)
+		obs.cancelWake = cancelWake
+	}
 
 	go func() {
 		for s := range sigCh {
@@ -465,10 +593,10 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				// from here would raise SIGTTOU and stop us again, and would put the
 				// shell's terminal in raw mode if it got through. `fg` sends another
 				// SIGCONT, from the foreground, and that one re-raws.
-				if !ownsTerminal(inFd) {
+				if !sess.ownsTTY(inFd) {
 					continue
 				}
-				sess.reRaw() // host TTY was cooked while suspended; never after a teardown began
+				sess.reRaw()
 				// AND RESIZE. A window resized while we were stopped changed the
 				// host tty behind our back, and the resulting SIGWINCH is only
 				// delivered if one was pending — a resize that happened before the
@@ -477,6 +605,8 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				// trigger.
 				resyncWinsize(inFd, master, c)
 			case syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM:
+				sess.requestCancel()
+				callStage(hook, StageCancelRequested)
 				// The terminate arm must reach os.Exit from the background too: that is
 				// where `kill %1` finds a job the user ^Z'd out of a lingering quit, and
 				// session.terminate ignores SIGTTOU/SIGTTIN and leaves the termios, which is
@@ -499,7 +629,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		}
 	}()
 
-	rc := proxyLoop(inFd, master, c, cooked, obs)
+	rc, proxyErr := proxyLoop(inFd, master, c, cooked, obs, exitedCh)
 	if !sess.claimReturn() {
 		select {} // an arm is exiting the process; never race it
 	}
@@ -507,12 +637,16 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 		afterReturnClaimed()
 	}
 
-	restoreCooked()
+	if proxyErr != nil {
+		restoreTerminalForCancellation(inFd, cooked, sink)
+	} else if !sess.isSuspended() {
+		restoreCooked()
+	}
 	close(sess.restored)
 	callStage(hook, StageTermiosRestored)
 	mode.close()
 	unix.Close(master)
-	return rc, nil
+	return rc, proxyErr
 }
 
 // beforeTerminateExit is a test seam: it runs in the terminate arm between killing the
@@ -541,6 +675,7 @@ func runPlain(cmd []string, onStarted func(*os.Process), obs Observer) (int, err
 		return 0, err
 	}
 	sess := newSession(-1, nil, c, hook)
+	exitedCh := reapChild(c, sess)
 	if obs.Arm != nil {
 		func() {
 			defer func() { _ = recover() }()
@@ -551,34 +686,303 @@ func runPlain(cmd []string, onStarted func(*os.Process), obs Observer) (int, err
 	if onStarted != nil {
 		go safeCallback(onStarted, c.Process)
 	}
-	err := c.Wait()
+	rc := <-exitedCh
 	callStage(hook, StageExited)
 	if !sess.claimReturn() {
 		select {} // the caller's arm is exiting the process; never race it
 	}
 	close(sess.restored)
-	return exitCode(err), nil
+	return rc, nil
+}
+
+func reapChild(c *exec.Cmd, sess *session) <-chan int {
+	exitedCh := make(chan int, 1)
+	go func() {
+		rc := exitCode(c.Wait())
+		if sess != nil {
+			sess.childReaped()
+		}
+		exitedCh <- rc
+	}()
+	return exitedCh
 }
 
 // maxForwardQueue is the backpressure threshold for host input queued for the
 // child's pty master. When the in-memory queue reaches this ceiling, reading from
 // host stdin is paused so a flood of pasted input cannot grow memory without bound
 // or outpace the child. Output draining from the child continues uninterrupted.
-const maxForwardQueue = 1024 * 1024 // 1 MiB
+const (
+	maxForwardQueue = 1024 * 1024 // 1 MiB
+	maxOutputQueue  = 1024 * 1024 // 1 MiB
+)
+
+type outputWriteRequest struct {
+	fd    int
+	data  []byte
+	reset bool
+}
+
+type outputWriteResult struct {
+	bytes int
+	reset bool
+	err   error
+}
+
+func writeOutputChunk(fd int, data []byte) error {
+	for len(data) > 0 {
+		n, err := unix.Write(fd, data)
+		if n > 0 {
+			data = data[n:]
+		}
+		if err == nil {
+			if n == 0 {
+				return io.ErrShortWrite
+			}
+			continue
+		}
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+			fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
+			if _, pollErr := unix.Poll(fds, -1); pollErr != nil && !errors.Is(pollErr, syscall.EINTR) {
+				return pollErr
+			}
+			continue
+		}
+		return err
+	}
+	return nil
+}
+
+type outputSink struct {
+	fd       int
+	mu       sync.Mutex
+	canceled atomic.Bool
+}
+
+func (s *outputSink) write(data []byte) error { return s.writeTo(s.fd, data) }
+
+func (s *outputSink) writeTo(fd int, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.canceled.Load() {
+		return nil
+	}
+	return writeOutputChunk(fd, data)
+}
+
+func (s *outputSink) cancel() { s.canceled.Store(true) }
+
+func (s *outputSink) cancelAndReset(inFd int) {
+	s.cancel()
+	fd := terminalResetFD(inFd)
+	if fd < 0 {
+		return
+	}
+	if fd == s.fd {
+		if !s.mu.TryLock() {
+			return
+		}
+		defer s.mu.Unlock()
+	}
+	writeTerminalResetFD(fd)
+}
+
+func writeTerminalResetIfReady(inFd int) {
+	if fd := terminalResetFD(inFd); fd >= 0 {
+		writeTerminalResetFD(fd)
+	}
+}
+
+func writeTerminalResetFD(fd int) {
+	reset := []byte(termReset)
+	for len(reset) > 0 {
+		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
+		n, err := unix.Poll(fds, 0)
+		if err != nil {
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			return
+		}
+		if n == 0 || fds[0].Revents&unix.POLLOUT == 0 {
+			return
+		}
+		written, err := unix.Write(fd, reset[:1])
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if err != nil || written != 1 {
+			return
+		}
+		reset = reset[1:]
+	}
+}
+
+func restoreTerminalForCancellation(inFd int, cooked *unix.Termios, sink *outputSink) {
+	if cooked != nil {
+		_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
+	}
+	if sink != nil {
+		sink.cancelAndReset(inFd)
+	} else {
+		writeTerminalResetIfReady(inFd)
+	}
+}
 
 // proxyLoop pumps bytes between the host TTY and the master pty until the child
 // exits.
-func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer) int {
+func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer, exitedCh <-chan int) (int, error) {
 	hook := obs.Stage
-	outFd := int(os.Stdout.Fd())
 	var pending []byte
 	var toMaster []byte
+	var enqueueToMaster func([]byte)
 	stdinClosed := false
 
 	// Set master to non-blocking so writes to the pty never hang proxyLoop in the
 	// kernel when child input buffers fill up (e.g. large image paste) while the child
 	// is producing output or blocked.
 	_ = unix.SetNonblock(master, true)
+	buf := make([]byte, readChunk)
+
+	// A blocked host stdout must not stop polling host input. One writer owns all
+	// stdout writes; the pump bounds outstanding output and keeps forwarding input
+	// while that writer is backpressured. No shared stdout status flags are changed.
+	sink := obs.outputSink
+	if sink == nil {
+		sink = &outputSink{fd: 1}
+	}
+	outputWrites := make(chan outputWriteRequest)
+	outputResults := make(chan outputWriteResult, 1)
+	outputStopped := make(chan struct{})
+	go func() {
+		defer close(outputStopped)
+		for request := range outputWrites {
+			err := sink.writeTo(request.fd, request.data)
+			outputResults <- outputWriteResult{bytes: len(request.data), reset: request.reset, err: err}
+		}
+	}()
+	var pendingOutput []outputWriteRequest
+	outputBytes := 0
+	var acceptedOffset uint64
+	outputBusy := false
+	outputFailed := false
+	var outputErr error
+	pendingSuspend := false
+	suspendResetQueued := false
+	var suspendOffset uint64
+	suspendResumePending := false
+	var resumeSuspendedInput func()
+	acceptOutput := func(data []byte) {
+		if outputFailed || len(data) == 0 {
+			return
+		}
+		copyOfData := append([]byte(nil), data...)
+		pendingOutput = append(pendingOutput, outputWriteRequest{fd: sink.fd, data: copyOfData})
+		outputBytes += len(copyOfData)
+		acceptedOffset += uint64(len(copyOfData))
+	}
+	dispatchOutput := func() {
+		if outputBusy || len(pendingOutput) == 0 {
+			return
+		}
+		outputWrites <- pendingOutput[0]
+		pendingOutput = pendingOutput[1:]
+		outputBusy = true
+	}
+	completeOutput := func(result outputWriteResult) {
+		outputBusy = false
+		outputBytes -= result.bytes
+		if result.err != nil {
+			outputFailed = true
+			outputErr = &OutputError{Err: result.err}
+			pendingOutput = nil
+			outputBytes = 0
+			pendingSuspend = false
+			// This command is the child owned by this proxy invocation. The
+			// reaper goroutine remains the sole caller of Wait.
+			if obs.run != nil {
+				obs.run.kill()
+			} else {
+				_ = c.Process.Kill()
+			}
+		} else if result.reset && pendingSuspend {
+			suspend, err := suspendAfterReset(inFd, cooked, obs.run, hook)
+			if err != nil {
+				outputFailed = true
+				outputErr = err
+				pendingSuspend = false
+				if obs.run != nil {
+					obs.run.kill()
+				} else {
+					_ = c.Process.Kill()
+				}
+				return
+			}
+			if !suspend {
+				pendingSuspend = false
+				return
+			}
+			if obs.run != nil && obs.run.isSuspended() {
+				suspendResumePending = true
+				return
+			}
+			if resumeSuspendedInput != nil {
+				resumeSuspendedInput()
+			}
+		}
+	}
+	waitOutput := func() {
+		if !outputBusy {
+			dispatchOutput()
+		}
+		if outputBusy {
+			completeOutput(<-outputResults)
+		}
+	}
+	finish := func(rc int) (int, error) {
+		callStage(hook, StageExited)
+		for {
+			if obs.run != nil && !obs.run.canDrainOutput() {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			for !outputFailed && outputBytes+readChunk > maxOutputQueue {
+				if obs.run != nil && !obs.run.canDrainOutput() {
+					break
+				}
+				waitOutput()
+			}
+			if obs.run != nil && !obs.run.canDrainOutput() {
+				continue
+			}
+			n, err := unix.Read(master, buf)
+			if n > 0 {
+				acceptOutput(buf[:n])
+			}
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+				break
+			}
+			if err != nil || n == 0 {
+				break
+			}
+		}
+		for outputBytes > 0 {
+			if obs.run != nil && !obs.run.canDrainOutput() {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			waitOutput()
+		}
+		callStage(hook, StageDrainDone)
+		close(outputWrites)
+		<-outputStopped
+		return rc, outputErr
+	}
 
 	flushToMaster := func() {
 		if len(toMaster) == 0 {
@@ -597,7 +1001,7 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 	}
 
-	enqueueToMaster := func(data []byte) {
+	enqueueToMaster = func(data []byte) {
 		if len(data) == 0 {
 			return
 		}
@@ -614,37 +1018,85 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			toMaster = append(toMaster, data...)
 		}
 	}
+	resumeSuspendedInput = func() {
+		if obs.cancelWake != nil {
+			select {
+			case <-obs.cancelWake:
+				if obs.run != nil {
+					obs.run.requestCancel()
+				}
+				select {}
+			default:
+			}
+		}
+		if obs.run != nil && obs.run.cancellationOrExitPublished() {
+			suspendResumePending = false
+			pendingSuspend = false
+			return
+		}
+		suspendResumePending = false
+		pendingSuspend = false
+		suspendResetQueued = false
+		callStage(hook, StageResumed)
+		if len(pending) > 0 {
+			enqueueToMaster(pending)
+			pending = nil
+		}
+	}
 
-	// Reap the child in the background so poll() equivalent works.
-	exitedCh := make(chan int, 1)
-	go func() { exitedCh <- exitCode(c.Wait()) }()
+	if exitedCh == nil {
+		exitedCh = reapChild(c, obs.run)
+	}
 
-	buf := make([]byte, readChunk)
 	for {
+		if obs.cancelWake != nil {
+			select {
+			case <-obs.cancelWake:
+				if obs.run != nil {
+					obs.run.requestCancel()
+				}
+				// The signal arm owns restoration, the owned-child kill and exit.
+				// Stop pumping immediately; the arm will end this process.
+				select {}
+			default:
+			}
+		}
 		select {
 		case rc := <-exitedCh:
-			// Drain any final child output, then return.
-			callStage(hook, StageExited)
-			for {
-				n, err := unix.Read(master, buf)
-				if n > 0 {
-					_, _ = unix.Write(outFd, buf[:n])
-				}
-				if err != nil || n == 0 {
-					break
-				}
-			}
-			callStage(hook, StageDrainDone)
-			return rc
+			return finish(rc)
 		default:
 		}
+		select {
+		case result := <-outputResults:
+			completeOutput(result)
+		default:
+		}
+		if suspendResumePending && obs.run != nil && !obs.run.isSuspended() {
+			resumeSuspendedInput()
+		}
+		if pendingSuspend && !suspendResetQueued && outputBytes == 0 && acceptedOffset == suspendOffset && !outputBusy && !outputFailed {
+			fd := terminalResetFD(inFd)
+			if fd >= 0 {
+				reset := []byte(termReset)
+				pendingOutput = append(pendingOutput, outputWriteRequest{fd: fd, data: reset, reset: true})
+				outputBytes += len(reset)
+				suspendResetQueued = true
+			}
+		}
+		if obs.run == nil || obs.run.canDrainOutput() {
+			dispatchOutput()
+		}
 
-		masterEvents := int16(unix.POLLIN)
-		if len(toMaster) > 0 {
+		masterEvents := int16(0)
+		if (obs.run == nil || obs.run.canDrainOutput()) && !pendingSuspend && (outputFailed || outputBytes+readChunk <= maxOutputQueue) {
+			masterEvents |= unix.POLLIN
+		}
+		readInputAllowed := obs.run == nil || obs.run.canReadInput()
+		if readInputAllowed && len(toMaster) > 0 {
 			masterEvents |= unix.POLLOUT
 		}
 		fds := []unix.PollFd{{Fd: int32(master), Events: masterEvents}}
-		if !stdinClosed && len(toMaster) < maxForwardQueue {
+		if readInputAllowed && !stdinClosed && len(toMaster)+len(pending) < maxForwardQueue {
 			fds = append(fds, unix.PollFd{Fd: int32(inFd), Events: unix.POLLIN})
 		}
 		_, err := unix.Poll(fds, 100)
@@ -657,29 +1109,27 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		}
 
 		// master readable
-		if fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
+		if (obs.run == nil || obs.run.canDrainOutput()) && !pendingSuspend && fds[0].Revents&(unix.POLLIN|unix.POLLHUP) != 0 {
 			n, rerr := unix.Read(master, buf)
 			if n > 0 {
-				_, _ = unix.Write(outFd, buf[:n])
+				acceptOutput(buf[:n])
 			}
 			if rerr != nil || n == 0 {
 				if rerr == nil || (!errors.Is(rerr, unix.EAGAIN) && !errors.Is(rerr, unix.EWOULDBLOCK) && !errors.Is(rerr, syscall.EINTR)) {
 					// master closed (child exited) — wait for the reaper.
 					rc := <-exitedCh
-					callStage(hook, StageExited)
-					callStage(hook, StageDrainDone)
-					return rc
+					return finish(rc)
 				}
 			}
 		}
 
 		// master writable
-		if fds[0].Revents&unix.POLLOUT != 0 {
+		if (obs.run == nil || obs.run.canReadInput()) && fds[0].Revents&unix.POLLOUT != 0 {
 			flushToMaster()
 		}
 
 		// stdin readable
-		if !stdinClosed && len(fds) > 1 && fds[1].Revents&unix.POLLIN != 0 {
+		if (obs.run == nil || obs.run.canReadInput()) && !stdinClosed && len(fds) > 1 && fds[1].Revents&unix.POLLIN != 0 {
 			n, rerr := unix.Read(inFd, buf)
 			if n == 0 || (rerr != nil && !errors.Is(rerr, syscall.EINTR) && !errors.Is(rerr, unix.EAGAIN) && !errors.Is(rerr, unix.EWOULDBLOCK)) {
 				// EOF on host stdin: stop reading stdin, keep pumping master
@@ -696,6 +1146,10 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			// The observer gets the chunk's SIZE and at most the name of the one
 			// control key it is — never a byte of it.
 			obs.input(n, classifyInput(data))
+			if pendingSuspend {
+				pending = append(pending, stripSuspendKeys(data)...)
+				continue
+			}
 			// ^C IS FORWARDED LIKE ANY OTHER BYTE, and that is a 2026-09-19 ruling
 			// reversing what this loop used to do.
 			//
@@ -734,16 +1188,46 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			if start > 0 {
 				enqueueToMaster(data[:start])
 			}
-			pending = append([]byte(nil), data[stop:]...)
-			callStage(hook, StageSuspended)
-			selfSuspend(inFd, cooked)
-			callStage(hook, StageResumed)
-			if len(pending) > 0 {
-				enqueueToMaster(pending)
-				pending = nil
+			pending = append(pending, stripSuspendKeys(data[stop:])...)
+			if obs.suspendBoundary != nil {
+				func() {
+					defer func() { _ = recover() }()
+					obs.suspendBoundary(acceptedOffset)
+				}()
 			}
+			pendingSuspend = true
+			suspendOffset = acceptedOffset
 		}
 	}
+}
+
+func stripSuspendKeys(data []byte) []byte {
+	var filtered []byte
+	copiedUntil := 0
+	for i := 0; i < len(data); {
+		skip := 0
+		if data[i] == suspByte {
+			skip = 1
+		} else if data[i] == esc {
+			if n, matched := matchEscapedSuspend(data[i:]); matched {
+				skip = n
+			}
+		}
+		if skip == 0 {
+			i++
+			continue
+		}
+		if filtered == nil {
+			filtered = make([]byte, 0, len(data))
+		}
+		filtered = append(filtered, data[copiedUntil:i]...)
+		i += skip
+		copiedUntil = i
+	}
+	if filtered == nil {
+		return data
+	}
+	return append(filtered, data[copiedUntil:]...)
 }
 
 // termReset contains ANSI escape sequences that restore the terminal to a
@@ -787,17 +1271,26 @@ const termReset = "\x1b[0m\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\
 // text attributes, and disable mouse tracking, bracketed paste, and application
 // keypad/cursor modes. It writes to the first available terminal among stdout,
 // stderr, and inFd.
-func resetTerminal(inFd int) {
-	fd := -1
+var (
+	terminalStdoutFD = 1
+	terminalStderrFD = 2
+)
+
+func terminalResetFD(inFd int) int {
 	switch {
-	case isatty(int(os.Stdout.Fd())):
-		fd = int(os.Stdout.Fd())
-	case isatty(int(os.Stderr.Fd())):
-		fd = int(os.Stderr.Fd())
+	case isatty(terminalStdoutFD):
+		return terminalStdoutFD
+	case isatty(terminalStderrFD):
+		return terminalStderrFD
 	case isatty(inFd):
-		fd = inFd
+		return inFd
+	default:
+		return -1
 	}
-	if fd >= 0 {
+}
+
+func resetTerminal(inFd int) {
+	if fd := terminalResetFD(inFd); fd >= 0 {
 		_, _ = unix.Write(fd, []byte(termReset))
 	}
 }
@@ -821,6 +1314,99 @@ func ownsTerminal(fd int) bool {
 func restoreTerminal(inFd int, cooked *unix.Termios) {
 	_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
 	resetTerminal(inFd)
+}
+
+// suspendAfterReset runs after the ordered terminal reset. Its lifecycle CAS is provisional;
+// claimSuspendSignal is the final atomic ordering point before the targeted syscall. Neither
+// that claim nor a successful syscall return proves that the kernel stopped this process.
+func suspendAfterReset(inFd int, cooked *unix.Termios, sess *session, hook StageHook) (bool, error) {
+	if sess == nil {
+		if cooked != nil {
+			_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
+		}
+		if err := syscall.Kill(os.Getpid(), syscall.SIGTSTP); err != nil {
+			if cooked != nil {
+				setRaw(inFd, cooked)
+			}
+			return false, err
+		}
+		callStage(hook, StageSuspended)
+		return true, nil
+	}
+
+	sess.mu.Lock()
+	if sess.state != sessionRunning || sess.cancellationPublished() || sess.childHasExited() {
+		sess.mu.Unlock()
+		return false, nil
+	}
+	if cooked != nil {
+		_ = unix.IoctlSetTermios(inFd, unix.TCSETS, cooked)
+	}
+	sess.suspended = true
+	if sess.beforeSuspend != nil {
+		sess.beforeSuspend()
+	}
+	if sess.cancellationPublished() || sess.childHasExited() {
+		if sess.childHasExited() && sess.ownsTTY(inFd) {
+			setRaw(inFd, cooked)
+			sess.suspended = false
+		}
+		sess.mu.Unlock()
+		return false, nil
+	}
+	if !sess.commitSuspendStop() {
+		if sess.ownsTTY(inFd) {
+			setRaw(inFd, cooked)
+			sess.suspended = false
+		}
+		sess.mu.Unlock()
+		return false, nil
+	}
+	sess.mu.Unlock()
+
+	// This test seam is deliberately before the final claim. Cancellation/reaping publish
+	// without this transition lock, so either event can deterministically revoke the claim.
+	if sess.afterSuspendCommit != nil {
+		func() {
+			defer func() { _ = recover() }()
+			sess.afterSuspendCommit()
+		}()
+	}
+	if !sess.claimSuspendSignal() {
+		sess.mu.Lock()
+		if sess.state == sessionRunning && sess.suspended && !sess.cancellationPublished() && sess.ownsTTY(inFd) {
+			setRaw(inFd, cooked)
+			sess.suspended = false
+		}
+		sess.mu.Unlock()
+		return false, nil
+	}
+
+	// No callback, mutex, or wait between the final claim and this targeted attempt. The
+	// process is not holding the terminal-transition mutex while SIGTSTP can stop it.
+	err := syscall.Kill(os.Getpid(), syscall.SIGTSTP)
+	if err != nil {
+		sess.clearSuspendStop()
+		sess.mu.Lock()
+		if sess.state == sessionRunning && sess.suspended && !sess.cancellationPublished() && sess.ownsTTY(inFd) {
+			setRaw(inFd, cooked)
+			sess.suspended = false
+		}
+		sess.mu.Unlock()
+		return false, err
+	}
+	// The syscall returned only after an ignored signal or a continuation; this marker is
+	// not proof of the kernel stop, which tests observe independently from the owned process.
+	callStage(hook, StageSuspended)
+	sess.mu.Lock()
+	if sess.state == sessionRunning && sess.suspended && !sess.cancellationPublished() && sess.ownsTTY(inFd) {
+		// SIGTSTP was ignored, or a foreground continuation raced the signal arm.
+		sess.suspended = false
+		setRaw(inFd, cooked)
+		sess.clearSuspendStop()
+	}
+	sess.mu.Unlock()
+	return true, nil
 }
 
 // selfSuspend restores cooked termios and resets the terminal, then raises

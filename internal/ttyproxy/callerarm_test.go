@@ -80,7 +80,7 @@ func callerArmRole(pty bool) int {
 		}
 		defer unix.Close(master)
 		os.Stdin = os.NewFile(uintptr(slave), "pty-slave")
-		go drainMaster(master)
+		_, _ = drainMaster(master)
 	} else {
 		devnull, err := os.Open(os.DevNull)
 		if err != nil {
@@ -163,11 +163,17 @@ func TestAHandleIsInertOnceTheRunIsOver(t *testing.T) {
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
 	}
-	defer unix.Close(master)
-	go drainMaster(master)
 	origIn := os.Stdin
-	os.Stdin = os.NewFile(uintptr(slave), "pty-slave-stdin")
-	defer func() { os.Stdin = origIn; unix.Close(slave) }()
+	hostTTY := os.NewFile(uintptr(slave), "pty-slave-stdin")
+	os.Stdin = hostTTY
+	stopDrain, drainDone := drainMaster(master)
+	t.Cleanup(func() {
+		stopDrain()
+		<-drainDone
+		os.Stdin = origIn
+		_ = hostTTY.Close()
+		_ = unix.Close(master)
+	})
 
 	var h Handle
 	rc, err := RunWithProxyObserved([]string{"sh", "-c", "exit 4"}, nil, nil,
@@ -206,7 +212,7 @@ func TestASignalAfterTheReturnIsClaimedIsLeftToTheCaller(t *testing.T) {
 			os.Exit(0)
 		}
 		defer unix.Close(master)
-		go drainMaster(master)
+		_, _ = drainMaster(master)
 		os.Stdin = os.NewFile(uintptr(slave), "pty-slave")
 		afterReturnClaimed = func() {
 			_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
@@ -249,12 +255,31 @@ func lflag(fd int) uint32 {
 	return t.Lflag
 }
 
-// drainMaster reads a pty master until it closes, so nothing written to its slave blocks.
-func drainMaster(master int) {
-	buf := make([]byte, 4096)
-	for {
-		if n, err := unix.Read(master, buf); err != nil || n == 0 {
+// drainMaster reads a pty master without blocking on an empty queue. The caller stops and
+// joins it before releasing the descriptor, so it cannot read a later occupant of the number.
+func drainMaster(master int) (func(), <-chan struct{}) {
+	_ = unix.SetNonblock(master, true)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			_, err := unix.Read(master, buf)
+			if err == nil || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
+				time.Sleep(time.Millisecond)
+				continue
+			}
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
 			return
 		}
-	}
+	}()
+	return func() { close(stop) }, done
 }
