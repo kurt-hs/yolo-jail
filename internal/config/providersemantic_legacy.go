@@ -172,7 +172,7 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 	}
 	setIntegerAliases := func(keys []string, dst *int64) {
 		var selected *int64
-		for _, key := range keys {
+		for index, key := range keys {
 			v, ok := flat[key]
 			if !ok {
 				continue
@@ -189,6 +189,21 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 			if n == 0 {
 				add(key, "authored zero is omitted by the canonical projection and can change the legacy consumer fallback")
 				continue
+			}
+			if index > 0 {
+				primary, present := flat[keys[0]]
+				primaryValue := int64(0)
+				primaryValid := false
+				if present && primary != nil {
+					parsed, err := strconv.ParseInt(strings.TrimSpace(*primary), 10, 64)
+					if err == nil && parsed > 0 {
+						primaryValue, primaryValid = parsed, true
+					}
+				}
+				if !primaryValid || primaryValue != n {
+					add(key, fmt.Sprintf("alternate spelling is not consumed by Pi's model-list path without an equivalent %s fact", keys[0]))
+					continue
+				}
 			}
 			if selected == nil {
 				value := n
@@ -366,6 +381,7 @@ func cloneProviderContribution(src packdecl.ProviderContribution) packdecl.Provi
 	if src.ModelOrder != nil {
 		out.ModelOrder = cloneStrings(src.ModelOrder)
 	}
+	out.VariantOrder = cloneStrings(src.VariantOrder)
 	if src.EveryModel != nil {
 		m := cloneLegacyProviderModel(*src.EveryModel)
 		out.EveryModel = &m
