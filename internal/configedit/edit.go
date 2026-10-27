@@ -186,11 +186,16 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		setValue(root, path, append(append([]any(nil), items...), normalized))
 	case Remove:
 		if format == configdoc.TOML && last.IsIndex {
-			item, ok, e := doc.Index.Item(path...)
+			itemPath := path
+			_, ok, e := doc.Index.Item(itemPath...)
 			if e != nil {
 				return nil, e
 			}
-			if ok && item.Start < len(data) && data[item.Start] == '[' {
+			arrayTable, e := isTOMLArrayTableItem(doc, itemPath)
+			if e != nil {
+				return nil, e
+			}
+			if ok && arrayTable {
 				items, valid := parent.([]any)
 				if !valid || last.Index < 0 || last.Index >= len(items) {
 					return nil, fmt.Errorf("remove target is not an array-table item")
@@ -624,12 +629,12 @@ func tomlStructureRanges(doc *configdoc.Document, path []configdoc.Step) ([]conf
 		switch node := value.(type) {
 		case *jsonx.OrderedMap:
 			if len(at) > 0 {
-				span, ok, err := doc.Index.Table(at...)
+				header, isHeader, err := isTOMLHeaderTable(doc, at)
 				if err != nil {
 					return err
 				}
-				if ok && span.Start < len(doc.Bytes) && doc.Bytes[span.Start] == '[' {
-					ranges = append(ranges, span)
+				if isHeader {
+					ranges = append(ranges, header)
 				}
 				member, found, err := doc.Index.Member(at...)
 				if err != nil {
@@ -659,11 +664,15 @@ func tomlStructureRanges(doc *configdoc.Document, path []configdoc.Step) ([]conf
 			}
 			for i, child := range node {
 				childPath := appendStep(at, configdoc.Step{Index: i, IsIndex: true})
-				item, ok, err := doc.Index.Item(childPath...)
+				item, found, err := doc.Index.Item(childPath...)
 				if err != nil {
 					return err
 				}
-				if ok && item.Start < len(doc.Bytes) && doc.Bytes[item.Start] == '[' {
+				arrayTable, err := isTOMLArrayTableItem(doc, childPath)
+				if err != nil {
+					return err
+				}
+				if found && arrayTable {
 					ranges = append(ranges, item)
 				}
 				if err := walk(childPath, child); err != nil {
@@ -895,6 +904,39 @@ func planStructuralSet(data []byte, format configdoc.Format, path []configdoc.St
 	return &Plan{Format: format, Original: original, Updated: append([]byte(nil), data...), Expected: expected, Noop: bytes.Equal(original, data), Hunks: []Hunk{{Start: start, End: end, Before: append([]byte(nil), original[start:end]...), After: append([]byte(nil), data[start:newEnd]...)}}}, nil
 }
 
+func isTOMLHeaderTable(doc *configdoc.Document, path []configdoc.Step) (configdoc.Span, bool, error) {
+	span, ok, err := doc.Index.Table(path...)
+	if err != nil || !ok {
+		return span, false, err
+	}
+	if _, hasValue, err := doc.Index.Value(path...); err != nil || hasValue {
+		return span, false, err
+	}
+	return span, tomlHeaderAt(doc.Bytes, span), nil
+}
+
+func isTOMLArrayTableItem(doc *configdoc.Document, path []configdoc.Step) (bool, error) {
+	if len(path) == 0 || !path[len(path)-1].IsIndex {
+		return false, nil
+	}
+	if _, ok, err := doc.Index.Item(path...); err != nil || !ok {
+		return false, err
+	}
+	_, ok, err := isTOMLHeaderTable(doc, path)
+	return ok, err
+}
+
+func tomlHeaderAt(data []byte, span configdoc.Span) bool {
+	if span.Start < 0 || span.Start >= len(data) {
+		return false
+	}
+	start := span.Start
+	for start < len(data) && (data[start] == ' ' || data[start] == '\t') {
+		start++
+	}
+	return start < len(data) && data[start] == '['
+}
+
 func tomlArrayTableAt(data []byte, path []configdoc.Step) bool {
 	doc, err := configdoc.Parse(data, configdoc.TOML)
 	if err != nil {
@@ -906,8 +948,8 @@ func tomlArrayTableAt(data []byte, path []configdoc.Step) bool {
 		return false
 	}
 	itemPath := appendStep(path, configdoc.Step{Index: 0, IsIndex: true})
-	span, ok, err := doc.Index.Item(itemPath...)
-	return err == nil && ok && span.Start < len(data) && data[span.Start] == '['
+	arrayTable, err := isTOMLArrayTableItem(doc, itemPath)
+	return err == nil && arrayTable
 }
 
 func appendTOMLArrayTableItem(data []byte, path []configdoc.Step, value any) ([]byte, error) {
@@ -920,12 +962,17 @@ func appendTOMLArrayTableItem(data []byte, path []configdoc.Step, value any) ([]
 	if !ok || !valid || len(items) == 0 {
 		return nil, fmt.Errorf("cannot locate existing TOML array-table rows")
 	}
-	keys := make([]string, len(path))
-	for i, step := range path {
+	keys := make([]string, 0, len(path))
+	nested := false
+	for _, step := range path {
 		if step.IsIndex {
-			return nil, fmt.Errorf("cannot append a nested array-table through an indexed parent; set the containing array-table item instead")
+			nested = true
+			continue
 		}
-		keys[i] = tomlKey(step.Key)
+		keys = append(keys, tomlKey(step.Key))
+	}
+	if nested {
+		return nil, fmt.Errorf("cannot grow nested TOML array-table %s automatically; manually add rows under the intended [[%s]] header and set their fields", tomlPathString(path), strings.Join(keys, "."))
 	}
 	row, ok := value.(*jsonx.OrderedMap)
 	if !ok {
@@ -933,7 +980,8 @@ func appendTOMLArrayTableItem(data []byte, path []configdoc.Step, value any) ([]
 	}
 	lastPath := appendStep(path, configdoc.Step{Index: len(items) - 1, IsIndex: true})
 	last, found, err := doc.Index.Item(lastPath...)
-	if err != nil || !found || last.Start >= len(data) || data[last.Start] != '[' {
+	arrayTable, tableErr := isTOMLArrayTableItem(doc, lastPath)
+	if err != nil || tableErr != nil || !found || !arrayTable || !tomlHeaderAt(data, last) {
 		return nil, fmt.Errorf("cannot locate final TOML array-table header")
 	}
 	end := last.End
