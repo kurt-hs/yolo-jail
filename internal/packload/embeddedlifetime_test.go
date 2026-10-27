@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -112,7 +113,10 @@ func TestEmbeddedRootsAreReadableForTheProcess(t *testing.T) {
 func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
 	const childEnv = "YOLO_PACKLOAD_TERMINAL_CHILD"
 	if os.Getenv(childEnv) == "1" {
-		tmp := os.TempDir()
+		tmp, err := filepath.EvalSymlinks(os.TempDir())
+		if err != nil {
+			t.Fatalf("resolve fixture TMPDIR: %v", err)
+		}
 		blocker := filepath.Join(tmp, "embedded-cache-is-a-file")
 		if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
 			t.Fatal(err)
@@ -132,9 +136,47 @@ func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
 		if processRoot == "" || processRoot == fallbackRoot {
 			t.Fatalf("expected distinct process tree before terminal release, got %q", processRoot)
 		}
+		roots := []string{fallbackRoot, processRoot}
+		ownedRoots := make([]string, 0, len(roots))
+		seenRoots := make(map[string]bool, len(roots))
+		for _, root := range roots {
+			physicalRoot, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatalf("resolve owned root %q: %v", root, err)
+			}
+			if seenRoots[physicalRoot] {
+				t.Fatalf("embedded fallback and process roots are not distinct: %q", physicalRoot)
+			}
+			seenRoots[physicalRoot] = true
+
+			rel, err := filepath.Rel(tmp, physicalRoot)
+			withinTMP := err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+			if root == fallbackRoot && !withinTMP {
+				t.Fatalf("fallback root %q is outside canonical fixture TMPDIR %q", physicalRoot, tmp)
+			}
+			if withinTMP {
+				ownedRoots = append(ownedRoots, physicalRoot)
+			}
+			lease, unlock, leaseErr := packload.ProbeLease(root)
+			unlock()
+			t.Logf("before-release root=%q physical=%q within-fixture-TMPDIR=%t lease=%s lease-error=%v", root, physicalRoot, withinTMP, lease, leaseErr)
+			if leaseErr != nil || lease != packload.LeaseHeld {
+				t.Fatalf("before-release root %q lease = %s (%v), want a held lease", root, lease, leaseErr)
+			}
+		}
+		if len(ownedRoots) < 1 || len(ownedRoots) > 2 {
+			t.Fatalf("before-release owned roots within fixture TMPDIR = %q, want the fallback and any in-TMP process root", ownedRoots)
+		}
+		sort.Strings(ownedRoots)
 		before, err := filepath.Glob(filepath.Join(tmp, packload.EmbeddedFallbackPrefix+"*"))
-		if err != nil || len(before) != 1 || before[0] != fallbackRoot {
-			t.Fatalf("before-release inventory = %q (%v), want the fallback tree containing the process tree", before, err)
+		t.Logf("before-release fixture-TMPDIR=%q exact-owned-inventory=%q actual-inventory=%q error=%v", tmp, ownedRoots, before, err)
+		if err != nil || len(before) != len(ownedRoots) {
+			t.Fatalf("before-release inventory = %q (%v), want exactly owned roots %q within fixture TMPDIR", before, err, ownedRoots)
+		}
+		for i := range before {
+			if before[i] != ownedRoots[i] {
+				t.Fatalf("before-release inventory = %q, want exactly owned roots %q within fixture TMPDIR", before, ownedRoots)
+			}
 		}
 		start := make(chan struct{})
 		var workers sync.WaitGroup
@@ -160,8 +202,11 @@ func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
 		for err := range failures {
 			t.Errorf("concurrent process-tree allocation: %v", err)
 		}
-		for _, tree := range []string{fallbackRoot, processRoot} {
-			if _, err := os.Lstat(tree); !os.IsNotExist(err) {
+		for _, tree := range roots {
+			_, err := os.Lstat(tree)
+			absent := os.IsNotExist(err)
+			t.Logf("after-release root=%q lstat-error=%v absent=%t", tree, err, absent)
+			if !absent {
 				t.Fatalf("terminal release left pre-existing tree %q (%v)", tree, err)
 			}
 		}
@@ -179,12 +224,17 @@ func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
 		}
 		if got, err := filepath.Glob(filepath.Join(tmp, packload.EmbeddedFallbackPrefix+"*")); err != nil || len(got) != 0 {
 			t.Fatalf("terminal release left or recreated per-process trees %q (%v)", got, err)
+		} else {
+			t.Logf("after-release fixture-TMPDIR=%q inventory=%q (empty)", tmp, got)
 		}
 		return
 	}
 
-	tmp := t.TempDir()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestReleaseEmbeddedForExitStopsReacquisition$")
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve fixture TMPDIR: %v", err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestReleaseEmbeddedForExitStopsReacquisition$", "-test.count=1", "-test.v")
 	var env []string
 	for _, item := range os.Environ() {
 		key, _, _ := strings.Cut(item, "=")
@@ -197,6 +247,7 @@ func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("terminal pack-tree child failed: %v\n%s", err, output)
 	}
+	t.Logf("terminal pack-tree child trace:\n%s", output)
 }
 
 // TestReleaseEmbeddedKeepsTheSharedTreeAndReadopts: a release gives back this process's lease,
