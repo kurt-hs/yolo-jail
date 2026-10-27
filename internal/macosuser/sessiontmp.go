@@ -5,10 +5,13 @@ package macosuser
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -68,6 +71,81 @@ func withSessionTmpEnv(env *jsonx.OrderedMap, dir string) *jsonx.OrderedMap {
 	return env
 }
 
+// sandboxTmpdirEnvAt returns temp-variable followers declared for the command in the selected pack
+// tree at root. The tree was selected and staged by the caller; core reads no agent names of its own.
+func sandboxTmpdirEnvAt(root, program string) ([]string, error) {
+	if root == "" || program == "" {
+		return nil, nil
+	}
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	entries, recorded, err := packload.ReadPackTreeRecord(root)
+	if err != nil {
+		return nil, err
+	}
+	if !recorded {
+		dirs, err := os.ReadDir(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range dirs {
+			if d.IsDir() {
+				entries = append(entries, packload.PackTreeEntry{Name: d.Name(), Dir: d.Name()})
+			}
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		if !filepath.IsLocal(filepath.FromSlash(entry.Dir)) {
+			return nil, fmt.Errorf("pack %q is outside the staged pack tree", entry.Name)
+		}
+		pack, problems := packload.LoadDirForUse(filepath.Join(root, filepath.FromSlash(entry.Dir)), entry.Name)
+		if len(problems) != 0 {
+			return nil, fmt.Errorf("loading staged pack %q: %s", entry.Name, strings.Join(problems, "; "))
+		}
+		if pack == nil || pack.Decl == nil {
+			continue
+		}
+		for _, contribution := range pack.Decl.Contributions() {
+			if contribution.Kind != packdecl.KindProgram || contribution.Bin != program {
+				continue
+			}
+			for _, name := range contribution.SandboxTmpdirEnv {
+				if !seen[name] {
+					seen[name] = true
+					out = append(out, name)
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// withSandboxTmpdirEnv sets each declared program temp variable to TMPDIR only when the caller
+// did not explicitly configure it. The native launch's TMPDIR composition remains authoritative.
+func withSandboxTmpdirEnv(env *jsonx.OrderedMap, names []string) *jsonx.OrderedMap {
+	if len(names) == 0 {
+		return env
+	}
+	if env == nil {
+		env = jsonx.NewOrderedMap()
+	}
+	tmpdir, _ := env.Get("TMPDIR")
+	for _, name := range names {
+		if old, ok := env.Get(name); ok && asStr(old) != "" {
+			continue
+		}
+		if asStr(tmpdir) != "" {
+			env = withEnvVar(env, name, asStr(tmpdir))
+		}
+	}
+	return env
+}
+
 // composedTmpdirProblem is the launch's refusal for a TMPDIR the user's env composed (tmpdir) that
 // lies outside every root the run-as-you profile lets the sandbox write: roots (the workspace, the
 // agent's home, the user's DARWIN_USER_TEMP_DIR, which holds the session's own), plus the shared
@@ -75,6 +153,10 @@ func withSessionTmpEnv(env *jsonx.OrderedMap, dir string) *jsonx.OrderedMap {
 // with /tmp, /var and /etc in their /private spelling, as the profile grants them; a symlink inside
 // a root that leads out is the profile's to refuse, not this check's.
 func composedTmpdirProblem(tmpdir string, roots []string, sharedTmp bool) string {
+	return composedTmpdirEnvProblem("TMPDIR", tmpdir, roots, sharedTmp)
+}
+
+func composedTmpdirEnvProblem(variable, tmpdir string, roots []string, sharedTmp bool) string {
 	if tmpdir == "" {
 		return ""
 	}
@@ -92,10 +174,10 @@ func composedTmpdirProblem(tmpdir string, roots []string, sharedTmp bool) string
 			}
 		}
 	}
-	msg := fmt.Sprintf("TMPDIR=%s, set by your env config, is outside everything the run-as-you sandbox "+
+	msg := fmt.Sprintf("%s=%s, set by your env config, is outside everything the run-as-you sandbox "+
 		"may write (the workspace, its home and your own temp folder), so every temporary file would fail "+
-		"with \"Operation not permitted\". Remove the TMPDIR override so the session uses its own temp "+
-		"dir, or point it inside the workspace", tmpdir)
+		"with \"Operation not permitted\". Remove the %s override so the session uses its own temp "+
+		"dir, or point it inside the workspace", variable, tmpdir, variable)
 	if t == "/private/tmp" || strings.HasPrefix(t, "/private/tmp/") {
 		msg += `; or, to use the shared /tmp, set "macos_user_shared_tmp": true in your user config`
 	}

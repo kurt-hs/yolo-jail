@@ -21,6 +21,10 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
+// claudeSecurityCompatEnv is temporary until the security component's carrier constant is
+// available to this worktree and can be adopted during serial integration.
+const claudeSecurityCompatEnv = "YOLO_CLAUDE_SECURITY_COMPAT"
+
 // RunPlan is the fully-resolved, ordered artifacts + commands for one session.
 // real gate rather than a pretty-printer.
 type RunPlan struct {
@@ -758,6 +762,13 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// and zsh's own variables, which ignore it, pointed into it, so their files and sockets land
 	// in a place of this session's that the profile lets the sandbox bind sockets under (MMP-D16)
 	// rather than in the /tmp every process of yours shares. The account mode is today's plan.
+	// Selected programs may also declare environment variables that follow this final TMPDIR;
+	// they are read from the staged pack tree, not a core tool-name table.
+	program := ""
+	if len(agentArgv) > 0 {
+		program = filepath.Base(agentArgv[0])
+	}
+	tempEnvNames, tempEnvErr := sandboxTmpdirEnvAt(hostPackRoot, program)
 	sessionTmp, composedTmp := "", ""
 	if self {
 		if sandboxEnv != nil {
@@ -767,6 +778,24 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		}
 		sessionTmp = SessionTmpDir(session.DarwinUserTempDir, sessionID)
 		sandboxEnv = withSessionTmpEnv(sandboxEnv, sessionTmp)
+	}
+	sandboxEnv = withSandboxTmpdirEnv(sandboxEnv, tempEnvNames)
+	tmpdirProblem := composedTmpdirProblem(composedTmp, []string{workspace, homes.Home,
+		session.DarwinUserTempDir}, session.SharedTmp && self)
+	if self && tmpdirProblem == "" {
+		for _, name := range tempEnvNames {
+			if value, ok := sandboxEnv.Get(name); ok && asStr(value) != "" {
+				if problem := composedTmpdirEnvProblem(name, asStr(value),
+					[]string{workspace, homes.Home, session.DarwinUserTempDir}, session.SharedTmp); problem != "" {
+					tmpdirProblem = problem
+					break
+				}
+			}
+		}
+	}
+	if tempEnvErr != nil && tmpdirProblem == "" {
+		tmpdirProblem = "could not read selected program temp-environment declarations from the staged pack tree; " +
+			"retry the launch to restage selected packs: " + tempEnvErr.Error()
 	}
 	// THE STAGED PACK TREE AND THE WORKSPACE, NAMED TO THE SESSION, so an in-sandbox `yolo`
 	// reads the jail the way its bootstrap did. `yolo programs` and `yolo pack update` decide
@@ -1084,10 +1113,9 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		ProfileRemoveCommands: [][]string{{rmBin, "-f", profilePath}},
 		// workspace_readonly and its config lock, each raw-path `devices` entry's ioctl
 		// carve-out (devices.go), and macos_log, whose "off" is a deny (SeatbeltProfile).
-		Seatbelt:      seatbelt,
-		SessionTmpDir: sessionTmp,
-		TmpdirProblem: composedTmpdirProblem(composedTmp, []string{workspace, homes.Home,
-			session.DarwinUserTempDir}, session.SharedTmp && self),
+		Seatbelt:                 seatbelt,
+		SessionTmpDir:            sessionTmp,
+		TmpdirProblem:            tmpdirProblem,
 		SharedTmp:                self && session.SharedTmp,
 		SessionTmpRemoveCommands: SessionTmpRemoveCommands(sessionTmp),
 		StagedDir:                stateDir,
@@ -1522,6 +1550,11 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 	// the switch (docs/design/claude-login-without-interception.md, CL-D10).
 	if v, ok := sandboxEnv.Get(claudeview.SwitchEnv); ok {
 		bootstrapEnv.Set(claudeview.SwitchEnv, v)
+	}
+	// The security compatibility carrier is resolved by the host launch. Relay only its
+	// final value into bootstrap, which generates program delivery for that same launch.
+	if v, ok := sandboxEnv.Get(claudeSecurityCompatEnv); ok {
+		bootstrapEnv.Set(claudeSecurityCompatEnv, v)
 	}
 
 	// MISE_DATA_DIR, named rather than defaulted — the bootstrap's Env resolves

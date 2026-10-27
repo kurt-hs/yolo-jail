@@ -26,3 +26,12 @@ func TestTheCredentialViewSwitchReachesTheBootstrapEnv(t *testing.T) {
 		t.Errorf("%s reached a bootstrap whose launch set none", claudeview.SwitchEnv)
 	}
 }
+
+func TestClaudeSecurityCompatCarrierReachesTheBootstrapEnv(t *testing.T) {
+	opts := optsWithTables(codexLocalTables())
+	opts.PackEnv.Set("YOLO_CLAUDE_SECURITY_COMPAT", "account")
+	vars := bootstrapVars(t, buildPlan(mockDeps(nil), opts, nil).BootstrapArgv)
+	if got := vars["YOLO_CLAUDE_SECURITY_COMPAT"]; got != "account" {
+		t.Errorf("security compatibility carrier reached the bootstrap as %q, want account", got)
+	}
+}

@@ -236,6 +236,10 @@ type Contribution struct {
 	// `<tmpdir>/<name>` is left as it is. Never a machine-wide directory: compiled code one jail
 	// wrote must never run in another (XB-P4).
 	TempCaches []string `json:"temp_caches,omitempty"`
+	// SandboxTmpdirEnv names program environment variables that follow the final native
+	// sandbox TMPDIR, nil when none. Read by the macos-user final-env composer and refused
+	// on non-program contributions; the program owns its temp-variable spellings.
+	SandboxTmpdirEnv []string `json:"sandbox_tmpdir_env,omitempty"`
 	// VersionsDir is the home-relative directory where the program's own installer keeps ONE
 	// ENTRY PER INSTALLED VERSION: `".codex/packages/standalone/releases"` for codex. Read only
 	// on a `program` delivered `via: "installer"`, and refused everywhere else, because the
@@ -1458,6 +1462,9 @@ func (m *Manifest) InstallContributions() []Install {
 		}
 		if len(c.TempCaches) > 0 {
 			in.TempCaches = append([]string(nil), c.TempCaches...)
+		}
+		if len(c.SandboxTmpdirEnv) > 0 {
+			in.SandboxTmpdirEnv = append([]string(nil), c.SandboxTmpdirEnv...)
 		}
 		// The platform list is projected for EVERY via, for UpdateVerb's reason: it
 		// names where the VENDOR publishes, which is a fact about the program rather
@@ -4237,6 +4244,7 @@ func validateContribution(label string, c Contribution) []string {
 	}
 	problems = append(problems, probeArgsProblems(label, c)...)
 	problems = append(problems, tempCachesProblems(label, c)...)
+	problems = append(problems, sandboxTmpdirEnvProblems(label, c)...)
 	problems = append(problems, versionsDirProblems(label, c)...)
 	problems = append(problems, installerEnvProblems(label, c)...)
 	// fork_of, source, build and produces are a fork's alone (fork.go): refused on every other
