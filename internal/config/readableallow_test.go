@@ -209,14 +209,19 @@ func TestReadableNamedRepositoryRequestWorksOutsideGitCheckoutAndEmptyScopesDoNo
 func TestReadableAlwaysPushNeedsNamedTargetAndAlwaysNewBranchesNeedsRead(t *testing.T) {
 	for _, tc := range []struct {
 		name, user, project string
-		wantBranch          bool
+		wantRead            bool
+		wantWrites          []brokerscope.Grant
+		wantReadRefusal     bool
 	}{
-		{"always push without target", `{"allow":{"git":{"always":["fetch","push"]}}}`, `{}`, false},
-		{"always push with explicit target", `{"allow":{"git":{"always":["fetch","push"]}}}`, `{"requests":{"git":{"push":["main"]}}}`, true},
-		{"new branches false", `{"allow":{"git":{"always":["fetch"],"on_request":["new_branches"]}}}`, `{"requests":{"git":{"new_branches":false}}}`, false},
-		{"always new branches lacks its read prerequisite", `{"allow":{"git":{"always":["new_branches"]}}}`, `{}`, false},
-		{"always new branches on concrete scope", `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, `{}`, true},
-		{"requested always new branches stays concrete", `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, `{"requests":{"git":{"new_branches":true}}}`, true},
+		{name: "always push without target", user: `{"allow":{"git":{"always":["fetch","push"]}}}`, project: `{}`, wantRead: true},
+		{name: "always push with explicit target", user: `{"allow":{"git":{"always":["fetch","push"]}}}`, project: `{"requests":{"git":{"push":["main"]}}}`, wantRead: true,
+			wantWrites: []brokerscope.Grant{{Kind: brokerscope.KindBranch, Repo: "github.com/acme/app", Branch: "main"}}},
+		{name: "new branches false", user: `{"allow":{"git":{"always":["fetch"],"on_request":["new_branches"]}}}`, project: `{"requests":{"git":{"new_branches":false}}}`, wantRead: true},
+		{name: "always new branches lacks its read prerequisite", user: `{"allow":{"git":{"on_request":["new_branches"]}}}`, project: `{"requests":{"git":{"new_branches":true}}}`, wantReadRefusal: true},
+		{name: "always new branches on concrete scope", user: `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, project: `{}`, wantRead: true,
+			wantWrites: []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/acme/app"}}},
+		{name: "requested always new branches stays concrete", user: `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, project: `{"requests":{"git":{"new_branches":true}}}`, wantRead: true,
+			wantWrites: []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/acme/app"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ws := t.TempDir()
@@ -231,29 +236,34 @@ func TestReadableAlwaysPushNeedsNamedTargetAndAlwaysNewBranchesNeedsRead(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			branchGrant := false
-			wantKind := ""
-			if strings.HasPrefix(tc.name, "always new branches") {
-				wantKind = "create-branch"
-			}
+
+			gotGrants := map[brokerscope.Grant]int{}
 			for _, source := range gate.Sources {
-				for _, g := range source.Grants {
-					if g.Kind == "branch" || g.Kind == "create-branch" {
-						branchGrant = true
-						if wantKind != "" && (g.Kind != wantKind || g.Repo != "github.com/acme/app" || g.Branch != "") {
-							t.Errorf("new-branch request widened or used wrong grant kind: %#v", g)
-						}
-						if g.Repo == brokerscope.AnyRepo {
-							t.Errorf("branch request materialized wildcard target: %#v", g)
-						}
-					}
+				for _, grant := range source.Grants {
+					gotGrants[grant]++
 				}
 			}
-			if branchGrant != tc.wantBranch {
-				t.Fatalf("branch grant=%v want %v gate=%#v", branchGrant, tc.wantBranch, gate)
+			wantGrants := map[brokerscope.Grant]int{}
+			if tc.wantRead {
+				wantGrants[brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/app"}]++
 			}
-			if tc.name == "always push without target" && len(gate.Sources) != 1 {
-				t.Fatalf("read scope should remain but no branch target: %#v", gate)
+			for _, grant := range tc.wantWrites {
+				wantGrants[grant]++
+			}
+			if !reflect.DeepEqual(gotGrants, wantGrants) {
+				t.Fatalf("exact grants = %#v, want %#v (no additional or wildcard grants)", gotGrants, wantGrants)
+			}
+
+			if tc.wantReadRefusal {
+				found := false
+				for _, request := range gate.Requests {
+					if request.Path == "requests.git.new_branches" {
+						found = request.Status == config.ReadableRequestSkipped && strings.Contains(request.Reason, "requires its own always read capability")
+					}
+				}
+				if !found {
+					t.Fatalf("missing independent read-prerequisite refusal: %#v", gate.Requests)
+				}
 			}
 		})
 	}
