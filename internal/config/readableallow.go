@@ -1089,10 +1089,6 @@ func readableSettingValue(value any, setting loopholedecl.Setting) (any, error) 
 	}
 	return normalized, nil
 }
-func readableSettingType(value any, setting loopholedecl.Setting) error {
-	_, err := readableSettingValue(value, setting)
-	return err
-}
 
 func putReadableSetting(plan *ReadableAllowancePlan, pack, key string, value any, origins []string) {
 	if plan.PackSettings[pack] == nil {

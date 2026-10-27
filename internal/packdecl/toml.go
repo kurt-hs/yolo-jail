@@ -994,11 +994,6 @@ func cloneMap(input map[string]any) map[string]any {
 	return out
 }
 
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return text
-}
-
 func formatManifestLocation(location ManifestLocation, problem string) string {
 	if location.Line > 0 {
 		return fmt.Sprintf("%s:%d:%d (%s): %s", location.File, location.Line, location.Column, location.Key, problem)

@@ -82,7 +82,7 @@ func ProjectProviderModelsForLegacyDerives(models ReadableModels) (LegacyDeriveP
 		if facts.Reasoning != nil {
 			flat.Set("reasoning", strconv.FormatBool(*facts.Reasoning))
 		}
-		if facts.Accepts != nil && len(facts.Accepts) > 0 {
+		if len(facts.Accepts) > 0 {
 			flat.Set("input", strings.Join(facts.Accepts, ","))
 		}
 		if facts.Price != nil {

@@ -205,9 +205,7 @@ func normalizeRepository(raw string) (string, error) {
 	if s == "" || s != raw {
 		return "", fmt.Errorf("expected an unqualified git repository URL")
 	}
-	if strings.HasPrefix(s, "git+") {
-		s = strings.TrimPrefix(s, "git+")
-	}
+	s = strings.TrimPrefix(s, "git+")
 	u, err := url.Parse(s)
 	if err != nil || u.Path == "" ||
 		(u.Scheme != "https" && u.Scheme != "ssh" && u.Scheme != "http" && u.Scheme != "file") ||

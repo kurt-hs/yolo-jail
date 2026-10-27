@@ -382,7 +382,7 @@ func TestNormalizeLegacyProviderModelsRestoreReturnsOwnEveryNestedCategory(t *te
 	first := normalized.RestoreLegacyProviderModels(input)
 	second := normalized.RestoreLegacyProviderModels(input)
 	base := ownershipProbeValues(input)
-	canonicalProbe := mutateOwnershipProbe(&*normalized.Canonical, "canonical")
+	canonicalProbe := mutateOwnershipProbe(normalized.Canonical, "canonical")
 	if reflect.DeepEqual(ownershipProbeValues(*normalized.Canonical), base) || !reflect.DeepEqual(ownershipProbeValues(input), base) || !reflect.DeepEqual(ownershipProbeValues(first), base) || !reflect.DeepEqual(ownershipProbeValues(second), base) {
 		t.Errorf("Canonical mutation was not isolated across all deep categories")
 	}
@@ -727,10 +727,6 @@ func legacyPiIntegerProviderFixture(t *testing.T, providerName, targetID, otherI
 	return loadLegacyPiProvider(t, providerName, fields)
 }
 
-func legacyPiNarrowedTable(t *testing.T, provider *packload.Pack) *jsonx.OrderedMap {
-	return legacyPiNarrowedProviderTable(t, provider, "openai", piLegacyTargetID)
-}
-
 func legacyPiNarrowedProviderTable(t *testing.T, provider *packload.Pack, providerName, targetID string) *jsonx.OrderedMap {
 	t.Helper()
 	root := t.TempDir()
@@ -978,7 +974,6 @@ func piRenderedReasoning(output map[string]any) any {
 }
 
 func stringPointer(value string) *string { return &value }
-func boolPointer(value bool) *bool       { return &value }
 func float64p(value float64) *float64    { return &value }
 
 func toDeriveTables(t *testing.T, values map[string]any) map[string]map[string]any {
