@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -619,6 +620,178 @@ func TestReadableUserScopeCollisionOffersSafeManualResolution(t *testing.T) {
 	}
 	if got, err := os.ReadFile(backup); err != nil || string(got) != "packs = ['new']\n" {
 		t.Fatalf("preserved TOML backup = %q, %v", got, err)
+	}
+}
+
+func TestReadableWorkspaceConfigThreeSiblingCollisionRecovery(t *testing.T) {
+	testReadableThreeSiblingCollisionRecovery(t, false)
+}
+
+func TestReadableUserScopeThreeSiblingCollisionRecovery(t *testing.T) {
+	testReadableThreeSiblingCollisionRecovery(t, true)
+}
+
+func testReadableThreeSiblingCollisionRecovery(t *testing.T, userScope bool) {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "reader path with spaces and 'quotes")
+	dir := root
+	var names []string
+	var read func() (*jsonx.OrderedMap, error)
+	var toml string
+	var expectedKey string
+	var expectedValue any
+	if userScope {
+		dir = filepath.Join(root, ".config", "yolo-jail")
+		t.Setenv("HOME", root)
+		names = []string{paths.UserConfigTOMLName, paths.UserConfigLegacyJSONCName, paths.UserConfigLegacyJSONName}
+		toml = filepath.Join(dir, names[0])
+		expectedKey, expectedValue = "packs", []any{"new"}
+		read = func() (*jsonx.OrderedMap, error) { return LoadReadableUserScopeConfig(true, nil) }
+	} else {
+		names = []string{paths.WorkspaceConfigTOMLName, paths.WorkspaceConfigLegacyJSONCName, paths.WorkspaceConfigLegacyJSONName}
+		toml = filepath.Join(dir, names[0])
+		expectedKey, expectedValue = "install", nil
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		workspace, err := filepath.Rel(cwd, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		read = func() (*jsonx.OrderedMap, error) { return LoadReadableWorkspaceConfig(workspace, true, nil) }
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	contents := []string{"packs = ['new']\n", `{"packs":["old-jsonc"]}`, `{"packs":["old-json"]}`}
+	if !userScope {
+		contents = []string{"[install]\nnix = ['new']\n", `{"packages":["old-jsonc"]}`, `{"packages":["old-json"]}`}
+	}
+	files := make([]string, len(names))
+	for i, name := range names {
+		files[i] = filepath.Join(dir, name)
+		write(t, files[i], contents[i])
+	}
+	before := snapshotReadableConfigDir(t, dir)
+	if _, err := read(); err == nil {
+		t.Fatal("readable reader accepted TOML, JSONC, and JSON siblings")
+	} else {
+		for _, file := range files {
+			if !strings.Contains(err.Error(), file) {
+				t.Errorf("collision error %q omits supplied full path %q", err, file)
+			}
+		}
+		if strings.Contains(err.Error(), "yolo config migrate") {
+			t.Errorf("collision error recommends nonexistent migration: %v", err)
+		}
+		if after := snapshotReadableConfigDir(t, dir); !reflect.DeepEqual(after, before) {
+			t.Fatalf("collision refusal wrote config files: before=%v after=%v", before, after)
+		}
+		commands := readableCollisionRecoveryCommands(t, err, files)
+		keepTOML, ok := commands[toml]
+		if !ok {
+			t.Fatalf("collision error has no keep-TOML recovery for %q: %v", toml, err)
+		}
+		for _, keep := range files {
+			command, ok := commands[keep]
+			if !ok {
+				t.Errorf("collision error has no recovery for keeping %q active", keep)
+				continue
+			}
+			for _, source := range files {
+				if source == keep {
+					continue
+				}
+				backup := source + ".backup"
+				if !strings.Contains(command, shquote.Quote(source)) || !strings.Contains(command, shquote.Quote(backup)) {
+					t.Errorf("recovery for keeping %q active omits full source/destination paths %q and %q: %s", keep, source, backup, command)
+				}
+			}
+		}
+		otherCWD := t.TempDir()
+		jsoncBackup := files[1] + ".backup"
+		write(t, jsoncBackup, "do not overwrite\n")
+		runReadableRecoveryCommand(t, otherCWD, keepTOML, false)
+		if got, err := os.ReadFile(jsoncBackup); err != nil || string(got) != "do not overwrite\n" {
+			t.Fatalf("existing backup was changed: %q, %v", got, err)
+		}
+		if got, err := os.ReadFile(files[1]); err != nil || string(got) != contents[1] {
+			t.Fatalf("source with existing backup was changed: %q, %v", got, err)
+		}
+		if err := os.Remove(jsoncBackup); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(dir, "missing backup target"), jsoncBackup); err != nil {
+			t.Fatal(err)
+		}
+		runReadableRecoveryCommand(t, otherCWD, keepTOML, false)
+		if target, err := os.Readlink(jsoncBackup); err != nil || target != filepath.Join(dir, "missing backup target") {
+			t.Fatalf("dangling-symlink backup was changed: %q, %v", target, err)
+		}
+		if got, err := os.ReadFile(files[1]); err != nil || string(got) != contents[1] {
+			t.Fatalf("source with dangling-symlink backup was changed: %q, %v", got, err)
+		}
+		if err := os.Remove(jsoncBackup); err != nil {
+			t.Fatal(err)
+		}
+		runReadableRecoveryCommand(t, otherCWD, keepTOML, true)
+		for i, source := range files[1:] {
+			backup := source + ".backup"
+			if got, err := os.ReadFile(backup); err != nil || string(got) != contents[i+1] {
+				t.Fatalf("recovery did not preserve %q: got %q, %v", source, got, err)
+			}
+			if _, err := os.Lstat(source); !os.IsNotExist(err) {
+				t.Errorf("recovery left competing sibling %q active (Lstat error %v)", source, err)
+			}
+		}
+	}
+
+	got, err := read()
+	if err != nil {
+		t.Fatalf("reader still reports a sibling collision after moving both legacy files aside: %v", err)
+	}
+	if userScope {
+		if value, ok := got.Get(expectedKey); !ok || !reflect.DeepEqual(value, expectedValue) {
+			t.Fatalf("readable user config %s = %#v, want %#v", expectedKey, value, expectedValue)
+		}
+	} else {
+		install, ok := got.Get("install")
+		if !ok || install == nil {
+			t.Fatalf("readable workspace config lacks install after recovery: %#v", got)
+		}
+	}
+}
+
+func readableCollisionRecoveryCommands(t *testing.T, err error, files []string) map[string]string {
+	t.Helper()
+	commands := make(map[string]string, len(files))
+	for _, keep := range files {
+		marker := "To keep " + keep + " active: `"
+		start := strings.Index(err.Error(), marker)
+		if start < 0 {
+			continue
+		}
+		start += len(marker)
+		end := strings.Index(err.Error()[start:], "`")
+		if end < 0 {
+			t.Fatalf("unterminated recovery command for %q in %v", keep, err)
+		}
+		commands[keep] = err.Error()[start : start+end]
+	}
+	return commands
+}
+
+func runReadableRecoveryCommand(t *testing.T, cwd, command string, wantSuccess bool) {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = cwd
+	output, err := cmd.CombinedOutput()
+	if wantSuccess && err != nil {
+		t.Fatalf("recovery command failed from different CWD: %v\n%s\ncommand: %s", err, output, command)
+	}
+	if !wantSuccess && err == nil {
+		t.Fatalf("recovery command unexpectedly succeeded with occupied backup: %s", command)
 	}
 }
 

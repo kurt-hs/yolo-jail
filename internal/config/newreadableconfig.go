@@ -121,6 +121,36 @@ func consumeReadableFormat(values *jsonx.OrderedMap, label, path string) error {
 	return nil
 }
 
+func readableSiblingCollisionError(files []string) error {
+	absolute := make([]string, len(files))
+	for i, file := range files {
+		if fullPath, err := filepath.Abs(file); err == nil {
+			file = fullPath
+		}
+		absolute[i] = file
+	}
+	files = absolute
+	display := strings.Join(files, ", ")
+	var choices []string
+	for i, keep := range files {
+		var moves []string
+		for j, other := range files {
+			if i != j {
+				moves = append(moves, guardedReadableSiblingMove(other))
+			}
+		}
+		choices = append(choices, fmt.Sprintf("To keep %s active: `%s`.", keep, strings.Join(moves, " && ")))
+	}
+	return configErr("config siblings %s exist; config formats are never merged. Choose exactly one file to keep active, first confirm each backup path does not already exist (including dangling symlinks), then run its full-path guarded move command; then rerun the command. Each command refuses an existing backup destination and uses no-clobber moves. %s The original files are preserved; neither file is converted or merged", display, strings.Join(choices, " "))
+}
+
+func guardedReadableSiblingMove(path string) string {
+	backup := path + ".backup"
+	quotedPath, quotedBackup := shquote.Quote(path), shquote.Quote(backup)
+	message := shquote.Quote("backup path already exists: " + backup)
+	return "if [ ! -e " + quotedBackup + " ] && [ ! -L " + quotedBackup + " ]; then mv -n " + quotedPath + " " + quotedBackup + " && { [ ! -e " + quotedPath + " ] && [ ! -L " + quotedPath + " ]; }; else printf '%s\\n' " + message + " >&2; exit 1; fi"
+}
+
 func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, err error) {
 	dir := filepath.Dir(legacyPath)
 	candidates := []string{paths.UserConfigTOMLName, paths.UserConfigLegacyJSONCName, paths.UserConfigLegacyJSONName}
@@ -131,9 +161,11 @@ func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, er
 		}
 	}
 	if len(found) > 1 && found[0] == paths.UserConfigTOMLName {
-		keepTOML := shquote.Join([]string{"mv", filepath.Join(dir, found[1]), filepath.Join(dir, found[1]+".backup")})
-		keepLegacy := shquote.Join([]string{"mv", filepath.Join(dir, found[0]), filepath.Join(dir, found[0]+".backup")})
-		return "", "", false, configErr("both %s and %s exist; config formats are never merged. Choose which file to keep active, first confirm the backup path does not already exist, then rerun the command. To keep TOML, move the legacy file with `%s`; to keep the legacy file, move TOML with `%s`. This preserves the moved file; neither file is converted or merged", found[0], found[1], keepTOML, keepLegacy)
+		conflicts := make([]string, len(found))
+		for i, name := range found {
+			conflicts[i] = filepath.Join(dir, name)
+		}
+		return "", "", false, readableSiblingCollisionError(conflicts)
 	}
 	name := paths.UserConfigTOMLName
 	if len(found) > 0 {
