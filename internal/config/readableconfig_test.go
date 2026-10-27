@@ -84,6 +84,82 @@ func TestLoadReadableWorkspaceConfigIncludesOptionalAndCycle(t *testing.T) {
 	}
 }
 
+func TestLoadReadableUserScopeConfigKeepsBaseWhenConfigDReadFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	basePath := filepath.Join(userDir, paths.UserConfigTOMLName)
+	write(t, basePath, "[install]\nnix = ['base']\n[env.set]\nRECOVERY_TEST = 'literal'\n")
+	fragmentDir := filepath.Join(userDir, "config.d")
+	write(t, fragmentDir, "not a directory")
+
+	var warnings []string
+	warn := func(msg string) { warnings = append(warnings, msg) }
+	got, err := LoadReadableUserScopeConfig(false, warn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, exists := got.Get("install"); !exists {
+		t.Fatalf("non-strict reader discarded valid base config: %#v", got)
+	} else {
+		install, ok := got.(*jsonx.OrderedMap)
+		if !ok || install == nil {
+			t.Fatalf("non-strict reader returned invalid map: %#v", got)
+		}
+	}
+	install, _ := got.Get("install")
+	actual, _ := install.(*jsonx.OrderedMap).Get("nix")
+	if !reflect.DeepEqual(actual, []any{"base"}) {
+		t.Errorf("install.nix = %#v, want preserved base value", actual)
+	}
+	env, _ := got.Get("env")
+	if env == nil {
+		t.Errorf("non-strict reader discarded valid env config: %#v", got)
+	} else if set, _ := env.(*jsonx.OrderedMap).Get("set"); set == nil {
+		t.Errorf("non-strict reader discarded valid env.set config: %#v", got)
+	} else if value, _ := set.(*jsonx.OrderedMap).Get("RECOVERY_TEST"); value != "literal" {
+		t.Errorf("env.set.RECOVERY_TEST = %#v, want preserved literal", value)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "Failed to parse") || !strings.Contains(warnings[0], fragmentDir) {
+		t.Errorf("warnings = %q, want one existing parse-failure warning naming config.d", warnings)
+	}
+
+	got, sources, err := LoadReadableUserScopeConfigWithSources(false, warn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ = got.Get("install")
+	actual, _ = install.(*jsonx.OrderedMap).Get("nix")
+	if !reflect.DeepEqual(actual, []any{"base"}) {
+		t.Errorf("source reader install.nix = %#v, want preserved base value", actual)
+	}
+	env, _ = got.Get("env")
+	set, _ := env.(*jsonx.OrderedMap).Get("set")
+	if value, _ := set.(*jsonx.OrderedMap).Get("RECOVERY_TEST"); value != "literal" {
+		t.Errorf("source reader env.set.RECOVERY_TEST = %#v, want preserved literal", value)
+	}
+	for _, check := range []struct {
+		path string
+		want string
+	}{
+		{path: "config.install.nix[0]", want: "~/.config/yolo-jail/" + paths.UserConfigTOMLName + ":2:"},
+		{path: "config.env.set.RECOVERY_TEST", want: "~/.config/yolo-jail/" + paths.UserConfigTOMLName + ":4:"},
+	} {
+		locations := sources.Locations(check.path)
+		if len(locations) != 1 || !strings.Contains(locations[0], check.want) {
+			t.Errorf("%s source locations = %q, want base source %q", check.path, locations, check.want)
+		}
+	}
+	if len(warnings) != 2 || !strings.Contains(warnings[1], "Failed to parse") || !strings.Contains(warnings[1], fragmentDir) {
+		t.Errorf("source-reader warnings = %q, want one additional existing parse-failure warning", warnings)
+	}
+
+	strict, strictSources, err := LoadReadableUserScopeConfigWithSources(true, nil)
+	if err == nil || strict != nil || strictSources != nil || !strings.Contains(err.Error(), "Failed to parse") || !strings.Contains(err.Error(), fragmentDir) {
+		t.Errorf("strict source reader = (%#v, %#v, %v), want refusal naming config.d and no hydrated config", strict, strictSources, err)
+	}
+}
+
 func TestLoadReadableUserScopeConfigDFragmentsApplyResetSequentiallyWithSources(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

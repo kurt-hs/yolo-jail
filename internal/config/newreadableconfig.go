@@ -147,11 +147,14 @@ func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir stri
 			}
 			return base, baseNode, nil
 		}
-		m, parseErr := handleParseFailure(fragmentDir, err, strict, warn)
+		_, parseErr := handleParseFailure(fragmentDir, err, strict, warn)
 		if parseErr != nil {
 			return nil, nil, parseErr
 		}
-		return m, nil, nil
+		if base == nil {
+			base = jsonx.NewOrderedMap()
+		}
+		return base, baseNode, nil
 	}
 	var names []string
 	for _, entry := range entries {
