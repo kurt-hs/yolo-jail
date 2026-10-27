@@ -1,8 +1,8 @@
 # Permanent production-caller mutation controls
 
-These are unchanged excerpts from the original `cli-output-error-red.log` and `cli-output-error-green-after-red.log`. The RED mutates both production caller pins in `internal/cli/run/sessionoutputerror_test.go`; the shared helper test still passes, so helper-only coverage cannot produce this failure. Restoring the pins yields GREEN. No command output is reconstructed.
+These are unchanged excerpts from the original `cli-output-error-red.log` and `cli-output-error-green-after-red.log`. The original mutation temporarily restored the unconditional production-caller blocks at both callsites; the permanent tests themselves were unchanged. During that mutation the shared helper test still passed, while AST pins for both fresh and attach production callers failed. Restoring committed production code made the same tests pass. This is mutation sensitivity of the production wiring, not a live end-to-end runtime result. No command output is reconstructed.
 
-## Both production callsites removed (RED)
+## Unconditional production-caller blocks restored (RED)
 
 ```text
 === RUN   TestARuntimeThatNeverStartedLeavesNoPackTree
