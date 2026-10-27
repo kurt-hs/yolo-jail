@@ -1036,6 +1036,10 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		pendingSuspend = false
 		suspendResetQueued = false
 		callStage(hook, StageResumed)
+		if obs.run != nil && obs.run.cancellationOrExitPublished() {
+			pending = nil
+			return
+		}
 		if len(pending) > 0 {
 			enqueueToMaster(pending)
 			pending = nil

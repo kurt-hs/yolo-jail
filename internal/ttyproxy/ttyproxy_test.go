@@ -304,11 +304,39 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 		fifo := os.Getenv("YOLO_TTYPROXY_PRESSURE_FIFO")
 		outputBytes := os.Getenv("YOLO_TTYPROXY_PRESSURE_BYTES")
 		observer := Observer{Env: []string{"YOLO_TTYPROXY_PRESSURE_FIFO=" + fifo, "YOLO_TTYPROXY_PRESSURE_BYTES=" + outputBytes, "YOLO_TTYPROXY_OUTPUT_ACK=" + os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK")}}
+		var resumeHandle Handle
 		if os.Getenv("YOLO_TTYPROXY_EXPECT_SUSPEND") == "1" {
 			if os.Getenv("YOLO_TTYPROXY_BG_FG") == "1" {
 				observer.ownsTTY = func(int) bool {
 					mode, err := os.ReadFile(fifo + ".ownership")
 					return err == nil && string(mode) == "foreground"
+				}
+			}
+			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" {
+				terminateSignals := make(chan os.Signal, 1)
+				signal.Notify(terminateSignals, syscall.SIGTERM)
+				observer.Arm = func(h Handle) {
+					resumeHandle = h
+					go func() {
+						for {
+							if _, err := os.Stat(fifo + ".kill"); err == nil {
+								h.Kill()
+								os.Exit(128 + int(syscall.SIGTERM))
+							} else if !errors.Is(err, os.ErrNotExist) {
+								_ = os.WriteFile(fifo+".kill-error", []byte(err.Error()), 0600)
+								h.Terminate()
+								h.Kill()
+								os.Exit(2)
+							}
+							select {
+							case <-terminateSignals:
+								h.Terminate()
+								h.Kill()
+								os.Exit(128 + int(syscall.SIGTERM))
+							case <-time.After(10 * time.Millisecond):
+							}
+						}
+					}()
 				}
 			}
 			if os.Getenv("YOLO_TTYPROXY_FINAL_CLAIM_GATE") == "1" {
@@ -329,7 +357,14 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 				_ = os.WriteFile(fifo+".boundary", []byte(strconv.FormatUint(n, 10)), 0600)
 			}
 			observer.Stage = func(stage string) {
-				if stage == StageResumed {
+				if stage == StageResumed && os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" {
+					if resumeHandle.Terminate() {
+						_ = os.WriteFile(fifo+".cancel-published", []byte("terminated"), 0600)
+					} else {
+						_ = os.WriteFile(fifo+".cancel-published", []byte("refused"), 0600)
+					}
+				}
+				if stage == StageResumed && os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") != "1" {
 					deadline := time.Now().Add(childDeadline)
 					for time.Now().Before(deadline) {
 						termios, err := unix.IoctlGetTermios(int(os.Stdin.Fd()), unix.TCGETS)
@@ -790,12 +825,13 @@ func waitForTTYOutputPressure(t *testing.T, master int) bool {
 }
 
 func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
-	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false) })
-	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false) })
-	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true) })
+	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false) })
+	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false, false) })
+	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true, false) })
+	t.Run("caller-cancel-published-during-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, true) })
 }
 
-func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop bool) {
+func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -816,6 +852,9 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		"YOLO_TTYPROXY_BG_FG=1", "YOLO_TTYPROXY_SEGMENTED_SUSPEND=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
 	if backgroundChildExit {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_BG_CHILD_EXIT=1")
+	}
+	if cancelDuringResume {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_DURING_RESUME=1")
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -1102,6 +1141,41 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	}
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
+	}
+	if cancelDuringResume {
+		if err := waitForFile(control+".cancel-published", time.Now().Add(childDeadline)); err != nil {
+			t.Fatalf("caller Handle.Terminate did not publish cancellation from StageResumed: %v", err)
+		}
+		published, err := os.ReadFile(control + ".cancel-published")
+		if err != nil || string(published) != "terminated" {
+			t.Fatalf("caller Handle.Terminate result = %q err=%v", published, err)
+		}
+		if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline)); err != nil {
+			t.Fatalf("StageResumed callback did not return before checking child input: %v", err)
+		}
+		inputErr := waitPressureMarker(t, control, 'R', time.Now().Add(childDeadline))
+		if err := os.WriteFile(control+".kill", []byte("observed"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err := <-waitResult:
+			assertSignalExit(t, err, syscall.SIGTERM)
+		case <-time.After(childDeadline):
+			t.Fatal("caller-owned child kill did not end the proxy after the observation gate")
+		}
+		<-waitDone
+		stopDrain()
+		if after := mustGetTermios(t, modeFD); *after != *termios {
+			t.Fatalf("caller cancellation did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+		}
+		if inputErr == nil {
+			input, _ := os.ReadFile(control)
+			t.Fatalf("owned child consumed ordinary queued input after caller Handle.Terminate published cancellation; input=%q", input)
+		}
+		if !strings.Contains(inputErr.Error(), "timed out waiting for marker") {
+			t.Fatalf("could not determine whether the owned child consumed queued input: %v", inputErr)
+		}
+		return
 	}
 	if !backgroundChildExit {
 		if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(time.Second)); err != nil {
