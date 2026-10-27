@@ -174,6 +174,12 @@ func TestPackLintRefusesAnUnknownFlag(t *testing.T) {
 // lintOnlineHome is newPatchedFixture with a private TMPDIR, so a test can see what lint leaves.
 func lintOnlineHome(t *testing.T) (*patchedFixture, string) {
 	t.Helper()
+	// Prime the process-lifetime embedded pack lease before redirecting TMPDIR. An external
+	// test binary keeps this shared tree under the normal temp dir; if the fixture changes
+	// TMPDIR first, the first Embedded call puts that immutable lease in the fixture's dir.
+	if packs := packload.Embedded(); len(packs) == 0 {
+		t.Fatalf("Embedded() is empty: %v", packload.EmbeddedProblems())
+	}
 	f := newPatchedFixture(t, "")
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
