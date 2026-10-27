@@ -126,6 +126,53 @@ func TestSelectedNPMHostPublicCompatibleReuseFreshAndMismatchFallback(t *testing
 	}
 }
 
+func TestSelectedNPMHostPublicNonemptyNodeOptionsFallsBack(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	req := selectedNPMUser(t, f, false)
+	selectedNPMSharedWorker(t)
+	if _, err := prepareOrdinaryForLaunch(req, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	record, err := readNPMCaptureRecord(f.store, f.in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedNPMHostFloor(t, f, record.Resolution.Runtime.Node)
+	countsBefore, err := os.ReadFile(filepath.Join(f.root, "counts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvesBefore, installsBefore := f.resolves.Load(), f.installs.Load()
+	t.Setenv("NODE_OPTIONS", "--trace-warnings")
+
+	got := captureHostExec(t)
+	var out bytes.Buffer
+	if rc := hostMain([]string{"--", "probe"}, io.Discard, &out, false, nil); rc != 0 || got.target == "" {
+		t.Fatalf("public host ambient NODE_OPTIONS fallback: %d %+v\n%s", rc, got, out.String())
+	}
+	const wantDisclosure = "yolo host: probe sealed artifact reuse is unsupported (ambient NODE_OPTIONS changes the host runtime environment); retaining its authorized bounded host installer — use an independently matching baseline runtime for reuse\n"
+	if !strings.Contains(out.String(), wantDisclosure) {
+		t.Fatalf("ambient NODE_OPTIONS disclosure missing: want %q in %q", wantDisclosure, out.String())
+	}
+	program := floorPrograms(req.Packs)[0]
+	status := newHostFloor(io.Discard, []hostfloor.Program{program}).Status(program)
+	if status.Record == nil || status.Record.Bin != program.Bin() || status.Record.Via != "npm" || status.Record.Capture != "" {
+		t.Fatalf("ambient runtime admitted a selected capture or wrote the wrong fallback identity: %+v", status.Record)
+	}
+	if f.resolves.Load() != resolvesBefore || f.installs.Load() != installsBefore {
+		t.Fatalf("ambient fallback materialized a selected capture: resolves %d→%d, installs %d→%d", resolvesBefore, f.resolves.Load(), installsBefore, f.installs.Load())
+	}
+	countsAfter, err := os.ReadFile(filepath.Join(f.root, "counts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeHostInstall := strings.Count(string(countsBefore), "host-install\n")
+	afterHostInstall := strings.Count(string(countsAfter), "host-install\n")
+	if afterHostInstall-beforeHostInstall != 1 {
+		t.Fatalf("ambient fallback host installer count delta = %d, want 1; counts: %s", afterHostInstall-beforeHostInstall, countsAfter)
+	}
+}
+
 func TestSelectedNPMHostPublicInvalidatedCaptureReinstallsSameVersion(t *testing.T) {
 	for _, tc := range []struct {
 		name                string

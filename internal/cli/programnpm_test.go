@@ -105,6 +105,7 @@ func newSelectedNPMFixture(t *testing.T) *selectedNPMFixture {
 	f := &selectedNPMFixture{store: &capture.Store{Dir: t.TempDir()}, in: npmCaptureInput{Owner: "fixture", Bin: "probe", Package: "probe-pkg"}, root: t.TempDir(), tools: t.TempDir(), node: node}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", f.tools+":"+os.Getenv("PATH"))
+	t.Setenv("NODE_OPTIONS", "")
 	binary, err := os.ReadFile(f.node)
 	if err != nil {
 		t.Fatal(err)
