@@ -217,6 +217,7 @@ func TestReadableAlwaysPushNeedsNamedTargetAndAlwaysNewBranchesNeedsRead(t *test
 		{name: "always push with explicit target", user: `{"allow":{"git":{"always":["fetch","push"]}}}`, project: `{"requests":{"git":{"push":["main"]}}}`, wantRead: true,
 			wantWrites: []brokerscope.Grant{{Kind: brokerscope.KindBranch, Repo: "github.com/acme/app", Branch: "main"}}},
 		{name: "new branches false", user: `{"allow":{"git":{"always":["fetch"],"on_request":["new_branches"]}}}`, project: `{"requests":{"git":{"new_branches":false}}}`, wantRead: true},
+		{name: "always new branches alone without a read ceiling", user: `{"allow":{"git":{"always":["new_branches"]}}}`, project: `{}`},
 		{name: "always new branches lacks its read prerequisite", user: `{"allow":{"git":{"on_request":["new_branches"]}}}`, project: `{"requests":{"git":{"new_branches":true}}}`, wantReadRefusal: true},
 		{name: "always new branches on concrete scope", user: `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, project: `{}`, wantRead: true,
 			wantWrites: []brokerscope.Grant{{Kind: "create-branch", Repo: "github.com/acme/app"}}},
