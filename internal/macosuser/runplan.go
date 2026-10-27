@@ -780,13 +780,19 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 		sandboxEnv = withSessionTmpEnv(sandboxEnv, sessionTmp)
 	}
 	sandboxEnv = withSandboxTmpdirEnv(sandboxEnv, tempEnvNames)
-	tmpdirProblem := composedTmpdirProblem(composedTmp, []string{workspace, homes.Home,
-		session.DarwinUserTempDir}, session.SharedTmp && self)
+	darwinUserTempDir := ""
+	if self {
+		darwinUserTempDir = session.DarwinUserTempDir
+	}
+	validationContext := SandboxTmpdirValidationContext{
+		Mode: session.Mode, Workspace: workspace, Home: homes.Home,
+		DarwinUserTempDir: darwinUserTempDir, SharedTmp: session.SharedTmp && self,
+	}
+	tmpdirProblem := SandboxTmpdirValidationProblem(validationContext, "TMPDIR", composedTmp)
 	if self && tmpdirProblem == "" {
 		for _, name := range tempEnvNames {
 			if value, ok := sandboxEnv.Get(name); ok && asStr(value) != "" {
-				if problem := composedTmpdirEnvProblem(name, asStr(value),
-					[]string{workspace, homes.Home, session.DarwinUserTempDir}, session.SharedTmp); problem != "" {
+				if problem := SandboxTmpdirValidationProblem(validationContext, name, asStr(value)); problem != "" {
 					tmpdirProblem = problem
 					break
 				}
@@ -809,9 +815,18 @@ func BuildRunPlanWithStages(workspace string, cfg *jsonx.OrderedMap, agents, age
 	// that staged no tree says so by absence, and the verbs then say "no staged packs here"
 	// rather than computing every installed program as undeclared. The values are paths, root-
 	// owned or the workspace itself; nothing composed rides with them.
+	sandboxEnv = withoutEnvVar(sandboxEnv, paths.MacosUserTmpdirContextEnv)
 	if packRoot != "" {
 		sandboxEnv = withEnvVar(sandboxEnv, "YOLO_PACK_ROOT", packRoot)
 		sandboxEnv = withEnvVar(sandboxEnv, "YOLO_DARWIN_WORKSPACE", workspace)
+		contextJSON, err := MarshalSandboxTmpdirValidationContext(validationContext)
+		if err != nil {
+			if tmpdirProblem == "" {
+				tmpdirProblem = "could not compose native temp-validation metadata for selected program launch: " + err.Error()
+			}
+		} else {
+			sandboxEnv = withEnvVar(sandboxEnv, paths.MacosUserTmpdirContextEnv, contextJSON)
+		}
 	}
 	// THE WORKSPACE SIDECAR — <workspace>/.yolo/home, the same directory the podman argv
 	// binds the jail home's per-workspace dirs from (paths.WorkspaceHomeState, one spelling
@@ -1293,7 +1308,7 @@ func stageCommandsNameEnvValue(cmds [][]string, content, key string) bool {
 // (packChannel.launchEnv); the session env file's YOLO_ lines never reach the bootstrap at all.
 func LauncherOwnedEnvNames() []string {
 	return []string{durable.EnvVar, paths.AllowMissingProgramsEnv, paths.NoProgramReadinessEnv,
-		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv}
+		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv, paths.MacosUserTmpdirContextEnv}
 }
 
 // buildBootstrapEnv composes the env baked onto the `yolo internal darwin-bootstrap` self-exec
@@ -1400,6 +1415,9 @@ func buildBootstrapEnv(workspace string, cfg, gitIdentity, sandboxEnv *jsonx.Ord
 		// and its launcher generation (the gate), as the container boot reads them.
 		if v, ok := sandboxEnv.Get(entrypoint.PatchedTreesEnv); ok {
 			bootstrapEnv.Set(entrypoint.PatchedTreesEnv, v)
+		}
+		if v, ok := sandboxEnv.Get(paths.MacosUserTmpdirContextEnv); ok {
+			bootstrapEnv.Set(paths.MacosUserTmpdirContextEnv, v)
 		}
 		// Every name relayed above is in LauncherOwnedEnvNames, which the run pipeline keeps out of
 		// the composed env (packChannel.launchEnv), so what crosses is the launcher's own value.
@@ -2850,6 +2868,21 @@ func withEnvVar(env *jsonx.OrderedMap, key, value string) *jsonx.OrderedMap {
 		}
 	}
 	out.Set(key, value)
+	return out
+}
+
+func withoutEnvVar(env *jsonx.OrderedMap, key string) *jsonx.OrderedMap {
+	out := jsonx.NewOrderedMap()
+	if env == nil {
+		return out
+	}
+	for _, k := range env.Keys() {
+		if k == key {
+			continue
+		}
+		v, _ := env.Get(k)
+		out.Set(k, v)
+	}
 	return out
 }
 

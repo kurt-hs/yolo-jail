@@ -181,6 +181,13 @@ func forkKeyDir(e *Env) string { return filepath.Join(e.Home, ".local", "state",
 // meets at generation is joined in by the provisioning stage). keyDir is forkKeyDir.
 func sourceAgentLauncherSegments(inst *packdecl.Install, d ForkDelivery, stampDir, keyDir, receiptsPath,
 	capturesPath string, updates bool, servers launcherServers, flags *packload.LaunchInjection) []string {
+	return sourceAgentLauncherSegmentsWithTmpdir(inst, d, stampDir, keyDir, receiptsPath,
+		capturesPath, updates, servers, flags, "", false)
+}
+
+func sourceAgentLauncherSegmentsWithTmpdir(inst *packdecl.Install, d ForkDelivery, stampDir, keyDir, receiptsPath,
+	capturesPath string, updates bool, servers launcherServers, flags *packload.LaunchInjection,
+	sandboxContext string, sandboxNative bool) []string {
 	token := execPrefixToken()
 	r := strings.NewReplacer(append([]string{
 		"__YOLO_BIN__", shquote.Quote(inst.Bin),
@@ -201,7 +208,7 @@ func sourceAgentLauncherSegments(inst *packdecl.Install, d ForkDelivery, stampDi
 		"__YOLO_EXEC_PREFIX__", token,
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(append(launchFlagSplices(flags), useInstalledSplices(inst.Bin, sourceOwner(inst, d))...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), startupSplices(inst, true)...)...)...)
+	}, append(append(append(launchFlagSplices(flags), useInstalledSplices(inst.Bin, sourceOwner(inst, d))...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), startupSplicesWithTmpdir(inst, true, sandboxContext, sandboxNative)...)...)...)
 	return strings.Split(r.Replace(sourceLauncherTemplate), token)
 }
 
@@ -367,7 +374,7 @@ if [ "$SERVERS_ENABLED" = "1" ] && [ "$_YOLO_PROBE" != "1" ]; then
     _refresh_servers
 fi
 ` + prelaunchRefreshCallShell + `
-` + agentEnvShellFn + agentAuthPrelaunchShellFn + compileCacheShellFn + `
+` + agentEnvShellFn + agentAuthPrelaunchShellFn + compileCacheShellFn + sandboxTmpdirEnvShellFn + `
 if [ -x "$REAL_BIN" ]; then
     _yolo_launch_argv "$@"
     exec __YOLO_EXEC_PREFIX__"$REAL_BIN" ${YOLO_ARGV[@]+"${YOLO_ARGV[@]}"}

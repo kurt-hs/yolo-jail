@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/capture"
+	"github.com/mschulkind-oss/yolo-jail/internal/claudesecurity"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
@@ -39,10 +40,17 @@ import (
 // rewrite semantics.
 func runInternal(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|dev-bundle-reap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|macos-user-profile|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check> [args...]")
+		fmt.Fprintln(os.Stderr, "usage: yolo internal <background-advance|preparation-scheduler|capture-materialize|capture-run|config-dump|ctx-attach|daemon|darwin-bootstrap|dev-bundle-reap|discard-rm|fork-build-jail|footer|image-copy|installer-check|log-append|macos-user-profile|migrate-host|model-menu|no-terminal|node-floor-launchers|node-floor-satisfied|openai-auth|openai-auth-client|pack-tree-reap|probe-services|refresh-programs|refresh-servers|bundle-dir|scratch-rm|update-check|validate-sandbox-tmpdir> [args...]")
 		return 2
 	}
 	switch args[0] {
+	case claudesecurity.Verb:
+		// The selected Claude launcher's write-only Keychain compatibility adapter.
+		return claudesecurity.Main(args[1:])
+	case sandboxTmpdirValidationVerb:
+		// The selected program launcher's native TMPDIR-confinement check, called immediately
+		// before exec with roots baked from the host-resolved macos-user launch context.
+		return runSandboxTmpdirValidation(args[1:])
 	case "footer":
 		// The agent footer's one renderer (docs/reference/agent-footer.md, "The renderer"), run by the
 		// status-line command each agent pack writes into its agent's settings. Hidden

@@ -21,6 +21,7 @@ import (
 // `yolo host -- probe`, then has the scheduled check find 2.0.0 and fail to prepare it.
 func hostOverFailedCheck(t *testing.T) *ordinaryNoFallback {
 	t.Helper()
+	baselineNodeRuntime(t)
 	x := newOrdinaryNoFallback(t)
 	x.admit(t)
 	record, err := readNPMCaptureRecord(x.f.store, x.f.in)

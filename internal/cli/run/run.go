@@ -797,6 +797,7 @@ func Run(opts Options) (rc int) {
 			setRosterEndpoints(launchEnv, rec)
 			if o.claudeCredentialView(rt, cfg) {
 				launchEnv.Set(claudeview.SwitchEnv, claudeview.ResolvedValue(true))
+				setClaudeSecurityCompatEnv(launchEnv, o.claudeSecurityCompatMode(rt, cfg))
 			}
 			// The keeper's endpoint files a session of the workspace granted already, which this
 			// session's stage does not grant again, and the record of those its own stage grants.
@@ -830,6 +831,7 @@ func Run(opts Options) (rc int) {
 			o.registerClaudeCredentialView(rt, cname, cfg)
 			if o.claudeCredentialView(rt, cfg) {
 				launchEnv.Set(claudeview.SwitchEnv, claudeview.ResolvedValue(true))
+				setClaudeSecurityCompatEnv(launchEnv, o.claudeSecurityCompatMode(rt, cfg))
 			}
 			for _, h := range handles {
 				// THE HOST PATH, never the jail path: there is no jail filesystem here, so

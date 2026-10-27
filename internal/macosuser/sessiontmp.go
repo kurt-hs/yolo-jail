@@ -146,16 +146,6 @@ func withSandboxTmpdirEnv(env *jsonx.OrderedMap, names []string) *jsonx.OrderedM
 	return env
 }
 
-// composedTmpdirProblem is the launch's refusal for a TMPDIR the user's env composed (tmpdir) that
-// lies outside every root the run-as-you profile lets the sandbox write: roots (the workspace, the
-// agent's home, the user's DARWIN_USER_TEMP_DIR, which holds the session's own), plus the shared
-// /tmp when the hatch is set. "" when tmpdir is empty or inside one (MMP-D20). Compared lexically,
-// with /tmp, /var and /etc in their /private spelling, as the profile grants them; a symlink inside
-// a root that leads out is the profile's to refuse, not this check's.
-func composedTmpdirProblem(tmpdir string, roots []string, sharedTmp bool) string {
-	return composedTmpdirEnvProblem("TMPDIR", tmpdir, roots, sharedTmp)
-}
-
 func composedTmpdirEnvProblem(variable, tmpdir string, roots []string, sharedTmp bool) string {
 	if tmpdir == "" {
 		return ""

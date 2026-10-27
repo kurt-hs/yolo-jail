@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,15 +34,20 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
+	"github.com/mschulkind-oss/yolo-jail/internal/claudesecurity"
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/execx"
 	"github.com/mschulkind-oss/yolo-jail/internal/logcap"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
+
+// hostClaudeViewGOOS keeps the platform predicate at the launch boundary testable off Darwin.
+var hostClaudeViewGOOS = runtime.GOOS
 
 // hostClaudeBrokerEnsure starts THIS LAUNCH'S OWN claude-oauth-broker, which keeps the view
 // current for as long as the launch's process lives, with its lines on errw (a host agent's stdout
@@ -137,9 +143,25 @@ func hostClaudeView(launch *hostComposition, environ []string, errw io.Writer) [
 			"shows the broker's store; unset %s to stop asking\n", launch.agent, err, claudeview.SwitchEnv)
 		return environ
 	}
+	if hostClaudeViewGOOS == "darwin" {
+		path := hostPathFromEnviron(environ)
+		shimDir, shimErr := writeHostClaudeSecurityAdapter(loc.Dir, path)
+		if shimErr != nil {
+			fmt.Fprintf(errw, "yolo host: could not prepare the scoped security adapter (%v), so %s "+
+				"keeps its own login and no credential view is handed off; resolve the security shim conflict, "+
+				"make %s writable and retry, or unset %s\n",
+				shimErr, launch.agent, homeTilde(paths.HostBlockDir()), claudeview.SwitchEnv)
+			return environ
+		}
+		environ = setEnviron(environ, "PATH", blockDirFirst(shimDir, paths.HostBlockDir(), path))
+	}
 	fmt.Fprintf(errw, "yolo host: %s reads the machine's shared Claude login from a store yolo "+
 		"manages, %s, which the host broker keeps current (%s=1); your own ~/.claude is not "+
 		"touched\n", launch.agent, homeTilde(loc.Dir), claudeview.SwitchEnv)
+	if hostClaudeViewGOOS == "darwin" {
+		fmt.Fprintln(errw, "yolo host: the PATH security adapter passes other Keychain operations through, "+
+			"and blocks reads, writes and deletion only for this managed Claude credential service")
+	}
 	if res.WasLoggedOut {
 		fmt.Fprintf(errw, "yolo host: /logout in an earlier `yolo host -- %s` had signed this store "+
 			"out of the machine's login; this launch signs it back in. `yolo claude-auth logout` "+
@@ -150,6 +172,69 @@ func hostClaudeView(launch *hostComposition, environ []string, errw io.Writer) [
 			"session enrolls the machine, for every jail and `yolo host` launch that shares it\n")
 	}
 	return setEnviron(environ, claudeview.SecureStorageEnv, loc.Dir)
+}
+
+func writeHostClaudeSecurityAdapter(viewDir, childPath string) (string, error) {
+	yolo, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve this yolo executable: %w", err)
+	}
+	service := claudesecurity.ViewService(viewDir)
+	root := paths.HostBlockDir()
+	scripts, err := hostBlockerScriptsInPath(root, childPath)
+	if err != nil {
+		return "", err
+	}
+	for _, script := range scripts {
+		if script.Name == "security" {
+			return "", fmt.Errorf("a security shim already governs this launch's PATH")
+		}
+	}
+	scripts = append(scripts, entrypoint.BlockerScript{
+		Name: "security", Content: claudesecurity.ShimContent(yolo, claudesecurity.ViewMode, service),
+	})
+	return writeHostBlockDir(root, scripts)
+}
+
+func hostPathFromEnviron(environ []string) string {
+	for _, kv := range environ {
+		if path, ok := strings.CutPrefix(kv, "PATH="); ok {
+			return path
+		}
+	}
+	return ""
+}
+
+func hostBlockerScriptsInPath(root, childPath string) ([]entrypoint.BlockerScript, error) {
+	root = filepath.Clean(root)
+	var scripts []entrypoint.BlockerScript
+	for _, dir := range filepath.SplitList(childPath) {
+		clean := filepath.Clean(dir)
+		rel, err := filepath.Rel(root, clean)
+		if err != nil || rel == "." || filepath.Dir(rel) != "." {
+			continue
+		}
+		entries, err := os.ReadDir(clean)
+		if err != nil {
+			return nil, fmt.Errorf("read existing host shims from %s: %w", clean, err)
+		}
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				return nil, fmt.Errorf("inspect existing host shim %s: %w", filepath.Join(clean, entry.Name()), err)
+			}
+			if !info.Mode().IsRegular() {
+				return nil, fmt.Errorf("existing host shim %s is not a regular file", filepath.Join(clean, entry.Name()))
+			}
+			content, err := os.ReadFile(filepath.Join(clean, entry.Name()))
+			if err != nil {
+				return nil, fmt.Errorf("read existing host shim %s: %w", filepath.Join(clean, entry.Name()), err)
+			}
+			scripts = append(scripts, entrypoint.BlockerScript{Name: entry.Name(), Content: string(content)})
+		}
+		return scripts, nil
+	}
+	return scripts, nil
 }
 
 // registerHostClaudeView starts this launch's broker and registers loc with it.

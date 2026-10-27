@@ -95,9 +95,10 @@ func compileCacheSplices(inst *packdecl.Install, node bool) []string {
 	}
 }
 
-// startupSplices is every startup sentinel pair a template carries for inst, the version probe's
-// (probeargs.go) and the compile caches', riding on the end of each generator's pair list as
-// refreshSplices does. node is compileCacheSplices'.
-func startupSplices(inst *packdecl.Install, node bool) []string {
-	return append(probeArgsSplices(inst.ProbeArgs), compileCacheSplices(inst, node)...)
+// startupSplicesWithTmpdir is every startup sentinel pair a template carries for inst: the version
+// probe's (probeargs.go), compile caches, and declared sandbox-TMPDIR followers. They ride on the
+// end of each generator's pair list as refreshSplices does. node is compileCacheSplices'.
+func startupSplicesWithTmpdir(inst *packdecl.Install, node bool, context string, native bool) []string {
+	splices := append(probeArgsSplices(inst.ProbeArgs), compileCacheSplices(inst, node)...)
+	return append(splices, sandboxTmpdirEnvSplices(inst, context, native)...)
 }

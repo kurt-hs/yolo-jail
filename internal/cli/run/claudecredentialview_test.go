@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
+	"github.com/mschulkind-oss/yolo-jail/internal/claudesecurity"
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
@@ -48,6 +49,49 @@ func jailDaemonNames(o *Options, rt string) []string {
 		names = append(names, s.Cmd...)
 	}
 	return names
+}
+
+func TestAccountSecurityAdapterCarrierFollowsOnlyTheResolvedMacosUserView(t *testing.T) {
+	brokerFixtureDirs(t, true)
+	o := goldenOptions("/ws", t.TempDir())
+	o.Getenv = viewEnv("1")
+	for _, tc := range []struct {
+		name string
+		rt   string
+		mode macosuser.Mode
+		view string
+		want string
+	}{
+		{"account view", "macos-user", macosuser.ModeAccount, "1", claudesecurity.AccountMode},
+		{"self view", "macos-user", macosuser.ModeSelf, "1", ""},
+		{"view off", "macos-user", macosuser.ModeAccount, "0", ""},
+		{"container view", "podman", macosuser.ModeAccount, "1", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o.MacosUserMode = tc.mode
+			o.Getenv = viewEnv(tc.view)
+			if got := o.claudeSecurityCompatMode(tc.rt, jsonx.NewOrderedMap()); got != tc.want {
+				t.Fatalf("carrier mode = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBothMacosUserProductionLaunchArmsCarryTheAccountSecurityAdapter(t *testing.T) {
+	body, err := os.ReadFile("run.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(body), "setClaudeSecurityCompatEnv(launchEnv, o.claudeSecurityCompatMode(rt, cfg))"); n != 2 {
+		t.Fatalf("the keeper and keeperless view launch arms carry the resolved security adapter %d times, want both", n)
+	}
+	for _, fragment := range []string{
+		"if o.claudeCredentialView(rt, cfg) {\n\t\t\t\tlaunchEnv.Set(claudeview.SwitchEnv, claudeview.ResolvedValue(true))\n\t\t\t\tsetClaudeSecurityCompatEnv",
+	} {
+		if !strings.Contains(string(body), fragment) {
+			t.Errorf("security carrier is no longer adjacent to the production credential-view decision")
+		}
+	}
 }
 
 func TestTheSwitchSelectsTheViewOrTheInterceptionAtLaunch(t *testing.T) {
@@ -198,7 +242,7 @@ func TestRegistrationUsesTheClaudeHomeForEachMode(t *testing.T) {
 	}
 }
 
-func TestMacosUserViewNoticeReflectsMeasuredEnrollmentLimits(t *testing.T) {
+func TestMacosUserViewNoticeReflectsTheInstalledCompatibilityPath(t *testing.T) {
 	brokerFixtureDirs(t, true)
 	for _, tc := range []struct {
 		name string
@@ -206,16 +250,16 @@ func TestMacosUserViewNoticeReflectsMeasuredEnrollmentLimits(t *testing.T) {
 		want string
 		fn   func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error)
 	}{
-		{name: "self registration error", mode: macosuser.ModeSelf, want: "session-TMPDIR and Claude store-path workarounds", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+		{name: "self registration error", mode: macosuser.ModeSelf, want: "session TMPDIR", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
 			return oauthbroker.RegisterResult{}, os.ErrPermission
 		}},
 		{name: "self no canonical login", mode: macosuser.ModeSelf, want: "session TMPDIR", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
 			return oauthbroker.RegisterResult{}, nil
 		}},
-		{name: "account registration error", mode: macosuser.ModeAccount, want: "Keychain write hang", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+		{name: "account registration error", mode: macosuser.ModeAccount, want: "scoped security adapter fails Keychain writes promptly", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
 			return oauthbroker.RegisterResult{}, os.ErrPermission
 		}},
-		{name: "account no canonical login", mode: macosuser.ModeAccount, want: "Keychain write hang", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
+		{name: "account no canonical login", mode: macosuser.ModeAccount, want: "scoped security adapter's fast Keychain-write refusal", fn: func(claudeview.Location, string, string) (oauthbroker.RegisterResult, error) {
 			return oauthbroker.RegisterResult{}, nil
 		}},
 	} {
@@ -231,10 +275,10 @@ func TestMacosUserViewNoticeReflectsMeasuredEnrollmentLimits(t *testing.T) {
 			o.registerClaudeCredentialView("macos-user", "yolo-ws", jsonx.NewOrderedMap())
 			message := stderr.String()
 			if !strings.Contains(message, tc.want) {
-				t.Errorf("notice omitted measured limitation %q:\n%s", tc.want, message)
+				t.Errorf("notice omitted active mechanism %q:\n%s", tc.want, message)
 			}
-			if !strings.Contains(message, "YOLO_CLAUDE_CREDENTIAL_VIEW=0") {
-				t.Errorf("notice omitted the existing view-off path:\n%s", message)
+			if strings.Contains(message, "Keychain write hang") || strings.Contains(message, "does not yet set session TMPDIR") {
+				t.Errorf("notice repeats a repaired failure:\n%s", message)
 			}
 		})
 	}
@@ -248,8 +292,8 @@ func TestMacosUserKeeperRegistersModeSpecificLocationIntoTheFinalEnvironment(t *
 		want   string
 		notice string
 	}{
-		{name: "self", mode: macosuser.ModeSelf, want: ".claude", notice: "native self-mode /login adopted the view with session-TMPDIR"},
-		{name: "account", mode: macosuser.ModeAccount, want: "claude", notice: "account-mode /login has a measured Keychain write hang"},
+		{name: "self", mode: macosuser.ModeSelf, want: ".claude", notice: "uses the session TMPDIR"},
+		{name: "account", mode: macosuser.ModeAccount, want: "claude", notice: "scoped security adapter fails Keychain writes promptly"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := packHome(t)
@@ -290,8 +334,8 @@ func TestMacosUserKeeperRegistersModeSpecificLocationIntoTheFinalEnvironment(t *
 			if registered == nil || registered.Workspace != ws || registered.Subdir != tc.want {
 				t.Errorf("keeper registered %+v, want workspace %q subdir %q", registered, ws, tc.want)
 			}
-			if !strings.Contains(stderr.String(), tc.notice) || !strings.Contains(stderr.String(), "YOLO_CLAUDE_CREDENTIAL_VIEW=0") {
-				t.Errorf("keeper notice does not match %s mode or omit the view-off path:\n%s", tc.name, stderr.String())
+			if !strings.Contains(stderr.String(), tc.notice) || strings.Contains(stderr.String(), "YOLO_CLAUDE_CREDENTIAL_VIEW=0") {
+				t.Errorf("keeper notice does not match %s repaired mechanism or repeats old workaround:\n%s", tc.name, stderr.String())
 			}
 			if got == nil {
 				t.Fatal("macos-user launch did not hand its final environment to the runner")
@@ -301,6 +345,13 @@ func TestMacosUserKeeperRegistersModeSpecificLocationIntoTheFinalEnvironment(t *
 			}
 			if v := envAt(got, claudeview.SecureStorageEnv); v != "" {
 				t.Errorf("view-on final environment points Claude at a shared refresh-token store: %q", v)
+			}
+			wantSecurity := ""
+			if tc.mode == macosuser.ModeAccount {
+				wantSecurity = claudesecurity.AccountMode
+			}
+			if v := envAt(got, claudesecurity.EnvVar); v != wantSecurity {
+				t.Errorf("final %s = %q, want %q", claudesecurity.EnvVar, v, wantSecurity)
 			}
 		})
 	}
