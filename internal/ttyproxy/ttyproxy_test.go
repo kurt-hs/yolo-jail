@@ -567,11 +567,15 @@ func TestOutputPressureCancellationRestoresOwnedTerminal(t *testing.T) {
 
 func TestOutputPressureTTYCancellationDoesNotBlockReset(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
-		t.Run(sig.String(), func(t *testing.T) { runFullTTYSignalCancellation(t, sig) })
+		t.Run(sig.String(), func(t *testing.T) { runFullTTYSignalCancellation(t, sig, false) })
 	}
 }
 
-func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
+func TestOutputPressureTTYWaitBoundsHelperStderr(t *testing.T) {
+	runFullTTYSignalCancellation(t, syscall.SIGTERM, true)
+}
+
+func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal, holdStderr bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -601,13 +605,44 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
 		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(16*1024*1024), "YOLO_TTYPROXY_EXPECT_SUSPEND=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	// Cmd.Wait otherwise waits for copied stderr until every inherited pipe writer closes.
+	// Keep this bound inside childDeadline so the signal test can report a stuck helper.
+	cmd.WaitDelay = childDeadline - time.Second
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
+	var heldStderr *os.File
+	if holdStderr {
+		helperStderr := fmt.Sprintf("/proc/%d/fd/2", cmd.Process.Pid)
+		want, err := os.Stat(helperStderr)
+		if err != nil {
+			t.Fatalf("stat owned helper stderr pipe: %v", err)
+		}
+		heldStderr, err = os.OpenFile(helperStderr, os.O_WRONLY|syscall.O_CLOEXEC, 0)
+		if err != nil {
+			t.Fatalf("hold owned helper stderr pipe: %v", err)
+		}
+		got, err := heldStderr.Stat()
+		if err != nil {
+			_ = heldStderr.Close()
+			t.Fatalf("stat held helper stderr pipe: %v", err)
+		}
+		if !os.SameFile(want, got) || got.Mode()&os.ModeNamedPipe == 0 {
+			_ = heldStderr.Close()
+			t.Fatalf("held stderr identity = same:%v mode:%v, want the owned helper's pipe", os.SameFile(want, got), got.Mode())
+		}
+	}
+	closeHeldStderr := func() {
+		if heldStderr != nil {
+			_ = heldStderr.Close()
+			heldStderr = nil
+		}
+	}
 	waited := false
 	defer func() {
+		closeHeldStderr()
 		if waited {
 			return
 		}
@@ -654,6 +689,13 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
 	select {
 	case waitErr = <-done:
 	case <-time.After(childDeadline):
+		if heldStderr != nil && errors.Is(unix.Kill(cmd.Process.Pid, 0), unix.ESRCH) {
+			closeHeldStderr()
+			waitErr = <-done
+			waited = true
+			assertSignalExit(t, waitErr, sig)
+			t.Fatalf("owned helper stderr writer kept Cmd.Wait from completing within childDeadline")
+		}
 		// This release is cleanup after the bounded assertion window, not a retry:
 		// it lets a red path terminate its own helper before the test fails.
 		_ = unix.SetNonblock(master, true)
@@ -676,6 +718,7 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal) {
 	}
 	assertSignalExit(t, waitErr, sig)
 	waited = true
+	closeHeldStderr()
 	if after := mustGetTermios(t, slave); *after != *cooked {
 		t.Fatalf("signal %s left host termios changed: before=%+v after=%+v", sig, *cooked, *after)
 	}
