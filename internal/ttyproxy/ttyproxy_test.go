@@ -2373,29 +2373,71 @@ func TestPtySlaveDescriptorsHaveSingleFileOwners(t *testing.T) {
 	if !ok {
 		t.Fatal("locate test source")
 	}
-	production := parseProxyFunction(t, filepath.Join(filepath.Dir(currentFile), "ttyproxy.go"), "RunWithProxyObserved")
-	productionOwners, productionCloses := fileOwnersAndCloses(production)
-	if len(productionOwners) != 1 || productionOwners[0] != "ptyFile" || productionCloses["ptyFile"] < 2 {
-		t.Fatalf("production slave owners=%v closes=%v, want one ptyFile closed on both start outcomes", productionOwners, productionCloses)
+	productionPath := filepath.Join(filepath.Dir(currentFile), "ttyproxy.go")
+	productionBytes, err := os.ReadFile(productionPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !childStreamsShareOwner(production, "ptyFile") {
-		t.Fatal("production child stdin/stdout/stderr no longer share the one owned slave file")
+	production := parseProxyFunctionSource(t, productionPath, string(productionBytes), "RunWithProxyObserved")
+	if !productionPtyOwnerCallpath(production) {
+		t.Fatal("production child streams no longer have one closed slave owner through c.Start")
+	}
+
+	for _, tc := range []struct {
+		name, old, replacement string
+	}{
+		{
+			name: "competing child-stream wrappers",
+			old:  "\tif err := c.Start(); err != nil {",
+			replacement: "\tc.Stdin = os.NewFile(uintptr(slave), \"competing-stdin\")\n" +
+				"\tc.Stdout = os.NewFile(uintptr(slave), \"competing-stdout\")\n" +
+				"\tc.Stderr = os.NewFile(uintptr(slave), \"competing-stderr\")\n" +
+				"\tif err := c.Start(); err != nil {",
+		},
+		{
+			name:        "deleted actual stream assignment",
+			old:         "\tc.Stdin, c.Stdout, c.Stderr = ptyFile, ptyFile, ptyFile\n\tif err := c.Start(); err != nil {",
+			replacement: "\tif err := c.Start(); err != nil {",
+		},
+	} {
+		mutated := strings.Replace(string(productionBytes), tc.old, tc.replacement, 1)
+		if mutated == string(productionBytes) {
+			t.Fatalf("mutation %q did not find its production seam", tc.name)
+		}
+		if productionPtyOwnerCallpath(parseProxyFunctionSource(t, productionPath, mutated, "RunWithProxyObserved")) {
+			t.Errorf("production ownership oracle accepted mutation %q", tc.name)
+		}
 	}
 
 	fixture := parseProxyFunction(t, currentFile, "TestResetTerminalFdSelection")
-	fixtureOwners, fixtureCloses := fileOwnersAndCloses(fixture)
-	if len(fixtureOwners) != 2 || fixtureCloses["stdoutFile"] != 1 || fixtureCloses["stderrFile"] != 1 {
-		t.Fatalf("terminal-reset fixture owners=%v closes=%v, want stdoutFile/stderrFile each explicitly closed by their owner", fixtureOwners, fixtureCloses)
+	fixtureOwners, fixtureCloses, fixtureNewFiles := fileOwnersAndCloses(fixture)
+	if fixtureNewFiles != 2 || len(fixtureOwners) != 2 || fixtureCloses["stdoutFile"] != 1 || fixtureCloses["stderrFile"] != 1 {
+		t.Fatalf("terminal-reset fixture NewFile calls=%d owners=%v closes=%v, want two wrappers each explicitly closed by their owner", fixtureNewFiles, fixtureOwners, fixtureCloses)
 	}
 	if rawClosesDescriptor(fixture, "s") {
 		t.Fatal("terminal-reset fixture raw-closes a slave descriptor still owned by an os.File")
 	}
 }
 
+func productionPtyOwnerCallpath(fn *ast.FuncDecl) bool {
+	owners, closes, newFiles := fileOwnersAndCloses(fn)
+	return newFiles == 1 && len(owners) == 1 && owners[0] == "ptyFile" && closes["ptyFile"] >= 2 &&
+		childStreamsShareOwnerThroughStart(fn, "ptyFile") && !rawClosesDescriptor(fn, "slave")
+}
+
 func parseProxyFunction(t *testing.T, filename, name string) *ast.FuncDecl {
 	t.Helper()
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("read %s: %v", filename, err)
+	}
+	return parseProxyFunctionSource(t, filename, string(contents), name)
+}
+
+func parseProxyFunctionSource(t *testing.T, filename, source, name string) *ast.FuncDecl {
+	t.Helper()
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filename, nil, 0)
+	file, err := parser.ParseFile(fset, filename, source, 0)
 	if err != nil {
 		t.Fatalf("parse %s: %v", filename, err)
 	}
@@ -2408,9 +2450,10 @@ func parseProxyFunction(t *testing.T, filename, name string) *ast.FuncDecl {
 	return nil
 }
 
-func fileOwnersAndCloses(fn *ast.FuncDecl) ([]string, map[string]int) {
+func fileOwnersAndCloses(fn *ast.FuncDecl) ([]string, map[string]int, int) {
 	var owners []string
 	closes := make(map[string]int)
+	newFiles := 0
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
 		switch n := node.(type) {
 		case *ast.AssignStmt:
@@ -2424,6 +2467,9 @@ func fileOwnersAndCloses(fn *ast.FuncDecl) ([]string, map[string]int) {
 				}
 			}
 		case *ast.CallExpr:
+			if isOSNewFile(n) {
+				newFiles++
+			}
 			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" {
 				if owner, ok := sel.X.(*ast.Ident); ok {
 					closes[owner.Name]++
@@ -2432,7 +2478,7 @@ func fileOwnersAndCloses(fn *ast.FuncDecl) ([]string, map[string]int) {
 		}
 		return true
 	})
-	return owners, closes
+	return owners, closes, newFiles
 }
 
 func isOSNewFile(call *ast.CallExpr) bool {
@@ -2444,37 +2490,59 @@ func isOSNewFile(call *ast.CallExpr) bool {
 	return ok && pkg.Name == "os"
 }
 
-func childStreamsShareOwner(fn *ast.FuncDecl, owner string) bool {
-	for _, stmt := range fn.Body.List {
-		assign, ok := stmt.(*ast.AssignStmt)
-		if !ok || len(assign.Lhs) != 3 || len(assign.Rhs) != 3 {
-			continue
-		}
-		fields := map[string]bool{}
-		for _, lhs := range assign.Lhs {
-			selector, ok := lhs.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "Stdin" && selector.Sel.Name != "Stdout" && selector.Sel.Name != "Stderr" {
-				fields = nil
-				break
+func childStreamsShareOwnerThroughStart(fn *ast.FuncDecl, owner string) bool {
+	streamAssignment := token.NoPos
+	streamAssignments := 0
+	startCall := token.NoPos
+	startCalls := 0
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		switch n := node.(type) {
+		case *ast.AssignStmt:
+			if len(n.Lhs) != 3 || len(n.Rhs) != 3 {
+				return true
 			}
-			fields[selector.Sel.Name] = true
-		}
-		if fields == nil || len(fields) != 3 {
-			continue
-		}
-		shared := true
-		for _, rhs := range assign.Rhs {
-			ident, ok := rhs.(*ast.Ident)
-			if !ok || ident.Name != owner {
-				shared = false
-				break
+			fields := make(map[string]bool)
+			for _, lhs := range n.Lhs {
+				selector, ok := lhs.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				receiver, receiverOK := selector.X.(*ast.Ident)
+				if !receiverOK || receiver.Name != "c" ||
+					(selector.Sel.Name != "Stdin" && selector.Sel.Name != "Stdout" && selector.Sel.Name != "Stderr") {
+					return true
+				}
+				fields[selector.Sel.Name] = true
+			}
+			if len(fields) == 3 {
+				streamAssignments++
+				streamAssignment = n.Pos()
+				shared := true
+				for _, rhs := range n.Rhs {
+					ident, ok := rhs.(*ast.Ident)
+					if !ok || ident.Name != owner {
+						shared = false
+						break
+					}
+				}
+				if !shared {
+					streamAssignment = token.NoPos
+				}
+			}
+		case *ast.CallExpr:
+			selector, ok := n.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Start" {
+				return true
+			}
+			receiver, ok := selector.X.(*ast.Ident)
+			if ok && receiver.Name == "c" {
+				startCalls++
+				startCall = n.Pos()
 			}
 		}
-		if shared {
-			return true
-		}
-	}
-	return false
+		return true
+	})
+	return streamAssignments == 1 && startCalls == 1 && streamAssignment.IsValid() && startCall > streamAssignment
 }
 
 func rawClosesDescriptor(fn *ast.FuncDecl, descriptor string) bool {
