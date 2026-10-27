@@ -872,7 +872,62 @@ func waitStopTargetGone(home string, p homeProcess, deadline time.Time, probes s
 	}
 }
 
+// freshOwnedProcessAfterExitProof permits only a newly bracketed HOME match for the same
+// readable identity and classifiable argv to leave the wait-only exiting set; no prior HOME or
+// PF_EXITING observation substitutes for that current positive ownership proof.
+func freshOwnedProcessAfterExitProof(home string, exiting homeProcess, listed []homeProcess, probes stopProcessProbes) bool {
+	if exiting.statErr != nil || exiting.startTime == "" || exiting.lateHomeErr != nil || probes.home == nil ||
+		(!exiting.homeMatched && !errors.Is(exiting.homeErr, errHomeEnvironmentCleared)) ||
+		(exiting.homeErr != nil && !errors.Is(exiting.homeErr, errHomeEnvironmentCleared)) {
+		return false
+	}
+	var current *homeProcess
+	for i := range listed {
+		if listed[i].pid != exiting.pid {
+			continue
+		}
+		if current != nil {
+			return false
+		}
+		current = &listed[i]
+	}
+	if current == nil || current.exiting || current.statErr != nil || current.argsErr != nil ||
+		current.startTime != exiting.startTime || current.homeErr != nil || current.lateHomeErr != nil ||
+		!current.homeMatched || len(current.args) == 0 {
+		return false
+	}
+
+	legacy, err := probes.inspect(exiting.pid)
+	if err != nil || legacy.gone || legacy.startTime != exiting.startTime ||
+		legacy.lateStartTimeErr != nil || !legacy.lateStartTimeFound ||
+		legacy.lateStartTime != exiting.startTime || len(legacy.args) != 0 ||
+		legacy.stateErr != nil || !legacy.stateFound || !validLiveLinuxProcessState(legacy.state) ||
+		legacy.flagsErr != nil || !legacy.flagsFound || legacy.flags&linuxPFExiting != 0 {
+		return false
+	}
+
+	matchesSnapshot := func(snapshot stopProcessSnapshot) bool {
+		return !snapshot.gone && snapshot.startTime == exiting.startTime &&
+			snapshot.lateStartTimeErr == nil && snapshot.lateStartTimeFound &&
+			snapshot.lateStartTime == exiting.startTime &&
+			snapshot.stateErr == nil && snapshot.stateFound && validLiveLinuxProcessState(snapshot.state) &&
+			snapshot.flagsErr == nil && snapshot.flagsFound && snapshot.flags&linuxPFExiting == 0 &&
+			len(snapshot.args) > 0 && slices.Equal(snapshot.args, current.args)
+	}
+	before, err := probes.inspect(exiting.pid)
+	if err != nil || !matchesSnapshot(before) {
+		return false
+	}
+	matches, err := probes.home(exiting.pid, home)
+	if err != nil || !matches {
+		return false
+	}
+	after, err := probes.inspect(exiting.pid)
+	return err == nil && matchesSnapshot(after)
+}
+
 func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, probes stopProcessProbes) ([]string, error) {
+
 	var stopped []string
 	var exiting []homeProcess
 	relistedPastBound := false
@@ -882,6 +937,9 @@ func stopHomeProcessesWithinWithProbes(home string, bound, grace time.Duration, 
 		var retained []homeProcess
 		heldPIDs := map[int]bool{}
 		for _, p := range exiting {
+			if freshOwnedProcessAfterExitProof(home, p, listed, probes) {
+				continue
+			}
 			snapshot, live, err := validateStopTarget(home, p, probes)
 			if err != nil {
 				return stopped, err
@@ -2197,6 +2255,338 @@ func TestStopHomeProcessesDoesNotClassifyUncertainExitEvidence(t *testing.T) {
 			_, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
 			if err == nil || inspectCalls != 1 || listCalls != 1 || killCalls != 0 {
 				t.Fatalf("stop error=%v, lists=%d inspections=%d signals=%d; want one fatal observation and no signal", err, listCalls, inspectCalls, killCalls)
+			}
+		})
+	}
+}
+
+func TestStopHomeProcessesReclassifiesExitingProcessOnlyAfterFreshPositiveHOME(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5155
+	const startTime = "876548"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{
+		pid: pid, ppid: 1, startTime: startTime,
+		homeErr:     cleared,
+		homeMatched: false,
+	}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/bin/worker", "--owned"}, startTime: startTime,
+		homeMatched: true,
+	}
+	live := func() stopProcessSnapshot {
+		return stopProcessSnapshot{
+			args: slices.Clone(confirmed.args), startTime: startTime,
+			state: "S", stateFound: true, flagsFound: true,
+			lateStartTime: startTime, lateStartTimeFound: true,
+		}
+	}
+	var events []string
+	listCalls, inspectCalls, homeCalls := 0, 0, 0
+	var signals []syscall.Signal
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			events = append(events, fmt.Sprintf("list-%d", listCalls))
+			switch listCalls {
+			case 1:
+				return []homeProcess{unconfirmed}
+			case 2:
+				return []homeProcess{confirmed}
+			default:
+				return nil
+			}
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			events = append(events, fmt.Sprintf("inspect-%d", inspectCalls))
+			if inspectCalls == 1 {
+				return exitingStopSnapshot(startTime), nil
+			}
+			if inspectCalls == 2 {
+				s := exitingStopSnapshot(startTime)
+				s.flags = 0
+				return s, nil
+			}
+			if inspectCalls >= 7 {
+				return stopProcessSnapshot{gone: true}, nil
+			}
+			return live(), nil
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			events = append(events, fmt.Sprintf("home-%d", homeCalls))
+			if homeCalls == 1 {
+				return false, cleared
+			}
+			return true, nil
+		},
+		kill: func(gotPID int, signal syscall.Signal) error {
+			if gotPID != pid {
+				t.Errorf("signalled pid %d, want %d", gotPID, pid)
+			}
+			events = append(events, "signal")
+			signals = append(signals, signal)
+			return nil
+		},
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if err != nil || len(stopped) != 1 || listCalls != 3 || inspectCalls != 8 || homeCalls != 2 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d); want one safely reclassified target, completed gone check, and fresh census",
+			stopped, err, listCalls, inspectCalls, homeCalls)
+	}
+	if !slices.Equal(signals, []syscall.Signal{syscall.SIGTERM}) {
+		t.Fatalf("signals=%v; want ordinary SIGTERM only", signals)
+	}
+	wantBracket := []string{"inspect-3", "home-2", "inspect-4"}
+	if !slices.Contains(events, "home-2") {
+		t.Fatalf("events=%v; want a fresh HOME observation", events)
+	}
+	for i := 0; i+len(wantBracket) <= len(events); i++ {
+		if slices.Equal(events[i:i+len(wantBracket)], wantBracket) {
+			return
+		}
+	}
+	t.Fatalf("events=%v; want the fresh HOME read bracketed by two identity inspections %v", events, wantBracket)
+}
+
+func TestStopHomeProcessesFreshPromotionKeepsScratchRemoverWaitOnly(t *testing.T) {
+	const home = "/test/home"
+	const pid = 5157
+	const startTime = "876550"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeErr: cleared}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/opt/yolo/bin/yolo", "internal", "scratch-rm"}, startTime: startTime,
+		homeMatched: true,
+	}
+	live := func() stopProcessSnapshot {
+		return stopProcessSnapshot{
+			args: slices.Clone(confirmed.args), startTime: startTime,
+			state: "S", stateFound: true, flagsFound: true,
+			lateStartTime: startTime, lateStartTimeFound: true,
+		}
+	}
+	listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			switch listCalls {
+			case 1:
+				return []homeProcess{unconfirmed}
+			case 2:
+				return []homeProcess{confirmed}
+			default:
+				return nil
+			}
+		},
+		inspect: func(int) (stopProcessSnapshot, error) {
+			inspectCalls++
+			if inspectCalls == 1 {
+				return exitingStopSnapshot(startTime), nil
+			}
+			if inspectCalls == 2 {
+				s := exitingStopSnapshot(startTime)
+				s.flags = 0
+				return s, nil
+			}
+			return live(), nil
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			if homeCalls == 1 {
+				return false, cleared
+			}
+			return true, nil
+		},
+		kill: func(int, syscall.Signal) error { killCalls++; return nil },
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	if err != nil || len(stopped) != 0 || killCalls != 0 || listCalls != 3 || inspectCalls != 5 || homeCalls != 2 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want a fresh census and no signal to the scratch remover",
+			stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+	}
+}
+
+func TestStopHomeProcessesDoesNotPromoteRetainedExitWithoutFreshPositiveHOME(t *testing.T) {
+
+	const home = "/test/home"
+	const pid = 5156
+	const startTime = "876549"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: pid, ppid: 1, startTime: startTime, homeErr: cleared}
+	confirmed := homeProcess{
+		pid: pid, ppid: 1, args: []string{"/bin/worker", "--owned"}, startTime: startTime,
+		homeMatched: true,
+	}
+	live := func(args []string) stopProcessSnapshot {
+		return stopProcessSnapshot{
+			args: slices.Clone(args), startTime: startTime,
+			state: "S", stateFound: true, flagsFound: true,
+			lateStartTime: startTime, lateStartTimeFound: true,
+		}
+	}
+	cases := []struct {
+		name           string
+		listed         []homeProcess
+		initialHomeErr error
+		promotionReady bool
+		inspect        func(int) (stopProcessSnapshot, error)
+		home           func(int, string) (bool, error)
+	}{
+		{
+			name:    "no fresh census entry",
+			listed:  nil,
+			inspect: func(int) (stopProcessSnapshot, error) { return live(confirmed.args), nil },
+			home:    func(int, string) (bool, error) { return false, errHomeOwnershipChanged },
+		},
+		{
+			name:    "fresh census does not confirm HOME",
+			listed:  []homeProcess{{pid: pid, ppid: 1, args: slices.Clone(confirmed.args), startTime: startTime, homeErr: errHomeOwnershipChanged}},
+			inspect: func(int) (stopProcessSnapshot, error) { return live(confirmed.args), nil },
+			home:    func(int, string) (bool, error) { return false, errHomeOwnershipChanged },
+		},
+		{
+			name:           "fresh HOME probe finds foreign HOME",
+			listed:         []homeProcess{confirmed},
+			promotionReady: true,
+			inspect:        func(int) (stopProcessSnapshot, error) { return live(confirmed.args), nil },
+			home:           func(int, string) (bool, error) { return false, errHomeOwnershipChanged },
+		},
+		{
+			name:           "fresh HOME probe is unreadable",
+			listed:         []homeProcess{confirmed},
+			promotionReady: true,
+			inspect:        func(int) (stopProcessSnapshot, error) { return live(confirmed.args), nil },
+			home: func(int, string) (bool, error) {
+				return false, fmt.Errorf("%w: %w", errHomeObservationUnknown, syscall.EACCES)
+			},
+		},
+		{
+			name:           "inherited late HOME error",
+			listed:         []homeProcess{confirmed},
+			initialHomeErr: fmt.Errorf("%w: %w", errHomeObservationUnknown, syscall.EACCES),
+			inspect:        func(int) (stopProcessSnapshot, error) { return live(confirmed.args), nil },
+			home:           func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:           "current PF_EXITING remains set",
+			listed:         []homeProcess{confirmed},
+			promotionReady: true,
+			inspect: func(int) (stopProcessSnapshot, error) {
+				s := live(confirmed.args)
+				s.flags = linuxPFExiting
+				return s, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:   "fresh census identity differs",
+			listed: []homeProcess{{pid: pid, ppid: 1, args: slices.Clone(confirmed.args), startTime: "replacement", homeMatched: true}},
+			inspect: func(int) (stopProcessSnapshot, error) {
+				s := live(confirmed.args)
+				s.startTime, s.lateStartTime = "replacement", "replacement"
+				return s, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:           "identity changes after fresh HOME list",
+			listed:         []homeProcess{confirmed},
+			promotionReady: true,
+			inspect: func(call int) (stopProcessSnapshot, error) {
+				s := live(confirmed.args)
+				if call > 1 {
+					s.startTime, s.lateStartTime = "replacement", "replacement"
+				}
+				return s, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:           "current flags missing",
+			listed:         []homeProcess{confirmed},
+			promotionReady: true,
+			inspect: func(int) (stopProcessSnapshot, error) {
+				s := live(confirmed.args)
+				s.flagsFound = false
+				s.flagsErr = errors.New("flags unreadable")
+				return s, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:           "current flags unreadable",
+			listed:         []homeProcess{confirmed},
+			promotionReady: true,
+			inspect: func(int) (stopProcessSnapshot, error) {
+				s := live(confirmed.args)
+				s.flagsErr = syscall.EACCES
+				return s, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:    "current arguments empty",
+			listed:  []homeProcess{{pid: pid, ppid: 1, startTime: startTime, homeMatched: true}},
+			inspect: func(int) (stopProcessSnapshot, error) { return live(nil), nil },
+			home:    func(int, string) (bool, error) { return true, nil },
+		},
+		{
+			name:    "fresh arguments unreadable",
+			listed:  []homeProcess{{pid: pid, ppid: 1, argsErr: syscall.EACCES, startTime: startTime, homeMatched: true}},
+			inspect: func(int) (stopProcessSnapshot, error) { return stopProcessSnapshot{}, syscall.EACCES },
+			home:    func(int, string) (bool, error) { return true, nil },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+			probes := stopProcessProbes{
+				list: func(string) []homeProcess {
+					listCalls++
+					if listCalls == 1 {
+						return []homeProcess{unconfirmed}
+					}
+					if listCalls == 2 {
+						return tc.listed
+					}
+					return nil
+				},
+				inspect: func(int) (stopProcessSnapshot, error) {
+					inspectCalls++
+					if inspectCalls == 1 {
+						return exitingStopSnapshot(startTime), nil
+					}
+					if tc.promotionReady && inspectCalls == 2 {
+						s := exitingStopSnapshot(startTime)
+						s.flags = 0
+						return s, nil
+					}
+					if tc.promotionReady {
+						return tc.inspect(inspectCalls - 2)
+					}
+					return tc.inspect(1)
+				},
+				home: func(int, string) (bool, error) {
+					homeCalls++
+					if homeCalls == 1 {
+						if tc.initialHomeErr != nil {
+							return false, tc.initialHomeErr
+						}
+						return false, cleared
+					}
+					return tc.home(homeCalls-1, home)
+				},
+				kill: func(int, syscall.Signal) error { killCalls++; return nil },
+			}
+			_, err := stopHomeProcessesWithinWithProbes(home, 100*time.Millisecond, 0, probes)
+			if err == nil || killCalls != 0 {
+				t.Fatalf("stop error=%v, lists=%d inspections=%d HOME=%d signals=%d; want fail-closed refusal with no signal",
+					err, listCalls, inspectCalls, homeCalls, killCalls)
 			}
 		})
 	}
