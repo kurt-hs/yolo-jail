@@ -160,26 +160,39 @@ func TestConfigEditIndentedTOMLArrayTableSetGrowthPlanAndApply(t *testing.T) {
 	}
 }
 
-func TestConfigEditNestedArrayTableGrowthRefusalOffersManualEdit(t *testing.T) {
+func TestConfigEditNestedArrayTableGrowthPlanAndApply(t *testing.T) {
 	before := []byte("[[parents]]\nname='first'\n[[parents.children]]\nname='only'\n[[parents]]\nname='second'\n")
 	mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "parents"}, {Index: 0, IsIndex: true}}, Value: map[string]any{"name": "first", "children": []any{map[string]any{"name": "only"}, map[string]any{"name": "added"}}}}
-	_, err := PlanEdit(before, configdoc.TOML, mutation)
-	if err == nil || !strings.Contains(err.Error(), "manually add") || !strings.Contains(err.Error(), "parents[0].children") || !strings.Contains(err.Error(), "[[parents.children]]") || strings.Contains(err.Error(), "Set the containing") {
-		t.Fatalf("expected a truthful manual-edit next step, got %v", err)
+	plan, err := PlanEdit(before, configdoc.TOML, mutation)
+	if err != nil {
+		t.Fatalf("PlanEdit nested growth: %v", err)
+	}
+	wantValues, err := semanticValue(map[string]any{"parents": []any{map[string]any{"name": "first", "children": []any{map[string]any{"name": "only"}, map[string]any{"name": "added"}}}, map[string]any{"name": "second"}}}, configdoc.TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := configdoc.Parse(plan.Updated, configdoc.TOML)
+	if err != nil || !semanticEqual(parsed.Values, wantValues) {
+		t.Fatalf("PlanEdit values = %#v, err %v; want %#v", parsed, err, wantValues)
 	}
 	path := filepath.Join(t.TempDir(), "nested.toml")
 	if err := os.WriteFile(path, before, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(path, configdoc.TOML, mutation, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "manually add") || !strings.Contains(err.Error(), "[[parents.children]]") {
-		t.Fatalf("Apply should report the same manual-edit alternative, got %v", err)
+	applied, err := Apply(path, configdoc.TOML, mutation, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply nested growth: %v", err)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, before) {
-		t.Fatalf("refused Apply changed bytes: %q", got)
+	if !bytes.Equal(got, plan.Updated) || !bytes.Equal(got, applied.Updated) {
+		t.Fatalf("Apply differs from the PlanEdit golden: %q", got)
+	}
+	parsed, err = configdoc.Parse(got, configdoc.TOML)
+	if err != nil || !semanticEqual(parsed.Values, wantValues) {
+		t.Fatalf("Apply values = %#v, err %v; want %#v", parsed, err, wantValues)
 	}
 }
 

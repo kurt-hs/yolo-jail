@@ -151,6 +151,34 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		}
 		obj.Set(last.Key, normalized)
 	case Append:
+		if format == configdoc.TOML && tomlArrayTableAt(data, path) {
+			rowsValue, exists := lookup(root, path)
+			rows, valid := rowsValue.([]any)
+			if !exists || !valid {
+				return nil, fmt.Errorf("append target is not a TOML array-table")
+			}
+			normalized, err := semanticValue(m.Value, format)
+			if err != nil {
+				return nil, err
+			}
+			for _, row := range rows {
+				if semanticEqual(row, normalized) {
+					noop = true
+					break
+				}
+			}
+			if !noop {
+				updated, err := appendTOMLArrayTableItem(data, path, normalized)
+				if err != nil {
+					return nil, err
+				}
+				start, end = commonDifference(data, updated)
+				newEnd := len(updated) - (len(data) - end)
+				hunks = []Hunk{{Start: start, End: end, Before: append([]byte(nil), data[start:end]...), After: append([]byte(nil), updated[start:newEnd]...)}}
+				setValue(root, path, append(append([]any(nil), rows...), normalized))
+			}
+			break
+		}
 		span, ok, e := doc.Index.Value(path...)
 		if e != nil {
 			return nil, e
@@ -201,9 +229,6 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 					return nil, fmt.Errorf("remove target is not an array-table item")
 				}
 				if len(items) == 1 {
-					if pathHasIndex(parentPath) {
-						return nil, fmt.Errorf("cannot represent an empty nested array-table after removing its last item without changing the containing table; remove the containing key at %s instead", tomlPathString(parentPath))
-					}
 					ranges, handled, e := tomlStructureRanges(doc, path)
 					if e != nil {
 						return nil, e
@@ -212,8 +237,14 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 						return nil, fmt.Errorf("cannot locate TOML array-table item for removal")
 					}
 					hunks = commentPreservingHunks(data, ranges, doc.Index.Comments())
-					emptyKey := tomlPathString(parentPath) + " = []" + newlineOf(data)
-					hunks = append([]Hunk{{Start: 0, End: 0, Before: nil, After: []byte(emptyKey)}}, hunks...)
+					if pathHasIndex(parentPath) {
+						name := path[len(path)-2].Key
+						prefix := []byte(tomlKey(name) + " = []" + newlineOf(data))
+						hunks[0].After = append(prefix, hunks[0].After...)
+					} else {
+						emptyKey := tomlPathString(parentPath) + " = []" + newlineOf(data)
+						hunks = append([]Hunk{{Start: 0, End: 0, Before: nil, After: []byte(emptyKey)}}, hunks...)
+					}
 					setValue(root, parentPath, []any{})
 					break
 				}
@@ -937,6 +968,28 @@ func tomlHeaderAt(data []byte, span configdoc.Span) bool {
 	return start < len(data) && data[start] == '['
 }
 
+func rootTableValueInsertion(doc *configdoc.Document, path []configdoc.Step) (int, bool, error) {
+	if len(path) != 1 || path[0].IsIndex {
+		return 0, false, nil
+	}
+	target, isHeader, err := isTOMLHeaderTable(doc, path)
+	if err != nil || !isHeader {
+		return 0, false, err
+	}
+	earliest := target.Start
+	for _, key := range doc.Values.Keys() {
+		candidate := []configdoc.Step{{Key: key}}
+		span, header, e := isTOMLHeaderTable(doc, candidate)
+		if e != nil {
+			return 0, false, e
+		}
+		if header && span.Start < earliest {
+			earliest = span.Start
+		}
+	}
+	return earliest, earliest < target.Start, nil
+}
+
 func tomlArrayTableAt(data []byte, path []configdoc.Step) bool {
 	doc, err := configdoc.Parse(data, configdoc.TOML)
 	if err != nil {
@@ -963,16 +1016,10 @@ func appendTOMLArrayTableItem(data []byte, path []configdoc.Step, value any) ([]
 		return nil, fmt.Errorf("cannot locate existing TOML array-table rows")
 	}
 	keys := make([]string, 0, len(path))
-	nested := false
 	for _, step := range path {
-		if step.IsIndex {
-			nested = true
-			continue
+		if !step.IsIndex {
+			keys = append(keys, tomlKey(step.Key))
 		}
-		keys = append(keys, tomlKey(step.Key))
-	}
-	if nested {
-		return nil, fmt.Errorf("cannot grow nested TOML array-table %s automatically; manually add rows under the intended [[%s]] header and set their fields", tomlPathString(path), strings.Join(keys, "."))
 	}
 	row, ok := value.(*jsonx.OrderedMap)
 	if !ok {
@@ -1077,7 +1124,49 @@ func replaceStructuralKind(data []byte, format configdoc.Format, path []configdo
 			return nil, err
 		}
 		if !found {
-			return nil, fmt.Errorf("cannot change a TOML table/header kind at %s; remove that full table path, then add the replacement under a representable TOML key", tomlPathString(path))
+			_, isHeader, err := isTOMLHeaderTable(doc, path)
+			if err != nil {
+				return nil, err
+			}
+			if !isHeader {
+				return nil, fmt.Errorf("cannot change a TOML table/header kind at %s; target a concrete value", tomlPathString(path))
+			}
+			ranges, handled, err := tomlStructureRanges(doc, path)
+			if err != nil || !handled {
+				if err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("cannot locate TOML table contents at %s", tomlPathString(path))
+			}
+			encoded, err := configdoc.EncodeValue(value, format)
+			if err != nil {
+				return nil, err
+			}
+			hunks := commentPreservingHunks(data, ranges, doc.Index.Comments())
+			if insertAt, moveToRoot, err := rootTableValueInsertion(doc, path); err != nil {
+				return nil, err
+			} else if moveToRoot {
+				assignment := append([]byte(tomlKey(path[0].Key)+" = "), encoded...)
+				assignment = append(assignment, []byte(newlineOf(data))...)
+				hunks = append(hunks, Hunk{Start: insertAt, End: insertAt, After: assignment})
+				sort.Slice(hunks, func(i, j int) bool { return hunks[i].Start < hunks[j].Start })
+			} else {
+				first := ranges[0]
+				indentEnd := first.Start
+				for indentEnd < len(data) && (data[indentEnd] == ' ' || data[indentEnd] == '\t') {
+					indentEnd++
+				}
+				assignment := append([]byte(nil), data[first.Start:indentEnd]...)
+				assignment = append(assignment, []byte(tomlKey(path[len(path)-1].Key)+" = ")...)
+				assignment = append(assignment, encoded...)
+				assignment = append(assignment, []byte(newlineOf(data))...)
+				hunks[0].After = append(assignment, hunks[0].After...)
+			}
+			updated := applyHunks(data, hunks)
+			if _, err := configdoc.Parse(updated, format); err != nil {
+				return nil, fmt.Errorf("TOML table kind splice does not parse: %w", err)
+			}
+			return updated, nil
 		}
 	}
 	span, ok, err := doc.Index.Value(path...)
@@ -1086,9 +1175,6 @@ func replaceStructuralKind(data []byte, format configdoc.Format, path []configdo
 	}
 	if !ok {
 		return nil, fmt.Errorf("cannot locate structure-changing value")
-	}
-	if format == configdoc.TOML && hasCommentWithin(doc.Index.Comments(), span) {
-		return nil, fmt.Errorf("cannot change a TOML value's container kind at %s while preserving comments inside that value; remove the comment first or make edits that keep the container kind", tomlPathString(path))
 	}
 	encoded, err := configdoc.EncodeValue(value, format)
 	if err != nil {
