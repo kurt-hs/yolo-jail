@@ -1803,9 +1803,80 @@ func TestStopHomeProcessesWaitsForAnUnconfirmedHomeFirstSeenExiting(t *testing.T
 		kill: func(int, syscall.Signal) error { killCalls++; return nil },
 	}
 	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
-	if err != nil || len(stopped) != 0 || killCalls != 0 || listCalls != 3 || inspectCalls != 3 || homeCalls != 2 {
-		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want the exiting process waited for until gone, without signal",
+	// The retained PID's gone observation needs one fresh census after the previous list,
+	// so a child that appeared in between cannot be missed.
+	if err != nil || len(stopped) != 0 || killCalls != 0 || listCalls != 4 || inspectCalls != 3 || homeCalls != 2 {
+		t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want the exiting process waited for until gone, then a fresh census, without signal",
 			stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+	}
+}
+
+func TestStopHomeProcessesFindsChildAfterUnconfirmedExitingIdentityGone(t *testing.T) {
+	const home = "/test/home"
+	const parentPID = 5150
+	const childPID = 5162
+	const parentStart = "876542"
+	const childStart = "876555"
+	cleared := fmt.Errorf("%w: environment disappeared during exit", errHomeEnvironmentCleared)
+	unconfirmed := homeProcess{pid: parentPID, ppid: 1, args: []string{"/bin/podman"}, startTime: parentStart, homeErr: cleared}
+	child := homeProcess{pid: childPID, ppid: parentPID, args: []string{"/bin/late-child"}, startTime: childStart, homeMatched: true}
+	listCalls, parentInspections, childInspections, homeCalls := 0, 0, 0, 0
+	var signals []syscall.Signal
+	var signalledPIDs []int
+	probes := stopProcessProbes{
+		list: func(string) []homeProcess {
+			listCalls++
+			switch listCalls {
+			case 1:
+				return []homeProcess{unconfirmed}
+			case 4:
+				return []homeProcess{child}
+			default:
+				return nil
+			}
+		},
+		inspect: func(pid int) (stopProcessSnapshot, error) {
+			switch pid {
+			case parentPID:
+				parentInspections++
+				if parentInspections < 3 {
+					return exitingStopSnapshot(parentStart), nil
+				}
+				return stopProcessSnapshot{gone: true}, nil
+			case childPID:
+				childInspections++
+				if childInspections < 3 {
+					return stopProcessSnapshot{
+						args: slices.Clone(child.args), startTime: childStart,
+						state: "S", stateFound: true, flagsFound: true,
+						lateStartTime: childStart, lateStartTimeFound: true,
+					}, nil
+				}
+				return stopProcessSnapshot{gone: true}, nil
+			default:
+				return stopProcessSnapshot{}, fmt.Errorf("unexpected pid inspection %d", pid)
+			}
+		},
+		home: func(int, string) (bool, error) {
+			homeCalls++
+			return false, cleared
+		},
+		kill: func(pid int, signal syscall.Signal) error {
+			signalledPIDs = append(signalledPIDs, pid)
+			signals = append(signals, signal)
+			return nil
+		},
+	}
+
+	stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
+	wantStopped := []string{fmt.Sprintf("pid %d (late-child)", childPID)}
+	if err != nil || fmt.Sprint(stopped) != fmt.Sprint(wantStopped) ||
+		listCalls != 5 || parentInspections != 3 || childInspections != 4 || homeCalls != 2 {
+		t.Fatalf("stop=%v, %v (lists=%d parent inspections=%d child inspections=%d HOME=%d signals=%v); want the fourth census child stopped and final empty census",
+			stopped, err, listCalls, parentInspections, childInspections, homeCalls, signalledPIDs)
+	}
+	if !slices.Equal(signalledPIDs, []int{childPID}) || !slices.Equal(signals, []syscall.Signal{syscall.SIGTERM}) {
+		t.Fatalf("signalled pids=%v signals=%v; want only the fresh child with SIGTERM, never the unconfirmed parent", signalledPIDs, signals)
 	}
 }
 
@@ -1939,7 +2010,8 @@ func TestStopHomeProcessesRetainsLateHOMEObservationUntilExplicitGone(t *testing
 				kill: func(int, syscall.Signal) error { killCalls++; return nil },
 			}
 			stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
-			if err != nil || len(stopped) != 0 || listCalls != 3 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
+			// The post-gone census catches a child that appears after the previous listing.
+			if err != nil || len(stopped) != 0 || listCalls != 4 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
 				t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want late %v retained only until independent gone, without signal",
 					stopped, err, listCalls, inspectCalls, homeCalls, killCalls, errno)
 			}
@@ -2017,7 +2089,8 @@ func TestStopHomeProcessesRetainsLateHOMEObservationUntilGoneOrBound(t *testing.
 			kill: func(int, syscall.Signal) error { killCalls++; return nil },
 		}
 		stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
-		if err != nil || len(stopped) != 0 || listCalls != 3 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
+		// The post-gone census catches a child that appears after the previous listing.
+		if err != nil || len(stopped) != 0 || listCalls != 4 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
 			t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want explicit absence after held reinspection, no signal",
 				stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
 		}
@@ -2053,7 +2126,8 @@ func TestStopHomeProcessesRetainsLateHOMEObservationUntilGoneOrBound(t *testing.
 					kill: func(int, syscall.Signal) error { killCalls++; return nil },
 				}
 				stopped, err := stopHomeProcessesWithinWithProbes(home, time.Second, 0, probes)
-				if err != nil || len(stopped) != 0 || listCalls != 3 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
+				// The post-gone census catches a child that appears after the previous listing.
+				if err != nil || len(stopped) != 0 || listCalls != 4 || inspectCalls != 3 || homeCalls != 2 || killCalls != 0 {
 					t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want held proof survive unreadable %v census until independent gone, without adopting or signalling",
 						stopped, err, listCalls, inspectCalls, homeCalls, killCalls, errno)
 				}
@@ -2253,7 +2327,8 @@ func TestStopHomeProcessesRetainsKernelProvenExitingIdentity(t *testing.T) {
 	if err != nil || len(stopped) != 0 || killCalls != 0 {
 		t.Fatalf("stop = %v, %v, signals=%d; want held identity retained until explicit gone without signal", stopped, err, killCalls)
 	}
-	if listCalls != 3 || inspectCalls != 3 || homeCalls != 2 {
+	// The post-gone census catches a child that appears after the previous listing.
+	if listCalls != 4 || inspectCalls != 3 || homeCalls != 2 {
 		t.Errorf("lists=%d inspections=%d HOME observations=%d; want census omission to trigger identity checks through explicit gone", listCalls, inspectCalls, homeCalls)
 	}
 }
