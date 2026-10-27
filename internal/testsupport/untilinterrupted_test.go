@@ -63,7 +63,7 @@ func interruptAfterStart(dir string, n int, offset time.Duration) error {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		return errors.New("it was still running 2 seconds later")
+		return fmt.Errorf("it was still running 2 seconds later (trap marker exists: %t)", exists(interrupted))
 	}
 	if code := cmd.ProcessState.ExitCode(); code != 130 || !exists(interrupted) {
 		return fmt.Errorf("it ended %d, its trap marking %v", code, exists(interrupted))
