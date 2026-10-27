@@ -1,0 +1,86 @@
+# Advisory opinion — readable-config activation sequence (blind first pass, packet-only)
+
+Legend: **[P]** = fact stated in the packet; **[I]** = my inference from those facts.
+
+## 1. Recommendation (prioritized)
+
+Neither A nor B as written. Recommend **A′: "red-to-green base, converge canonical roots, then fan out consumers by seam, then serialize H2, then writers."** The smallest *complete* sequence is the one where every consumer is written exactly once against the *final* canonical shape, and no lane is branched from a base whose test signal is already red.
+
+**Phase 0 — retire activation-induced debt in the committed candidate (serial, one tree, before any new lane).**
+- `internal/config/drift.go/FoldBootBaselineKey` + the `cli/run/liveapply.go` apply→fold caller: fold must address canonical nested keys (`install.nix`, `install.mise`, `machine.gpu`, `machine.resources`, `network`) individually. [P] it still assumes old top-level `packages`/`network`; [P] `TestFoldBootBaselineKeyReplacesOneKey` fails on the combined tree while the baseline passes — this is the clearest "mixed old/new semantics" already present.
+- The six `internal/cli/check` consumer failures [P]: **triage, don't blanket-fix.** [I] Those that are pure reader-shape (nested key path lookups: Linux guest notch, in-jail GPU key, no-materialization warning, likely the two host-package reporting cases) fix here. Any that actually depend on I lower-composition semantics (baked-image package gate is the candidate) move *explicitly* into the I lane's acceptance set rather than being patched twice. Do not leave them silently red.
+- `config/sources.go/AnnotateOne`: [P] file/line/column survive and the root-spelling regression is green, but the retained index is a composed-list index, not a demonstrated physical-source index. [I] Decide now whether the contract is "physical index" or "composed index with physical location"; add the permanent test (§4) either way. This is the "lost source identity" risk; it is cheap now and expensive after migration/editing writers depend on it.
+
+Exit gate: combined full `config`/`check`/`run` suites green on the committed candidate. [I] Rationale: parallel lanes branched from a red base cannot distinguish their own regressions from inherited debt, which is exactly the failure mode that makes option B's "more integration obligations" expensive.
+
+**Phase 0.5 — converge interim roots to final canonical (serial, config package only).**
+[P] Ordered legacy `env_sources` and named E/F/G roots are INTERIM. [I] If F/H2/check consumers are activated against interim root names, every one of them is touched twice when convergence lands — that *is* mixed semantics, and migration/editing cannot be lossless to a shape that is still moving. Convergence is owed anyway; doing it before consumers is a reorder, not added scope. [I] It is config-internal and covered by the committed producer tests, so it is low-risk to do early. Keep `projectLegacyB2Config` as the dual-reader legacy projection (the window is a ruling [P]); convergence changes the canonical *target*, not the legacy *source*.
+
+**Phase 1 — fan out by disjoint seam (parallel trees from the green, converged base).**
+- **I lane** (`packload/packload.go` `launchFlagClaims`/`LaunchInjection`, `packoverlay/packoverlay.go` `overlayAppendsArrays`): consume D row metadata (`Origin.Format/Location/Replace`, authored launch-row order) through the *existing* Collect→agentcfg Compose→entrypoint RMW `AppendArrays` [P]. Fix repeated-bin attribution so each claim is attributed to the pack that authored it; keep posture overlays non-appending; keep the replacement gate (`TOML omitted replace` = append, `JSON false` = historical replace by `Origin.Format`) exactly as D encodes it [P]. No RMW rewrite [P].
+- **F lane** (`run/profilechannel.go`, `assemble/providerenvfiles`, `host.go`): consume `ComposeConfiguredProviderSemantics` / `ConfigActiveProviderSelection` / `ClearNativeProviderEnvForReceiver` [P]; delete the legacy per-file composition in those callers so there is one composer. `host.go` needs its explicit source-owner transfer recorded *before* the lane starts [P].
+- **G/H seam note** (docs/plan only, no code): where the typed approved-extra-target carrier lives and who owns it. [P] `brokerscope/file.go` lacks the carrier and placement needs G/H coordination. [I] This is an engineering seam contract within accepted rulings (approved ≠ requested is already settled), not a new owner product decision — write it as a plan §-level seam entry with owner, persistence point (on approval), and withdrawal path (live), then H1 may start.
+- [I] These three touch disjoint files per the packet, so concurrency here is cheap; this is where B's parallelism is worth having.
+
+**Phase 2 — H1 records (one owner, after the seam note).** Inheritance/JSON records/canonical path folding [P], *including* the approved-target carrier as a typed record field with live withdrawal. Attach continues to read the running staged tree and never restages [P].
+
+**Phase 3 — H2 runtime ingestion + attach/live-apply consumers (serial, after I and H1 integrate).** Shared applied-facts timing [P] is the reason this cannot overlap: it consumes both I's composed launch rows and H1's records.
+
+**Phase 4 — writers: migration, byte-preserving edit, CLI, assets.** Only after Phase 0.5 convergence and Phase 3 consumers are green, because the writer's target is the final canonical shape and its zero-writes-on-loss guard must be checked against the *actual* round trip the consumers read.
+
+**Phase 5 — full activation gates** (full suites + integration on Linux nested); native Mac/rootless/reachability/Kitty certification stays separate and must not gate this [P].
+
+## 2. Strongest counterargument
+
+"Phase 0/0.5 serialization delays H1 records by two serial steps for no functional gain. H1 (`packtree.go`, records) touches files disjoint from drift/check/config convergence; H1 could start today from the committed base, and consumers can be insulated from interim root names through accessor functions, so convergence need not precede them. Option B gets records and I done concurrently and defers the convergence refactor to a mechanical rename at the end."
+
+Why I still prefer A′ [I]: (a) accessor insulation is a *new* abstraction layer the packet does not list and would itself be a candidate for "duplicate reader"; (b) the approved-target carrier placement is unknown [P] and sits exactly in H1 — starting H1 before the seam note risks a record schema that G then cannot adopt (that would be "inventing a shared schema", which the packet forbids); (c) a red combined base makes every lane's exit gate ambiguous. The counterargument wins if Phase 0.5 convergence turns out to be large or if the carrier placement is trivially brokerscope-only — see §6 for how to detect that.
+
+## 3. Concrete source-owner / caller transfers
+
+| Seam | Producer (committed [P]) | Caller/consumer still legacy [P] | Transfer needed [I unless marked] |
+|---|---|---|---|
+| Drift fold | canonical nested projection (`readablemerge.go`) | `drift.go/FoldBootBaselineKey`; `liveapply.go` apply→fold | config owns fold per nested key; run caller passes nested key path; no top-level `packages`/`network` assumptions |
+| Check | canonical projection | six `cli/check` consumers | check owner adopts nested keys; I-dependent cases transferred into I lane acceptance |
+| Source identity | `sources.go/AnnotateOne` | diagnostics / future editor | config owner states index contract (physical vs composed+location); canonical map stays unmutated [P] |
+| D→I | `packdecl/contributes.go` row metadata | `packload` claims/injection, `packoverlay` appends | I owner consumes metadata via existing RMW `AppendArrays`; packdecl unchanged |
+| F | `providersemantic_consumer.go` | `profilechannel.go`, `providerenvfiles`, `host.go` | explicit `host.go` source-owner transfer [P]; legacy composition deleted in callers; declaration ≠ selection |
+| G/H | `readableallow.go`, `gateread.go`, `readablescope.go` | `brokerscope/file.go` (no carrier) | joint seam note; typed approved-target carrier with persistence + live withdrawal; existing fatal-before-record and HTTPS-first/private rechecks unchanged [P] |
+| H1/H2 | root-landed mechanics/stream APIs [P] | `packtree.go` attach, live apply | H1 owner adds records; H2 owner ingests; no duplicate renderer [P]; I packfiles / K registry stay separate [P] |
+| Writers | stable canonical (after 0.5) | migration/edit/CLI/assets (unbuilt) | single writer; byte/comment/order/symlink-target preservation; zero writes on loss [P constraint] |
+
+## 4. Permanent tests that would falsify the recommendation
+
+- **Fold isolation:** `TestFoldBootBaselineKeyReplacesOneKey` extended: a nested `install.nix` change folds nothing under `install.mise`, `machine.gpu`, `machine.resources`, `network`; and a `network.ports` change likewise. (Already failing [P]; it is Phase 0's exit criterion.)
+- **Dual-reader equivalence golden:** same effective configuration authored as legacy TOML/JSON and as readable TOML → identical canonical struct *and* identical downstream outputs (check report, launch rows, provider env files). Any consumer still reading a legacy key breaks this. This is the single most valuable "no mixed semantics" test.
+- **Interim-root absence:** after Phase 0.5, no consumer package references interim root identifiers (a compile-level test via unexported final types, not a grep).
+- **Source identity:** multi-file include where an element is authored at index 0 of file 2 but index 5 of the composed list, with a byte-identical body also at file 1 index 0; diagnostic must report file 2 path/line/column and the contracted index; body-identification must not collapse the two.
+- **D/I replacement gate + attribution:** TOML omitted `replace` → append; legacy JSON `false` → replacement; a bin claimed by two packs attributed to each authoring pack, not the first; authored row order preserved through RMW; posture overlay never appends arrays.
+- **F selection:** two declared providers, one active → receiver gets only the active one; native env cleared only where cleanup is declared; `host.go` output equals `ComposeConfiguredProviderSemantics` output byte-for-byte (falsifies a second composer).
+- **G authority:** `AdditionalRepositories` request without approval never appears in live scope or any record; approved target persists via the typed carrier and disappears from the next scope read after live withdrawal; fatal-before-record and SSH/push prerequisites unchanged. Plus a posture-equivalence test: readable path yields identical posture/grants to legacy for the same input (falsifies "broadened authority").
+- **H attach:** hash of the staged tree unchanged after attach; configured differences reported; live records adopted.
+- **Writers:** migration round-trip loss → zero bytes written, no backup created; comments/order preserved; edit writes through a symlink without replacing its target.
+
+If the dual-reader golden can be made green *without* Phase 0.5 convergence, my ordering argument for 0.5-before-consumers is weakened.
+
+## 5. Trade-offs
+
+- A′ vs A: same serial discipline, but front-loads convergence and makes Phase 1 genuinely parallel; costs an early config-internal refactor.
+- A′ vs B: later H1 start (behind Phase 0/0.5 and the seam note); in exchange, one write per consumer and unambiguous lane gates. B's independent progress is real but, per packet, lands on an unknown carrier placement.
+- Triage of the six check failures adds a small classification step but prevents double-fixing.
+
+## 6. Assumptions and unknowns
+
+- [I] Assumes the six check failures split into reader-shape vs I-dependent; if all six need I, Phase 0 shrinks and the I lane grows.
+- [I] Assumes Phase 0.5 convergence is config-internal and small. If it requires touching consumers already, that indicates the interim roots are more entangled than the packet shows, and B's "converge last" becomes cheaper.
+- [P] Carrier placement, exhaustive consumer census, full activation CI, and whole-graph writer acceptance are unknown; I treat them as owed work, not as decided.
+- [P] Main may have advanced via the Mac landing; its generic temp/execution fields must be merge-preserved — not addressed here beyond "Phase 0 rebases first."
+- No ETA or percentage asserted [P constraint].
+
+## 7. Confidence
+
+- High that Phase 0 (fold + check + source-identity contract) must precede new lanes.
+- Moderate (~0.6) that convergence-before-consumers is the smaller total path; this is the part most likely to be overturned by the counterargument.
+- Moderate on the seam-note-before-H1 ordering; depends on how much of the carrier truly needs G/H coordination.
+
+This is advice only; it is not a ruling, accepted design, or authorization to change source, configuration, or access.

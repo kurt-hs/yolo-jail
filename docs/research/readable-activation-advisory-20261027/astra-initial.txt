@@ -1,0 +1,93 @@
+## Recommendation
+
+**Prefer A for the smallest contract-complete sequence:** finish lower composition, then durable records, then serialized consumer activation, followed by migration/editing/CLI/assets acceptance. Treat these as dependency boundaries—not a reason to idle independent work.
+
+**Packet evidence:** the reader is already activated in the private candidate, while boot-baseline folding and six check consumers remain red. Provider producers exist without their actual runtime consumers; approved extra-target persistence and withdrawal are incomplete.
+
+**Inference:** the immediate risk is not insufficient reader functionality. It is exposing canonical input to callers and records that still embody legacy meaning. Adding compatibility branches downstream would prolong that split.
+
+This is advisory ordering, not an accepted implementation plan or authorization. The private candidate should remain an integration vehicle, not evidence of completed activation.
+
+## Recommended closure order and ownership transfers
+
+### 1. Close lower-composition semantics before recording them
+
+The **D → I transfer** is the first bounded closure:
+
+- Consume D’s existing row metadata in `packload`/`packoverlay`, including format, location, replacement intent and authored launch-row order.
+- Stop relying on body/index matching where it can lose row identity.
+- Preserve repeated-bin assignment rules, one-pack attribution, replacement gates and the existing selected-posture channel.
+- Carry the result through the existing `AppendArrays` → `agentcfg.Compose` → entrypoint RMW route. Do not introduce another writer.
+
+In the same dependency stage, the relevant configuration owners must retire the **interim ordered `env_sources` and E/F/G roots** as alternative effective meanings. Legacy input can remain readable through the accepted dual-reader window; downstream consumers should not have to choose between legacy and canonical semantics.
+
+**Do not repeat completed work:** manifest-conflict refusal, local-use resolver selection and the existing RMW machinery are supplied as completed seams.
+
+### 2. Settle the G/H carrier ownership, then complete H1 records
+
+The missing **G → H/brokerscope transfer** needs an engineering agreement between the source owners before either side persists an assumed shape:
+
+- G supplies the distinct request, concrete, approved and live facts.
+- H/brokerscope carries the typed approved extra-target state through persistence and live withdrawal.
+- Requests must never become approvals merely because they were serialized, inherited or rediscovered.
+
+The packet does **not** establish the carrier’s exact placement. That remains an implementation-contract gap, not a new owner product question or permission to create another authorization channel.
+
+Then finish H1 inheritance, machine JSON records and canonical path folding. Durable records should represent the accepted meaning and retain the necessary source/approval identity—not freeze interim aliases into another compatibility obligation.
+
+### 3. Serialize the actual consumer transfers
+
+Use a bounded caller census to demonstrate closure, not just a list of newly tested producers:
+
+| Transfer | Required closure |
+|---|---|
+| **F → run/profilechannel, assemble/providerenvfiles, host.go** | Consume one host provider composition, actual receiver model facts and profile gates, and declared native-environment cleanup. Obtain the explicit `host.go` source-owner transfer. Do not compose again or equate declaration with selection. |
+| **Config/live-apply → drift baseline** | Move `FoldBootBaselineKey` and its apply→fold caller together to canonical nested semantics. Folding nix or ports must not replace unrelated mise/resources/GPU siblings. |
+| **Canonical facts → check/launch/host/backend** | Repair the six identified check failures and inspect the actual callers for equivalent legacy assumptions. Producer success is not consumer acceptance. |
+| **H1 records → H2 runtime/attach/live apply** | Complete runtime ingestion and shared applied-facts timing. Attach uses the running staged tree, reports configured differences and adopts live records; it must not restage. |
+
+Preserve the I packfiles, G broker/check, K registry and mechanics-owned boundaries. Root-landed stream/mechanics APIs are dependencies to reuse, not redesign.
+
+### 4. Close the authoring and migration surface
+
+Migration, byte-preserving editing, CLI and assets are part of activation—not optional cleanup after runtime tests turn green.
+
+Their acceptance should follow stable semantics across the graph: legacy conversion must be lossless; human TOML and machine JSON retain their separate roles; unsupported old TOML aliases remain rejected; comments, order, symlink physical targets and backups retain the accepted guarantees. A lossy migration must make **zero writes across the attempted graph**, rather than leaving earlier files converted.
+
+### 5. Accept the integrated graph, not the component sum
+
+The packet’s scoped producer tests and build/vet results do not establish full activation. Required combined checks must exercise standard readers through real caller entrypoints and records.
+
+Independent Mac repair must continue separately. Integration must preserve its generic temporary/execution fields. Linux-nested results cannot certify native Mac, rootless, reachability or actual Kitty behavior; those evidence gaps should remain explicit.
+
+## Permanent tests that could falsify this recommendation
+
+These should remain caller-level regressions where practical, using fixtures and fakes rather than real agents/API calls.
+
+1. **Canonical equivalence and rejection:** supported legacy JSON and equivalent TOML produce the same effective meaning through launch/check paths; unsupported TOML aliases fail. If downstream behavior still depends on an interim root or duplicate representation, semantic closure has failed.
+
+2. **D/I format-sensitive composition:** exercise posture and ordinary rows, identical overlay bodies with different metadata, repeated launch binaries and multiple packs. Verify TOML omitted/false replacement appends, legacy JSON false preserves historical replacement, and existing explicit-replacement gates and attribution remain intact.
+
+3. **Source identity through the original caller:** included and overridden lists whose composed indices differ from physical indices must still identify the correct authored root, file, line and column without mutating the canonical map. The packet does **not** prove physical-source index relabeling; tests must not silently claim that guarantee.
+
+4. **Apply→fold isolation:** run the actual live-apply caller for nested nix and ports changes, with unrelated mise/resources/GPU siblings present. Assert both intended updates and unchanged siblings. Retain `TestFoldBootBaselineKeyReplacesOneKey` as a meaningful regression.
+
+5. **Provider routing at each missing consumer:** declarations without selection must not activate providers; receiver model facts and profile gates must control routing; stale declared native keys must be cleaned without deleting unrelated environment. Cover `host.go`, not only the producer API.
+
+6. **Approval persistence and withdrawal:** a requested-but-unapproved repository remains unapproved after serialization, inheritance and attach. Withdrawal must be observed at existing live/read rechecks, including withdrawal between preliminary lookup and read. Preserve anonymous HTTPS-first behavior, private-access checks, SSH/push prerequisites and fatal-before-record guards.
+
+7. **Runtime records and attach:** changed configuration does not restage a running tree; configured differences remain visible and live records are adopted. Failure paths must not publish misleading applied facts. Exercise canonical-path/source identity through inheritance and reload.
+
+8. **Whole-surface acceptance:** retain the six check regressions at their consumer seams; test migration loss discovered late in a multi-file graph causes no writes; test supported edits preserve required bytes and physical targets. Exercise existing pack conflict/resolver behavior through standard callers without duplicating its implementation.
+
+## Strongest counterargument and trade-offs
+
+**B could be faster and expose record-integration defects earlier.** Nothing in the packet proves that every H1 inheritance or JSON-record task depends on completed I folds. Requiring all H1 work to wait may unnecessarily delay independent progress.
+
+I nevertheless prefer A’s **contract order** because carrier placement and canonical convergence remain unresolved, and “smallest” here should minimize reconciliation and competing representations—not merely elapsed time. If the owners can identify H1 work whose inputs are already settled and disjoint from those gaps, doing that portion in parallel is reasonable. That would not justify parallel H2 activation against provisional contracts.
+
+## Assumptions, unknowns and confidence
+
+- **Assumed:** all 44 rulings remain binding; the supplied private candidate is the common evidence base.
+- **Unknown:** exhaustive consumer inventory, exact G/H carrier placement, native/backend confirmation and whole-graph migration/editor acceptance.
+- **Confidence:** high that producer-only completion cannot close activation; moderate in A over constrained B, because the packet does not establish every H1 dependency.

@@ -1,0 +1,139 @@
+# Merged advisory design: contract-first activation, with early debt closure
+
+**Recommendation:** adopt Astra’s dependency-led sequence, strengthened by Fable’s early failure accounting and canonical-convergence checks. Permit bounded parallel work only where inputs and source ownership are established; **serialize integration and H2 activation against completed contracts**.
+
+The smallest complete sequence is not “make every suite green before any work starts,” nor “finish producers and repair callers later.” It is to close each producer-to-caller contract without creating another interim representation, then accept the entire runtime **and authoring** graph.
+
+This is a synthesis of the supplied opinions, not an accepted design, executable plan, authorization, or implementation report. The packet’s all-44-rulings contract remains binding; the opinions add no product decisions.
+
+## Comparison and adoption
+
+| Topic | Astra | Fable | Merged position |
+|---|---|---|---|
+| Activation-induced failures | Repair actual callers during semantic closure. | Front-load drift/check triage; require a green base before new lanes. | **Adopt early triage and immediate independent repairs. Reject a blanket green-base prerequisite:** an I-dependent failure cannot sensibly block the I work needed to fix it. Every retained failure needs explicit ownership and a dependency, not dismissal as baseline noise. |
+| Canonical convergence | Close interim meanings before durable records and consumer activation. | Make convergence an early, config-only phase. | **Adopt convergence before dependent activation.** Its size and confinement to config are unproved. Change affected producers and callers coherently rather than promising a small rename. |
+| Parallel work | Allow demonstrably independent H1 work. | Parallelize I/F after a green, converged base. | **Adopt constrained concurrency, not inferred independence.** Named seams do not prove disjoint ownership or files. Stable-input preparation may proceed; integration remains serial. |
+| Source identity | Preserve physical location; flag unproved index relabeling. | Resolve physical versus composed-index semantics early. | **Adopt early investigation against the existing accepted contract. Reject choosing a new display/index policy here.** Correct root spelling and location do not establish physical-index relabeling. |
+| Approved-target carrier | Require G/H agreement before dependent records. | Propose a seam note followed by an H1 typed record field. | **Adopt joint ownership and persistence/withdrawal requirements. Reject prescribing a record field or carrier location.** A note alone does not complete the transfer. |
+| Authoring surface | Mandatory closure after stable semantics. | Writers follow green runtime consumers. | **Keep migration/editing/CLI/assets in the activation scope from the outset.** Independent preparation need not await all runtime work; final acceptance requires the actual stable round trip. |
+
+## Recommended sequence and dependencies
+
+### 1. Establish an attributable integration baseline
+
+**Packet evidence:** the private candidate activates standard readers, but the combined config suite fails `TestFoldBootBaselineKeyReplacesOneKey`, and check retains six consumer failures. Producer tests and scoped build/vet are insufficient activation evidence.
+
+**Recommendation:**
+
+- Account for the fold failure and all six check failures individually. Repair those whose required canonical semantics are already settled; attach genuinely composition-dependent failures to the corresponding transfer’s acceptance.
+- Do **not** adopt Fable’s hypothesized classification of specific check failures as fact. Their dependency split remains unverified.
+- Establish the remaining caller inventory across standard readers, check, launch, attach, host, backend, live apply, provider receivers, and authoring commands. A producer inventory is not a caller census.
+- Identify the physical-source/index obligation before records or editors rely on composed indices. Use the accepted source-identity contract; do not reopen it as a fresh “physical versus composed” product choice.
+- Include migration, editing, CLI, and assets in the acceptance inventory now—not as a later optional workstream.
+
+The known red candidate must not become a claim of completed activation. Nevertheless, attributable existing failures need not prevent unrelated, owned work from progressing.
+
+### 2. Close final semantic inputs and the missing ownership contracts
+
+#### Canonical configuration and D → I
+
+Converge the interim ordered `env_sources` and E/F/G representations to the accepted canonical effective meaning. Preserve supported legacy reading through projection; do not preserve competing downstream interpretations or introduce old TOML aliases.
+
+I must consume D’s existing row metadata—format, location, replacement intent, and authored launch-row order—in the actual `packload` and `packoverlay` folds. Preserve:
+
+- Existing repeated-bin assignment and one-pack attribution rules.
+- Format-sensitive replacement behavior and replacement gates.
+- The existing selected-posture channel, without an autonomous-host bypass.
+- Entry provenance and truthful attribution of additive contributions.
+
+Reuse the existing `AppendArrays` → `agentcfg.Compose` → entrypoint RMW path.
+
+**Correction to Fable:** the packet does not authorize changing repeated-bin policy so that both packs necessarily own the same claim. Nor does the current blanket non-appending posture branch, by itself, prove the completed D/I behavior. Required behavior must come from the accepted contribution contract and D metadata.
+
+#### Physical-source identity
+
+`AnnotateOne` currently restores authored root spelling and preserves file/line/column. Its retained deeper list index remains a composed index; physical-index relabeling is **not demonstrated**.
+
+Before identity-dependent recording or editing is accepted, the source owner must establish how the selected physical occurrence remains identifiable when inclusion, overrides, and duplicate bodies separate composed position from authored position. This advice does not invent a locator API or decide what bracketed index diagnostics must display.
+
+Correct physical location must not be presented as proof that index relabeling works.
+
+#### G/H approved-target transfer
+
+G/H source owners must establish the lower-layer carrier’s placement, ownership, and lifecycle before dependent persistence is finalized. The completed transfer must preserve ceiling, request, concrete, approved, and live as distinct facts, including durable approved-target state and live withdrawal.
+
+The packet does not locate the carrier or establish a shared schema. Do not assume it is simply a new H1 field in `brokerscope/file.go`, or that documenting placement implements it.
+
+Requests may remain represented **as requests**. Serialization, inheritance, attach, or rediscovery must never promote them to approved or live authority.
+
+### 3. Complete bounded dependent work on stable inputs
+
+These obligations may progress independently where their inputs and ownership permit; their dependency boundaries, not a blanket phase barrier, determine readiness.
+
+| Transfer | Actual caller obligation and dependency |
+|---|---|
+| **Canonical config → drift/live apply** | Change `FoldBootBaselineKey` and the apply→fold caller together. A nested nix or ports update must preserve unrelated mise/resources/GPU siblings. Requires the affected canonical path semantics, not necessarily every unrelated I task. |
+| **Canonical/composed facts → check** | Close all six identified regressions at actual consumer seams. A failure dependent on I remains owed by that dependency chain; it cannot disappear into an integration waiver. |
+| **F → provider receivers** | Route `run/profilechannel.go`, `assemble/providerenvfiles`, and `host.go` through the supplied provider semantics, with one host composition, actual receiver model facts/profile gates, and declared native-environment cleanup. Obtain the explicit `host.go` source-owner transfer before changes there. Avoid another composer or declaration-as-selection. |
+| **Stable facts + G/H carrier → H1** | Complete inheritance, machine JSON records, canonical path folding, and the agreed authority round trip. Independent record work may begin earlier; dependent durable representations must not freeze interim roots or an assumed carrier. |
+| **Stable semantics + physical-source identity → migration/editing/CLI/assets** | Complete the whole authoring surface against the supported reader/writer round trip. Preserve comments, order, required unchanged bytes, symlink physical targets, and backups. Detect migration loss before any graph writes. CLI and assets must exercise the supported formats and canonical meaning rather than bypassing the standard path. |
+
+Migration/editing/CLI/assets are therefore **inside the activation closure**, not deferred follow-up. Their final verification depends on stable semantics, but preparation and independent work need not wait for all H2 tests.
+
+### 4. Serialize H2 and cross-consumer integration
+
+After the relevant final composition, provider transfers, H1 records, and approval carrier are integrated, close H2 runtime ingestion and shared applied-facts timing through actual launch/check/host/backend/attach/live-apply paths.
+
+Required invariants include:
+
+- Attach reads the running staged tree, reports configured differences, and adopts live records; it never restages.
+- Applied facts reflect the actual application outcome, including failures.
+- Existing fatal-before-record guards, anonymous HTTPS-first behavior, private live-scope/read rechecks, and SSH/push prerequisites survive.
+- I packfiles, G broker/check, K registry, and mechanics-owned seams remain separate.
+
+Reuse completed manifest-conflict handling, local-use resolution, RMW, and root-landed mechanics/stream APIs. Their existence does not remove the need to test their actual callers, but it rules out duplicating them.
+
+### 5. Accept the integrated activation graph
+
+Final evidence must cover standard composition through validation, contributions, providers, authority, records, runtime callers, migration, editing, CLI, and assets. Component-green results do not establish this.
+
+Independent Mac repairs continue separately, without waiting for this advice. Integration must preserve their generic temporary/execution fields. Conversely, Linux-nested results cannot certify native Mac, rootless operation, reachability, or actual Kitty behavior. Neither opinion has authority to waive required confirmation or impose a new Mac hold.
+
+## Permanent falsifying tests
+
+Use fixtures and fakes, not real agents or API calls.
+
+| Area | A failure that would falsify closure |
+|---|---|
+| **Canonical equivalence** | Supported legacy JSON and equivalent readable TOML produce different effective behavior through check, launch, provider receivers, or records. Unsupported old TOML aliases must fail. Do **not** adopt Fable’s unsupported legacy-TOML equivalence case. |
+| **Interim semantics** | A real caller still selects behavior from an interim representation rather than the accepted canonical meaning. Test observable behavior; do not invent unexported types or compile-time APIs to express this. |
+| **Apply→fold isolation** | Through the actual live-apply caller, changing nix or ports changes unrelated siblings. Retain the existing failing fold regression as a meaningful test. |
+| **D/I composition** | Duplicate bodies with distinct origins, repeated binaries, multiple packs, posture/ordinary rows, or whole replacement lose identity, order, format-sensitive replacement behavior, or truthful attribution through repeated rendering. |
+| **Physical source** | An included element at physical index 0 but composed index 5 is confused with an identical element elsewhere. Assert authored root and physical file/line/column, plus the index behavior required by the accepted contract. Test diagnostic and editor targeting separately; one does not prove the other. |
+| **Provider receivers** | An unselected declaration activates routing; receiver facts/profile gates are ignored; cleanup removes unrelated environment; or `host.go` diverges semantically from the shared composition. Byte-for-byte whole-output equality is not established as the right oracle. |
+| **Authority round trip** | A requested-only repository becomes approved/live after persistence, inheritance, or attach; withdrawal is missed at the existing required rechecks; or HTTPS-first, private-read, SSH/push, or fatal-before-record protections regress. Requests need not be banned from request records. |
+| **Runtime/attach** | Attach changes the staged tree, hides configured differences, fails to adopt live records, or failure paths publish misleading applied facts. |
+| **Whole authoring surface** | Loss discovered late in a multi-file migration leaves any writes; editing changes unrelated bytes or replaces the symlink rather than editing the intended physical target; backup guarantees fail; or actual CLI/assets exercise unsupported semantics. Retain all six check regressions as caller-level coverage. |
+
+## Strongest counterargument and trade-offs
+
+**A more aggressive B could finish sooner.** H1 inheritance, provider adapters, or authoring work may be insulated from the unresolved I and canonical-root details. Waiting for too broad a “stable contract” could unnecessarily serialize them.
+
+That is justified where source owners can demonstrate stable inputs. The merged recommendation deliberately allows such progress. It rejects only building dependent callers or durable records against provisional meanings.
+
+Conversely, Fable’s all-green-first rule offers simpler regression attribution. Its weakness is possible circularity: some current failures may require unfinished producer transfers. Explicit failure ownership provides attribution without demanding that dependencies be solved before their work can begin.
+
+The trade-off is a modest coordination burden now in exchange for less semantic rework and fewer competing representations later. The packet does not support promises of “one write per consumer,” cheap convergence, or a completion date.
+
+## Assumptions, unknowns, and confidence
+
+**Assumptions:** the frozen packet accurately describes the candidate; all 44 rulings and source-owner/credential fences remain binding. No authority is extended to CB implementation, registry changes, duplicate writers, host bypasses, credential widening, or personal/home/briefing edits.
+
+**Explicit unknowns:**
+
+- Physical-index display requirements and the remaining physical-occurrence transfer needed by diagnostics/editors.
+- Exact approved-target carrier placement and persistence/withdrawal integration.
+- Exhaustive caller census, check-failure dependencies, and canonical-convergence scope.
+- Current integration-base changes, full activation results, whole-graph authoring acceptance, and native/backend confirmation.
+
+**Confidence:** high in the required transfers and invariants; moderate in the proposed ordering and achievable concurrency. Neither opinion supplies evidence that these obligations are already complete.
