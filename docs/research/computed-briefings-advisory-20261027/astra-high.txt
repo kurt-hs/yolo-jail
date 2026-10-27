@@ -1,0 +1,202 @@
+## 1. Bottom line
+
+**I recommend the briefing-producer direction, but not the document’s present access contract unchanged.** A named Lua producer, declared inputs, and placement inside the owning pack’s section are a good fit for the stated need. A general pack-publication framework is not justified by the supplied example.
+
+The main weakness is that the document moves too freely between **approved policy**, **broker availability**, **broker-permitted operations**, and **operations that will succeed**. Those are different facts. Its Git-shaped access table also leaves source-specific semantic ownership underspecified.
+
+Before treating this as an implementation handoff, I would tighten those distinctions, correct the worked example’s destination assumptions, and make publication and failure behavior consistent across launch, attach, live apply, and host destinations.
+
+**Confidence:** high in these design findings; moderate in implementation feasibility. The packet’s implementation descriptions are dated to `3aba3dad3`, not verified descriptions of current production. OQ-CB1, OQ-CB2, and OQ-CB3 remain owner decisions; the recommendations below do not settle them.
+
+## 2. Strongest counterargument
+
+The strongest argument for accepting the design largely as written is proportionality: this is advisory prose, not another authorization mechanism. For the narrow Git use case, an inaccurate positive statement usually produces a refused push, while an inaccurate negative statement merely leaves work for the human. Existing launch-time briefings already have freshness limits. Elaborate capability negotiation, transactional infrastructure, or live observation could overwhelm a small feature.
+
+That argument supports **deferring general frameworks and continuous refresh**, but it does not justify misleading field meanings or incomplete failure handling. It also has a boundary: the host has no broker, and a pack’s house rules can be stricter than broker permissions. Losing those rules can change behavior without any broker refusal. The smallest sound contract must acknowledge that.
+
+## 3. Prioritized defects and improvements
+
+### Priority 1 — Correctness and contract boundaries
+
+### A. Separate lifecycle facts from source-specific permission meaning  
+**Sections: Defined terms; §1; §3.2–3.3; OQ-CB1**
+
+The document defines `ctx.access` as keyed by brokered source, including `git` and `github`, but then gives every source a Git-shaped repository schema: `read`, `push_new_branches`, and `push_branches`.
+
+This is a substantive gap, not just terminology. A source name establishes neither the meaning of its permissions nor the existence of an implemented projection for them. A loophole declaring a source cannot, by that declaration alone, provide the advertised access table.
+
+**Recommended improvement:**
+
+- Core should own input delivery, declaration checks, runtime context, snapshot handling, and isolation.
+- Each supported source should have an explicit permission contract, projected from the authoritative enforcement semantics for that source.
+- The first version can support **Git only**. An installed but unsupported source should produce a clear validation error—not a fabricated Git-shaped entry.
+- Distinguish an unknown source, an unsupported projection, and a known source unavailable in this launch.
+- Resolve ambiguous source ownership or multiple instances explicitly rather than silently picking one.
+
+This requires neither an agent/tool registry nor `yolo.publish`. A small source-specific projector alongside the relevant enforcement logic is enough. The packet supports core ownership of approval and storage; it does not establish that generic core infrastructure should define every source’s permission meaning.
+
+### B. Replace “usable authority” promises with a precise policy snapshot  
+**Sections: §3.2; §3.4; §3.6–3.7; §8**
+
+Several statements overclaim:
+
+- `running` is defined using pack selection, backend support, and placement eligibility. Those do not establish that a broker successfully started or remains alive.
+- Fresh-launch facts are composed **before scope files are written**, yet described as what the launch already applies.
+- `read` means “a fetch works.” A broker’s permission cannot establish remote availability, credential validity, server acceptance, or repository existence.
+- An unreadable scope file becomes `running = false`, although inability to observe scope does not prove that the broker is stopped.
+
+**Recommended improvement:** distinguish:
+
+1. A known approved/applied policy snapshot.
+2. Runtime availability, to the extent actually known.
+3. Unavailable or unknown observations.
+
+Keep this small: a clearly defined status and source payload are sufficient; no general health framework is needed. Describe permission fields as what the broker permits **under the captured policy**, not guaranteed operation success.
+
+The fresh-launch sequence must either publish facts after the relevant scope is committed and startup state is known, or explicitly describe its earlier snapshot as prospective. The current combination—pre-write inputs and “already applies” wording—is inconsistent.
+
+An unreadable or malformed live scope should not masquerade as ordinary inactivity. It should lead to an explicit unavailable-facts outcome, with human-visible diagnostics and conservative prose according to the selected error policy.
+
+### C. The worked example can falsely describe usable authority  
+**Sections: §3.2; §3.7; §4**
+
+The example needs several corrections or explicit limitations:
+
+- **`origin` is not established as the push destination.** The packet does not specify how approved remote names are obtained without probing, whether push URLs are included, or whether the mapping remains current. An approved fetch identity is not necessarily the identity a later push reaches.
+- **“Push it to `main`” is underspecified.** It does not bind the instruction to the approved repository or distinguish the current local branch from the destination ref. Default upstreams, push configuration, or multiple remotes can make that wording target something else.
+- **“Push a new branch” is permission, not assured success.** A locally new branch may already exist remotely; another actor can create it concurrently; the remote can reject it for independent reasons.
+- **Working-set history must be projected through current enforcement semantics.** The packet says the store persists across launches. Copying historical entries alone does not establish current permission. The document must define what happens to created branches after grant changes and match the broker’s actual rule, rather than infer an answer.
+- **“You created” is ambiguous.** The defined working set belongs to the workspace, not necessarily this agent session or author.
+- **Created branches are ignored by the example.** If there are usable `why="created"` entries but no current `push_new_branches` permission, the script returns commit-only. That may be intentional house policy, but it is not an exhaustive description of available pushes.
+- **Host and Apple Container fallbacks are policy statements, not proof that pushing is impossible.** The host explicitly uses the human’s credentials. Lack of a Git broker does not, by itself, establish the absence of every other route.
+- **The sample is not defensive against its own evolution rule.** `ipairs(repo.push_branches)` fails if that field is absent; §3.2 says absent fields should be handled defensively.
+
+The producer should express a selected **finishing policy within broker permissions**, not equate the two. In particular, permission to force-update or delete a branch does not mean the finishing instruction authorizes either action.
+
+The example should name or otherwise unambiguously bind the approved repository, remote, and destination ref. If that binding cannot be established from supplied facts, it should not emit an affirmative push instruction. Branch names interpolated into Markdown also need safe quoting.
+
+### D. The degradation argument does not cover all briefing producers  
+**Sections: §1 reason 4; §3.1; §3.6; §5; OQ-CB3**
+
+The justification for continuing after failure is Git-specific: the broker will reject an unauthorized push. But the proposed producer is general-purpose. It can contain testing, review, confidentiality, or release instructions that no broker enforces. At the host notch, even the Git enforcement premise is absent.
+
+The failure table also has a significant inconsistency: a runtime error gets a conservative placeholder, while a declared producer with no registration delivers **nothing**, with only a human warning. After moving static rules into the producer, that omission can silently remove the rules from the agent’s briefing.
+
+**Recommended improvement:**
+
+- Put a missing declared registration through the chosen producer-failure policy, rather than silently omitting the slot.
+- Make the fallback describe unavailable computed instructions generally; “ask before pushing” is insufficient for a non-Git producer.
+- Specify whether failure replaces only that producer’s slot or the whole relevant computed contribution. Do not leave partial generated output.
+- State that the fallback is advisory too; it cannot enforce retention of house rules.
+- Distinguish script load/syntax errors from invocation errors. Because the same `derive.lua` is also loaded by existing readers, a syntax error or unknown registration may fail an earlier host-env path before the briefing fallback is reached.
+
+Manifest validation failures can reasonably remain hard errors, but the boundaries should be deliberate and consistent.
+
+### E. Serialization is not yet a complete freshness/publication contract  
+**Sections: §2.2–2.3; §3.4–3.5; §8; §10**
+
+The proposed shared launch lock is useful. It establishes writer serialization only for paths that actually participate. It does not by itself establish:
+
+- A consistent read of live scope, runtime state, and working-set contents.
+- The same input snapshot for every destination in one composition.
+- Serialization between different workspaces writing the same host destination.
+- Atomic visibility to readers of a file updated in place.
+
+**Recommended improvement:**
+
+- Capture one immutable snapshot for a composition, with a defined read boundary against scope replacement and working-set updates.
+- Specify lock participation and acquisition order; do not assume the broker’s store lock and the workspace launch lock form one transaction.
+- Render and validate outputs before publication.
+- Preserve the stated bind-mount requirement: a generic “write temporary file and rename” prescription may replace the inode the jail is not actually reading.
+- Ensure newly admitted sessions cannot read an incomplete rewrite. Document the limit for already-running sessions that reread independently.
+- Serialize machine-wide host destinations by their actual shared destination scope, and identify which machine-wide configuration owns their content. A workspace lock is insufficient for a shared home file.
+- If path deduplication combines destinations with different agent identities, define the identity or reject the ambiguity. “Once per destination” cannot otherwise guarantee deterministic `ctx.agent`.
+
+**Revocation must remain independent of prose success.** A rendering failure must not undo or delay a successfully approved revocation merely to preserve briefing consistency. If subsequent publication fails, report that distinctly; the old text may remain stale even though enforcement changed.
+
+The decision not to refresh after every push is reasonable. However, live-apply recomposition belongs in the first release claiming applied authority, not a later completeness step.
+
+### Priority 2 — Portability, determinism, and evolution
+
+### F. Reuse of the VM does not establish all new determinism and resource claims  
+**Sections: §2.1; §3.1–3.2; §5; §8**
+
+Sorting lists is useful, but `remotes` and `repos` are maps. Scripts iterating them do not automatically get stable ordering. One VM per pack also allows mutable globals or closures to make a destination’s output depend on which destination ran first. Shared mutable context can similarly contaminate later calls.
+
+The 64 KiB return limit does not bound allocations made before returning. The packet establishes a five-second wall-clock budget, not a memory bound or interruption behavior for every host-backed Lua operation.
+
+**Recommended improvement:** define invocation-state isolation, snapshot immutability, deterministic traversal expectations, and whether the time budget covers loading plus all calls or each call separately. Verify existing resource behavior rather than claiming the output cap supplies it.
+
+This need not reopen the acknowledged `tostring` issue. The new concern is repeated destination invocation and newly supplied collections.
+
+### G. Tighten dependencies, compatibility, consent, and delivery rules  
+**Sections: §3.1–3.3; §5; §9**
+
+Several edge contracts should be explicit:
+
+- An optional source still must exist in the machine’s declared-source universe. That deliberately rejects a portable pack on a machine with no such source installed. Explain this trade-off rather than implying `optional` means universally usable fallback.
+- Define repeated manifest declarations for one producer, especially if they have different audiences or `reads`.
+- Update every reader of shared `derive.lua`, not just the new composer. The packet specifically identifies differing unknown-registration behavior across readers.
+- “Additive fields” is not a complete compatibility policy. Document supported meanings and defensive absence handling; source semantics must not change silently under stable names.
+- A declared `reads` dependency gives access to information, **not authorization to perform operations**. The readable-config `allow`/`requests` vocabulary must remain separate from approved and applied permissions.
+
+The claim **“No new fact crosses”** is not demonstrated by the supplied evidence. Writing scope files and producing broker refusals does not prove that every projected repository identity or historical working-set branch is already visible to the destination agent. This is an evidence gap, not proof of a leak.
+
+Keep the projection minimized to the intended workspace and launch; never include credentials or host paths. Source additions and materially more sensitive metadata need an explicit evolution decision. None of that automatically requires another routine launch banner.
+
+## 4. Recommendations for the open questions
+
+### OQ-CB1 — Core facts or pack publication?
+
+**My recommendation is A, narrowly construed.** Core should deliver authoritative snapshots through declared source inputs, with explicit source-specific projection semantics.
+
+**Trade-off:** this introduces a core-facing API and may require coordinated releases when a source gains new facts. A publisher shipped with a source implementation could evolve closer to that implementation, which is the strongest argument for B.
+
+The packet’s only concrete case does not justify a publication bus, arbitrary published values, or inter-pack dependency APIs. A remains sound only if “core-owned transport” does not become “one generic permission schema for all sources.”
+
+### OQ-CB2 — Whole config or named facts?
+
+**My recommendation is A initially, with C reserved for a demonstrated custom-setting need.**
+
+Named facts protect scripts from config spelling changes and, more importantly, separate requested configuration from applied behavior. They do constrain customization and require new projections for new facts.
+
+C can support house-policy choices later, provided those settings are visibly policy inputs—not evidence of granted authority. B is the broadest and quickest extension mechanism, but read-only access does not make requested permission truthful as an applied fact, and the packet does not establish a safe, stable whole-config surface.
+
+### OQ-CB3 — Refuse or degrade?
+
+**I lean toward B for this advisory feature, with the failure contract repaired as above.**
+
+Its advantage is availability: a prose computation failure does not unnecessarily block a usable environment. Its real cost is loss of potentially important human policy, not merely a refused push.
+
+A is defensible if the owner treats these computed instructions as a prerequisite for starting a session. Neither option can retract instructions an existing session already read. Whichever is chosen must cover missing registrations and clearly define how it interacts with load errors, host application, and failed refresh after revocation. I would not introduce per-pack failure-policy configuration in the first version.
+
+## 5. Smallest coherent first implementation
+
+The document’s first step—producer registration with only notch and agent—is a good **construction increment**, but not completion of the owner’s permission-aware use case.
+
+The smallest coherent deliverable would contain:
+
+1. One briefing-producer mechanism with declaration checks, deterministic placement, audience handling, output limits, lint visibility, and the owner-selected failure behavior.
+2. A Git-only access projection with explicit lifecycle/status semantics and an exact relationship to current broker enforcement.
+3. One common composition contract for launch, attach, live apply, and host apply. Host inputs must remain machine-wide and must not read workspace grants merely to discard them.
+4. A corrected finishing example that binds affirmative instructions to the intended repository and distinguishes house policy from permission.
+5. Acceptance coverage beyond §9’s happy paths: declined grants, revocation, retained working-set entries, unreadable scope, unavailable brokers, ambiguous remotes, missing registrations, shared destinations, and failures during publication.
+
+Defer arbitrary publication, whole-config exposure, custom settings, additional source schemas, push-triggered refresh, live-session updates, a live permission-query command, per-workspace host prose, and changes to the shipped Git pack.
+
+That preserves the small feature rather than turning it into a general computed-data framework.
+
+## 6. Assumptions and unknowns
+
+This review assumes the briefing remains advisory and cannot confer authority. It also assumes pack selection authorizes the pack’s prose, not broader credential use or hidden permission changes.
+
+The packet does not establish current:
+
+- Git enforcement behavior after grant changes for previously created branches.
+- Authoritative remote/push-destination mapping.
+- Broker readiness and liveness evidence available to composition.
+- Lock participation, host destination locking, or reader synchronization.
+- VM allocation limits, shared-state isolation, and all-reader registration compatibility.
+- Field-by-field equivalence between proposed metadata and information already visible to agents.
+
+Those are focused verification seams, not grounds for broad repository investigation or a speculative new architecture. Finally, §1’s “verdict” and the summary should remain visibly provisional while the decision ledger and three owner answers are empty.

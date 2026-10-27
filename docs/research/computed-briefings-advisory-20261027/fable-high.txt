@@ -1,0 +1,88 @@
+# Advisory opinion: `docs/design/computed-briefings.md` (blob 202304d, dated claims at 3aba3dad3)
+
+Scope note: worked only from the supplied packet. Repository claims in the document are dated 2026-10-24 and unverified here; I mark them as "document states" rather than fact. OQ-CB1/2/3 are left to the owner.
+
+## 1. Bottom line
+
+**Recommendation: accept the shape (a `yolo.briefing` producer fed a core-owned, declared, applied-not-configured access table), but not the current contract as written.** Before implementation the document needs (a) a split between core lifecycle fields and source-specific permission fields with a stated owner per source, (b) a determinism fix for map-shaped tables, (c) a clear source for `remotes`, (d) reconciliation of the launch-refusing pairing checks with the OQ-CB3 "degrade" leaning, and (e) tighter wording for fields that currently describe outcomes ("a fetch works") rather than approved grants. The worked example is sound in direction (it errs toward "commit only") but a handful of facts in the table are under-specified in ways that could let text claim authority the broker will not honor.
+
+**Confidence:** moderate-high (≈0.75) that the overall direction is right and that the listed defects are real against the document's own text; low-moderate on anything depending on git-broker/working-set semantics, which the packet does not contain.
+
+## 2. Strongest counterargument
+
+"Don't build a computed-briefing layer at all; let core emit one factual 'what this jail may push' line into the jail-managed body, and keep the maintainer's house rule static." The document rejects this in §6 ("the wording is the maintainer's house rule, not a fact about the jail"), but the counterargument is stronger than the table admits: the *only* known case is git finishing rules, and a core-written factual line ("Approved for this workspace: fetch; push to `main`") plus static prose ("follow the push line above") removes the Lua VM on the host at every attach, the new manifest field, two-way pairing checks, the `reads` universe, the OQ-CB3 degrade policy, and the per-source schema ownership problem — all for one consumer. The response is that the maintainer explicitly asked for no `if` in the prose and for the wording to be theirs; a core line still leaves an `if` ("if the line says push…"). I find the document's reasoning adequate but the cost side of §8 understated: the general mechanism is being bought for one case, and OQ-CB1/CB2 exist precisely because that mechanism invites generalization.
+
+## 3. Prioritized defects and improvements
+
+### P0 — contract-level
+
+**D1. Core lifecycle vs. source-specific permission meaning are mixed in one entry (§3.2, §3.3; owner constraint).** `running`/`why_not` are lifecycle/transport facts core can state for any brokered source. `repos.<id>.read / push_new_branches / push_branches` are *git's* permission semantics. The document places both at the same level under `ctx.access.<source>` and never says who owns the projection for a source other than git, even though the universe for `reads` is "any brokered source a loophole on this machine declares" (§3.3) and the text uses `ctx.access.github` as an example. Consequence: `reads: [{access: "github"}]` is admitted by the typo check, yet its shape is undefined. *Fix:* state explicitly that core owns `running`/`why_not` for every source, that per-source permission fields are a versioned projection owned by core **per source**, and that in v1 only `git` has a projection — any other declared source is refused with "not readable yet", not a did-you-mean. This keeps "no hidden authorization from prose" honest: the fields that look like authority are exactly the ones with a named owner.
+
+**D2. "Same facts give the same bytes" does not hold for `remotes` and `repos` (§3.2 "Sorted and stable", §5 Determinism).** Both are Lua tables keyed by string. Only *lists* are sorted; a producer that iterates `pairs(git.repos)` gets gopher-lua hash order, which is not stable. The example happens to avoid this (it indexes `remotes.origin`), but the contract claims determinism it cannot guarantee, and the jail/host parity test in §8 compares bytes. *Fix:* make `repos` a sorted array of `{identity=…, remotes={…sorted}, read=…, …}` (which also removes the `remotes.origin` two-step lookup), or document that map iteration order is out of contract and that only the provided arrays are stable. Prefer the array.
+
+**D3. The pairing checks refuse launch; OQ-CB3's leaning degrades (§3.1 vs §11 OQ-CB3).** "A registration no line declares is refused at launch and at `yolo host apply`" and "two registrations of one name are a Lua error" (which under leaning B degrades). So a typo in `yolo.briefing("finsihing", …)` blocks every jail selecting the pack, while a typo in the function body does not. That is the exact outcome OQ-CB3-B argues against. *Fix:* decide one policy for *all* authoring errors in prose producers (refuse or degrade+warn) and make §3.1/§3.6 consistent with whatever OQ-CB3 rules. This is an inconsistency, not a ruling; the owner picks the side.
+
+**D4. `remotes` has no stated source (§3.2, §3.4 "No probe").** The gate approves *repository identities*; remote *names* live in the workspace's `.git/config`. The composer "runs no subprocess" — but reading `.git/config` on the host is a new host read the document never mentions, and the agent can change remotes inside the jail (`git remote set-url`), so the mapping is mutable from inside. The worked example depends entirely on `remotes.origin`. *Fix:* name where the mapping comes from (config? a host file read? not available at all?). If unavailable, drop `remotes` from v1 and let producers key by repository identity (see D2's array shape), and have the example *name the repository* in its text rather than assume `origin`.
+
+### P1 — facts that could overstate usable authority
+
+**D5. `running` at fresh launch is "the broker start decision, before the scope files are written" (§3.4).** A decision to start is not a running broker. If the broker fails after composition, text says "push to `main`" while nothing serves pushes. Direction: overstates. *Fix:* either compose after the broker is confirmed up, or word the field as `will_run` / document that it is a decision, not liveness; the §3.6 fallback wording should be "pushes may be refused" not "a fetch works".
+
+**D6. Attach reads "its brokers' liveness" (§3.4) while §2.2/§3.4 insist the composer runs no probe.** A liveness check is a probe (socket/pidfile), even if not a subprocess. Either admit the file/socket read explicitly or derive `running` from the scope file's existence only and say so. Inconsistency as written.
+
+**D7. `read` is defined as "a fetch works" (§3.2).** The broker can hold a grant and still fail (expired login, network). The table should state *grant coverage*, not outcome, everywhere, consistent with "applied, never configured." Otherwise prose says a fetch works when it does not.
+
+**D8. `push_branches` claims "update, force-update or delete" (§3.2).** Whether a `branch` grant permits force-update and delete is a git-broker.md fact not in the packet. If the broker refuses force/delete, a producer that faithfully reports the field will tell the agent it may force-push `main`. *Flag as unverified; align wording with git-broker.md before freezing the field's meaning.*
+
+**D9. `why="created"` entries after a `create-branch` grant is declined or revoked (§2.3, §3.2).** The working set "lasts across launches, keyed by workspace", but the broker "reads only [the scope] file". Whether created branches remain pushable when the current launch's scope lacks `create-branch` is not stated. Depending on the answer, `push_branches` either overstates (lists branches the broker now refuses) or understates. The example ignores `created` entries, so the maintainer's case does not need this today. *Fix:* defer working-set entries until the combination rule is written down (see §5 below).
+
+**D10. Wildcard expansion universe (§3.2).** "A grant on `*` appears on every approved repository" — approved by what set? If the set is the current remotes, a repository the agent adds later is pushable under `*` but absent from the text (understates — safe, but the universe should be named).
+
+**D11. Hard-coded backend/host facts (§3.5).** Apple Container `running=false` "runs no host services" and host notch "no broker" are dated claims. If either changes, the text silently understates. Safe direction, but mark them as derived from the backend's declaration, not literals in the composer.
+
+### P2 — smaller gaps
+
+**D12. `ctx.agent` for shared destinations (§3.1 "Called once per destination").** Destinations are deduplicated by path, and `ctx.agent` is "the destination's declared agent identity". If two agents share a path (e.g. a shared `AGENTS.md`), which identity is passed? The example words rules per agent, so this matters for correctness, not authority.
+
+**D13. Version-boundary claim is overstated (§3.2 last bullet, §2.1).** The same `derive.lua` is still loaded by the jail-side rendering reader (warning on unknown `yolo.*`) and the host env reader (error on unknown `yolo.*`). A pack using `yolo.briefing` on a skewed/older yolo will warn in the jail and *error in the env reader*. The statement "jail-image skew does not arise for them" is true of the producer's execution but not of the file's loading. Note that all three readers must learn the new member in the same release.
+
+**D14. `optional` semantics at `yolo host apply` (§3.3 vs §3.4).** §3.3: a real source whose pack is unselected refuses unless `optional`. §3.4 host row: every declared source is `running=false` with the host sentence. Which wins for a non-optional `git` read at host apply? State the precedence.
+
+**D15. Presence of `remotes`/`repos` when `running=false` (§3.7).** Not stated whether they are empty tables or `nil`. Specify "always present, empty" — otherwise producers that skip the `running` guard crash into the OQ-CB3 path.
+
+**D16. Budget granularity (§3.1 vs §8).** "5-second wall-clock budget" vs "one VM session per pack per composition, invoking the producer per destination" — per call or per session? Say which; attach latency depends on it.
+
+**D17. Example robustness (§4).** `ipairs(repo.push_branches)` on a `nil` field (older build per the version-boundary rule) raises; the example should model the defensive style the §3.2 rule assumes (`for _, b in ipairs(repo.push_branches or {})`). Also "push it to `main`. Push no other branch." understates authority when `create-branch` is also approved — acceptable as a house rule, but the table in §4 should not present it as what the broker allows.
+
+**D18. §5 "the facts … are already visible to an agent in the jail (`writeScopeFiles`)".** Whether the scope file is readable from inside the jail is a dated, unverified claim; the no-new-fact-crosses argument should not rest on it alone (`git remote -v` and broker refusals suffice).
+
+### Explicit list: what could make the worked example falsely describe usable authority
+Overstating (text says push, broker/launch cannot): D5 (decision ≠ running), D7 (`read` as outcome), D8 (force/delete semantics), D9 (stale `created` entries), the acknowledged running-session/revocation window (§3.4). Understating (safe direction but still wrong text): D4 (`origin` re-pointed or absent → commit-only), D10, D11, §3.6 "scope could not be read" row. Misattributing (right facts, wrong reader): D12. The document's safety argument (verdict reason 4) holds for all overstating cases *only if* the git pack's prose really teaches the agent to read a refusal and stop — a dependency on text not in this packet.
+
+## 4. Open questions — recommendations and trade-offs (not rulings)
+
+**OQ-CB1 (core hands over facts vs. git pack publishes).** On packet evidence, A is the smaller sound contract: the facts are gate-approved and broker-applied, and B would copy them through a pack and create a pack-to-pack API whose shape no one in core checks. B also carries a prose-authority risk the document under-emphasizes: once *any* pack can publish *anything*, a published table named like a grant looks like authority to a consumer. The real cost of A is D1: core must own a projection per brokered source, and third-party brokered sources get none until core adds it. A middle path the document does not list — core-owned lifecycle fields for every source plus a per-source projection that core adds only when a real consumer exists — is just A stated honestly. Suggest ruling A *with* the D1 ownership split written into §3.2, and recording "B reopens when a pack holds a fact core does not."
+
+**OQ-CB2 (whole config vs. named facts vs. pack-own settings).** A now is the right default and the document's argument against B is correct and important: B shows *requested* (`allow`/`requests`) rather than *approved* authority, which is exactly the confusion the owner's constraint forbids. C is reasonable later but note a subtlety: a pack's own setting is *configured*, not *applied*; if a maintainer adds `push: true` to their pack settings, the text will say "push" with no gate behind it. That is still only prose, and the broker enforces, but C should carry a rule that pack settings cannot be named like grants and must not be presented in the briefing as what the jail "may" do.
+
+**OQ-CB3 (refuse vs. degrade on a broken script).** B is defensible because the output is advisory and the fallback line is conservative ("ask the human before pushing"). Two caveats: (1) D3 — the §3.1 pairing checks must follow the same policy or B is only half-true; (2) B's weak point is a human who ignores launch output, leaving every workspace degraded indefinitely — mitigated by the agent reading the fallback line and asking. If the owner picks A, attach would also be blocked, which the document correctly notes. Either way, the fallback text should name *what* failed (pack, producer) so the agent's question to the human is specific.
+
+## 5. Smallest coherent first implementation; what to defer
+
+Build (one release):
+1. `yolo.briefing(name, fn)` registration; the `briefing` manifest line with `derive`, `agents`, `reads`; the `briefing/<name>.md` slot and collision refusal; `ctx.notch`, `ctx.agent`; lint in both directions; all three `derive.lua` readers learn the new member (D13).
+2. `ctx.access.git` only. Lifecycle fields `running`/`why_not` (core-owned for any source), and a git projection as a **sorted array** of repositories with `identity`, `read`, `push_new_branches`, `push_branches` containing **declared** entries only (D2, D9). Other declared brokered sources refused as "not readable yet" (D1).
+3. Facts from the gate's approved result at fresh launch and from the scope file at attach; `running` defined as "scope present and broker admitted at launch", with no liveness probe, and documented as such (D5/D6).
+4. The OQ-CB3-ruled failure policy applied uniformly to body errors *and* pairing mismatches (D3).
+
+Defer: `remotes` until its source is named (D4) — or ship it only if it comes from the approved config, not from reading the workspace; `why="created"` / working set until the scope-plus-working-set rule is written (D9); `yolo config apply` re-composition (document's step 3; valuable but independent); `optional` sources (the maintainer always selects git; add when a second consumer needs it); any non-git projection; OQ-CB2-C pack settings.
+
+This covers every row of the §4 table except "Any workspace on Apple Container", which needs only `running=false` from the backend declaration (D11) and is cheap to include.
+
+## 6. Assumptions and unknowns
+
+- Unverified (dated 3aba3dad3): gate-before-compose ordering in `run.go`; `ReplaceScopeContext` not re-composing; `packload.AgentEnv` running host-side; launch-lock coverage of every composition path; `briefingparity_test.go` existence; Apple Container having no host services; scope-file visibility from inside the jail.
+- Not in packet: git-broker.md's exact `branch` grant semantics (force/delete), how the working set combines with the per-launch scope, the repository-identity spelling, whether remote names are known to core at all, and whether the git pack's prose actually instructs the agent to stop on a refusal (verdict reason 4 depends on it).
+- Inference: the maintainer's case needs neither the working set nor a `remotes` map; both can be deferred without changing the §4 outcomes.
+- The readable-config redesign is in progress; the document's concept-name insulation (§3.2) is the right approach, but its `config-user.md#a6` mapping is itself a moving target.
+- This is advice only; nothing here authorizes implementation, credential changes, or edits to the document.
