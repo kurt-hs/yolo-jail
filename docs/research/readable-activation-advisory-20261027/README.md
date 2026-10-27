@@ -17,9 +17,9 @@ The opinions are retained as supplied; the `.txt` files avoid converting their o
 
 ## Provenance and effective capabilities
 
-The frozen question originated from private source `d8ed0c9dd820886d249c66d662474673cd2b2c7a7`, tree `72e5f49583d488b2929c7f79a682f5cd30af888d`, collected at `0aa`. Although the Mac source may have advanced, the advice is not acceptance of the current runtime.
+The frozen question originated from private source `d8ed0c9dd820886d249c66d662474673cd2b2c7a`, tree `72e5f49583d488b2929c7f79a682f5cd30af888d`, collected at `0aa`. Although the Mac source may have advanced, the advice is not acceptance of the current runtime.
 
-One workflow (`b21f2400-91dc-4b96-863d-b36ae07c2901`) ran both initial opinions blind on the identical 8,557-byte packet, each once. Astra run `1f4405e8` resolved to `amazon-bedrock / global.openai.gpt-6-astra`, HIGH, message `24e1ee76`. Fable run `d111e8f5` resolved to `amazon-bedrock / global.anthropic.claude-fable-5-1`, HIGH, message `5025218c`. The authorized explicit merge follow-up was Astra run `b9e9e6a0`, HIGH, message `cfbff708`, supplied the original packet, both complete opinions, and a design-only comparison; it was not blind.
+One workflow (`b21f2400-91dc-4b96-863d-b36ae07c2901`) ran both initial opinions blind with the identical frozen 8,301-byte packet included exactly once; each actual task prompt was 8,557 bytes with the known runtime wrapper. Astra run `1f4405e8` resolved to `amazon-bedrock / global.openai.gpt-6-astra`, HIGH, message `24e1ee76`. Fable run `d111e8f5` resolved to `amazon-bedrock / global.anthropic.claude-fable-5-1`, HIGH, message `5025218c`. The authorized explicit merge follow-up was Astra run `b9e9e6a0`, HIGH, message `cfbff708`, supplied the original packet, both complete opinions, and a design-only comparison; it was not blind.
 
 Native audits report all three actual effective direct-tool lists as only `subagent`, `contact_supervisor`, and `subagent_supervisor`; allowed helper names were scout, researcher, and evidence-auditor. No direct read/write, shell, search, MCP, or internal tools were available, and direct/helper calls were zero. Each fresh context had the same 16,540-byte ambient memory message. Therefore this was not packet-only or extension-free/global-confinement context; the raw Fable “packet-only” title is qualified by this observed context. Memory contents and raw prompts are deliberately not reproduced here.
 
@@ -38,7 +38,7 @@ Raw provider-reported per-message values, deduplicated by native message identit
 | Role | Native message | Model / effort | Calls | Input | Output | Cache read | Cache write | Total tokens | Reported cost |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|
 | Astra initial | `24e1ee76` | `global.openai.gpt-6-astra`, HIGH | 1 | 2 | 4,066 | 0 | 6,755 | 10,823 | $0.2877575 |
-| Fable initial | `5025218c` | `global.anthropic.claude-fable-5-1`, HIGH | 1 | 4 | 9,991 | 0 | 11,975 | 21,970 | $0.73909 |
+| Fable initial | `5025218c` | `global.anthropic.claude-fable-5-1`, HIGH | 1 | 4 | 9,991 | 0 | 11,975 (reported 1h tier) | 21,970 | $0.73909 |
 | Astra merge | `cfbff708` | `global.openai.gpt-6-astra`, HIGH | 1 | 2 | 4,746 | 0 | 12,474 | 17,222 | $0.393245 |
 | **Three advisory calls** |  |  | **3** |  |  |  |  |  | **$1.4200925** |
 
