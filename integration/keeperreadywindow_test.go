@@ -51,6 +51,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	naming "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
@@ -196,6 +197,22 @@ func holdAtReadyWithAnother(t *testing.T, try int, firstScript string) *readyWin
 	cname := naming.FromWorkspace(dir)
 	logPath := filepath.Join(paths.GlobalStorage(), "logs", "jail-keeper-"+cname+".log")
 	ready := "holds " + cname + " until its last session leaves"
+	// The spawned frame after "keeper: started" records the launch under this flock. Stopping
+	// the launcher while it owns that lock strands the attach immediately after its header,
+	// before its own record and exec. Own the lock before starting the launcher, and release it
+	// only once the launcher is stopped: neither launch can then wait on a stopped writer.
+	recordPath := run.MachineLaunchLogPath() + ".lock"
+	if err := os.MkdirAll(filepath.Dir(recordPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recordLock, err := os.OpenFile(recordPath, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recordLock.Close()
+	if err := syscall.Flock(int(recordLock.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatalf("holding the launch-record lock before stopping the launch: %v", err)
+	}
 	first := startYoloBackground(t, "interrupted", dir, firstScript)
 	var m []string
 	for deadline := time.Now().Add(jailTimeout()); ; time.Sleep(2 * time.Millisecond) {
@@ -214,6 +231,19 @@ func holdAtReadyWithAnother(t *testing.T, try int, firstScript string) *readyWin
 	keeper, _ := strconv.Atoi(m[1])
 	if err := syscall.Kill(first.pid, syscall.SIGSTOP); err != nil {
 		t.Fatalf("stopping the launch: %v", err)
+	}
+	for deadline := time.Now().Add(jailTimeout()); ; time.Sleep(time.Millisecond) {
+		stopped, err := readyWindowLaunchStopped(first.pid)
+		if err != nil || time.Now().After(deadline) {
+			_ = syscall.Kill(first.pid, syscall.SIGCONT)
+			t.Fatalf("try %d: the launch did not stop before releasing the record lock (%v):\n%s", try, err, first.combined())
+		}
+		if stopped {
+			break
+		}
+	}
+	if err := recordLock.Close(); err != nil {
+		t.Fatalf("releasing the stopped launch's record barrier: %v", err)
 	}
 	for deadline := time.Now().Add(jailTimeout()); ; time.Sleep(20 * time.Millisecond) {
 		raw, _ := os.ReadFile(logPath)
@@ -241,6 +271,36 @@ func holdAtReadyWithAnother(t *testing.T, try int, firstScript string) *readyWin
 		}
 	}
 	return &readyWindowWithAnother{cname: cname, first: first, other: other, keeper: keeper}
+}
+
+// readyWindowLaunchStopped acknowledges SIGSTOP before the fixture releases its record barrier.
+// On Linux the record writer can be on any Go thread, so the leader's state alone is insufficient.
+func readyWindowLaunchStopped(pid int) (bool, error) {
+	if goruntime.GOOS != "linux" {
+		state, found, err := processState(pid)
+		if err != nil {
+			return false, err
+		}
+		return found && strings.HasPrefix(state, "T"), nil
+	}
+	threads, err := os.ReadDir(filepath.Join("/proc", strconv.Itoa(pid), "task"))
+	if err != nil {
+		return false, err
+	}
+	for _, thread := range threads {
+		tid, err := strconv.Atoi(thread.Name())
+		if err != nil {
+			return false, err
+		}
+		state, found, err := processState(tid)
+		if err != nil {
+			return false, err
+		}
+		if !found || state != "T" {
+			return false, nil
+		}
+	}
+	return len(threads) > 0, nil
 }
 
 // endTheOther quits the second session and requires the keeper to end the jail after it.
