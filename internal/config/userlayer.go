@@ -57,6 +57,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -148,6 +149,21 @@ func UserScopeConfig(strict bool, warn Warn) (*jsonx.OrderedMap, error) {
 	return loadUserScopeConfig(p, p, strict, warn)
 }
 
+// LoadReadableUserScopeConfig reads the format-2 user graph and sorted config.d fragments. It is
+// a library seam only; existing runtime readers stay on UserScopeConfig until H activation.
+func LoadReadableUserScopeConfig(strict bool, warn Warn) (*jsonx.OrderedMap, error) {
+	p := paths.UserConfigPath()
+	m, _, err := loadReadableUserScope(p, strict, warn, false)
+	return m, err
+}
+
+// LoadReadableUserScopeConfigWithSources adds source positions to the readable user graph.
+func LoadReadableUserScopeConfigWithSources(strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
+	p := paths.UserConfigPath()
+	m, node, err := loadReadableUserScope(p, strict, warn, true)
+	return m, sourcesOf(node), err
+}
+
 // UserScopeConfigWithSources is UserScopeConfig plus where each value was written
 // (sources.go), for a caller that reports validation problems over the user scope.
 func UserScopeConfigWithSources(strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
@@ -188,9 +204,55 @@ func loadUserScope(path, label string, strict bool, warn Warn, record bool) (*js
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg, node = applyInheritedLaunch(cfg, node, record)
+	cfg, node = applyInheritedLaunch(cfg, node, record, false)
 	cfg, node = applyUserLayer(cfg, node, record)
 	return cfg, node, nil
+}
+
+func loadReadableUserScope(path string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	selectedPath, selectedLabel, readable, err := resolveUserConfigPath(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	seen := map[string]struct{}{}
+	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{})
+	if err != nil {
+		return nil, nil, err
+	}
+	if readable {
+		cfg, node, err = mergeUserConfigFragments(cfg, node, filepath.Dir(selectedPath), strict, warn, seen, record)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	cfg, node = applyInheritedLaunch(cfg, node, record, true)
+	cfg, node = applyReadableUserLayer(cfg, node, record)
+	return cfg, node, nil
+}
+
+func applyReadableUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode) {
+	path := UserLayerPath()
+	if path == "" {
+		return base, baseNode
+	}
+	var layer *jsonx.OrderedMap
+	var layerNode *srcNode
+	var err error
+	if strings.EqualFold(filepath.Ext(path), ".toml") {
+		layer, layerNode, err = loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{})
+	} else {
+		layer, layerNode, err = loadWithIncludes(path, "--user-layer "+path, false, func(string) {}, nil, record, readAt{})
+	}
+	if err != nil || layer == nil || layer.Len() == 0 {
+		return base, baseNode
+	}
+	if base == nil {
+		base = jsonx.NewOrderedMap()
+	}
+	if strings.EqualFold(filepath.Ext(path), ".toml") {
+		return mergeReadableConfig(base, layer, baseNode, layerNode, nil)
+	}
+	return mergeConfig(base, layer, baseNode, layerNode)
 }
 
 // InheritedLaunchPath is the nested-launch file a jail's host wrote beside its user config:
@@ -221,7 +283,7 @@ func InheritedLaunchPath() string {
 // handed down; a jail's own config.jsonc (and any --user-layer on top) is the more local
 // statement and must win — the same direction as user-under-workspace one level up. The
 // provenance (sources.go) is folded the same way, so a refused key the file carries names it.
-func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode) {
+func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record, readable bool) (*jsonx.OrderedMap, *srcNode) {
 	path := InheritedLaunchPath()
 	if path == "" {
 		return base, baseNode
@@ -237,6 +299,9 @@ func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record bool
 	AnchorEnvSources(inherited, filepath.Dir(path))
 	if base == nil {
 		return inherited, inheritedNode
+	}
+	if readable {
+		return mergeReadableConfig(inherited, base, inheritedNode, baseNode, nil)
 	}
 	return mergeConfig(inherited, base, inheritedNode, baseNode)
 }

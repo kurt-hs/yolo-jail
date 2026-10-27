@@ -35,6 +35,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	_ "github.com/mschulkind-oss/yolo-jail/internal/packreg" // registers the embedded packs with packload
+	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
 )
@@ -359,6 +360,7 @@ func checkPacks(v any) ([]PackEntry, []string) {
 	var entries []PackEntry
 	var problems []string
 	seenName := map[string]int{}
+	seenLocal := map[string]int{}
 	for i, raw := range list {
 		entry, problem := checkPackEntry(raw, fmt.Sprintf("config.%s[%d]", packsKey, i))
 		if problem != "" {
@@ -369,9 +371,22 @@ func checkPacks(v any) ([]PackEntry, []string) {
 		// would silently overwrite the first.
 		if prev, dup := seenName[entry.Name]; dup {
 			problems = append(problems, fmt.Sprintf(
-				"config.%s[%d]: duplicate pack name %q (already used by entry %d) — "+
-					"give one an explicit \"name\"", packsKey, i, entry.Name, prev))
+				"config.%s[%d]: duplicate pack name %q (also at config.%s[%d]) — "+
+					"give one an explicit \"name\"", packsKey, i, entry.Name, packsKey, prev))
 			continue
+		}
+		if entry.IsLocal() {
+			if u, err := url.Parse(entry.Source); err == nil {
+				if identity, err := packsrc.LocalDirectoryIdentity(u.Path); err == nil {
+					if prev, dup := seenLocal[identity]; dup {
+						problems = append(problems, fmt.Sprintf(
+							"config.%s[%d]: duplicate local pack directory %q (also at config.%s[%d]) — list the physical directory once",
+							packsKey, i, entry.Source, packsKey, prev))
+						continue
+					}
+					seenLocal[identity] = i
+				}
+			}
 		}
 		seenName[entry.Name] = i
 		entries = append(entries, entry)

@@ -19,6 +19,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentenv"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 // protocolAgentPack installs `claude` with the given protocol list (raw JSON, or "" for a
@@ -215,5 +216,84 @@ func TestTheGateRefusesBeforeAnythingIsComposed(t *testing.T) {
 	}
 	if vars != nil {
 		t.Errorf("vars = %#v, want nil: a refused pairing composes NOTHING", vars)
+	}
+}
+
+func TestBuiltInProviderPublicReadersDistinguishDefaultNamedDisabledAndAbsent(t *testing.T) {
+	manifest, problems := packdecl.DecodeTOML([]byte(`[[program]]
+bin = "claude"
+via = "npm"
+package = "claude"
+built_in_providers = { names = ["own", "alternate"], plans = { named = { provider = "alternate" }, disabled = "off" } }
+`))
+	if len(problems) != 0 {
+		t.Fatalf("grouped built-in provider fixture rejected: %v", problems)
+	}
+	owner := &Pack{Name: "claude", Decl: manifest}
+	got := BuiltInProvidersFor([]*Pack{owner}, "claude")
+	for name, wantID := range map[string]string{"own": "own", "alternate": "alternate", "named": "alternate"} {
+		provider, ok := BuiltInProviderFor([]*Pack{owner}, "claude", name)
+		if !ok || provider.ID != wantID || got[name].ID != wantID {
+			t.Errorf("public default/named provider %q = %#v/%t and map %#v, want ID %q", name, provider, ok, got[name], wantID)
+		}
+	}
+	if provider, ok := BuiltInProviderFor([]*Pack{owner}, "claude", "disabled"); !ok || provider.ID != "" {
+		t.Errorf("present off plan = %#v/%t, want present with no provider", provider, ok)
+	}
+	if provider, ok := BuiltInProviderFor([]*Pack{owner}, "claude", "absent"); ok || provider.ID != "" {
+		t.Errorf("absent plan = %#v/%t, want absent", provider, ok)
+	}
+	if got["disabled"].ID != "" {
+		t.Errorf("BuiltInProvidersFor disabled plan = %#v", got["disabled"])
+	}
+
+	withoutPlans, problems := packdecl.DecodeTOML([]byte(`[[program]]
+bin = "claude"
+via = "npm"
+package = "claude"
+`))
+	if len(problems) != 0 {
+		t.Fatalf("grouped absent-provider fixture rejected: %v", problems)
+	}
+	absentOwner := &Pack{Name: "claude", Decl: withoutPlans}
+	if providers := BuiltInProvidersFor([]*Pack{absentOwner}, "claude"); providers != nil {
+		t.Errorf("BuiltInProvidersFor with no declaration = %#v, want nil", providers)
+	}
+	if provider, ok := BuiltInProviderFor([]*Pack{absentOwner}, "claude", "named"); ok || provider.ID != "" {
+		t.Errorf("BuiltInProviderFor with no declaration = %#v/%t, want absent", provider, ok)
+	}
+}
+
+func TestGroupedBuiltInProviderOffPlanUsesProductionReachabilityGate(t *testing.T) {
+	readerRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(readerRoot, "derive.lua"), []byte(`yolo.derive("claude", "config", function(ctx) return {} end)`), 0o644); err != nil {
+		t.Fatalf("writing derive.lua: %v", err)
+	}
+	reader := &Pack{Name: "surface", Root: readerRoot}
+
+	for _, tc := range []struct {
+		name  string
+		plans string
+		want  bool
+	}{
+		{name: "off plan", plans: `p = "off"`, want: false},
+		{name: "named plan", plans: `p = { provider = "own" }`, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest, problems := packdecl.DecodeTOML([]byte(`[[program]]
+bin = "claude"
+via = "npm"
+package = "claude"
+built_in_providers = { names = ["own"], plans = { ` + tc.plans + ` } }
+`))
+			if len(problems) != 0 {
+				t.Fatalf("grouped program fixture rejected: %v", problems)
+			}
+			owner := &Pack{Name: "claude", Decl: manifest}
+			got := readsProviderTable([]*Pack{owner, reader}, owner, "claude", "p", true)
+			if got != tc.want {
+				t.Errorf("readsProviderTable = %t, want %t", got, tc.want)
+			}
+		})
 	}
 }

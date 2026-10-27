@@ -39,6 +39,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -54,8 +55,10 @@ type Sources struct {
 
 // srcFile is one config file as the loader read it.
 type srcFile struct {
-	path string
-	data []byte
+	path     string
+	data     []byte
+	format   configdoc.Format
+	document *configdoc.Document
 
 	// contained says the bytes came from inside the workspace, read beneath its root
 	// (wsroot.go), and rel is then the file's workspace-relative name. Both are zero for every
@@ -79,13 +82,25 @@ type srcFile struct {
 
 // locate is the span of the value at steps in this file, ok false where the file does not
 // locate it: nothing there, or a key along the path written twice (json5.Index.Locate).
-func (f *srcFile) locate(steps []json5.Step) (json5.Span, bool) {
+func (f *srcFile) locate(steps []json5.Step, documentSteps []configdoc.Step) (json5.Span, bool) {
+	if f.format == configdoc.TOML && f.document != nil {
+		span, ok, err := f.document.Index.Value(documentSteps...)
+		return json5.Span{Start: span.Start, End: span.End}, ok && err == nil
+	}
 	f.indexOnce.Do(func() { f.index, _ = json5.NewIndex(f.data) })
 	if f.index == nil {
 		return json5.Span{}, false
 	}
 	span, ok, err := f.index.Locate(steps...)
 	return span, ok && err == nil
+}
+
+// position returns the byte offset's 1-based source coordinates in this document format.
+func (f *srcFile) position(offset int) (int, int) {
+	if f.format == configdoc.TOML && f.document != nil {
+		return f.document.Index.Position(offset)
+	}
+	return json5.Position(f.data, offset)
 }
 
 // writtenTwice is json5.Index.Locate's error for steps in this file, the key along them that is
@@ -106,9 +121,10 @@ func (f *srcFile) writtenTwice(steps []json5.Step) error {
 // the host file that wrote the value, which a message names in place of the copy, file being the
 // copy itself.
 type srcOrigin struct {
-	file  *srcFile
-	steps []json5.Step
-	host  string
+	file          *srcFile
+	steps         []json5.Step
+	documentSteps []configdoc.Step
+	host          string
 }
 
 // srcNode mirrors one value of a composed config. Nodes are never modified once built: a merge
@@ -157,25 +173,31 @@ func (n *srcNode) without(k string) *srcNode {
 // fileTree is the provenance tree of one file's decoded document: every value written by f,
 // at the path it sits at in f.
 func fileTree(f *srcFile, v any) *srcNode {
-	return fileTreeAt(f, v, nil)
+	return fileTreeAt(f, v, nil, nil)
 }
 
-func fileTreeAt(f *srcFile, v any, steps []json5.Step) *srcNode {
-	n := &srcNode{writers: []srcOrigin{{file: f, steps: steps}}}
+func fileTreeAt(f *srcFile, v any, steps []json5.Step, documentSteps []configdoc.Step) *srcNode {
+	n := &srcNode{writers: []srcOrigin{{file: f, steps: steps, documentSteps: documentSteps}}}
 	switch t := v.(type) {
 	case *jsonx.OrderedMap:
 		n.keys = make(map[string]*srcNode, t.Len())
 		for _, k := range t.Keys() {
 			cv, _ := t.Get(k)
-			n.keys[k] = fileTreeAt(f, cv, appendStep(steps, json5.Key(k)))
+			n.keys[k] = fileTreeAt(f, cv, appendStep(steps, json5.Key(k)), appendDocumentStep(documentSteps, configdoc.Step{Key: k}))
 		}
 	case []any:
 		n.elems = make([]*srcNode, len(t))
 		for i, e := range t {
-			n.elems[i] = fileTreeAt(f, e, appendStep(steps, json5.Elem(i)))
+			n.elems[i] = fileTreeAt(f, e, appendStep(steps, json5.Elem(i)), appendDocumentStep(documentSteps, configdoc.Step{Index: i, IsIndex: true}))
 		}
 	}
 	return n
+}
+
+func appendDocumentStep(steps []configdoc.Step, step configdoc.Step) []configdoc.Step {
+	out := make([]configdoc.Step, len(steps), len(steps)+1)
+	copy(out, steps)
+	return append(out, step)
 }
 
 // appendStep appends without sharing steps' backing array, which sibling paths also extend.
@@ -426,11 +448,11 @@ func (o srcOrigin) String() string {
 		return ""
 	}
 	where := o.file.label()
-	span, ok := o.file.locate(o.steps)
+	span, ok := o.file.locate(o.steps, o.documentSteps)
 	if !ok {
 		return where
 	}
-	line, col := json5.Position(o.file.data, span.Start)
+	line, col := o.file.position(span.Start)
 	return where + ":" + strconv.Itoa(line) + ":" + strconv.Itoa(col)
 }
 

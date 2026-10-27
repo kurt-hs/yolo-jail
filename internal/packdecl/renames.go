@@ -32,6 +32,7 @@ var fieldRenames = []fieldRename{
 	// Grouped manifests use the codec's concise overlay/model vocabulary. These are
 	// format-specific refusals; legacy JSON keeps its existing spellings.
 	{Scope: "overlay", Old: "config", New: "set"},
+	{Scope: "program", Old: "install_hints", New: "install"},
 	{Scope: "provider-model", Old: "id", New: "the model table key"},
 	{Scope: "provider-model", Old: "input", New: "accepts"},
 	{Scope: "provider-model", Old: "cost", New: "price"},

@@ -10,12 +10,15 @@ package modelcatalog
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 // Bounds on what one catalog read may cost. pi 0.99.1's data files total under 1 MiB across 42
@@ -30,6 +33,9 @@ const (
 type Catalog struct {
 	// IDs is every id the read files name.
 	IDs map[string]bool
+	// Facts holds offline canonical model facts found beside an id. It contains only authored
+	// fields; absence is not converted into a consumer default.
+	Facts map[string]packdecl.ProviderModel
 	// Files is how many matched files parsed as JSON; 0 means the catalog could not be read,
 	// whatever else was on disk.
 	Files int
@@ -42,6 +48,40 @@ type Catalog struct {
 // what the files that do parse name.
 func Read(pkgDir string, globs []string) Catalog {
 	c := Catalog{IDs: map[string]bool{}}
+	files := catalogFiles(pkgDir, globs)
+	for _, f := range files {
+		doc, ok := readJSON(f)
+		if !ok {
+			continue
+		}
+		c.Files++
+		collectIDs(doc, c.IDs)
+	}
+	return c
+}
+
+// ReadCanonicalFacts reads an explicitly designated offline source using canonical model-row
+// fields beside each id. Unlike Read, which intentionally reads only an installed agent's own id
+// catalog, this API treats malformed JSON or malformed authored canonical facts as an actionable
+// error. Callers must opt into this source; native agent catalogs are never implicitly interpreted
+// as yolo facts.
+func ReadCanonicalFacts(pkgDir string, globs []string) (Catalog, error) {
+	c := Catalog{IDs: map[string]bool{}, Facts: map[string]packdecl.ProviderModel{}}
+	for _, file := range catalogFiles(pkgDir, globs) {
+		doc, ok := readJSON(file)
+		if !ok {
+			return Catalog{}, fmt.Errorf("%s: cannot read canonical model fact source as bounded JSON", file)
+		}
+		c.Files++
+		collectIDs(doc, c.IDs)
+		if err := collectCanonicalFacts(doc, c.Facts); err != nil {
+			return Catalog{}, fmt.Errorf("%s: %w", file, err)
+		}
+	}
+	return c, nil
+}
+
+func catalogFiles(pkgDir string, globs []string) []string {
 	var files []string
 	seen := map[string]bool{}
 	for _, g := range globs {
@@ -56,15 +96,7 @@ func Read(pkgDir string, globs []string) Catalog {
 	if len(files) > maxFiles {
 		files = files[:maxFiles]
 	}
-	for _, f := range files {
-		doc, ok := readJSON(f)
-		if !ok {
-			continue
-		}
-		c.Files++
-		collectIDs(doc, c.IDs)
-	}
-	return c
+	return files
 }
 
 // Installed reports whether pkgDir holds an installed npm package: its package.json exists.
@@ -136,6 +168,53 @@ func readJSON(file string) (any, bool) {
 		return nil, false
 	}
 	return doc, true
+}
+
+// collectFacts records recognized canonical sibling facts from every object that declares an id.
+// Catalog-owned dialects beyond this canonical shape remain IDs-only rather than being guessed.
+func collectCanonicalFacts(v any, into map[string]packdecl.ProviderModel) error {
+	switch value := v.(type) {
+	case map[string]any:
+		id, hasID := value["id"].(string)
+		if hasID && id != "" {
+			fields := map[string]any{}
+			for _, key := range []string{"name", "description", "vendor", "api", "thinking", "images", "price", "context", "max_tokens", "reasoning", "accepts", "base", "wire_id", "extends", "openrouter_routing", "compact_at"} {
+				if fact, exists := value[key]; exists {
+					fields[key] = fact
+				}
+			}
+			if len(fields) > 0 {
+				encoded, err := json.Marshal(fields)
+				if err != nil {
+					return fmt.Errorf("model %q canonical facts: %w", id, err)
+				}
+				var facts packdecl.ProviderModel
+				if err := json.Unmarshal(encoded, &facts); err != nil {
+					return fmt.Errorf("model %q has malformed canonical facts: %w", id, err)
+				}
+				if _, exists := into[id]; !exists {
+					into[id] = facts
+				}
+			}
+		}
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if err := collectCanonicalFacts(value[key], into); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range value {
+			if err := collectCanonicalFacts(child, into); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // collectIDs adds every string held under an `id` key, in any object at any depth of v.
