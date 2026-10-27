@@ -124,13 +124,17 @@ func writeLogin(t *testing.T, path, at, rt string, expiresAt int64, extra map[st
 
 // workspace registers a fresh workspace's view the way a launch does, and returns it.
 func (f *viewFixture) workspace(t *testing.T, name string) claudeview.Location {
+	return f.workspaceRuntime(t, name, "podman")
+}
+
+func (f *viewFixture) workspaceRuntime(t *testing.T, name, runtime string) claudeview.Location {
 	t.Helper()
 	ws := filepath.Join(f.home, "code", name)
 	if err := os.MkdirAll(ws, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	loc := claudeview.Location{Workspace: ws, Subdir: claudeview.HostSubdir("podman")}
-	if _, err := RegisterView(loc, "podman", "yolo-"+name); err != nil {
+	loc := claudeview.Location{Workspace: ws, Subdir: claudeview.HostSubdir(runtime)}
+	if _, err := RegisterView(loc, runtime, "yolo-"+name); err != nil {
 		t.Fatalf("RegisterView(%s): %v", name, err)
 	}
 	return loc
@@ -315,6 +319,257 @@ func TestARefusedEnrollmentIsStrippedAndNotRetried(t *testing.T) {
 	}
 }
 
+func useDarwinHost(t *testing.T) {
+	t.Helper()
+	saved := brokerHostIsDarwin
+	brokerHostIsDarwin = true
+	t.Cleanup(func() { brokerHostIsDarwin = saved })
+}
+
+func useNonDarwinHost(t *testing.T) {
+	t.Helper()
+	saved := brokerHostIsDarwin
+	brokerHostIsDarwin = false
+	t.Cleanup(func() { brokerHostIsDarwin = saved })
+}
+
+func registrationFor(t *testing.T, loc claudeview.Location) *viewRegistration {
+	t.Helper()
+	for _, r := range loadRegistrations() {
+		if r.Location == loc {
+			return r
+		}
+	}
+	t.Fatalf("no registration for %s", loc.Path())
+	return nil
+}
+
+func TestDarwinMacosUserMissingWrittenViewHonorsWorkspaceLogout(t *testing.T) {
+	f := newViewFixture(t)
+	useDarwinHost(t)
+	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+	alpha := f.workspaceRuntime(t, "alpha", "macos-user")
+	beta := f.workspaceRuntime(t, "beta", "macos-user")
+	if !registrationFor(t, alpha).Written || !registrationFor(t, beta).Written {
+		t.Fatal("registration setup did not persist broker-written marks")
+	}
+
+	// Claude's Darwin /logout unlinks its credential view instead of retaining an empty JSON file.
+	if err := os.Remove(alpha.Path()); err != nil {
+		t.Fatal(err)
+	}
+	BackgroundRefreshTick(f.legacy, BackgroundRefreshLeadSeconds)
+	if !registrationFor(t, alpha).LoggedOut {
+		t.Fatal("background maintenance did not persist Darwin workspace logout")
+	}
+	if got := str(oauthOf(t, CanonicalPath), "refreshToken"); got != "RT_machine" {
+		t.Fatalf("workspace logout changed canonical machine login refresh token to %q", got)
+	}
+	assertView(t, beta, "AT_machine")
+
+	if _, err := ForceRefresh(0); err != nil {
+		t.Fatalf("ForceRefresh: %v", err)
+	}
+	if _, err := os.Lstat(alpha.Path()); !os.IsNotExist(err) {
+		t.Fatalf("forced refresh resurrected the logged-out view: %v", err)
+	}
+	assertView(t, beta, "AT_1")
+
+	res, err := RegisterView(alpha, "macos-user", "yolo-alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.WasLoggedOut || !res.Wrote {
+		t.Fatalf("explicit re-registration = %+v, want logout notice and restored view", res)
+	}
+	assertView(t, alpha, "AT_1")
+}
+
+func TestDarwinMacosUserImmediateForcedRefreshHonorsDeletedView(t *testing.T) {
+	f := newViewFixture(t)
+	useDarwinHost(t)
+	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+	alpha := f.workspaceRuntime(t, "alpha", "macos-user")
+	beta := f.workspaceRuntime(t, "beta", "macos-user")
+	if err := os.Remove(alpha.Path()); err != nil {
+		t.Fatal(err)
+	}
+
+	// The CLI forced-refresh production caller publishes views without first running background
+	// maintenance, so publication itself must classify the missing Darwin credential view.
+	if _, err := ForceRefresh(0); err != nil {
+		t.Fatalf("ForceRefresh: %v", err)
+	}
+	if !registrationFor(t, alpha).LoggedOut {
+		t.Fatal("ForceRefresh did not persist logout before publishing views")
+	}
+	if _, err := os.Lstat(alpha.Path()); !os.IsNotExist(err) {
+		t.Fatalf("ForceRefresh resurrected alpha's deleted view: %v", err)
+	}
+	assertView(t, beta, "AT_1")
+	if got := str(oauthOf(t, CanonicalPath), "refreshToken"); got != "RT_1" {
+		t.Fatalf("ForceRefresh changed the canonical machine login unexpectedly: %q", got)
+	}
+
+	// Later refreshes also skip the workspace; only a fresh launch can re-enroll it.
+	if _, err := ForceRefresh(0); err != nil {
+		t.Fatalf("second ForceRefresh: %v", err)
+	}
+	if _, err := os.Lstat(alpha.Path()); !os.IsNotExist(err) {
+		t.Fatalf("a later refresh resurrected alpha's signed-out view: %v", err)
+	}
+	assertView(t, beta, "AT_2")
+}
+
+func TestDarwinHostViewImmediateForcedRefreshHonorsDeletedView(t *testing.T) {
+	f := newViewFixture(t)
+	useDarwinHost(t)
+	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+	host := f.hostView(t, "claude")
+	alpha := f.workspace(t, "alpha")
+	if err := os.Remove(host.Path()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ForceRefresh(0); err != nil {
+		t.Fatalf("ForceRefresh: %v", err)
+	}
+	if !registrationFor(t, host).LoggedOut {
+		t.Fatal("ForceRefresh did not persist host-view logout before publishing views")
+	}
+	if _, err := os.Lstat(host.Path()); !os.IsNotExist(err) {
+		t.Fatalf("ForceRefresh resurrected the deleted host view: %v", err)
+	}
+	assertView(t, alpha, "AT_1")
+
+	if _, err := ForceRefresh(0); err != nil {
+		t.Fatalf("second ForceRefresh: %v", err)
+	}
+	if _, err := os.Lstat(host.Path()); !os.IsNotExist(err) {
+		t.Fatalf("a later refresh resurrected the host's signed-out view: %v", err)
+	}
+	assertView(t, alpha, "AT_2")
+}
+
+func TestNonDarwinHostViewMissingCredentialRecovers(t *testing.T) {
+	f := newViewFixture(t)
+	useNonDarwinHost(t)
+	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+	host := f.hostView(t, "claude")
+	if err := os.Remove(host.Path()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ForceRefresh(0); err != nil {
+		t.Fatalf("ForceRefresh: %v", err)
+	}
+	if registrationFor(t, host).LoggedOut {
+		t.Fatal("Linux host-view deletion was mistaken for workspace logout")
+	}
+	assertView(t, host, "AT_1")
+}
+
+func TestDarwinVendorRuntimeMissingViewsRemainRecoverable(t *testing.T) {
+	for _, runtime := range []string{"podman", "container"} {
+		t.Run(runtime, func(t *testing.T) {
+			f := newViewFixture(t)
+			useDarwinHost(t)
+			writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+			view := f.workspaceRuntime(t, runtime, runtime)
+			if err := os.Remove(view.Path()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ForceRefresh(0); err != nil {
+				t.Fatalf("ForceRefresh: %v", err)
+			}
+			if registrationFor(t, view).LoggedOut {
+				t.Fatalf("%s vendor view was treated as native Darwin logout", runtime)
+			}
+			assertView(t, view, "AT_1")
+		})
+	}
+}
+
+func TestDarwinMacosUserRetiredWorkspaceDropsRegistration(t *testing.T) {
+	f := newViewFixture(t)
+	useDarwinHost(t)
+	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+	alpha := f.workspaceRuntime(t, "alpha", "macos-user")
+	registrationPath := registrationFor(t, alpha).file
+	if err := os.RemoveAll(alpha.Workspace); err != nil {
+		t.Fatal(err)
+	}
+	BackgroundRefreshTick(f.legacy, BackgroundRefreshLeadSeconds)
+	if _, err := os.Stat(registrationPath); !os.IsNotExist(err) {
+		t.Fatalf("retired workspace registration was not dropped: %v", err)
+	}
+}
+
+func TestDarwinMacosUserUnsafeOrInvalidViewIsNotWorkspaceLogout(t *testing.T) {
+	for _, kind := range []string{"symlink", "read-error", "bad-json", "empty-file"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newViewFixture(t)
+			useDarwinHost(t)
+			writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+			alpha := f.workspaceRuntime(t, "alpha", "macos-user")
+			switch kind {
+			case "symlink":
+				outside := filepath.Join(f.home, "outside")
+				if err := os.WriteFile(outside, []byte(`{"sentinel":true}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(alpha.Path()); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, alpha.Path()); err != nil {
+					t.Fatal(err)
+				}
+			case "read-error":
+				if err := os.Remove(alpha.Path()); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(alpha.Path(), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "bad-json":
+				if err := os.WriteFile(alpha.Path(), []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "empty-file":
+				if err := os.WriteFile(alpha.Path(), []byte{}, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			BackgroundRefreshTick(f.legacy, BackgroundRefreshLeadSeconds)
+			if registrationFor(t, alpha).LoggedOut {
+				t.Fatalf("%s view was mistaken for a Darwin workspace logout", kind)
+			}
+			if kind == "symlink" {
+				if fi, err := os.Lstat(alpha.Path()); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+					t.Fatalf("unsafe view link was replaced: %v", err)
+				}
+			}
+			if kind == "bad-json" || kind == "empty-file" {
+				assertView(t, alpha, "AT_machine")
+			}
+		})
+	}
+}
+
+func TestMissingMacosUserViewRecoversOnNonDarwinHost(t *testing.T) {
+	f := newViewFixture(t)
+	useNonDarwinHost(t)
+	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
+	alpha := f.workspaceRuntime(t, "alpha", "macos-user")
+	if err := os.Remove(alpha.Path()); err != nil {
+		t.Fatal(err)
+	}
+	BackgroundRefreshTick(f.legacy, BackgroundRefreshLeadSeconds)
+	if registrationFor(t, alpha).LoggedOut {
+		t.Fatal("non-Darwin missing view was mistaken for workspace logout")
+	}
+	assertView(t, alpha, "AT_machine")
+}
+
 func TestALoggedOutViewStopsThatWorkspacesWritesUntilTheNextLaunch(t *testing.T) {
 	f := newViewFixture(t)
 	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
@@ -348,11 +603,15 @@ func TestALoggedOutViewStopsThatWorkspacesWritesUntilTheNextLaunch(t *testing.T)
 
 func TestAViewTheBrokerNeverWroteIsNotReadAsALogout(t *testing.T) {
 	f := newViewFixture(t)
-	alpha := f.workspace(t, "alpha") // a signed-out machine: nothing is written
-	if err := os.WriteFile(alpha.Path(), []byte(`{}`), 0o600); err != nil {
+	useDarwinHost(t)
+	alpha := f.workspaceRuntime(t, "alpha", "macos-user") // a signed-out machine: nothing is written
+	if err := os.Remove(alpha.Path()); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	BackgroundRefreshTick(f.legacy, BackgroundRefreshLeadSeconds)
+	if registrationFor(t, alpha).LoggedOut {
+		t.Fatal("missing never-written view was mistaken for workspace logout")
+	}
 	writeLogin(t, f.legacy, "AT_later", "RT_later", nowMS()+7*3600_000, nil)
 	BackgroundRefreshTick(f.legacy, BackgroundRefreshLeadSeconds)
 	assertView(t, alpha, "AT_later")
@@ -360,9 +619,10 @@ func TestAViewTheBrokerNeverWroteIsNotReadAsALogout(t *testing.T) {
 
 func TestSignOutClearsTheMachineAndEveryViewWithoutReadingItAsALogout(t *testing.T) {
 	f := newViewFixture(t)
+	useDarwinHost(t)
 	writeLogin(t, CanonicalPath, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
 	writeLogin(t, f.legacy, "AT_machine", "RT_machine", nowMS()+7*3600_000, nil)
-	alpha := f.workspace(t, "alpha")
+	alpha := f.workspaceRuntime(t, "alpha", "macos-user")
 
 	res, err := SignOut()
 	if err != nil {
