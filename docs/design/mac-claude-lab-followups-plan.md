@@ -54,6 +54,17 @@ Use the real broker fixture, register a native `macos-user` view, write a canoni
 
 Before each Go invocation capture source HEAD/tree/diff/hash, command, Go env, relevant ambient env and actual umask. Preserve normal HOME, cache paths, loader flags, NODE_OPTIONS and TMPDIR; no environment stripping, cache clearing, load management, arbitrary timeouts or weakened assertions. Store separate stdout/stderr and finite PRE/LIVE/terminal exit/signal/EOF evidence outside the tracked tree. Unit/race/scoped vet/staticcheck only; no full landing suite, interactive Claude/API/auth or native host run. Darwin compile is labeled compile-only. The lead checks artifacts and one fresh high-effort review; the parent runs combined landing qualification.
 
+## Residual baseline validation
+
+`TestStageFontCopyConcurrentLaunchesAgree` in [the native font-copy tests](../../internal/macosuser/fontcopy_test.go) has an observed pre-existing concurrency failure: some concurrent copy results have an empty path. Before temp adoption, the lead's complete macos-user source still matched published `9d040116b531b937d595148a42dcb27cee0c1153`. The direct race reproducer passed once, then the bounded twenty-run reproducer failed with exit 1 and no signal:
+
+```console
+$ go test -race -count=1 -run '^TestStageFontCopyConcurrentLaunchesAgree$' ./internal/macosuser
+$ go test -race -count=20 -run '^TestStageFontCopyConcurrentLaunchesAgree$' ./internal/macosuser
+```
+
+The temp writer's broader scoped race command also failed at this same macos-user test; it is not a packload failure. This is backlog outside the demonstrated Claude repairs. Keep the test and assertions unchanged, do not alter timeouts, environment, caches or load policy, and do not retry the unchanged twenty-run reproducer in this lane. Focused temp caller/race evidence remains required. The parent owns the combined landing gate and disclosure of this residual; no claim that all race checks are green is made.
+
 ## Focused native confirmation after parent publication
 
 1. Use the parent's published candidate and a disposable valid workspace under `/Users/Shared/yolo`, selected Claude only; do not repeat the full backend suite.
