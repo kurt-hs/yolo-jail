@@ -1,0 +1,44 @@
+# Permanent production-caller mutation controls
+
+The original mutation temporarily restored the unconditional production-caller blocks at both callsites; the permanent tests themselves were unchanged. The unchanged helper test passed, while AST pins for both fresh and attach production callers failed. Restoring committed production code made the same tests pass. This is mutation sensitivity of the production wiring, not a live end-to-end runtime result.
+
+## Unconditional production-caller blocks restored (RED)
+
+Source capture: `cli-output-error-red.log`, complete original output (15 lines).
+
+```text
+=== RUN   TestARuntimeThatNeverStartedLeavesNoPackTree
+--- PASS: TestARuntimeThatNeverStartedLeavesNoPackTree (0.02s)
+=== RUN   TestSessionRunOutputErrorNamesTheTerminalCauseAndNextStep
+--- PASS: TestSessionRunOutputErrorNamesTheTerminalCauseAndNextStep (0.00s)
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer
+    sessionoutputerror_test.go:75: runContainer must report runArmedSession errors through reportSessionRunError after the session call
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting
+    sessionoutputerror_test.go:75: attachExisting must report runArmedSession errors through reportSessionRunError after the session call
+--- FAIL: TestFreshAndAttachSessionErrorCallsitesArePinned (0.00s)
+    --- FAIL: TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer (0.00s)
+    --- FAIL: TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting (0.00s)
+FAIL
+FAIL	github.com/mschulkind-oss/yolo-jail/internal/cli/run	0.030s
+FAIL
+```
+
+## Restored production callers (GREEN)
+
+Source capture: `cli-output-error-green-after-red.log`, complete original output (12 lines).
+
+```text
+=== RUN   TestARuntimeThatNeverStartedLeavesNoPackTree
+--- PASS: TestARuntimeThatNeverStartedLeavesNoPackTree (0.02s)
+=== RUN   TestSessionRunOutputErrorNamesTheTerminalCauseAndNextStep
+--- PASS: TestSessionRunOutputErrorNamesTheTerminalCauseAndNextStep (0.00s)
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting
+--- PASS: TestFreshAndAttachSessionErrorCallsitesArePinned (0.00s)
+    --- PASS: TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer (0.00s)
+    --- PASS: TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting (0.00s)
+PASS
+ok  	github.com/mschulkind-oss/yolo-jail/internal/cli/run	0.031s
+```

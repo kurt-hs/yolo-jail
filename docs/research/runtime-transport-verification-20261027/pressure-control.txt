@@ -1,0 +1,78 @@
+# Pressure and cancellation controls
+
+Each fenced output block below is the complete original captured file, copied without changing tabs, spaces, line breaks, or output. The surrounding headings and provenance are added separately. These controls are distinct; none establishes a Kitty incident cause.
+
+## Original output-pressure regression (RED)
+
+Source capture: `output-pressure-baseline-red.txt`, full seven-line capture.
+
+```text
+=== RUN   TestOutputPressureDoesNotStopInputForwarding
+    ttyproxy_test.go:336: input did not reach the child while its output pipe was full; helper wait=<nil> stderr="" captured=131122 bytes
+--- FAIL: TestOutputPressureDoesNotStopInputForwarding (2.14s)
+FAIL
+FAIL	github.com/mschulkind-oss/yolo-jail/internal/ttyproxy	2.144s
+FAIL
+rc=1
+```
+
+## Permanent production package controls (GREEN)
+
+Source capture: `lead-focused8.log`, entire original 33-line focused run on the retained 63f candidate, including interleaved control tests and the exact terminal package summary. The large-paste record is `65536/65536` input and paste, `131148/131148` output.
+
+```text
+=== RUN   TestAHandleIsInertOnceTheRunIsOver
+--- PASS: TestAHandleIsInertOnceTheRunIsOver (0.00s)
+=== RUN   TestSuspendResumePreservesOutputQueueOrder
+=== RUN   TestSuspendResumePreservesOutputQueueOrder/foreground-resume
+=== RUN   TestSuspendResumePreservesOutputQueueOrder/background-child-exit
+=== RUN   TestSuspendResumePreservesOutputQueueOrder/queued-termination-after-stop
+--- PASS: TestSuspendResumePreservesOutputQueueOrder (6.07s)
+    --- PASS: TestSuspendResumePreservesOutputQueueOrder/foreground-resume (2.07s)
+    --- PASS: TestSuspendResumePreservesOutputQueueOrder/background-child-exit (2.03s)
+    --- PASS: TestSuspendResumePreservesOutputQueueOrder/queued-termination-after-stop (1.97s)
+=== RUN   TestOwnedChildExitPreemptsPendingSuspend
+--- PASS: TestOwnedChildExitPreemptsPendingSuspend (0.86s)
+=== RUN   TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop
+=== RUN   TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop/interrupt
+=== RUN   TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop/terminated
+--- PASS: TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop (1.80s)
+    --- PASS: TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop/interrupt (0.95s)
+    --- PASS: TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop/terminated (0.85s)
+=== RUN   TestHandleKillInSynchronousArm
+=== RUN   TestHandleKillInSynchronousArm/plain
+=== RUN   TestHandleKillInSynchronousArm/pty
+--- PASS: TestHandleKillInSynchronousArm (0.00s)
+    --- PASS: TestHandleKillInSynchronousArm/plain (0.00s)
+    --- PASS: TestHandleKillInSynchronousArm/pty (0.00s)
+=== RUN   TestProxySlaveFinalizersCannotCloseReusedCallerFD
+--- PASS: TestProxySlaveFinalizersCannotCloseReusedCallerFD (0.03s)
+=== RUN   TestPtySlaveDescriptorsHaveSingleFileOwners
+--- PASS: TestPtySlaveDescriptorsHaveSingleFileOwners (0.01s)
+=== RUN   TestLargePasteDeadlockPinsNonblockingMasterForwarding
+LargePaste flow: host input=65536/65536 paste-written=65536/65536 output-drained=131148/131148
+--- PASS: TestLargePasteDeadlockPinsNonblockingMasterForwarding (0.01s)
+PASS
+ok  	github.com/mschulkind-oss/yolo-jail/internal/ttyproxy	8.793s
+```
+
+## Compiled queued-cancel mutation control
+
+The first full captured output removes the production cancellation check; the second is the full restored-source output. These are original program outputs, not reconstructed expected text.
+
+RED source capture: `final-mutation-red.stdout.raw`.
+
+```text
+--- FAIL: TestSuspendResumePreservesOutputQueueOrder (2.07s)
+    --- FAIL: TestSuspendResumePreservesOutputQueueOrder/caller-cancel-published-during-resume (2.07s)
+        ttyproxy_test.go:1173: owned child consumed ordinary queued input after caller Handle.Terminate published cancellation; input="SDWR"
+FAIL
+FAIL	github.com/mschulkind-oss/yolo-jail/internal/ttyproxy	2.074s
+FAIL
+```
+
+Restored GREEN source capture: `committed-focused.stdout.raw`.
+
+```text
+ok  	github.com/mschulkind-oss/yolo-jail/internal/ttyproxy	12.106s
+```

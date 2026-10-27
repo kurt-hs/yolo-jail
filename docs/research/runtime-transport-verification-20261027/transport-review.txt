@@ -1,0 +1,51 @@
+> Original independent review body. Source provenance is recorded in [`README.md`](./README.md).
+> Redaction: private durable-host filesystem path literals were replaced; no review judgment or technical statement was edited.
+
+## Review
+
+- **Correct:** The frozen candidate is exactly `d8412df0ac90c8c3fcda0148a2eff0b52fecba6c`, tree `8c980162d2bcdf8f5957c3ff9ad9ae900dc6c40d`, on the supplied non-main branch. Physical cwd equals Git root; tracked worktree, index and untracked inventory are clean. The `a8001cfea→HEAD` delta contains only the two authorized files, **225 insertions / 9 deletions**. Main remains `12acfa691`; protected tag remains raw `337ab0df`, peeled `cd0c5f4c`.
+- **Correct:** `internal/ttyproxy/ttyproxy.go:1038–1044` closes the demonstrated synchronous callback window: it checks cancellation/exit publication after `StageResumed`, discards `pending`, and returns before forwarding. This is the exact four-line production hunk, not a general arbitration redesign.
+- **Finding: P2 — publication-file read can falsely reject a valid callback, `internal/ttyproxy/ttyproxy_test.go:1146–1151`.** `waitForFile` checks existence only (`2034–2037`), while the callback uses `os.WriteFile` (`362`), whose implementation creates the file before writing its contents (`/mise/installs/go/1.26.7/src/os/file.go:933–937`). A parent scheduled between those operations can read an empty file and fail despite successful `Terminate`. **Smallest fix:** move the content read/assertion after the existing `.proxy` `R` wait; that receipt is written only after the publication-file write returns (`386`). This is source-proved scheduling exposure, not an observed failure in this review.
+- **Finding: P2 — callback-return diagnostic overstates its observation, `internal/ttyproxy/ttyproxy_test.go:1154`.** The awaited `R` is emitted *inside* the callback (`386`), before its return. **Smallest fix:** say “StageResumed marker was not observed,” rather than claiming the callback did not return.
+- **Finding: P2 — WaitDelay comment inaccurately describes EOF, `internal/ttyproxy/ttyproxy_test.go:644`.** Go forcibly closes its parent-side copied pipes and returns `ErrWaitDelay`; it does not establish writer closure or actual pipe EOF (`os/exec/exec.go:997–1002`). **Smallest fix:** replace “forces EOF” with “forcibly closes the copied pipes.” The following statement about unsuccessful child `ExitError` taking precedence is correct (`930–932`, `948–952`).
+- **Blockers:** No P0/P1 introduced by this bounded delta was established. The P2 findings do not invalidate the demonstrated production counterexample or its repair.
+- **Merge verdict: OK with notes — bounded new-delta acceptance only.** This is **not** whole-candidate QA, landing authorization, or closure of the historical failures.
+
+## Acceptance evidence
+
+All artifact references below are under `[REDACTED: private durable-host evidence root]/`.
+
+### Cleanup and guard
+
+- `ttyproxy_test.go:647` sets fixture-only `WaitDelay=9s` under unchanged `childDeadline=10s`. The sole helper `Wait` starts at `652`; cleanup is registered at `662`, before the first fallible owned-stderr probe at `686`. Error paths retain pipe closure, signal/drain cleanup, kill fallback and joining of that waiter.
+- Independently read `new-diagnosis/fixture-red.stdout.raw` and `.fixture-green` counterparts: the actual held-stderr regression fails by assertion at **10.028s**, then passes at **9.027s**. This establishes bounded fixture waiting—not production EOF or historical-holder identification.
+- The source guard reads the actual fixture and retains the **earliest relevant** owned-stderr probe (`2518–2564`), ignoring unrelated control-file stats. `guard-repair/corrected-reorder-*` and `delete-cleanup-valid-*` contain compiled assertion failures at **0.004s**; `reorder-green.*` passes after restoration. Malformed negatives are not counted.
+- The helper fixture is byte-identical across `719→059→d841`. The original large-paste test, its child helper, and `TestOutputPressureTarget` are byte-identical to `a800`; the existing queued-termination `R` assertions remain present. CLI/named-stream paths outside this delta are unchanged; `internal/ttyproxy/stdout_test.go` equals `12acfa`.
+
+### Callback causality and controls
+
+- The real `Observer.Arm` supplies the handle; `StageResumed` calls actual `Handle.Terminate`, then records its result (`315–386`). The owned target writes receipt `R` only after reading queued `q` (`1954–1964`). Thus the failed receipt is child delivery, not merely a stage trace.
+- `queued-cancel-diagnosis/worker/original-red-native-receipt.json` preserves native call/result timestamps and explicit exit1 for the **2.087s** original counterexample.
+- The corrected permanent fixture’s `pre-fix-targeted.*` fails at **2.071s**, and removal of only the approved production hunk produces the same `SDWR` child-receipt failure at **2.074s** in `final-mutation-red.*`. Restored production SHA matches both saved hashes and the current source.
+- Parent-controlled kill and SIGTERM cleanup replace the earlier timer. `Handle.Kill` waits for owned-child reaping; the parent has one helper waiter and checks signal exit and cooked terminal state. The existing positive foreground-resume control remains intact.
+
+### Independent checks executed here
+
+Using `env -u TMPDIR -u NODE_OPTIONS`, without source mutations:
+
+- Owned-stderr regression plus both cleanup guards: **PASS, 9.032s**, all three named tests visibly ran. The held-pipe check would fail if `Wait` missed the original assertion window; the guard rejects invalid cleanup/probe ordering.
+- Exact foreground-resume and callback-cancel subtests: **PASS, 14.177s** total; respectively **2.08s / 12.09s**, both visibly ran. The positive control checks normal delivery/output order; the cancellation case fails on actual child receipt of queued input.
+- Committed-delta whitespace check: exit0. Frozen HEAD and clean state rechecked afterward.
+
+I also inspected—not reran—the exact committed-candidate command/exit/raw artifacts: focused **12.106s**, package **53.184s**, race **62.055s**, positive **2.095s**, CLI typed-cause/caller **0.010s**, all exit0. No baseline-tree test is counted as candidate evidence.
+
+## Evidence integrity and residuals
+
+- **Preserved reporting breach:** `guard-repair/worker-report.md` misattributes quality results. Raw `final-ttyproxy-package.*` proves **PASS40.784/exit0**; raw `final-ttyproxy-race.*` proves **FAIL49.481/exit1**, queued-termination trace `?ZAR?`. Its “race not run” statement is false; CLI evidence at `059` is absent. Keep the report immutable and carry this correction in the lead’s final accounting.
+- Original120 remains a real exit1 timeout: copied-stderr `Read`, `Cmd.Wait.awaitGoroutines`, and cleanup receiving `done`. Its preserved copy hash matches. Source ordering through `.boundary` rules out plain fallback, but the historical holder/reused-FD possibility and initial cancellation cause remain unknown. Later greens and the dead-shim deletion do not explain them.
+- `followthrough/noninjected-owned-fd.json` verifies parent readerFD9/helperfd2 pipe identity `452199561`, separate target PTY, and boundary/input observations; it misses later cancellation/EOF.
+- Injected `owned-fd-red2` verifies held pipe `451915400` and exact `pidfd_getfd` queue4095. Its SIGQUIT/exit2 is diagnostic injection, **not** a natural historical failure or Go assertion RED.
+- The older kernel-pending `?ZAR?` failure is **not causally closed** by this callback fix or the latest race green. Arbitrary publication after the new check/before a write remains outside this closure; no mutex-across-stop or kernel-acknowledgment guarantee was added.
+- Original holder/EOF attribution, Kitty/native macOS, rootless and reachability remain unqualified. Full CI, integration, nested jail, census, `done`, deployment and landing were not run. The older lead diagnosis is an in-progress historical snapshot, not current frozen-state evidence.
+
+Repository/index/source/branch/tag state was left unchanged; no fixes were applied.
