@@ -27,9 +27,17 @@ type RenameDescriptor struct {
 	Replacements []string
 	Scope        SchemaScope
 	Transform    RenameTransform
+	TOMLRefusal  string
 }
 
 var configRenames = []RenameDescriptor{
+	{OldPath: "agents", Replacements: []string{"packs"}, Scope: SchemaScopeUserOnly, Transform: RenameValueRewrite, TOMLRefusal: "Agent selection is now expressed by choosing the packs that install the programs you want; the old agent list is not accepted as an alias."},
+	{OldPath: "repo_path", Replacements: nil, Scope: SchemaScopeBoth, Transform: RenameDrop, TOMLRefusal: "This setting was retired; yolo finds its repository from the flake bundle. Remove the key."},
+	{OldPath: "agent_profiles", Replacements: []string{"active_provider"}, Scope: SchemaScopeUserOnly, Transform: RenameUnrepresentable, TOMLRefusal: "Profile selection now names a provider or provider/variant under active_provider. Choose the corresponding new provider names; the old profile mapping is not converted automatically."},
+	{OldPath: "use_profiles", Replacements: []string{"active_provider"}, Scope: SchemaScopeUserOnly, Transform: RenameUnrepresentable, TOMLRefusal: "Profile selection now names a provider or provider/variant under active_provider. Choose the corresponding new provider names; the old profile mapping is not converted automatically."},
+	{OldPath: "macos_log", Replacements: []string{"packs"}, Scope: SchemaScopeBoth, Transform: RenameUnrepresentable, TOMLRefusal: "The macOS log is delivered by the macos-log pack. Select that pack in user-scope packs if it is needed; the old mode cannot be treated as a TOML alias."},
+	{OldPath: "mcp_presets", Replacements: []string{"packs", "mcp_servers.*"}, Scope: SchemaScopeFieldSensitive, Transform: RenameUnrepresentable, TOMLRefusal: "MCP server selection is no longer a built-in preset list: select chrome-devtools through packs, or declare a server under mcp_servers. Remove the retired preset key."},
+	{OldPath: "host_processes", Replacements: []string{"the host-processes pack"}, Scope: SchemaScopeUserOnly, Transform: RenameDrop, TOMLRefusal: "Host process access is now supplied by the host-processes pack. Select that pack in user-scope packs; the old inline key is not a TOML alias."},
 	{OldPath: "packages", Replacements: []string{"install.nix"}, Scope: SchemaScopeBoth, Transform: RenameMove},
 	{OldPath: "mise_tools", Replacements: []string{"install.mise"}, Scope: SchemaScopeBoth, Transform: RenameMove},
 	{OldPath: "gpu", Replacements: []string{"machine.gpu"}, Scope: SchemaScopeBoth, Transform: RenameMove},
@@ -72,8 +80,7 @@ var configRenames = []RenameDescriptor{
 
 	{OldPath: "loopholes.*.enabled", Replacements: []string{"off"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
 	{OldPath: "loopholes.*.settings.*", Replacements: []string{"allow.*.*"}, Scope: SchemaScopeFieldSensitive, Transform: RenameValueRewrite},
-	{OldPath: "host_processes", Replacements: []string{"the host-processes pack"}, Scope: SchemaScopeUserOnly, Transform: RenameDrop},
-	{OldPath: "journal", Replacements: []string{"the journal pack"}, Scope: SchemaScopeUserOnly, Transform: RenameDrop},
+	{OldPath: "journal", Replacements: []string{"packs"}, Scope: SchemaScopeUserOnly, Transform: RenameUnrepresentable, TOMLRefusal: "Journal access is now supplied by the journal pack. Select that pack in user-scope packs; the old mode is not a TOML alias."},
 }
 
 // RenameDescriptors returns a detached copy of the migration metadata in declaration order.

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -75,7 +76,7 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 		warn(msg)
 		return jsonx.NewOrderedMap(), nil, nil, nil
 	}
-	f := &srcFile{path: path, data: data, contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
+	f := &srcFile{path: path, data: data, format: configdoc.JSONC, contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
 	if !record {
 		return m, f, nil, nil
 	}
@@ -229,6 +230,14 @@ func LoadJSONCWithIncludes(path, label string, strict bool, warn Warn, seen map[
 // in it either way. at is loadJSONCFile's, for this file; each include is read beneath the same
 // root, naming the entry that reached it.
 func loadWithIncludes(path, label string, strict bool, warn Warn, seen map[string]struct{}, record bool, at readAt) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadWithIncludesMode(path, label, strict, warn, seen, record, false, SchemaScopeBoth, at)
+}
+
+func loadWithIncludesScope(path, label string, strict bool, warn Warn, seen map[string]struct{}, record bool, scope SchemaScope, at readAt) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadWithIncludesMode(path, label, strict, warn, seen, record, true, scope, at)
+}
+
+func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[string]struct{}, record bool, readable bool, scope SchemaScope, at readAt) (*jsonx.OrderedMap, *srcNode, error) {
 	if warn == nil {
 		warn = defaultWarn
 	}
@@ -241,7 +250,15 @@ func loadWithIncludes(path, label string, strict bool, warn Warn, seen map[strin
 	}
 	seen[resolved] = struct{}{}
 
-	raw, file, node, err := loadJSONCFile(path, label, strict, warn, record, at)
+	var raw *jsonx.OrderedMap
+	var file *srcFile
+	var node *srcNode
+	var err error
+	if readable {
+		raw, file, node, err = loadConfigFile(path, label, strict, warn, record, scope, at)
+	} else {
+		raw, file, node, err = loadJSONCFile(path, label, strict, warn, record, at)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -253,7 +270,11 @@ func loadWithIncludes(path, label string, strict bool, warn Warn, seen map[strin
 	// the include walk merges anyone else's in. Per-file is the point (see
 	// AnchorEnvSources): an include's entries anchor at the include's dir when the
 	// recursion loads it, so provenance survives the concat that is about to happen.
-	AnchorEnvSources(raw, filepath.Dir(path))
+	if readable && file != nil && file.format == configdoc.TOML {
+		anchorReadableEnvSources(raw, filepath.Dir(path))
+	} else {
+		AnchorEnvSources(raw, filepath.Dir(path))
+	}
 
 	includesVal, hasIncludes := raw.Get("include_if_found")
 	raw.Delete("include_if_found") // consumed; not part of the returned config
@@ -303,24 +324,30 @@ func loadWithIncludes(path, label string, strict bool, warn Warn, seen map[strin
 		if !pathExists(incPath) {
 			continue
 		}
-		included, incNode, err := loadWithIncludes(incPath, incPath, strict, warn, seen, record,
-			readAt{ws: at.ws, via: entryLabel + " in " + label})
+		var included *jsonx.OrderedMap
+		var incNode *srcNode
+		if readable {
+			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, true, scope,
+				readAt{ws: at.ws, via: entryLabel + " in " + label})
+		} else {
+			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, false, scope,
+				readAt{ws: at.ws, via: entryLabel + " in " + label})
+		}
 		if err != nil {
 			return nil, nil, err
 		}
-		result, node = mergeConfig(result, included, node, incNode)
+		if readable && strings.EqualFold(filepath.Ext(incPath), ".toml") {
+			result, node = mergeReadableConfig(result, included, node, incNode, nil)
+		} else {
+			result, node = mergeConfig(result, included, node, incNode)
+		}
 	}
 	return result, node, nil
 }
 
-// ResolveWorkspaceConfigPath is where LoadWorkspaceConfig reads the workspace config file
-// baseName (WorkspaceConfigName or WorkspaceLocalConfigName) from, and the name it reads it
-// under: the `.jsonc` name when that file exists, else its `.json` fallback when that one does,
-// else the `.jsonc` name, which is the file to create.
-//
-// It is the loader's own answer, so every other reader of a workspace config file asks it rather
-// than joining a name of its own: a reader that joined the `.jsonc` name passed over a workspace
-// configured in `yolo-jail.json`, whose keys the launch honored all the same.
+// ResolveWorkspaceConfigPath remains the legacy filename projection for callers that still
+// report or write the JSON config during the compatibility window. The B2 loader uses its
+// private format-aware resolver; runtime consumers move to the new path contract with H.
 func ResolveWorkspaceConfigPath(workspace, baseName string) (path, name string) {
 	for _, name := range workspaceConfigCandidates(baseName) {
 		if p := filepath.Join(workspace, name); pathExists(p) {
@@ -330,8 +357,8 @@ func ResolveWorkspaceConfigPath(workspace, baseName string) (path, name string) 
 	return filepath.Join(workspace, baseName), baseName
 }
 
-// WorkspaceConfigFileNames is every file name LoadWorkspaceConfig can read, in its order: each
-// base name, then its `.json` fallback.
+// WorkspaceConfigFileNames is the legacy filename projection retained for current runtime
+// consumers until their format-aware activation is integrated.
 func WorkspaceConfigFileNames() []string {
 	var names []string
 	for _, base := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
@@ -340,33 +367,95 @@ func WorkspaceConfigFileNames() []string {
 	return names
 }
 
-// workspaceConfigCandidates is the names baseName is read under, in the order the loader tries
-// them: the `.jsonc` name, then its `.json` fallback.
 func workspaceConfigCandidates(baseName string) []string {
 	return []string{baseName, strings.TrimSuffix(baseName, "c")}
 }
 
-// LoadWorkspaceConfig loads yolo-jail.jsonc (or yolo-jail.json) plus
-// yolo-jail.local.jsonc (or yolo-jail.local.json) (local wins), sharing the seen
-// set so a config that also includes the local file doesn't merge it twice.
+func readableWorkspaceConfigCandidates(baseName string) []string {
+	switch baseName {
+	case WorkspaceConfigName:
+		return []string{WorkspaceTOMLConfigName, WorkspaceConfigName, strings.TrimSuffix(WorkspaceConfigName, "c")}
+	case WorkspaceLocalConfigName:
+		return []string{WorkspaceLocalTOMLConfigName, WorkspaceLocalConfigName, strings.TrimSuffix(WorkspaceLocalConfigName, "c")}
+	default:
+		return []string{baseName, strings.TrimSuffix(baseName, "c")}
+	}
+}
+
+func resolveWorkspaceConfigPath(workspace, baseName string) (path, name string, err error) {
+	candidates := readableWorkspaceConfigCandidates(baseName)
+	var found []string
+	for _, candidate := range candidates {
+		if pathExists(filepath.Join(workspace, candidate)) {
+			found = append(found, candidate)
+		}
+	}
+	if len(found) > 1 && found[0] == candidates[0] {
+		return "", "", configErr("both %s and %s exist; config formats are never merged. Keep one file and run `yolo config migrate` to convert the legacy file", found[0], found[1])
+	}
+	if len(found) > 0 {
+		return filepath.Join(workspace, found[0]), found[0], nil
+	}
+	return filepath.Join(workspace, candidates[0]), candidates[0], nil
+}
+
+// LoadWorkspaceConfig is the runtime-facing legacy JSONC/JSON reader. Readable TOML remains
+// available through LoadReadableWorkspaceConfig until the H activation wave switches consumers.
 func LoadWorkspaceConfig(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
 	m, _, err := loadWorkspaceConfig(workspace, strict, warn, false)
 	return m, err
 }
 
-// LoadWorkspaceConfigWithSources is LoadWorkspaceConfig plus where each value was written
-// (sources.go).
+// LoadWorkspaceConfigWithSources is LoadWorkspaceConfig plus legacy source locations.
 func LoadWorkspaceConfigWithSources(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
 	m, n, err := loadWorkspaceConfig(workspace, strict, warn, true)
 	return m, sourcesOf(n), err
 }
 
-// loadWorkspaceConfig is LoadWorkspaceConfig, with the provenance beside it when record is set.
-//
-// A load that records reads every file beneath an os.Root on the workspace (wsRoot), so the
-// record knows which values came from inside it: the `brokered` key is honored from those files
-// alone (WW-D17, docs/design/workspace-widening.md §3.1). A plain load reads as it always has,
-// since nothing it returns says where a value came from.
+// loadReadableWorkspaceConfigOver applies TOML workspace layers in file precedence order to an
+// existing readable config, so an empty-list reset survives into the next layer.
+func loadReadableWorkspaceConfigOver(workspace string, strict bool, warn Warn, record bool, base *jsonx.OrderedMap, baseNode *srcNode) (*jsonx.OrderedMap, *srcNode, error) {
+	if workspace == "" {
+		workspace = cwd()
+	}
+	var at readAt
+	if record {
+		at.ws = openWorkspaceRoot(workspace)
+		defer at.ws.close()
+	}
+	seen := map[string]struct{}{}
+	merged := base
+	if merged == nil {
+		merged = jsonx.NewOrderedMap()
+	}
+	mergedNode := baseNode
+	for _, name := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
+		path, label, err := resolveWorkspaceConfigPath(workspace, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		layer, layerNode, err := loadWithIncludesScope(path, label, strict, warn, seen, record, SchemaScopeWorkspaceOnly, at)
+		if err != nil {
+			return nil, nil, err
+		}
+		merged, mergedNode = mergeReadableConfig(merged, layer, mergedNode, layerNode, nil)
+	}
+	return merged, mergedNode, nil
+}
+
+// LoadReadableWorkspaceConfig reads one format-2 TOML workspace graph without activating it for
+// runtime consumers. H switches those consumers only after their compatibility projections land.
+func LoadReadableWorkspaceConfig(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
+	m, _, err := loadReadableWorkspaceConfig(workspace, strict, warn, false)
+	return m, err
+}
+
+// LoadReadableWorkspaceConfigWithSources is LoadReadableWorkspaceConfig plus TOML/JSONC origins.
+func LoadReadableWorkspaceConfigWithSources(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
+	m, n, err := loadReadableWorkspaceConfig(workspace, strict, warn, true)
+	return m, sourcesOf(n), err
+}
+
 func loadWorkspaceConfig(workspace string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
 	if workspace == "" {
 		workspace = cwd()
@@ -389,6 +478,114 @@ func loadWorkspaceConfig(workspace string, strict bool, warn Warn, record bool) 
 	}
 	m, n := mergeConfig(wsCfg, localCfg, wsNode, localNode)
 	return m, n, nil
+}
+
+// loadReadableWorkspaceConfig is the format-aware B2 library reader.
+func loadReadableWorkspaceConfig(workspace string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	if workspace == "" {
+		workspace = cwd()
+	}
+	var at readAt
+	if record {
+		at.ws = openWorkspaceRoot(workspace)
+		defer at.ws.close()
+	}
+	seen := map[string]struct{}{}
+	wsPath, wsLabel, err := resolveWorkspaceConfigPath(workspace, WorkspaceConfigName)
+	if err != nil {
+		return nil, nil, err
+	}
+	wsCfg, wsNode, err := loadWithIncludesScope(wsPath, wsLabel, strict, warn, seen, record, SchemaScopeWorkspaceOnly, at)
+	if err != nil {
+		return nil, nil, err
+	}
+	localPath, localLabel, err := resolveWorkspaceConfigPath(workspace, WorkspaceLocalConfigName)
+	if err != nil {
+		return nil, nil, err
+	}
+	localCfg, localNode, err := loadWithIncludesScope(localPath, localLabel, strict, warn, seen, record, SchemaScopeWorkspaceOnly, at)
+	if err != nil {
+		return nil, nil, err
+	}
+	var m *jsonx.OrderedMap
+	var n *srcNode
+	if strings.EqualFold(filepath.Ext(localPath), ".toml") {
+		m, n = mergeReadableConfig(wsCfg, localCfg, wsNode, localNode, nil)
+	} else {
+		m, n = mergeConfig(wsCfg, localCfg, wsNode, localNode)
+	}
+	return m, n, nil
+}
+
+// LoadReadableConfig composes readable user/workspace layers without changing LoadConfig's
+// runtime-facing legacy behavior.
+func LoadReadableConfig(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
+	m, _, err := composeReadableConfig(workspace, strict, warn, false, true)
+	return m, err
+}
+
+// LoadReadableConfigWithSources adds origins for every readable and legacy layer in the result.
+func LoadReadableConfigWithSources(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
+	m, n, err := composeReadableConfig(workspace, strict, warn, true, true)
+	return m, sourcesOf(n), err
+}
+
+// LoadReadableConfigWithoutWorkspaceFile is LoadReadableConfig without per-workspace host overrides.
+func LoadReadableConfigWithoutWorkspaceFile(workspace string, strict bool, warn Warn) (*jsonx.OrderedMap, error) {
+	m, _, err := composeReadableConfig(workspace, strict, warn, false, false)
+	return m, err
+}
+
+func composeReadableConfig(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool) (*jsonx.OrderedMap, *srcNode, error) {
+	userCfg, userNode, err := loadReadableUserScope(paths.UserConfigPath(), strict, warn, record)
+	if err != nil {
+		return nil, nil, err
+	}
+	wsCfg, wsNode, err := loadReadableWorkspaceConfig(workspace, strict, warn, record)
+	if err != nil {
+		return nil, nil, err
+	}
+	ws := workspace
+	if ws == "" {
+		ws = cwd()
+	}
+	workspaceHasTOML := false
+	workspaceLayersAreTOML := true
+	for _, base := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
+		path, _, resolveErr := resolveWorkspaceConfigPath(ws, base)
+		if resolveErr != nil {
+			return nil, nil, resolveErr
+		}
+		if pathExists(path) {
+			if strings.EqualFold(filepath.Ext(path), ".toml") {
+				workspaceHasTOML = true
+			} else {
+				workspaceLayersAreTOML = false
+			}
+		}
+	}
+	if workspaceHasTOML && workspaceLayersAreTOML {
+		merged, mergedNode, err := loadReadableWorkspaceConfigOver(ws, strict, warn, record, userCfg, userNode)
+		if err != nil {
+			return nil, nil, err
+		}
+		if withWorkspaceFile {
+			merged, mergedNode = applyWorkspaceFile(merged, mergedNode, workspace, record)
+		}
+		return merged, mergedNode, nil
+	}
+	mergeableAsReadable := workspaceHasTOML
+	var merged *jsonx.OrderedMap
+	var mergedNode *srcNode
+	if mergeableAsReadable {
+		merged, mergedNode = mergeReadableConfig(userCfg, wsCfg, userNode, wsNode, nil)
+	} else {
+		merged, mergedNode = mergeConfig(userCfg, wsCfg, userNode, wsNode)
+	}
+	if withWorkspaceFile {
+		merged, mergedNode = applyWorkspaceFile(merged, mergedNode, workspace, record)
+	}
+	return merged, mergedNode, nil
 }
 
 // LoadConfig merges the user-level config under the workspace config, and the workspace's
