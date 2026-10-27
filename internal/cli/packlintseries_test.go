@@ -10,11 +10,13 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
@@ -174,6 +176,12 @@ func TestPackLintRefusesAnUnknownFlag(t *testing.T) {
 // lintOnlineHome is newPatchedFixture with a private TMPDIR, so a test can see what lint leaves.
 func lintOnlineHome(t *testing.T) (*patchedFixture, string) {
 	t.Helper()
+	// Prime the process-lifetime embedded pack lease before redirecting TMPDIR. An external
+	// test binary keeps this shared tree under the normal temp dir; if the fixture changes
+	// TMPDIR first, the first Embedded call puts that immutable lease in the fixture's dir.
+	if packs := packload.Embedded(); len(packs) == 0 {
+		t.Fatalf("Embedded() is empty: %v", packload.EmbeddedProblems())
+	}
 	f := newPatchedFixture(t, "")
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
@@ -189,6 +197,71 @@ func mustBeEmpty(t *testing.T, dir string) {
 	}
 	for _, e := range entries {
 		t.Errorf("lint left %s behind in %s", e.Name(), dir)
+	}
+}
+
+// A go test process uses a cache beside its binary, which masks a first Embedded call after the
+// lint fixture redirects TMPDIR. Copy the actual test binary outside cmd/go's work tree and run
+// only the real upstream-lint test in a fresh process so the fixture's cleanup check sees that call.
+func TestPackLintOnlineChecksTheUpstreamInAScratchMirrorFirstCall(t *testing.T) {
+	const childEnv = "YOLO_TEST_PACKLINT_EXTERNAL_FIRSTCALL"
+	if os.Getenv(childEnv) == "1" {
+		TestPackLintOnlineChecksTheUpstreamInAScratchMirror(t)
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(dir, "packlint-first-call.test")
+	copy, err := os.OpenFile(copyPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(copy, source); err != nil {
+		copy.Close()
+		t.Fatal(err)
+	}
+	if err := copy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(copyPath, info.Mode().Perm()); err != nil {
+		t.Fatal(err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, copyPath, "-test.run=^TestPackLintOnlineChecksTheUpstreamInAScratchMirrorFirstCall$",
+		"-test.count=1", "-test.timeout=50s")
+	cmd.Dir = cwd
+	cmd.Env = make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, childEnv+"=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, childEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("fresh external test binary failed (%v):\n%s", err, out)
 	}
 }
 
