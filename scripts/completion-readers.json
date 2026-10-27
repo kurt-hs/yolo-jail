@@ -193,6 +193,7 @@
 "internal/catrust/*",
 "internal/cgd/*",
 "internal/changetiming/*",
+"internal/claudesecurity/*",
 "internal/claudeview/*",
 "internal/cli/*.go",
 "internal/cli/check/*",
@@ -338,6 +339,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -523,6 +525,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/check/*.go",
 "internal/cli/run/*.go",
@@ -668,6 +671,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/check",
 "internal/cli/run/**",
@@ -1111,6 +1115,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -1256,6 +1261,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli",
 "internal/cli/check",
@@ -1669,6 +1675,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -1706,6 +1713,7 @@
 "internal/cli/run/claudecredentialview.go",
 "internal/cli/run/claudelogincatchup.go",
 "internal/cli/run/claudesecurestorage.go",
+"internal/cli/run/claudesecurity.go",
 "internal/cli/run/command.go",
 "internal/cli/run/console.go",
 "internal/cli/run/contracttags.go",
@@ -2025,6 +2033,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -2299,6 +2308,15 @@
 "cmd/yolo-serial/main.go"
 ],
 "listed": []
+},
+{
+"read": [
+"packs/claude/pack.json"
+],
+"listed": [
+".",
+"internal"
+]
 },
 {
 "read": [
@@ -2631,6 +2649,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -2778,6 +2797,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -2928,6 +2948,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -3074,6 +3095,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -3380,6 +3402,7 @@
 "internal/catrust/*",
 "internal/cgd/*",
 "internal/changetiming/*",
+"internal/claudesecurity/*",
 "internal/claudeview/*",
 "internal/cli/*.go",
 "internal/cli/check/*",
@@ -3615,6 +3638,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -3762,6 +3786,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -3906,6 +3931,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -4054,6 +4080,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -4199,6 +4226,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -4347,6 +4375,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -4492,6 +4521,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -4724,6 +4754,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -4882,6 +4913,7 @@
 "internal/catrust/*.go",
 "internal/cgd/*.go",
 "internal/changetiming/changetiming.go",
+"internal/claudesecurity/claudesecurity.go",
 "internal/claudeview/claudeview.go",
 "internal/cli/*.go",
 "internal/cli/check/*.go",
@@ -5027,6 +5059,7 @@
 "internal/catrust",
 "internal/cgd",
 "internal/changetiming",
+"internal/claudesecurity",
 "internal/claudeview",
 "internal/cli/**",
 "internal/config",
@@ -5280,6 +5313,7 @@
 "internal/cgd/logcap_test.go",
 "internal/cgd/socket_test.go",
 "internal/changetiming/changetiming_test.go",
+"internal/claudesecurity/claudesecurity_test.go",
 "internal/claudeview/claudeview_test.go",
 "internal/claudeview/nativecoordination_test.go",
 "internal/claudeview/sharedfile_test.go",
@@ -6956,6 +6990,7 @@
 "TestAUserFontconfigFileWins": 29,
 "TestAccountModeHasNoSessionTmpdirOrServicesGrant": 29,
 "TestAccountModePlanIsUnchanged": 29,
+"TestAccountRunPlanDoesNotInventUserTempValidationRoots": 71,
 "TestAnAccountModePlanCarryingACacheAliasIsRefused": 29,
 "TestAnEmptyContextDirDoesNotClaimAComposedTree": 29,
 "TestAnEnvGatedServerSurvivesTheLaunchToBootstrapCrossing": 29,
@@ -6970,6 +7005,8 @@
 "TestBuildRunPlanLocksASymlinkedConfigsTarget": 29,
 "TestBuildRunPlanLocksASymlinkedConfigsTargetOutsideTheWorkspace": 29,
 "TestBuildRunPlanLocksTheWorkspaceConfigWithWorkspaceReadonly": 29,
+"TestBuildRunPlanMapsSelectedProgramTempEnvToSandboxTMPDIR": 71,
+"TestBuildRunPlanMapsTempEnvOnlyFromSelectedProgramPack": 29,
 "TestBuildRunPlanNamesTheWorkspaceSidecar": 29,
 "TestBuildRunPlanProtectsNothingWhenNothingIsDelivered": 29,
 "TestBuildRunPlanPutsTheHostNixClientOnEverySandboxPath": 29,
@@ -7040,6 +7077,7 @@
 "TestProvisionArgvIsConfinedUnderThisSessionsProfile": 29,
 "TestProvisionArgvRunsItsScriptInTheWorkspace": 29,
 "TestRunPlanCarriesBothHalvesOfHostFiles": 29,
+"TestRunPlanCarriesOnlyResolvedTempValidationContextToNativeLaunchers": 71,
 "TestRunPlanDoesNotGrantASocketVariable": 29,
 "TestRunPlanEmitsOneSearchAceForOneDirectory": 29,
 "TestRunPlanGrantsAndCarriesOpenAIAuthEndpoint": 29,
@@ -7104,26 +7142,26 @@
 "TestTwoLaunchPackTreesHaveDifferentGuestRoots": 29
 },
 "internal/packdecl": {
-"TestDecodeForUseMatchesDecodeWhenNothingIsSkipped": 74,
-"TestEveryShippedAndExampleInstallHintNamesItsSource": 72,
-"TestEveryShippedAndExamplePackHasNoInstallHintProblem": 72,
-"TestLlamacppDeclaresTheAttributionHeaderAsAProviderOption": 73,
-"TestLlamacppDeclaresTheOptionsAProfileMayTune": 73,
-"TestLlamacppNamesNoCredentialVariable": 73,
-"TestLlamacppShipsOneProviderAndTheProfileOverIt": 73,
-"TestShippedManifestsSurviveTheBriefingDefaultsRefusals": 71
+"TestDecodeForUseMatchesDecodeWhenNothingIsSkipped": 75,
+"TestEveryShippedAndExampleInstallHintNamesItsSource": 73,
+"TestEveryShippedAndExamplePackHasNoInstallHintProblem": 73,
+"TestLlamacppDeclaresTheAttributionHeaderAsAProviderOption": 74,
+"TestLlamacppDeclaresTheOptionsAProfileMayTune": 74,
+"TestLlamacppNamesNoCredentialVariable": 74,
+"TestLlamacppShipsOneProviderAndTheProfileOverIt": 74,
+"TestShippedManifestsSurviveTheBriefingDefaultsRefusals": 72
 },
 "internal/packload": {
-"TestAPackShippedJailBinaryReachesTheContainerArgv": 80,
-"TestEmbedMatchesTree": 76,
-"TestEmbeddedExecutablesMatchTheTree": 75,
-"TestNoFetchedPackHostAccessGateExists": 78,
-"TestReleaseEmbeddedForExitStopsReacquisitionFromExternalBinary": 77,
-"TestTheDisclosureThatReplacedTheGateIsStillWired": 79,
-"TestTheSubsetAcceptsAJailOnlyLoophole": 80
+"TestAPackShippedJailBinaryReachesTheContainerArgv": 81,
+"TestEmbedMatchesTree": 77,
+"TestEmbeddedExecutablesMatchTheTree": 76,
+"TestNoFetchedPackHostAccessGateExists": 79,
+"TestReleaseEmbeddedForExitStopsReacquisitionFromExternalBinary": 78,
+"TestTheDisclosureThatReplacedTheGateIsStillWired": 80,
+"TestTheSubsetAcceptsAJailOnlyLoophole": 81
 },
 "internal/paths": {
-"TestEveryDocCitationFromGoResolves": 81,
+"TestEveryDocCitationFromGoResolves": 82,
 "TestTheGatesPythonBytecodeIsIgnored": 3
 },
 "internal/provision": {
@@ -7134,29 +7172,29 @@
 },
 "internal/prune": {
 "TestOwnerLabelSpellingMatchesTheFlake": 4,
-"TestPrefixBinMountDestMatchesTheLauncher": 82,
-"TestRetiredPrefixOutLinksHaveNoWriter": 82
+"TestPrefixBinMountDestMatchesTheLauncher": 83,
+"TestRetiredPrefixOutLinksHaveNoWriter": 83
 },
 "internal/render": {
-"TestGuestNotchSentenceHasExactlyOneHome": 83,
-"TestTheEngineHasOneCaller": 84
+"TestGuestNotchSentenceHasExactlyOneHome": 84,
+"TestTheEngineHasOneCaller": 85
 },
 "internal/runtime": {
-"TestEveryRunAndExecIntoAJailTurnsOffTheDetachSequence": 85
+"TestEveryRunAndExecIntoAJailTurnsOffTheDetachSequence": 86
 },
 "internal/setupcensus": {
-"TestEveryCitedFileAndFunctionIsWhereTheReasonSays": 87,
+"TestEveryCitedFileAndFunctionIsWhereTheReasonSays": 88,
 "TestEveryGuideLabelNamesOneRow": 46,
 "TestEveryGuideRowNamingAKeyOrKindIsClaimed": 46,
 "TestEveryKeyAndKindHasAGuideRow": 46,
-"TestEveryNoticeIsReadByItsPrinter": 86,
+"TestEveryNoticeIsReadByItsPrinter": 87,
 "TestEverySilentOrRefusingGuideAnswerIsACensusCell": 46,
-"TestNoUserGuidePageMakesAClaimTheCensusContradicts": 88,
+"TestNoUserGuidePageMakesAClaimTheCensusContradicts": 89,
 "TestTheGuideAgreesWithTheCensus": 46
 },
 "internal/tty": {
-"TestEveryColorEmitterIsInventoried": 89,
-"TestNoPrivateTerminalProbe": 89
+"TestEveryColorEmitterIsInventoried": 90,
+"TestNoPrivateTerminalProbe": 90
 },
 "internal/version": {
 "TestBuildVersionPrecedence": 3,
@@ -7165,63 +7203,63 @@
 "TestTheFlakeAndBuildGoShareReleaseMetadata": 55
 },
 "internal/wirebridged": {
-"TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches": 90
+"TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches": 91
 },
 "packs": {
 "TestModelListCheckPackWideMetadataPreservesTheLastReleasesProgram": 33,
-"TestShippedPacksDecodeUnderTheLastRelease": 91
+"TestShippedPacksDecodeUnderTheLastRelease": 92
 },
 "tools/build-wheels": {
-"TestPublishRequiresTrustedPublishing": 92,
-"TestTheRealReadmeKeepsNoRelativeLink": 93
+"TestPublishRequiresTrustedPublishing": 93,
+"TestTheRealReadmeKeepsNoRelativeLink": 94
 },
 "tools/release-wiring": {
-"TestAReleaseBuildPrintsItsVersionAndCommit": 97,
-"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 100,
+"TestAReleaseBuildPrintsItsVersionAndCommit": 98,
+"TestActualPublisherCallerRefusesDuplicatePartialOldAndFailedOriginalState": 101,
 "TestActualTrustedUploadCallerPreservesAllAssetsNotesPrereleaseAndPartialState": 3,
-"TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 92,
+"TestClaimPublicationDependencyAndPyPIOIDCSourceCaller": 93,
 "TestConcurrentActualRequestCallersHaveOneCreateOnlyTagWinner": 3,
-"TestDarwinFloorCacheBuildsTheDispatchedCommitAndTitlesItsRun": 94,
+"TestDarwinFloorCacheBuildsTheDispatchedCommitAndTitlesItsRun": 95,
 "TestDarwinFloorPathsEvaluatesTheFloorWithoutCredentials": 3,
-"TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 92,
-"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 99,
-"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 98,
-"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 99,
+"TestFailedJobsOnlyPublisherRerunRefusesAtEachActualMutationJobEntry": 93,
+"TestGoReleaserPackagingScriptAcceptsOnlyItsDeclaredInertOutputSet": 100,
+"TestHomebrewBackfillIsExplicitAndRequiresThePublishedImmutableTag": 99,
+"TestHomebrewFormulaHeredocNeverExecutesLiteralYoloForNormalOrBackfill": 100,
 "TestHomebrewReleasePresenceGateRefusesDraftOrUnknown": 3,
 "TestHostJustReleaseRefusesAVersionArgument": 3,
 "TestHostJustReleaseSubmitsOnlyFrozenSHAAfterLocalChangelogCheck": 3,
-"TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 92,
-"TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 92,
-"TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 92,
-"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 99,
-"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 96,
-"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 101,
+"TestImageCacheBuildRefusesAnUnexpectedOutputBeforeAnyCopy": 93,
+"TestImageCacheBuildUploadsExactlyTheImagesAndBothCopierOutputs": 93,
+"TestImageCacheImportAcceptsUnsignedRunnerBuiltPaths": 93,
+"TestMainBackfillCallerUsesTrustedToolsWhenOldTagHasNone": 100,
+"TestMainScopedReleaseCallerUsesAnchoredRunNamesAndTrustedMainInputs": 97,
+"TestOtherNormalPublicationJobsGuardBeforeCredentialSteps": 102,
 "TestReleaseArtifactHandoffFailsClosedOnUnexpectedPathsTypesAndDigests": 3,
-"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 95,
-"TestReleaseRequestHandsTheFloorPathsToTheWriteJob": 95,
-"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 96,
+"TestReleaseRequestEligibilityAllowsAResumeToReachTheWriteJob": 96,
+"TestReleaseRequestHandsTheFloorPathsToTheWriteJob": 96,
+"TestReleaseWorkflowsAreMainDispatchedAndKeepWritesOffTargetSource": 97,
 "TestRequestCallerRejectsWrongRefAndRerunBeforeAnyWrite": 3,
 "TestRequestHostRecipeDoesNotTagLocally": 31,
-"TestRequestJobCanDispatchTheFloorBuild": 95,
-"TestRequestJobTimeoutExceedsItsWaits": 95,
+"TestRequestJobCanDispatchTheFloorBuild": 96,
+"TestRequestJobTimeoutExceedsItsWaits": 96,
 "TestRequestMainCallerWaitsForExactOriginalReleaseSuccessBeforePublishDispatch": 3,
 "TestRequestResumesATagOnlyReleaseWithoutTouchingTheTag": 3,
 "TestRequestRunsTheDarwinFloorGateBeforeTheTag": 3,
 "TestRequestTapDispatchFailureLeavesTheRequestGreen": 3,
-"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 96,
+"TestShellHelpersFailClosedAndAllWorkflowCommandsParse": 97,
 "TestStandaloneCLIHasNoFixtureTrustHook": 3,
-"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 95,
+"TestTrustedEligibilityRejectsUnmergedSourceBeforeHostileTargetCanRun": 96,
 "TestTrustedHelperCLIUsesOnlyExplicitFixtureRoots": 3,
 "TestValidateReleaseAssetDirectoryAgainstPinnedGoreleaserContract": 3,
-"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 96
+"TestWorkflowHelperCallsAreExecutableAndTargetCheckoutCannotPersistCredentials": 97
 },
 "tools/tap-install-check": {
-"TestReleasePushesTheFormulaTheDocsInstall": 106,
-"TestReleaseRunNameTransportReachesTheProductionTapCaller": 99,
-"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 102,
-"TestTheWorkflowCarriesNoSecrets": 105,
-"TestTheWorkflowInstallsWhatTheDocsSay": 103,
-"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 104
+"TestReleasePushesTheFormulaTheDocsInstall": 107,
+"TestReleaseRunNameTransportReachesTheProductionTapCaller": 100,
+"TestTheJudgeAcceptsWhatTheLastReleaseReportsOnABareMac": 103,
+"TestTheWorkflowCarriesNoSecrets": 106,
+"TestTheWorkflowInstallsWhatTheDocsSay": 104,
+"TestTheWorkflowRunsAfterEachReleaseWeeklyAndByHand": 105
 }
 }
 }

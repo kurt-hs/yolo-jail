@@ -102,6 +102,9 @@ func newSandboxTmpdirLaunchWithMode(t *testing.T, shippedClaude, includeContext,
 	}
 	e := entrypoint.NewEnv(vars)
 	e.Stderr = io.Discard
+	// GenerateAgentLaunchers reads packs through the in-jail loader, which switches this
+	// process-wide decoder to tolerant. This host-side fixture keeps later authoring reads strict.
+	t.Cleanup(packload.OverrideSkewTolerance(false))
 	if err := entrypoint.GenerateAgentLaunchers(e); err != nil {
 		t.Fatalf("GenerateAgentLaunchers: %v", err)
 	}
@@ -365,5 +368,19 @@ func TestNestedTempValidationContextUsesResolvedRoots(t *testing.T) {
 	}
 	if !strings.Contains(string(body), filepath.Join(h.home, "workspace")) {
 		t.Fatal("generated launcher context omitted the resolved workspace root")
+	}
+}
+
+func TestNestedTmpdirLauncherFixtureRestoresStrictPackReads(t *testing.T) {
+	t.Run("generate launchers", func(t *testing.T) {
+		newSandboxTmpdirLaunch(t, false)
+	})
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pack.json"), `{"name":"probe","contributes":[`+
+		`{"kind":"env","vars":{"A":"1"},"field_from_a_newer_yolo":1}]}`)
+	if _, problems := packload.LoadDir(dir, "probe"); len(problems) == 0 ||
+		!strings.Contains(strings.Join(problems, "\n"), `unknown field "field_from_a_newer_yolo"`) {
+		t.Fatalf("the strict authoring read after fixture generation must reject the unknown field by name, got %v", problems)
 	}
 }

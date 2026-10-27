@@ -182,6 +182,12 @@ var knownReleaseBreaks = []knownReleaseBreak{
 	// two hooks were unknown to v0.10.0.
 	{release: "v0.15.1", pack: "chrome-devtools", problem: `unknown hook "boot_check"`,
 		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree},
+	// Measured against v0.15.1: Claude's program now declares `sandbox_tmpdir_env`, which that
+	// reader does not know. Its fresh program loses only this native temp adaptation; an existing
+	// v0.15.1 jail keeps its own staged pack tree because attach never re-stages it.
+	{release: "v0.15.1", pack: "claude", problem: `unknown field "sandbox_tmpdir_env"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
+		repair: dropKey("sandbox_tmpdir_env")},
 	// Measured against v0.15.1 on 2026-10-23: guardrails' two `requires` entries became
 	// `program` with no recipe (docs/design/provisioner-sets.md OQ-PS11, ruled with no
 	// transition), which v0.15.1's reader refuses as a program missing its "via". It is a
@@ -323,6 +329,29 @@ func TestShippedPacksDecodeUnderTheLastRelease(t *testing.T) {
 				if !skipped[note] {
 					skipped[note] = true
 					t.Logf("%s skips, without failing its boot: %s", release, note)
+				}
+				i := knownSkippedBreakFor(release, pack, note)
+				if i < 0 {
+					t.Errorf("%s skipped an unlisted contribution in pack %q: %s", release, pack, note)
+					continue
+				}
+				if seen[pack] == nil {
+					seen[pack] = map[string]bool{}
+				}
+				if !seen[pack][note] {
+					seen[pack][note] = true
+					order = append(order, pack+"\x00"+note)
+				}
+				b := knownReleaseBreaks[i]
+				switch {
+				case repaired[i]:
+					t.Errorf("the repair for the known skipped field %s/%q did not take: %s's reader still skips it",
+						b.pack, b.problem, release)
+				case b.repair == nil:
+					t.Errorf("the known skipped field %s/%q has no repair for %s's reader", b.pack, b.problem, release)
+				default:
+					repaired[i] = true
+					repairs = append(repairs, i)
 				}
 			}
 			for _, problem := range res["problems"] {
@@ -577,6 +606,48 @@ func knownBreakFor(release, pack, problem string) int {
 		}
 	}
 	return -1
+}
+
+// knownSkippedBreakFor recognizes only a listed program unknown-field diagnostic for the exact
+// released yolo and pack. Other skips remain failures in the release-compatibility test.
+func knownSkippedBreakFor(release, pack, skipped string) int {
+	if !strings.Contains(skipped, "skipping the program contribution") {
+		return -1
+	}
+	for i, b := range knownReleaseBreaks {
+		if b.release != release || b.pack != pack || !strings.HasPrefix(b.problem, `unknown field "`) {
+			continue
+		}
+		if strings.Contains(skipped, b.problem) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestKnownSkippedReleaseBreakMatchesOnlyTheListedProgramField(t *testing.T) {
+	const diagnostic = `pack claude: contributes[0]: skipping the program contribution "claude" — unknown field "sandbox_tmpdir_env", which this yolo does not know`
+	want := knownBreakFor("v0.15.1", "claude", `unknown field "sandbox_tmpdir_env"`)
+	if want < 0 || knownReleaseBreaks[want].repair == nil {
+		t.Fatal("the v0.15.1 Claude temp follower break must be listed with a repair")
+	}
+	if got := knownSkippedBreakFor("v0.15.1", "claude", diagnostic); got != want {
+		t.Fatalf("listed diagnostic matched %d, want %d", got, want)
+	}
+	for _, tc := range []struct {
+		name, release, pack, diagnostic string
+	}{
+		{"wrong release", "v0.15.2", "claude", diagnostic},
+		{"wrong pack", "v0.15.1", "pi", diagnostic},
+		{"different field", "v0.15.1", "claude", `skipping the program contribution "claude" — unknown field "sandbox_tmpdir_env_typo"`},
+		{"not a skipped program", "v0.15.1", "claude", `unknown field "sandbox_tmpdir_env"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := knownSkippedBreakFor(tc.release, tc.pack, tc.diagnostic); got != -1 {
+				t.Fatalf("unlisted skip matched break %d", got)
+			}
+		})
+	}
 }
 
 // repairManifest applies repair to the manifest in dir, in place: the materialized copy, never

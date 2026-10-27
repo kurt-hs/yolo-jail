@@ -698,7 +698,7 @@ func TestNativeSessionPlanWrapsOnlyDeclaringPacks(t *testing.T) {
 	if err := os.Mkdir(packDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{"session_homes":[{"dir":".tool/agent","env":"TOOL_AGENT_DIR","shared":["auth.json"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{"contributes":[{"kind":"state","at":".tool","scope":"workspace"}],"session_homes":[{"dir":".tool/agent","env":"TOOL_AGENT_DIR","shared":["auth.json"]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	p := BuildRunPlanWithDaemons("/Users/Shared/yolo/proj", provisionCfg(), []string{"codex"},
@@ -726,7 +726,7 @@ func TestNativeSessionSelfModePlanPassesItsInvariants(t *testing.T) {
 	if err := os.Mkdir(packDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{"session_homes":[{"dir":".tool/agent","env":"TOOL_AGENT_DIR","shared":["auth.json"]}]}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(packDir, "pack.json"), []byte(`{"contributes":[{"kind":"state","at":".tool","scope":"workspace"}],"session_homes":[{"dir":".tool/agent","env":"TOOL_AGENT_DIR","shared":["auth.json"]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	ws := "/Users/you/code/alpha"
