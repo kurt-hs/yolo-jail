@@ -100,7 +100,9 @@ func ProjectProviderModelsForLegacyDerives(models ReadableModels) (LegacyDeriveP
 		if facts.WireID != "" {
 			wireID = facts.WireID
 		}
-		setText("wire_id", wireID)
+		if model.WireIDAuthored {
+			setText("wire_id", wireID)
+		}
 		setText("extends", facts.Extends)
 		if flat.Len() > 0 {
 			options.Set(id, flat)

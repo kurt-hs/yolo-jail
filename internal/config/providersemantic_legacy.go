@@ -57,8 +57,11 @@ func NormalizeLegacyProviderModels(provider packdecl.ProviderContribution, offli
 		return result
 	}
 
-	if provider.ModelRows != nil && len(provider.Models) > 0 {
-		result.addDifference("model_rows", "canonical ID rows and legacy alias bindings coexist; their precedence/order must be resolved by the owning layer")
+	if provider.ModelRows != nil && provider.Models != nil {
+		result.addDifference("model_rows", "canonical ID rows and legacy model bindings coexist, including explicit empty legacy maps; their precedence/order must be resolved by the owning layer")
+	}
+	if provider.EveryModel != nil {
+		result.addDifference("every_model", "shared model facts are not emitted by the legacy provider composer and cannot be safely activated alongside legacy model bindings")
 	}
 	canonical.ModelRows = make(map[string]packdecl.ProviderModel)
 	type legacyModelOrder struct {
@@ -152,7 +155,7 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 		diffs = append(diffs, ProviderModelDifference{Path: path, Reason: why})
 	}
 	if flat == nil {
-		return model, 0, false, diffs
+		flat = map[string]*string{}
 	}
 	order := 0
 	hasOrder := false
@@ -183,6 +186,10 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 				add(key, "is not a non-negative integer canonical fact")
 				continue
 			}
+			if n == 0 {
+				add(key, "authored zero is omitted by the canonical projection and can change the legacy consumer fallback")
+				continue
+			}
 			if selected == nil {
 				value := n
 				selected = &value
@@ -203,9 +210,13 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 			add(key, "tombstones have no canonical fact-presence representation")
 			return
 		}
-		b, err := strconv.ParseBool(strings.TrimSpace(*v))
-		if err != nil {
-			add(key, "is not a boolean canonical fact")
+		b := false
+		switch *v {
+		case "true":
+			b = true
+		case "false":
+		default:
+			add(key, "is not an exact legacy boolean spelling (use true or false)")
 			return
 		}
 		*dst = &b
@@ -244,6 +255,8 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 			add("wire_id", "wire identity tombstones cannot be represented")
 		} else if *v != wire {
 			add("wire_id", fmt.Sprintf("conflicts with models.%s wire identity %q", alias, wire))
+		} else {
+			model.WireID = *v
 		}
 	}
 	prices := map[string]**float64{}
@@ -294,9 +307,6 @@ func legacyFactsToProviderModel(alias, wire string, flat map[string]*string, off
 	}
 	if model.WireID != "" && model.WireID != wire {
 		add("wire_id", "offline/model fact wire identity conflicts with the alias binding")
-	}
-	if alias == wire {
-		model.WireID = ""
 	}
 	return model, order, hasOrder, diffs
 }
@@ -350,20 +360,28 @@ func cloneProviderContribution(src packdecl.ProviderContribution) packdecl.Provi
 	if src.ModelRows != nil {
 		out.ModelRows = make(map[string]packdecl.ProviderModel, len(src.ModelRows))
 		for k, v := range src.ModelRows {
-			out.ModelRows[k] = cloneProviderModel(v)
+			out.ModelRows[k] = cloneLegacyProviderModel(v)
 		}
 	}
 	if src.ModelOrder != nil {
-		out.ModelOrder = append([]string{}, src.ModelOrder...)
+		out.ModelOrder = cloneStrings(src.ModelOrder)
 	}
 	if src.EveryModel != nil {
-		m := cloneProviderModel(*src.EveryModel)
+		m := cloneLegacyProviderModel(*src.EveryModel)
 		out.EveryModel = &m
 	}
 	if src.Variants != nil {
 		out.Variants = make(map[string]packdecl.ProviderVariant, len(src.Variants))
-		for k, v := range src.Variants {
-			out.Variants[k] = v
+		for k, variant := range src.Variants {
+			variant.Options = cloneOptionDefaults(variant.Options)
+			variant.Subagents = cloneLegacyAnyMap(variant.Subagents)
+			if variant.EnforceModels != nil {
+				value := *variant.EnforceModels
+				variant.EnforceModels = &value
+			}
+			variant.Capabilities = cloneStrings(variant.Capabilities)
+			variant.Protocols = cloneStrings(variant.Protocols)
+			out.Variants[k] = variant
 		}
 	}
 	if src.Endpoints != nil {
@@ -378,8 +396,80 @@ func cloneProviderContribution(src packdecl.ProviderContribution) packdecl.Provi
 			out.Options[k] = v
 		}
 	}
-	out.APIKeyEnvName = append([]string(nil), src.APIKeyEnvName...)
-	out.RegionEnvName = append([]string(nil), src.RegionEnvName...)
-	out.Capabilities = append([]string(nil), src.Capabilities...)
+	if src.RegionFile != nil {
+		region := *src.RegionFile
+		out.RegionFile = &region
+	}
+	out.APIKeyEnvName = packdecl.EnvNames(cloneStrings(src.APIKeyEnvName))
+	out.RegionEnvName = cloneStrings(src.RegionEnvName)
+	out.Capabilities = cloneStrings(src.Capabilities)
 	return out
+}
+
+func cloneLegacyProviderModel(model packdecl.ProviderModel) packdecl.ProviderModel {
+	out := cloneProviderModel(model)
+	out.OpenRouterRouting = cloneLegacyAnyMap(model.OpenRouterRouting)
+	return out
+}
+
+func cloneLegacyAnyMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		if value == nil {
+			out[key] = nil
+			continue
+		}
+		out[key] = cloneLegacyValue(reflect.ValueOf(value)).Interface()
+	}
+	return out
+}
+
+func cloneLegacyValue(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		cloned := cloneLegacyValue(value.Elem())
+		out := reflect.New(value.Type()).Elem()
+		out.Set(cloned)
+		return out
+	case reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.New(value.Type().Elem())
+		out.Elem().Set(cloneLegacyValue(value.Elem()))
+		return out
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(iter.Key(), cloneLegacyValue(iter.Value()))
+		}
+		return out
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			out.Index(i).Set(cloneLegacyValue(value.Index(i)))
+		}
+		return out
+	case reflect.Array:
+		out := reflect.New(value.Type()).Elem()
+		for i := 0; i < value.Len(); i++ {
+			out.Index(i).Set(cloneLegacyValue(value.Index(i)))
+		}
+		return out
+	default:
+		return value
+	}
 }

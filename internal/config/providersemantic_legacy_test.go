@@ -228,6 +228,13 @@ func TestNormalizeLegacyProviderModelsPreservesIdentityWirePresenceThroughShippe
 	if !reflect.DeepEqual(oldOutput, outputs[0].Value) {
 		t.Errorf("legacy ComposeProviders→shipped pi model-lists differs from typed projection: old=%#v projected=%#v", oldOutput, outputs[0].Value)
 	}
+	oldModels := runShippedPi(t, piPack, "models", oldTable, ctx)
+	_, modelOutputs, err := ProjectProviderSemantics(input, []ProviderDeriveRequest{{Receiver: "pi", Pack: piPack, Surface: "models", Context: ctx}})
+	if err != nil || len(modelOutputs) != 1 {
+		t.Errorf("project complete shipped pi models surface: outputs=%#v err=%v", modelOutputs, err)
+	} else if !reflect.DeepEqual(oldModels, modelOutputs[0].Value) {
+		t.Errorf("legacy ComposeProviders→shipped pi models differs from typed projection: old=%#v projected=%#v", oldModels, modelOutputs[0].Value)
+	}
 
 	// Presence is distinct from value: an authored wire_id equal to id must still reach pi.
 	authoredPack, authored := loadLegacyPiProvider(t, "openai", `"models":{"global.openai.gpt-6-luna":"global.openai.gpt-6-luna"},"model_options":{"global.openai.gpt-6-luna":{"vendor":"openai","wire_id":"global.openai.gpt-6-luna","cost_input":"1","cost_output":"2","cost_cache_read":"3","cost_cache_write":"4"}}`)
@@ -244,6 +251,13 @@ func TestNormalizeLegacyProviderModelsPreservesIdentityWirePresenceThroughShippe
 	if !reflect.DeepEqual(oldAuthoredOutput, authoredOutputs[0].Value) {
 		t.Errorf("authored identity wire_id presence differs in shipped pi output: old=%#v projected=%#v", oldAuthoredOutput, authoredOutputs[0].Value)
 	}
+	authoredModels := runShippedPi(t, piPack, "models", authoredOld, ctx)
+	_, authoredModelOutputs, err := ProjectProviderSemantics(ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{*authoredNormalized.Canonical}, Selection: ActiveProviderSelection{Default: []string{"openai"}}, Receivers: ProviderReceivers([]*packload.Pack{piPack})}, []ProviderDeriveRequest{{Receiver: "pi", Pack: piPack, Surface: "models", Context: ctx}})
+	if err != nil || len(authoredModelOutputs) != 1 {
+		t.Errorf("project authored shipped pi models surface: outputs=%#v err=%v", authoredModelOutputs, err)
+	} else if !reflect.DeepEqual(authoredModels, authoredModelOutputs[0].Value) {
+		t.Errorf("authored wire_id differs in shipped pi models surface: old=%#v projected=%#v", authoredModels, authoredModelOutputs[0].Value)
+	}
 }
 
 func TestNormalizeLegacyProviderModelsDeeplyOwnsBothReturnedDeclarations(t *testing.T) {
@@ -255,7 +269,7 @@ func TestNormalizeLegacyProviderModelsDeeplyOwnsBothReturnedDeclarations(t *test
 	input := packdecl.ProviderContribution{
 		Name: "p", Alias: "alias", Model: "m", Variants: map[string]packdecl.ProviderVariant{"v": {
 			Model: "m", Options: map[string]packdecl.OptionDefault{"temperature": {Defaulted: true, Value: "0.2"}},
-			Subagents:     map[string]any{"roles": map[string]any{"worker": "m"}, "opaque": &opaque, "channel": channel},
+			Subagents:     map[string]any{"roles": map[string]any{"worker": "m"}, "opaque": &opaque, "channel": channel, "nil": nil},
 			EnforceModels: &enforce, Capabilities: []string{}, Protocols: []string{"openai"},
 		}}, VariantOrder: []string{}, EveryModel: &packdecl.ProviderModel{Vendor: "acme", Reasoning: &flag, Price: price, Accepts: []string{}},
 		ModelRows: map[string]packdecl.ProviderModel{"m": {Vendor: "acme", Price: price, Accepts: []string{}}}, ModelOrder: []string{},
@@ -295,8 +309,8 @@ func TestNormalizeLegacyProviderModelsDeeplyOwnsBothReturnedDeclarations(t *test
 	got.Canonical.Capabilities = []string{"changed"}
 	got.Canonical.APIKeyEnvName = packdecl.EnvNames{"changed"}
 	got.Canonical.RegionEnvName = []string{"changed"}
-	if got.Canonical.Variants["v"].Subagents["channel"] != channel {
-		t.Error("non-JSON channel value was not preserved")
+	if got.Canonical.Variants["v"].Subagents["channel"] != channel || got.Canonical.Variants["v"].Subagents["nil"] != nil {
+		t.Error("non-JSON or nil subagent values were not preserved")
 	}
 	if input.Variants["v"].Options["temperature"].Value != "0.2" || input.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || opaque != 7 || *input.Variants["v"].EnforceModels || input.Variants["v"].Capabilities == nil || input.Variants["v"].Protocols[0] != "openai" || len(input.VariantOrder) != 0 || input.RegionFile.Path != ".aws/config" || input.Options["context_window"].Value != "500" || input.Endpoints["openai"].BaseURL != "https://example.test/v1" || input.ModelRows["m"].Accepts == nil || *input.ModelRows["m"].Price.Input != 1 || *input.EveryModel.Reasoning != true || *input.EveryModel.Price.Output != 2 || input.Capabilities == nil || len(input.APIKeyEnvName) != 0 || input.RegionEnvName == nil {
 		t.Errorf("canonical return aliases original declaration: %#v", input)
@@ -309,6 +323,38 @@ func TestNormalizeLegacyProviderModelsDeeplyOwnsBothReturnedDeclarations(t *test
 	first.Capabilities = []string{"restore-mutated"}
 	if input.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || second.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || got.Canonical.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "changed" || input.RegionFile.Path != ".aws/config" || second.RegionFile.Path != ".aws/config" || got.Canonical.RegionFile.Path != "changed" || input.Capabilities == nil || len(input.Capabilities) != 0 || second.Capabilities == nil || len(second.Capabilities) != 0 || got.Canonical.Capabilities[0] != "changed" {
 		t.Errorf("restore return is not independent from input/canonical/sibling returns")
+	}
+}
+
+func TestNormalizeLegacyProviderModelsPreservesCapabilityReplacementPresenceForReceiver(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		providerCapabilities []string
+		variantCapabilities  []string
+		selector             string
+		want                 []string
+	}{
+		{name: "inherit absent provider and variant capabilities", providerCapabilities: nil, variantCapabilities: nil, selector: "p/v", want: nil},
+		{name: "preserve explicitly empty provider capabilities", providerCapabilities: []string{}, variantCapabilities: nil, selector: "p", want: []string{}},
+		{name: "inherit provider capabilities", providerCapabilities: []string{"provider-capability"}, variantCapabilities: nil, selector: "p/v", want: []string{"provider-capability"}},
+		{name: "replace with explicitly empty variant capabilities", providerCapabilities: []string{"provider-capability"}, variantCapabilities: []string{}, selector: "p/v", want: []string{}},
+		{name: "replace with present variant capabilities", providerCapabilities: []string{"provider-capability"}, variantCapabilities: []string{"variant-capability"}, selector: "p/v", want: []string{"variant-capability"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			declaration := packdecl.ProviderContribution{Name: "p", Capabilities: tc.providerCapabilities, Variants: map[string]packdecl.ProviderVariant{"v": {Capabilities: tc.variantCapabilities}}}
+			normalized := NormalizeLegacyProviderModels(declaration, nil)
+			if normalized.Canonical == nil {
+				t.Fatalf("canonical clone failed: %#v", normalized.Differences)
+			}
+			resolved, err := ResolveActiveProviders([]packdecl.ProviderContribution{*normalized.Canonical}, ActiveProviderSelection{Default: []string{tc.selector}}, []ProviderReceiver{{Bin: "pi"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := resolved.ByReceiver["pi"][0].LegacyCompatibility().Capabilities
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("receiver capabilities = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -411,7 +457,7 @@ func TestNormalizeLegacyProviderModelsUsesPiExactReasoningGrammar(t *testing.T) 
 				if err != nil || len(outputs) != 1 {
 					t.Fatalf("attempted bool render: %#v %v", outputs, err)
 				}
-				if reflect.DeepEqual(oldOutput, outputs[0].Value) || piRenderedReasoning(oldOutput) != nil || piRenderedReasoning(outputs[0].Value) != "true" {
+				if reflect.DeepEqual(oldOutput, outputs[0].Value) || piRenderedReasoning(oldOutput) != nil || piRenderedReasoning(outputs[0].Value) != true {
 					t.Errorf("actual pi boolean grammar difference missing: old=%#v projected=%#v", oldOutput, outputs[0].Value)
 				}
 			} else {

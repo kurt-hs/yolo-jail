@@ -12,10 +12,11 @@ import (
 // ReadableModel is one selectable canonical model identity and its fully composed facts. CompactAt
 // is selection metadata, not a replacement id; WireID is the inherited/overridden wire identity.
 type ReadableModel struct {
-	ID        string
-	WireID    string
-	CompactAt int64
-	Facts     packdecl.ProviderModel
+	ID             string
+	WireID         string
+	WireIDAuthored bool
+	CompactAt      int64
+	Facts          packdecl.ProviderModel
 }
 
 // ReadableModels is provider model composition keyed by selectable id, plus declaration order.
@@ -172,7 +173,7 @@ func ComposeProviderModels(provider packdecl.ProviderContribution, catalog map[s
 		if wireID == "" {
 			wireID = id
 		}
-		resolved := ReadableModel{ID: id, WireID: wireID, CompactAt: compactAt, Facts: cloneProviderModel(facts)}
+		resolved := ReadableModel{ID: id, WireID: wireID, WireIDAuthored: facts.WireID != "" || row.TwinOf != "", CompactAt: compactAt, Facts: cloneProviderModel(facts)}
 		rows.ByID[id] = resolved
 		state[id] = 2
 		return resolved, nil
