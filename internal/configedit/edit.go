@@ -394,7 +394,7 @@ func insertMember(doc *configdoc.Document, parent []configdoc.Step, key string, 
 			return 0, 0, nil, err
 		}
 		if !ok && len(parent) == 0 {
-			span = configdoc.Span{0, len(doc.Bytes)}
+			span = configdoc.Span{Start: 0, End: len(doc.Bytes)}
 			ok = true
 		}
 		if !ok {
