@@ -11,6 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
@@ -391,7 +392,9 @@ func resolveWorkspaceConfigPath(workspace, baseName string) (path, name string, 
 		}
 	}
 	if len(found) > 1 && found[0] == candidates[0] {
-		return "", "", configErr("both %s and %s exist; config formats are never merged. Keep one file and run `yolo config migrate` to convert the legacy file", found[0], found[1])
+		keepTOML := shquote.Join([]string{"mv", filepath.Join(workspace, found[1]), filepath.Join(workspace, found[1]+".backup")})
+		keepLegacy := shquote.Join([]string{"mv", filepath.Join(workspace, found[0]), filepath.Join(workspace, found[0]+".backup")})
+		return "", "", configErr("both %s and %s exist; config formats are never merged. Choose which file to keep active, first confirm the backup path does not already exist, then rerun the command. To keep TOML, move the legacy file with `%s`; to keep the legacy file, move TOML with `%s`. This preserves the moved file; neither file is converted or merged", found[0], found[1], keepTOML, keepLegacy)
 	}
 	if len(found) > 0 {
 		return filepath.Join(workspace, found[0]), found[0], nil

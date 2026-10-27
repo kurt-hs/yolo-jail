@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -536,6 +537,153 @@ func TestRuntimeReadersDoNotActivateTOMLBeforeHandoff(t *testing.T) {
 	if _, exists := composed.Get("install"); exists {
 		t.Fatalf("runtime composed reader activated readable config: %#v", composed)
 	}
+}
+
+func TestReadableWorkspaceConfigCollisionOffersSafeManualResolution(t *testing.T) {
+	dir := t.TempDir()
+	toml := filepath.Join(dir, paths.WorkspaceConfigTOMLName)
+	legacy := filepath.Join(dir, paths.WorkspaceConfigLegacyJSONCName)
+	write(t, toml, "[install]\nnix = ['new']\n")
+	write(t, legacy, `{"packages":["legacy"]}`)
+	before := snapshotReadableConfigDir(t, dir)
+
+	if _, err := LoadReadableWorkspaceConfig(dir, true, nil); err == nil {
+		t.Fatal("readable workspace loader accepted colliding files")
+	} else {
+		for _, want := range []string{paths.WorkspaceConfigTOMLName, paths.WorkspaceConfigLegacyJSONCName, "never merged", "backup path does not already exist", "then rerun the command", "mv ", paths.WorkspaceConfigLegacyJSONCName + ".backup", paths.WorkspaceConfigTOMLName + ".backup", "neither file is converted"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("collision error %q does not contain safe-resolution guidance %q", err, want)
+			}
+		}
+		if strings.Contains(err.Error(), "yolo config migrate") {
+			t.Errorf("collision error names nonexistent migration command: %v", err)
+		}
+	}
+	if after := snapshotReadableConfigDir(t, dir); !reflect.DeepEqual(after, before) {
+		t.Fatalf("collision refusal wrote config files: before=%v after=%v", before, after)
+	}
+
+	backup := toml + ".backup"
+	if err := os.Rename(toml, backup); err != nil {
+		t.Fatal(err)
+	}
+	legacyConfig, err := LoadWorkspaceConfig(dir, true, nil)
+	if err != nil {
+		t.Fatalf("legacy workspace reader stopped working after moving TOML aside: %v", err)
+	}
+	if packages, ok := legacyConfig.Get("packages"); !ok || !reflect.DeepEqual(packages, []any{"legacy"}) {
+		t.Fatalf("legacy workspace config = %#v, want original packages", legacyConfig)
+	}
+	if got, err := os.ReadFile(backup); err != nil || string(got) != "[install]\nnix = ['new']\n" {
+		t.Fatalf("preserved TOML backup = %q, %v", got, err)
+	}
+}
+
+func TestReadableUserScopeCollisionOffersSafeManualResolution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	toml := filepath.Join(userDir, paths.UserConfigTOMLName)
+	legacy := filepath.Join(userDir, paths.UserConfigLegacyJSONCName)
+	write(t, toml, "packs = ['new']\n")
+	write(t, legacy, `{"packs":["legacy"]}`)
+	before := snapshotReadableConfigDir(t, userDir)
+
+	if _, err := LoadReadableUserScopeConfig(true, nil); err == nil {
+		t.Fatal("readable user loader accepted colliding files")
+	} else {
+		for _, want := range []string{paths.UserConfigTOMLName, paths.UserConfigLegacyJSONCName, "never merged", "backup path does not already exist", "then rerun the command", "mv ", paths.UserConfigLegacyJSONCName + ".backup", paths.UserConfigTOMLName + ".backup", "neither file is converted"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("collision error %q does not contain safe-resolution guidance %q", err, want)
+			}
+		}
+		if strings.Contains(err.Error(), "yolo config migrate") {
+			t.Errorf("collision error names nonexistent migration command: %v", err)
+		}
+	}
+	if after := snapshotReadableConfigDir(t, userDir); !reflect.DeepEqual(after, before) {
+		t.Fatalf("collision refusal wrote config files: before=%v after=%v", before, after)
+	}
+
+	backup := toml + ".backup"
+	if err := os.Rename(toml, backup); err != nil {
+		t.Fatal(err)
+	}
+	legacyConfig, err := UserScopeConfig(true, nil)
+	if err != nil {
+		t.Fatalf("legacy user reader stopped working after moving TOML aside: %v", err)
+	}
+	if packs, ok := legacyConfig.Get("packs"); !ok || !reflect.DeepEqual(packs, []any{"legacy"}) {
+		t.Fatalf("legacy user config = %#v, want original packs", legacyConfig)
+	}
+	if got, err := os.ReadFile(backup); err != nil || string(got) != "packs = ['new']\n" {
+		t.Fatalf("preserved TOML backup = %q, %v", got, err)
+	}
+}
+
+func TestReadableTOMLUnsupportedFormatOffersSafeManualRewrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, paths.WorkspaceConfigTOMLName)
+	document := "format = 1\npackages = ['legacy']\n"
+	write(t, path, document)
+	before := snapshotReadableConfigDir(t, dir)
+
+	_, err := LoadReadableWorkspaceConfig(dir, true, nil)
+	if err == nil {
+		t.Fatal("format-1 TOML was accepted")
+	}
+	for _, want := range []string{filepath.Base(path), "format 1", "format 2", "backup path does not already exist", "cp -p yolo-jail.toml yolo-jail.toml.backup", "manually rewrite", "TOML", "schema", "before using it", "changing or removing the format marker alone is not a conversion"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("unsupported-format error %q does not contain safe recovery guidance %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "yolo config migrate") || strings.Contains(err.Error(), "set format = 2") {
+		t.Errorf("unsupported-format error recommends a nonexistent or marker-only conversion: %v", err)
+	}
+	if after := snapshotReadableConfigDir(t, dir); !reflect.DeepEqual(after, before) {
+		t.Fatalf("unsupported-format refusal wrote config files: before=%v after=%v", before, after)
+	}
+
+	write(t, path, "[install]\nnix = ['just']\n")
+	if _, err := LoadReadableWorkspaceConfig(dir, true, nil); err != nil {
+		t.Fatalf("format-2 TOML without a marker was refused: %v", err)
+	}
+	write(t, path, "format = 2\n[install]\nnix = ['just']\n")
+	if _, err := LoadReadableWorkspaceConfig(dir, true, nil); err != nil {
+		t.Fatalf("explicit format-2 TOML was refused: %v", err)
+	}
+	for _, format := range []int{0, 1, 3} {
+		t.Run(fmt.Sprintf("format-%d-refused", format), func(t *testing.T) {
+			write(t, path, fmt.Sprintf("format = %d\n", format))
+			_, err := LoadReadableWorkspaceConfig(dir, true, nil)
+			if err == nil {
+				t.Fatalf("format %d TOML was accepted", format)
+			}
+			if format > 2 && (!strings.Contains(err.Error(), "Upgrade with `yolo update`") || !strings.Contains(err.Error(), "just install")) {
+				t.Fatalf("future format error = %v, want existing upgrade remedy", err)
+			}
+		})
+	}
+}
+
+func snapshotReadableConfigDir(t *testing.T, dir string) map[string][]byte {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := make(map[string][]byte, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			t.Fatalf("unexpected subdirectory %s in config snapshot", entry.Name())
+		}
+		contents, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot[entry.Name()] = contents
+	}
+	return snapshot
 }
 
 func TestLoadWorkspaceConfigReadableRejectsSiblingCollision(t *testing.T) {

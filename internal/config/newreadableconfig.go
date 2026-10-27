@@ -11,6 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 const readableConfigFormat = 2
@@ -112,7 +113,8 @@ func consumeReadableFormat(values *jsonx.OrderedMap, label string) error {
 		return configErr("%s is format %d; this yolo reads format 2. Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started", label, n)
 	}
 	if n != readableConfigFormat {
-		return configErr("%s: format %d is unsupported in a TOML file; TOML config files use format 2. Run `yolo config migrate` for the supported format", label, n)
+		backup := shquote.Join([]string{"cp", "-p", label, label + ".backup"})
+		return configErr("%s: format %d is unsupported in a TOML file; TOML config files use format 2. First confirm a non-config backup path does not already exist and preserve this file with `%s`; then manually rewrite its contents as TOML format 2, checking every key against the accepted TOML schema before using it. changing or removing the format marker alone is not a conversion; no lossless or equivalence-checked migration is available", label, n, backup)
 	}
 	values.Delete("format")
 	return nil
@@ -128,7 +130,9 @@ func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, er
 		}
 	}
 	if len(found) > 1 && found[0] == paths.UserConfigTOMLName {
-		return "", "", false, configErr("both %s and %s exist; config formats are never merged. Keep one file and run `yolo config migrate` to convert the legacy file", found[0], found[1])
+		keepTOML := shquote.Join([]string{"mv", filepath.Join(dir, found[1]), filepath.Join(dir, found[1]+".backup")})
+		keepLegacy := shquote.Join([]string{"mv", filepath.Join(dir, found[0]), filepath.Join(dir, found[0]+".backup")})
+		return "", "", false, configErr("both %s and %s exist; config formats are never merged. Choose which file to keep active, first confirm the backup path does not already exist, then rerun the command. To keep TOML, move the legacy file with `%s`; to keep the legacy file, move TOML with `%s`. This preserves the moved file; neither file is converted or merged", found[0], found[1], keepTOML, keepLegacy)
 	}
 	name := paths.UserConfigTOMLName
 	if len(found) > 0 {
