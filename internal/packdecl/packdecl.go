@@ -777,13 +777,18 @@ func (m *Manifest) retiredFieldProblems() []string {
 // loudly here — with each problem labeled by the entry's ORIGINAL index, the one the
 // author sees in pack.json.
 func DecodeTolerant(data []byte) (m *Manifest, problems, skipped []string) {
+	m, problems, skipped, _ = decodeTolerantWithIndexes(data)
+	return m, problems, skipped
+}
+
+func decodeTolerantWithIndexes(data []byte) (m *Manifest, problems, skipped []string, retainedIndexes []int) {
 	clean, err := cleanJSON5(data)
 	if err != nil {
-		return nil, []string{ManifestName + ": " + err.Error()}, nil
+		return nil, []string{ManifestName + ": " + err.Error()}, nil, nil
 	}
 	var man Manifest
 	if err := json.Unmarshal(clean, &man); err != nil {
-		return nil, []string{ManifestName + ": " + err.Error()}, nil
+		return nil, []string{ManifestName + ": " + err.Error()}, nil, nil
 	}
 	man.setLegacyOrigin()
 	// A FIELD this build does not know, which json.Unmarshal above ignores, is the same class as
@@ -861,12 +866,12 @@ func DecodeTolerant(data []byte) (m *Manifest, problems, skipped []string) {
 	}
 	// A sibling that cannot work without a skipped contribution is skipped too, as the host's use
 	// read skips it (dependentSkips, PF-D76).
-	kept, _, notes := dependentSkips(kept, index, skippedService)
+	kept, index, notes := dependentSkips(kept, index, skippedService)
 	skipped = append(skipped, notes...)
 	if len(skipped) > 0 {
 		man.Contributes = kept
 	}
-	return &man, problems, skipped
+	return &man, problems, skipped, index
 }
 
 // unknownViaSkip returns the skew note for a `program` whose `via` names a delivery
