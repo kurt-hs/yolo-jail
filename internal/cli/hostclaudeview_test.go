@@ -18,7 +18,9 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/broker"
+	"github.com/mschulkind-oss/yolo-jail/internal/claudesecurity"
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/oauthbroker"
@@ -154,8 +156,115 @@ func TestHostClaudeWithoutTheSwitchKeepsItsOwnLogin(t *testing.T) {
 	}
 }
 
+func TestHostClaudeCredentialViewAddsScopedSecurityAdapterToLaunchPath(t *testing.T) {
+	oldGOOS := hostClaudeViewGOOS
+	hostClaudeViewGOOS = "darwin"
+	t.Cleanup(func() { hostClaudeViewGOOS = oldGOOS })
+
+	env, errs, _, home := claudeViewLaunch(t, claudeAlone, "1")
+	if !strings.Contains(errs, "passes other Keychain operations through") {
+		t.Fatalf("Darwin launch did not disclose the scoped Keychain adapter:\n%s", errs)
+	}
+	path := filepath.SplitList(env["PATH"])
+	if len(path) == 0 {
+		t.Fatalf("host Claude launch has no PATH:\n%s", errs)
+	}
+	shim := filepath.Join(path[0], "security")
+	st, err := os.Stat(shim)
+	if err != nil {
+		t.Fatalf("view-enabled Darwin host Claude PATH does not deliver the security adapter first; %s: %v\n%s", shim, err, errs)
+	}
+	if st.Mode()&0o111 == 0 {
+		t.Fatalf("security adapter %s is not executable", shim)
+	}
+	body, err := os.ReadFile(shim)
+	if err != nil || !strings.Contains(string(body), "internal claude-security view") {
+		t.Fatalf("PATH's security adapter does not invoke hidden production dispatch: %v\n%s", err, body)
+	}
+	viewDir := filepath.Join(home, ".local", "share", "yolo-jail", "host-agents", "claude")
+	if !strings.Contains(string(body), claudesecurity.ViewService(viewDir)) {
+		t.Fatalf("adapter service does not match the exact managed view-store path %s: %s", viewDir, body)
+	}
+}
+
+func TestHostClaudeSecurityAdapterPreservesExistingHostBlockers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := paths.HostBlockDir()
+	original := []entrypoint.BlockerScript{{Name: "grep", Content: "#!/bin/sh\nexit 46\n"}}
+	oldDir, err := writeHostBlockDir(root, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := oldDir + string(os.PathListSeparator) + "/usr/bin"
+	service := claudesecurity.ViewService(filepath.Join(home, "managed"))
+	newDir, err := writeHostClaudeSecurityAdapter(filepath.Join(home, "managed"), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newDir == oldDir {
+		t.Fatal("security adapter did not produce an extended content-addressed bundle")
+	}
+	gotBlocker, err := os.ReadFile(filepath.Join(newDir, "grep"))
+	if err != nil || string(gotBlocker) != original[0].Content {
+		t.Fatalf("existing blocker was not retained exactly: %q, %v", gotBlocker, err)
+	}
+	gotAdapter, err := os.ReadFile(filepath.Join(newDir, "security"))
+	if err != nil || !strings.Contains(string(gotAdapter), service) {
+		t.Fatalf("view adapter missing its scoped service %q: %q, %v", service, gotAdapter, err)
+	}
+	if got := blockDirFirst(newDir, root, path); filepath.SplitList(got)[0] != newDir {
+		t.Fatalf("combined bundle is not first on PATH: %q", got)
+	}
+}
+
+func TestHostClaudeSecurityAdapterDoesNotOverrideExistingSecurityShim(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := paths.HostBlockDir()
+	const blocked = "#!/bin/sh\nexit 1\n"
+	dir, err := writeHostBlockDir(root, []entrypoint.BlockerScript{{Name: "security", Content: blocked}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeHostClaudeSecurityAdapter(filepath.Join(home, "managed"), dir); err == nil {
+		t.Fatal("view adapter overrode an existing host security shim")
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "security"))
+	if err != nil || string(got) != blocked {
+		t.Fatalf("existing security shim changed: %q, %v", got, err)
+	}
+}
+
+func TestHostClaudeViewOffDoesNotInstallDarwinSecurityAdapter(t *testing.T) {
+	oldGOOS := hostClaudeViewGOOS
+	hostClaudeViewGOOS = "darwin"
+	t.Cleanup(func() { hostClaudeViewGOOS = oldGOOS })
+	env, errs, _, _ := claudeViewLaunch(t, claudeAlone, "0")
+	if env[claudeview.SecureStorageEnv] != "" {
+		t.Fatalf("view-off host Claude unexpectedly received a managed store: %q", env[claudeview.SecureStorageEnv])
+	}
+	assertNoHostClaudeSecurityAdapter(t, env)
+	if strings.Contains(errs, "scoped security adapter") {
+		t.Fatalf("view-off host Claude announced an adapter:\n%s", errs)
+	}
+}
+
+func assertNoHostClaudeSecurityAdapter(t *testing.T, env map[string]string) {
+	t.Helper()
+	for _, dir := range filepath.SplitList(env["PATH"]) {
+		body, err := os.ReadFile(filepath.Join(dir, "security"))
+		if err == nil && strings.Contains(string(body), "internal claude-security view") {
+			t.Fatalf("view-off or unrelated launch PATH contains the Darwin host adapter %s", filepath.Join(dir, "security"))
+		}
+	}
+}
+
 // A program whose pack does not link Claude's credential is not the Claude the view is for.
 func TestTheClaudeViewIsOnlyForClaudesOwnPack(t *testing.T) {
+	oldGOOS := hostClaudeViewGOOS
+	hostClaudeViewGOOS = "darwin"
+	t.Cleanup(func() { hostClaudeViewGOOS = oldGOOS })
 	saved := hostClaudeBrokerEnsure
 	called := false
 	t.Cleanup(func() { hostClaudeBrokerEnsure = saved })
@@ -171,6 +280,7 @@ func TestTheClaudeViewIsOnlyForClaudesOwnPack(t *testing.T) {
 		t.Errorf("pi was given Claude's credential view (env %q, broker started %v):\n%s",
 			env[claudeview.SecureStorageEnv], called, errs)
 	}
+	assertNoHostClaudeSecurityAdapter(t, env)
 }
 
 // A view that cannot be set up warns, names where to look, and changes nothing.

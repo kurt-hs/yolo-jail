@@ -181,6 +181,7 @@ func forkBaseFields(c Contribution) []forkBaseField {
 		{"refresh", base, c.Refresh != nil},
 		{"probe_args", base, c.ProbeArgs != nil},
 		{"temp_caches", base, c.TempCaches != nil},
+		{"sandbox_tmpdir_env", base, c.SandboxTmpdirEnv != nil},
 		{"provider_sets", base, c.ProviderSets},
 		{"capabilities", base, c.Capabilities != nil},
 		{"protocols", base, c.Protocols != nil},

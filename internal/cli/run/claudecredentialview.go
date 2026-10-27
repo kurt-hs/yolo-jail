@@ -83,16 +83,15 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 	loc := claudeview.Location{Workspace: o.Workspace, Subdir: subdir}
 	res, err := registerView(loc, rt, cname)
 	if err != nil {
-		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: Warned — native self enrollment depended on the separate session-TMPDIR workaround
+		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: NotApplicable — podman and Apple Container have no native self mode
 			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
-				"(%s); native self-mode /login adopted the view with session-TMPDIR and Claude "+
-				"store-path workarounds. This launcher now aligns the view path but does not yet "+
-				"set session TMPDIR. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the "+
-				"existing view-off path.[/yellow]", err.Error())
-		} else if rt == "macos-user" { // parity: Warned — account-mode Keychain writes hang; the launch recommends view-off rather than /login
+				"(%s). Self-mode Claude uses the session TMPDIR and its home-local credentials path; "+
+				"check `yolo claude-auth status` and retry after correcting the broker failure.[/yellow]", err.Error())
+		} else if rt == "macos-user" { // parity: NotApplicable — podman and Apple Container have no native account mode
 			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
-				"(%s); account-mode /login has a measured Keychain write hang. Relaunch with "+
-				"YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the existing view-off path.[/yellow]", err.Error())
+				"(%s). Account-mode Claude's scoped security adapter fails Keychain writes promptly "+
+				"so its file fallback remains available; check `yolo claude-auth status` and retry "+
+				"after correcting the broker failure.[/yellow]", err.Error())
 		} else {
 			out.printf("[yellow]Warning: could not register this workspace's Claude credential view "+
 				"(%s); Claude in this jail will ask for /login.[/yellow]", err.Error())
@@ -105,15 +104,12 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 			"whole machine out.[/yellow]")
 	}
 	if !res.Wrote {
-		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: Warned — self enrollment was measured only with the separate session-TMPDIR workaround
+		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: NotApplicable — podman and Apple Container have no native self mode
 			out.print("[dim]Claude: this machine has no Claude login yet; native self-mode /login " +
-				"adopted a view only with session-TMPDIR and Claude store-path workarounds. This " +
-				"launcher now aligns the view path but does not yet set session TMPDIR. Relaunch " +
-				"with YOLO_CLAUDE_CREDENTIAL_VIEW=0 to use the existing view-off path.[/dim]")
-		} else if rt == "macos-user" { // parity: Warned — account-mode Keychain writes hang; the launch recommends view-off rather than /login
-			out.print("[dim]Claude: this machine has no Claude login yet; account-mode /login has a " +
-				"measured Keychain write hang. Relaunch with YOLO_CLAUDE_CREDENTIAL_VIEW=0 " +
-				"to use the existing view-off path.[/dim]")
+				"uses the session TMPDIR and home-local credentials path.[/dim]")
+		} else if rt == "macos-user" { // parity: NotApplicable — podman and Apple Container have no native account mode
+			out.print("[dim]Claude: this machine has no Claude login yet; account-mode /login " +
+				"uses the scoped security adapter's fast Keychain-write refusal and Claude's file fallback.[/dim]")
 		} else {
 			out.print("[dim]Claude: this machine has no Claude login yet; /login in the jail " +
 				"enrolls it for every workspace.[/dim]")

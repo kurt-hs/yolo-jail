@@ -6,9 +6,10 @@ import (
 )
 
 // probeargs_test.go covers `program`'s `probe_args` (a version probe, pi-extension-store-builds.md
-// XB-D24) and `temp_caches` (the temporary-directory compile caches, XB-D52): each survives the
-// projection every launcher reads, is refused on kinds no launcher serves, and each malformed
-// shape that would silently do nothing is refused by name.
+// XB-D24), `temp_caches` (the temporary-directory compile caches, XB-D52), and
+// `sandbox_tmpdir_env` (program-owned environment followers for the native sandbox temp dir):
+// each survives the projection every launcher reads, is refused on kinds no launcher serves,
+// and each malformed shape that would silently do nothing is refused by name.
 
 // TestProbeArgsAndTempCachesSurviveTheProjection: InstallContributions is the only way core reads
 // a program, so a declaration that does not reach Install never reaches a launcher. For every via,
@@ -18,7 +19,7 @@ func TestProbeArgsAndTempCachesSurviveTheProjection(t *testing.T) {
 	  {"kind":"program","bin":"pi","via":"npm","package":"pi-coding-agent",
 	   "probe_args":["--version","-v"],"temp_caches":["jiti"]},
 	  {"kind":"program","bin":"claude","via":"installer","url":"https://claude.ai/install.sh",
-	   "probe_args":["--version"]},
+	   "probe_args":["--version"],"sandbox_tmpdir_env":["CLAUDE_CODE_TMPDIR"]},
 	  {"kind":"program","bin":"copilot","via":"npm","package":"@github/copilot"}]}`))
 	if len(probs) != 0 {
 		t.Fatalf("the declarations should decode cleanly, got: %v", probs)
@@ -36,14 +37,21 @@ func TestProbeArgsAndTempCachesSurviveTheProjection(t *testing.T) {
 	if got := strings.Join(byBin["claude"].ProbeArgs, " "); got != "--version" {
 		t.Errorf("an installer-delivered program's probe must survive the projection too, got %q", got)
 	}
-	if byBin["copilot"].ProbeArgs != nil || byBin["copilot"].TempCaches != nil {
+	if got := strings.Join(byBin["claude"].SandboxTmpdirEnv, " "); got != "CLAUDE_CODE_TMPDIR" {
+		t.Errorf("the installer-delivered program's sandbox temp follower arrived as %q", got)
+	}
+	if byBin["copilot"].ProbeArgs != nil || byBin["copilot"].TempCaches != nil || byBin["copilot"].SandboxTmpdirEnv != nil {
 		t.Errorf("a program declaring neither must project neither: %+v", byBin["copilot"])
 	}
 	pi := byBin["pi"]
 	pi.ProbeArgs[0], pi.TempCaches[0] = "mutated", "mutated"
+	byBin["claude"].SandboxTmpdirEnv[0] = "mutated"
 	for _, in := range m.InstallContributions() {
 		if in.Bin == "pi" && (in.ProbeArgs[0] != "--version" || in.TempCaches[0] != "jiti") {
 			t.Error("InstallContributions aliased the manifest's lists")
+		}
+		if in.Bin == "claude" && in.SandboxTmpdirEnv[0] != "CLAUDE_CODE_TMPDIR" {
+			t.Error("InstallContributions aliased the manifest's sandbox temp env list")
 		}
 	}
 }
@@ -70,6 +78,12 @@ func TestProbeArgsAndTempCachesRefusals(t *testing.T) {
 		{"a parent", func(c *Contribution) { c.TempCaches = []string{".."} }, "one bare directory name"},
 		{"an empty cache", func(c *Contribution) { c.TempCaches = []string{""} }, "one bare directory name"},
 		{"duplicate cache", func(c *Contribution) { c.TempCaches = []string{"jiti", "jiti"} }, "is listed twice"},
+		{"temp env on a non-program", func(c *Contribution) {
+			*c = Contribution{Kind: KindConfig, SandboxTmpdirEnv: []string{"TOOL_TMPDIR"}}
+		}, `does not take "sandbox_tmpdir_env"`},
+		{"empty temp env list", func(c *Contribution) { c.SandboxTmpdirEnv = []string{} }, "empty list names no environment variable"},
+		{"invalid temp env name", func(c *Contribution) { c.SandboxTmpdirEnv = []string{"BAD-NAME"} }, "invalid environment variable name"},
+		{"duplicate temp env name", func(c *Contribution) { c.SandboxTmpdirEnv = []string{"TOOL_TMPDIR", "TOOL_TMPDIR"} }, "is listed twice"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := program
@@ -82,6 +96,7 @@ func TestProbeArgsAndTempCachesRefusals(t *testing.T) {
 	}
 	ok := program
 	ok.ProbeArgs, ok.TempCaches = []string{"--version", "-v"}, []string{"jiti"}
+	ok.SandboxTmpdirEnv = []string{"TOOL_TMPDIR"}
 	if probs := validateContribution("contributes[0]", ok); len(probs) != 0 {
 		t.Errorf("pi's own declaration is refused: %v", probs)
 	}

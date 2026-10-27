@@ -306,6 +306,9 @@ type Install struct {
 	// directory, nil when it declares none. The Contribution field of the same name carries the
 	// reasoning.
 	TempCaches []string `json:"temp_caches,omitempty"`
+	// SandboxTmpdirEnv names the program's environment variables that follow the final native
+	// sandbox TMPDIR. The Contribution field of the same name carries the reasoning.
+	SandboxTmpdirEnv []string `json:"sandbox_tmpdir_env,omitempty"`
 	// VersionsDir is the home-relative directory the program's installer keeps one entry per
 	// installed version in, "" meaning the default `.local/share/<bin>/versions`. The
 	// Contribution field of the same name carries the reasoning; read it through

@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -27,6 +28,10 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/claudeview"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
+
+// brokerHostIsDarwin is the host-platform discriminator for behavior proven on Darwin. Tests
+// override it to exercise that branch without requiring a Mac.
+var brokerHostIsDarwin = runtime.GOOS == "darwin"
 
 // viewRegistration is one workspace whose launch selected the credential view, or one program
 // `yolo host --` started with it (its Location's Dir set, CL-D27). It lives in ViewRegistryDir,
@@ -149,13 +154,20 @@ func readView(r *viewRegistration) (viewState, error) {
 		}
 		return viewState{}, err
 	}
+	return viewStateFromBytes(data, false), nil
+}
+
+func viewStateFromBytes(data []byte, missing bool) viewState {
+	if missing {
+		return viewState{missing: true}
+	}
 	decoded, err := jsonx.Decode(data)
 	if err != nil {
-		return viewState{}, nil // not JSON: rewritten whole
+		return viewState{} // not JSON: rewritten whole
 	}
 	root, ok := decoded.(*jsonx.OrderedMap)
 	if !ok {
-		return viewState{}, nil
+		return viewState{}
 	}
 	st := viewState{root: root}
 	if v, ok := root.Get("claudeAiOauth"); ok {
@@ -163,7 +175,7 @@ func readView(r *viewRegistration) (viewState, error) {
 			st.oauth = m
 		}
 	}
-	return st, nil
+	return st
 }
 
 // viewBytes renders a view from the file's CURRENT bytes: every other top-level key kept
@@ -245,11 +257,25 @@ func handleViewError(r *viewRegistration, err error) {
 // bytes is not rewritten, so Claude's modification-time check (F5) sees a change only when
 // there is one.
 func writeView(r *viewRegistration, projection *jsonx.OrderedMap) (markDirty bool) {
+	workspaceLogout := false
 	wrote, locked, err := r.Update(func(current []byte) ([]byte, error) {
+		missing := false
+		if current == nil {
+			_, readErr := r.Read()
+			missing = errors.Is(readErr, fs.ErrNotExist) && !errors.Is(readErr, claudeview.ErrDirGone)
+		}
+		if viewWasLoggedOut(r, viewStateFromBytes(current, missing)) {
+			workspaceLogout = true
+			return nil, nil
+		}
 		return viewBytes(current, projection)
 	})
 	if err != nil {
 		handleViewError(r, err)
+		return false
+	}
+	if workspaceLogout {
+		recordViewLogoutLocked(r)
 		return false
 	}
 	if wrote {
@@ -274,6 +300,32 @@ func saveMarks(regs []*viewRegistration) {
 			logWarn("view: could not record the write to %s: %s", r.Path(), err)
 		}
 	}
+}
+
+// nativeDarwinViewRegistration names the two native Claude credential locations that unlink their
+// view on logout: a macos-user workspace or the host-managed store. Vendor jail runtimes are not
+// included, even when the broker itself runs on Darwin.
+func nativeDarwinViewRegistration(r *viewRegistration) bool {
+	return (!r.IsHost() && r.Runtime == "macos-user") ||
+		(r.IsHost() && r.Runtime == claudeview.HostRuntime)
+}
+
+// viewWasLoggedOut recognizes the two persisted workspace logout forms. A missing credential file
+// is a logout only for a broker-written native Darwin view; all other missing views remain
+// recoverable, while readView keeps directory retirement and unsafe reads distinct.
+func viewWasLoggedOut(r *viewRegistration, st viewState) bool {
+	return r.Written && ((!st.missing && st.root != nil && st.oauth == nil) ||
+		(st.missing && brokerHostIsDarwin && nativeDarwinViewRegistration(r)))
+}
+
+// recordViewLogoutLocked persists workspace logout before another publisher can rewrite the view.
+func recordViewLogoutLocked(r *viewRegistration) {
+	r.LoggedOut = true
+	if err := r.save(); err != nil {
+		logWarn("view: could not record the /logout in %s: %s", r.Path(), err)
+	}
+	logInfo("view: %s was signed out by /logout %s; the broker writes it nothing "+
+		"more until its next launch", r.Path(), r.signedOutWhere())
 }
 
 // publishViewsLocked writes every live registration's view from a new canonical login, one
@@ -383,13 +435,8 @@ func (s store) maintainViewLocked(r *viewRegistration) {
 	case st.oauth != nil && nonEmpty(st.oauth, "refreshToken"):
 		s.adoptEnrollmentLocked(r, st)
 		return
-	case !st.missing && st.root != nil && st.oauth == nil && r.Written:
-		r.LoggedOut = true
-		if err := r.save(); err != nil {
-			logWarn("view: could not record the /logout in %s: %s", r.Path(), err)
-		}
-		logInfo("view: %s was signed out by /logout %s; the broker writes it nothing "+
-			"more until its next launch", r.Path(), r.signedOutWhere())
+	case viewWasLoggedOut(r, st):
+		recordViewLogoutLocked(r)
 		return
 	}
 	canonical, err := oauthFromCreds(s.canonical)

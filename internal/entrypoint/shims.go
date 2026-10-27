@@ -13,6 +13,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -52,7 +53,10 @@ func GenerateShims(e *Env) error {
 	}
 	// The block dir's second writer, AFTER the blockers so a refusal for the same name is
 	// already on disk and wins (interceptshims.go).
-	return GenerateIntercepts(e)
+	if err := GenerateIntercepts(e); err != nil {
+		return err
+	}
+	return generateClaudeSecurityAdapter(e)
 }
 
 // generateBlockers writes one blocking/filtering shim per YOLO_BLOCK_CONFIG entry.
@@ -574,11 +578,16 @@ func GenerateAgentLaunchers(e *Env) error {
 			if serverBins[inst.Bin] {
 				updates, launcherSet = false, launcherServers{}
 			}
+			sandboxNative := e.Getenv("YOLO_DARWIN_WORKSPACE") != ""
+			sandboxContext := ""
+			if sandboxNative {
+				sandboxContext = e.Getenv(paths.MacosUserTmpdirContextEnv)
+			}
 			var launcher string
 			switch inst.Kind {
 			case "npm":
-				segments := npmAgentLauncherSegments(p.Name, inst, stampDir, receiptsFile(e),
-					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin), func(token string) string {
+				segments := npmAgentLauncherSegmentsWithTmpdir(p.Name, inst, stampDir, receiptsFile(e),
+					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin), sandboxContext, sandboxNative, func(token string) string {
 						return e.programCaptureShell(inst.Bin, inst.Package, token)
 					})
 				prefix := nodeExecPrefix(inst.NodeFloor)
@@ -591,17 +600,17 @@ func GenerateAgentLaunchers(e *Env) error {
 					}
 				}
 			case "native":
-				launcher = nativeAgentLauncher(p.Name, inst, stampDir, receiptsFile(e), capturesDir(e),
-					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin))
+				launcher = nativeAgentLauncherWithTmpdir(p.Name, inst, stampDir, receiptsFile(e), capturesDir(e),
+					updates, launcherSet, launchFlagsFor(e, packs, inst.Bin), sandboxContext, sandboxNative)
 			case packdecl.InstallKindSource:
 				// A FORK's program (docs/design/forked-programs-as-packs.md): built from source
 				// in a sealed capture jail on the host, and materialized here from the store key
 				// the host handed over (forklauncher.go). The base's upstream delivery is NOT a
 				// fallback, because a jail that ran the upstream program under the fork's name
 				// would be the wrong program looking like the right one.
-				segments := sourceAgentLauncherSegments(inst, sourceDeliveryFor(forks, inst, p.Name), stampDir,
+				segments := sourceAgentLauncherSegmentsWithTmpdir(inst, sourceDeliveryFor(forks, inst, p.Name), stampDir,
 					forkKeyDir(e), receiptsFile(e), capturesDir(e), updates, launcherSet,
-					launchFlagsFor(e, packs, inst.Bin))
+					launchFlagsFor(e, packs, inst.Bin), sandboxContext, sandboxNative)
 				prefix := nodeExecPrefix(inst.NodeFloor)
 				launcher = strings.Join(segments, prefix)
 				// AR-L5, as for an npm launcher: a floor nothing met at generation is joined in by
@@ -673,6 +682,12 @@ func npmAgentLauncher(pack string, inst *packdecl.Install, stampDir, receiptsPat
 // to spell the template's sentinel cannot become a place the interpreter is spliced.
 func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, receiptsPath string,
 	updates bool, servers launcherServers, flags *packload.LaunchInjection, prepared ...func(string) string) []string {
+	return npmAgentLauncherSegmentsWithTmpdir(pack, inst, stampDir, receiptsPath, updates, servers, flags, "", false, prepared...)
+}
+
+func npmAgentLauncherSegmentsWithTmpdir(pack string, inst *packdecl.Install, stampDir, receiptsPath string,
+	updates bool, servers launcherServers, flags *packload.LaunchInjection, sandboxContext string, sandboxNative bool,
+	prepared ...func(string) string) []string {
 	token := execPrefixToken()
 	binName := inst.Bin
 	pkgName, pkgVersion := splitNpmSpec(inst.Package)
@@ -724,7 +739,7 @@ func npmAgentLauncherSegments(pack string, inst *packdecl.Install, stampDir, rec
 		"__YOLO_EXEC_PREFIX__", token,
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplices(inst, true)...)...)...)
+	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplicesWithTmpdir(inst, true, sandboxContext, sandboxNative)...)...)...)
 	return strings.Split(r.Replace(npmLauncherTemplate), token)
 }
 
@@ -785,6 +800,11 @@ func capturesDir(e *Env) string {
 
 func nativeAgentLauncher(pack string, inst *packdecl.Install, stampDir, receiptsPath, capturesPath string,
 	updates bool, servers launcherServers, flags *packload.LaunchInjection) string {
+	return nativeAgentLauncherWithTmpdir(pack, inst, stampDir, receiptsPath, capturesPath, updates, servers, flags, "", false)
+}
+
+func nativeAgentLauncherWithTmpdir(pack string, inst *packdecl.Install, stampDir, receiptsPath, capturesPath string,
+	updates bool, servers launcherServers, flags *packload.LaunchInjection, sandboxContext string, sandboxNative bool) string {
 	binName := inst.Bin
 	installerURL := inst.InstallerURL
 	r := strings.NewReplacer(append([]string{
@@ -821,7 +841,7 @@ func nativeAgentLauncher(pack string, inst *packdecl.Install, stampDir, receipts
 		"__YOLO_EXEC_PREFIX__", "",
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplices(inst, false)...)...)...)
+	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplicesWithTmpdir(inst, false, sandboxContext, sandboxNative)...)...)...)
 	return r.Replace(nativeLauncherTemplate)
 }
 
@@ -1784,7 +1804,7 @@ if [ "$SERVERS_ENABLED" = "1" ] && [ "$_YOLO_PROBE" != "1" ]; then
     _refresh_servers
 fi
 ` + prelaunchRefreshCallShell + `
-` + agentEnvShellFn + agentAuthPrelaunchShellFn + modelMenuShellFn + compileCacheShellFn + `
+` + agentEnvShellFn + agentAuthPrelaunchShellFn + modelMenuShellFn + compileCacheShellFn + sandboxTmpdirEnvShellFn + `
 if [ -x "$REAL_BIN" ]; then
     _yolo_launch_argv "$@"
     [ "$_YOLO_PROBE" = "1" ] || _yolo_model_menu
@@ -2525,7 +2545,7 @@ if [ "$SERVERS_ENABLED" = "1" ] && [ "$_YOLO_PROBE" != "1" ]; then
 fi
 
 ` + prelaunchRefreshCallShell + `
-` + agentEnvShellFn + agentAuthPrelaunchShellFn + modelMenuShellFn + compileCacheShellFn + `
+` + agentEnvShellFn + agentAuthPrelaunchShellFn + modelMenuShellFn + compileCacheShellFn + sandboxTmpdirEnvShellFn + `
 if [ -x "$REAL_BIN" ]; then
     _yolo_launch_argv "$@"
     [ "$_YOLO_PROBE" = "1" ] || _yolo_model_menu

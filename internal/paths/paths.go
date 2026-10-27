@@ -338,6 +338,18 @@ const HoldExecEnv = "YOLO_HOLD_EXEC"
 // than the variable, and its readers fall back to wording true of podman.
 const JailBackendEnv = "YOLO_JAIL_BACKEND"
 
+// MacosUserTmpdirContextEnv carries the macos-user launch's resolved temp-validation roots into
+// its native entrypoint. The host producer, not env_sources or the running shell, is the authority.
+const MacosUserTmpdirContextEnv = "YOLO_MACOS_USER_TMPDIR_CONTEXT"
+
+// SandboxTmpdirValidationContextEnv and SandboxTmpdirValidationNamesEnv are the one-shot inputs the
+// generated program launcher gives yolo internal validate-sandbox-tmpdir. Roots are baked into the
+// trusted launcher; only current values and pack-declared variable names cross this local dispatch.
+const (
+	SandboxTmpdirValidationContextEnv = "YOLO_INTERNAL_SANDBOX_TMPDIR_CONTEXT"
+	SandboxTmpdirValidationNamesEnv   = "YOLO_INTERNAL_SANDBOX_TMPDIR_NAMES"
+)
+
 // AllowMissingProgramsEnv is the escape hatch out of the jail's READINESS ACT
 // (docs/reference/program-readiness.md, OQ-JR1): the provisioning stage installs every program
 // a selected pack declares before the command runs, and a program it cannot install STOPS the

@@ -25,6 +25,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/claudesecurity"
 )
 
 // AgentEnvDirRel is the per-agent env directory, relative to the jail home. podman binds it
@@ -154,6 +156,13 @@ if [ -r "$_yolo_entry_dir/` + ProviderKeysSubdir + `/$BIN.sh" ]; then
     . "$_yolo_entry_dir/` + ProviderKeysSubdir + `/$BIN.sh"
 fi
 unset _yolo_entry_dir
+# A selected Claude credential hook materializes the adapter under its program name. Only that
+# program's launcher adds the directory; other agents and interactive shells keep their PATH.
+if [ "${` + claudesecurity.EnvVar + `:-}" = "account" ] &&
+    [ -x "$HOME/` + claudeSecurityAdapterDir + `/$BIN/security" ]; then
+    PATH="$HOME/` + claudeSecurityAdapterDir + `/$BIN${PATH:+:$PATH}"
+    export PATH
+fi
 `
 
 // agentsWithEnvFiles lists, sorted, the agents this entry wrote an env file for — the names

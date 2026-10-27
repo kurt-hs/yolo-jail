@@ -86,6 +86,9 @@
       "probe_args": [
         "--version"
       ],
+      "sandbox_tmpdir_env": [
+        "CLAUDE_CODE_TMPDIR"
+      ],
       "protocols": [
         "anthropic"
       ],

@@ -45,6 +45,36 @@ func probeArgsProblems(label string, c Contribution) []string {
 	return problems
 }
 
+func sandboxTmpdirEnvProblems(label string, c Contribution) []string {
+	if c.SandboxTmpdirEnv == nil {
+		return nil
+	}
+	field := label + ".sandbox_tmpdir_env"
+	if c.Kind != KindProgram {
+		return []string{fmt.Sprintf(
+			"%s: kind %q does not take \"sandbox_tmpdir_env\" — only a \"program\" owns its temp environment",
+			field, c.Kind)}
+	}
+	if len(c.SandboxTmpdirEnv) == 0 {
+		return []string{field + ": an empty list names no environment variable — omit the key instead"}
+	}
+	var problems []string
+	seen := map[string]bool{}
+	for i, name := range c.SandboxTmpdirEnv {
+		entry := fmt.Sprintf("%s[%d]", field, i)
+		if !ValidEnvName(name) {
+			problems = append(problems, fmt.Sprintf("%s: invalid environment variable name %q "+
+				"(must match [A-Za-z_][A-Za-z0-9_]*)", entry, name))
+			continue
+		}
+		if seen[name] {
+			problems = append(problems, fmt.Sprintf("%s: %q is listed twice", entry, name))
+		}
+		seen[name] = true
+	}
+	return problems
+}
+
 // tempCachesProblems validates Contribution.TempCaches, the directories a program keeps compiled
 // code in under its temporary directory (XB-D52). It is refused off a `program` for `update`'s
 // reason.
