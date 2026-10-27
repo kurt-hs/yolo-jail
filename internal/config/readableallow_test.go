@@ -1,0 +1,576 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/json5"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
+)
+
+func readableMap(t *testing.T, text string) *jsonx.OrderedMap {
+	t.Helper()
+	value, err := json5.Decode([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("decoded %T, want ordered map", value)
+	}
+	return m
+}
+
+func readableBrokerDeclarations() []ReadableBrokerDeclaration {
+	return []ReadableBrokerDeclaration{
+		{Pack: "git", Label: "git-broker", Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "*", Grants: []string{"create-branch", "branch"}},
+			ReadCapability: "fetch", KindCapabilities: map[string]string{"create-branch": "new_branches", "branch": "push"}},
+		{Pack: "github", Label: "github-broker", Brokered: loopholedecl.Brokered{Source: "github", RemoteHost: "github.com"},
+			ReadCapability: "read", KindCapabilities: map[string]string{}},
+	}
+}
+
+func TestReadableAllowanceNormalizesCeilingsAndSkipsOutsideRequest(t *testing.T) {
+	input := ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch"],"on_request":["push"]}}}`),
+		Workspace: readableMap(t, `{"requests":{"git":{"push":["main"],"new_branches":true}}}`), SelectedPacks: []string{"git"}, Declarations: readableBrokerDeclarations()}
+	plan, err := ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Requests) != 2 || plan.Requests[0].Status != ReadableRequestGranted || plan.Requests[1].Status != ReadableRequestSkipped || !strings.Contains(plan.Requests[1].Reason, "allow.git.on_request") {
+		t.Fatalf("request decisions = %#v", plan.Requests)
+	}
+}
+
+func TestReadableAllowanceRejectsMalformedValuesAndUndeclaredKinds(t *testing.T) {
+	for _, tc := range []struct{ name, user, project, want string }{
+		{"bad list type", `{"allow":{"git":{"always":["fetch"]}}}`, `{"requests":{"git":{"push":true}}}`, "requests.git.push"},
+		{"unknown allowance", `{"allow":{"git":{"always":["mystery"]}}}`, `{}`, "declared capabilities"},
+		{"unknown declared request regardless of ceiling", `{}`, `{"requests":{"github":{"create_pr":true}}}`, "not a canonical request"},
+		{"wildcard source rejects repo list", `{"allow":{"git":{"always":["fetch"]}}}`, `{"requests":{"git":{"repos":["acme/tools"]}}}`, "remote_host"},
+		{"invalid branch is fatal", `{}`, `{"requests":{"git":{"push":["bad..name"]}}}`, "valid concrete branch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ReadableAllowanceInput{User: readableMap(t, tc.user), Workspace: readableMap(t, tc.project), SelectedPacks: []string{"git", "github"}, Declarations: readableBrokerDeclarations()}
+			_, err := ResolveReadableAllowance(input)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestReadableSettingsUseDeclaredTypeScopeSelectionAndOrigin(t *testing.T) {
+	declarations := []ReadablePackDeclaration{{Pack: "auth-pack", Settings: []loopholedecl.Setting{
+		{Key: "profile", Type: loopholedecl.SettingTypeString, Scope: loopholedecl.SettingScopeUser},
+		{Key: "visible", Type: loopholedecl.SettingTypeStringList, Scope: loopholedecl.SettingScopeWorkspace},
+	}}}
+	input := ReadableAllowanceInput{User: readableMap(t, `{"allow":{"auth-pack":{"profile":"work","visible":["a"]}}}`),
+		Workspace: readableMap(t, `{"requests":{"auth-pack":{"visible":[]}}}`), SelectedPacks: []string{"auth-pack"}, PackSettings: declarations,
+		UserOrigins: map[string][]string{"allow.auth-pack.visible": {"user.toml"}}, WorkspaceOrigins: map[string][]string{"requests.auth-pack.visible": {"project.toml"}}}
+	plan, err := ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.PackSettings["auth-pack"]; got["profile"] != "work" || !reflect.DeepEqual(got["visible"], []string{}) {
+		t.Fatalf("settings = %#v", got)
+	}
+	if !reflect.DeepEqual(plan.PackSettingOrigins["auth-pack"]["visible"], []string{"user.toml", "project.toml"}) {
+		t.Errorf("user origins = %#v", plan.PackSettingOrigins)
+	}
+	input.Workspace = readableMap(t, `{"requests":{"auth-pack":{"profile":"other"}}}`)
+	if _, err := ResolveReadableAllowance(input); err == nil || !strings.Contains(err.Error(), "user-scope only") {
+		t.Fatalf("scope error = %v", err)
+	}
+	input.User = readableMap(t, `{"allow":{"auth-pack":{"profile":false}}}`)
+	input.Workspace = readableMap(t, `{}`)
+	if _, err := ResolveReadableAllowance(input); err == nil || !strings.Contains(err.Error(), "allow.auth-pack.profile") {
+		t.Fatalf("type error = %v", err)
+	}
+	input.User = readableMap(t, `{"allow":{"auth-pack":{"profile":"work"}}}`)
+	input.SelectedPacks = nil
+	plan, err = ResolveReadableAllowance(input)
+	if err != nil || len(plan.PackSettings) != 0 || len(plan.Diagnostics) == 0 {
+		t.Fatalf("unselected setting result=%#v err=%v", plan, err)
+	}
+}
+
+func TestReadableGateProducerSpiesOnConcreteInputForBothBrokers(t *testing.T) {
+	ws := t.TempDir()
+	writeReadableGitConfig(t, ws, `[remote "origin"]
+	url = https://github.com/acme/app.git
+[remote "upstream"]
+	url = git@github.com:acme/upstream.git
+`)
+	input := ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch"],"on_request":["push"]},"github":{"always":["read"]}}}`),
+		Workspace:        readableMap(t, `{"requests":{"git":{"push":["main"]},"github":{"repos":["acme/other"]}}}`),
+		WorkspaceOrigins: map[string][]string{"requests.github.repos": {"sub/team.toml"}}, SelectedPacks: []string{"git", "github"}, Declarations: readableBrokerDeclarations()}
+	plan, err := ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	var observed ReadableGateInput
+	err = WithReadableGateInput(ws, plan, func(got ReadableGateInput) error { calls++; observed = got; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(observed.Sources) != 2 {
+		t.Fatalf("gate calls=%d input=%#v", calls, observed)
+	}
+	bySource := map[string]ReadableGateSource{}
+	for _, source := range observed.Sources {
+		bySource[source.Source] = source
+	}
+	git := bySource["git"]
+	if got, want := git.Read.Repos(), []string{"git@github.com:acme/upstream.git", "https://github.com/acme/app.git"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("any-host actual remotes = %v want %v", got, want)
+	}
+	if len(git.Entry) != 0 {
+		t.Errorf("any-host Git was given legacy entries: %#v", git.Entry)
+	}
+	if !containsReadableGrant(git.Grants, brokerscope.Grant{Kind: "read", Repo: "github.com/acme/other"}) || !containsReadableGrant(git.Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/app", Branch: "main"}) {
+		t.Errorf("Git grants = %#v", git.Grants)
+	}
+	for _, grant := range git.Grants {
+		if grant.Repo == brokerscope.AnyRepo {
+			t.Errorf("wildcard grant: %#v", grant)
+		}
+	}
+	if len(git.Targets) != 3 {
+		t.Errorf("Git typed concrete targets (including named-host request) = %#v", git.Targets)
+	}
+	github := bySource["github"]
+	if !containsReadableEntry(github.Entry, "acme/other", "sub/team.toml") || !containsReadableGrant(github.Grants, brokerscope.Grant{Kind: "read", Repo: "github.com/acme/other"}) {
+		t.Errorf("GitHub gate source = %#v", github)
+	}
+	if len(observed.AdditionalRepositories) != 1 || observed.AdditionalRepositories[0].Source != "github" || observed.AdditionalRepositories[0].RemoteHost != "github.com" || observed.AdditionalRepositories[0].Repository != "acme/other" {
+		t.Errorf("additional identities = %#v", observed.AdditionalRepositories)
+	}
+}
+
+func TestReadableNamedRepositoryRequestWorksOutsideGitCheckoutAndEmptyScopesDoNotPrompt(t *testing.T) {
+	input := ReadableAllowanceInput{User: readableMap(t, `{"allow":{"github":{"always":["read"]},"git":{"always":["fetch"]}}}`),
+		Workspace:        readableMap(t, `{"requests":{"github":{"repos":["acme/private"]}}}`),
+		WorkspaceOrigins: map[string][]string{"requests.github.repos": {"project.toml"}}, SelectedPacks: []string{"github", "git"}, Declarations: readableBrokerDeclarations()}
+	plan, err := ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate, err := ProduceReadableGateInput(t.TempDir(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bySource := map[string]ReadableGateSource{}
+	for _, source := range gate.Sources {
+		bySource[source.Source] = source
+	}
+	if _, ok := bySource["git"]; !ok {
+		t.Fatal("selected Git consumer did not receive the named-host canonical scope target")
+	}
+	if !containsReadableGrant(bySource["git"].Grants, brokerscope.Grant{Kind: "read", Repo: "github.com/acme/private"}) {
+		t.Fatalf("Git did not use its own fetch ceiling for extra target: %#v", bySource["git"])
+	}
+	if !containsReadableGrant(bySource["github"].Grants, brokerscope.Grant{Kind: "read", Repo: "github.com/acme/private"}) {
+		t.Fatalf("GitHub did not get its own read grant: %#v", bySource["github"])
+	}
+	if len(gate.AdditionalRepositories) != 1 {
+		t.Fatalf("additional identities = %#v", gate.AdditionalRepositories)
+	}
+
+	for _, source := range []string{"git", "github"} {
+		ws := t.TempDir()
+		// An empty .git config is separately covered from a non-Git workspace.
+		if source == "git" {
+			writeReadableGitConfig(t, ws, "")
+		}
+		bare, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch"]},"github":{"always":["read"]}}}`),
+			Workspace: readableMap(t, `{}`), SelectedPacks: []string{source}, Declarations: readableBrokerDeclarations()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := ProduceReadableGateInput(ws, bare)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Sources) != 0 || len(got.AdditionalRepositories) != 0 || len(got.ReadCapabilities) != 1 || !got.ReadCapabilities[0].Always {
+			t.Errorf("%s empty scope creates grant/prompt or loses read ceiling metadata: %#v", source, got)
+		}
+	}
+}
+
+func TestReadableAlwaysPushNeedsNamedTargetAndAlwaysNewBranchesNeedsRead(t *testing.T) {
+	for _, tc := range []struct {
+		name, user, project string
+		wantBranch          bool
+	}{
+		{"always push without target", `{"allow":{"git":{"always":["fetch","push"]}}}`, `{}`, false},
+		{"always push with explicit target", `{"allow":{"git":{"always":["fetch","push"]}}}`, `{"requests":{"git":{"push":["main"]}}}`, true},
+		{"new branches false", `{"allow":{"git":{"always":["fetch"],"on_request":["new_branches"]}}}`, `{"requests":{"git":{"new_branches":false}}}`, false},
+		{"new branches needs read", `{"allow":{"git":{"always":["new_branches"]}}}`, `{}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := t.TempDir()
+			writeReadableGitConfig(t, ws, `[remote "origin"]
+	url = https://github.com/acme/app.git
+`)
+			plan, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, tc.user), Workspace: readableMap(t, tc.project), SelectedPacks: []string{"git"}, Declarations: readableBrokerDeclarations()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gate, err := ProduceReadableGateInput(ws, plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			branchGrant := false
+			for _, source := range gate.Sources {
+				for _, g := range source.Grants {
+					if g.Kind == "branch" || g.Kind == "create-branch" {
+						branchGrant = true
+					}
+				}
+			}
+			if branchGrant != tc.wantBranch {
+				t.Fatalf("branch grant=%v want %v gate=%#v", branchGrant, tc.wantBranch, gate)
+			}
+			if tc.name == "always push without target" && len(gate.Sources) != 1 {
+				t.Fatalf("read scope should remain but no branch target: %#v", gate)
+			}
+		})
+	}
+}
+
+func TestReadableDeclaredFutureActionsRemainPendingRuntime(t *testing.T) {
+	decls := readableBrokerDeclarations()
+	decls[1].PendingCapabilities = []string{"create_pr", "create_issue"}
+	decls[1].Brokered.Grants = []string{"create-pr", "create-issue"}
+	decls[1].KindCapabilities = map[string]string{"create-pr": "create_pr", "create-issue": "create_issue"}
+	plan, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"github":{"always":["read"],"on_request":["create_pr","create_issue"]}}}`),
+		Workspace: readableMap(t, `{"requests":{"github":{"create_pr":true,"create_issue":true}}}`), SelectedPacks: []string{"github"}, Declarations: decls})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range plan.Requests {
+		if request.Status != ReadableRequestPending {
+			t.Errorf("declared action status=%#v", request)
+		}
+	}
+	gate, err := ProduceReadableGateInput(t.TempDir(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.Sources) != 0 {
+		t.Fatalf("pending actions materialized writes without transport: %#v", gate)
+	}
+}
+
+func TestReadableLegacyProjectionPreservesIdentityDormancyAndScopeOrigin(t *testing.T) {
+	declarations := []loopholedecl.Setting{{Key: "profile", Type: loopholedecl.SettingTypeString, Scope: loopholedecl.SettingScopeUser}, {Key: "visible", Type: loopholedecl.SettingTypeStringList, Scope: loopholedecl.SettingScopeWorkspace}}
+	projection := ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{
+		{Key: "profile", Value: "work", DeclaredScope: loopholedecl.SettingScopeUser, OriginScope: "user"},
+		{Key: "visible", Value: []any{"one", ""}, DeclaredScope: loopholedecl.SettingScopeWorkspace, OriginScope: "user"},
+	}, declarations, ReadableLegacyPackState{Selected: true, DefaultEnabled: boolPointer(true)}, map[string][]string{"profile": {"user.toml"}})
+	if projection.AllowSettings["profile"] != "work" || !reflect.DeepEqual(projection.AllowSettings["visible"], []string{"one", ""}) || len(projection.Differences) != 0 {
+		t.Fatalf("explicit mapping/user-origin projection=%#v", projection)
+	}
+	literalOff := ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{{Key: "profile", Value: "off", DeclaredScope: loopholedecl.SettingScopeUser, OriginScope: "user"}}, declarations, ReadableLegacyPackState{Selected: true, DefaultEnabled: boolPointer(true)}, nil)
+	if literalOff.AllowSettings["profile"] != "off" {
+		t.Fatalf("literal string off was reinterpreted: %#v", literalOff)
+	}
+	projection = ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{{Key: "visible", Value: []any{"one"}, DeclaredScope: loopholedecl.SettingScopeWorkspace, OriginScope: "workspace"}}, declarations, ReadableLegacyPackState{Selected: true, DefaultEnabled: boolPointer(true)}, nil)
+	if len(projection.RequestSettings) != 1 {
+		t.Fatalf("workspace origin did not map to requests: %#v", projection)
+	}
+	projection = ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{{Key: "profile", Value: "work", DeclaredScope: loopholedecl.SettingScopeUser, OriginScope: "user"}}, declarations,
+		ReadableLegacyPackState{Selected: true, DefaultEnabled: boolPointer(false), WorkspaceEnabled: boolPointer(false)}, nil)
+	if len(projection.AllowSettings) != 0 || projection.MachineOff == nil || !*projection.MachineOff || projection.DefaultEnabled == nil || len(projection.Differences) == 0 {
+		t.Fatalf("dormant legacy state lost or activated: %#v", projection)
+	}
+	projection = ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{{Key: "profile", Value: "work", DeclaredScope: loopholedecl.SettingScopeUser, OriginScope: "user"}}, declarations,
+		ReadableLegacyPackState{Selected: true, UserEnabled: boolPointer(true), DefaultEnabled: boolPointer(false)}, nil)
+	if !*projection.EffectiveEnabled || projection.AllowSettings["profile"] != "work" || projection.UserEnabled == nil || !*projection.UserEnabled {
+		t.Fatalf("explicit user enable did not override false manifest default: %#v", projection)
+	}
+	projection = ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{{Key: "profile", Value: "work", DeclaredScope: loopholedecl.SettingScopeUser, OriginScope: "user"}}, declarations,
+		ReadableLegacyPackState{Selected: true, UserEnabled: boolPointer(false), DefaultEnabled: boolPointer(false), WorkspaceEnabled: boolPointer(true)}, nil)
+	if !*projection.EffectiveEnabled || len(projection.AllowSettings) != 1 {
+		t.Fatalf("workspace true override did not outrank false user/default: %#v", projection)
+	}
+	projection = ProjectReadableLegacyPack(ReadableLegacyPackMapping{LegacyName: "aws-auth", PackHandle: "local/my-auth"}, []ReadableLegacySetting{{Key: "profile", Value: "work", DeclaredScope: loopholedecl.SettingScopeUser, OriginScope: "user"}}, declarations,
+		ReadableLegacyPackState{Selected: true}, nil)
+	if projection.EffectiveEnabled == nil || *projection.EffectiveEnabled || len(projection.AllowSettings) != 0 || len(projection.Differences) == 0 {
+		t.Fatalf("absent legacy default was activated: %#v", projection)
+	}
+}
+
+func TestReadableLegacyGrantExpansionIsBoundedByConcreteScope(t *testing.T) {
+	legacy := []brokerscope.Grant{{Kind: "read", Repo: brokerscope.AnyRepo}}
+	targets := []ReadableRepository{{Source: "github", RemoteHost: "github.com", Repository: "acme/one"}, {Source: "github", RemoteHost: "github.com", Repository: "acme/two"}}
+	projection := ExpandReadableLegacyGrants("github", legacy, targets)
+	if len(projection.Concrete) != 2 || len(projection.Differences) != 0 || !projection.ScopeFreeRead {
+		t.Fatalf("bounded expansion=%#v", projection)
+	}
+	empty := ExpandReadableLegacyGrants("github", legacy, nil)
+	if !empty.ScopeFreeRead || len(empty.Concrete) != 0 || len(empty.Raw) != 1 || len(empty.Differences) != 1 || !strings.Contains(empty.Differences[0], "scope-free reads") {
+		t.Fatalf("empty-scope scope-free legacy read difference was erased: %#v", empty)
+	}
+	outside := ExpandReadableLegacyGrants("github", legacy, targets[:1])
+	if len(outside.Concrete) != 1 || len(outside.Raw) != 1 {
+		t.Fatalf("scope-bounded raw projection=%#v", outside)
+	}
+}
+
+func TestReadableLegacyGrantDifferenceReportsNarrowScopedBranch(t *testing.T) {
+	legacy := []brokerscope.Grant{{Kind: "branch", Repo: "github.com/acme/one", Branch: "main"}}
+	canonical := []brokerscope.Grant{{Kind: "branch", Repo: "github.com/acme/one", Branch: "main"}, {Kind: "branch", Repo: "github.com/acme/two", Branch: "main"}}
+	projection := CompareReadableLegacyGrants("git", legacy, canonical)
+	if len(projection.Differences) != 1 || !strings.Contains(projection.Differences[0], "github.com/acme/two") {
+		t.Fatalf("legacy mapping difference=%#v", projection)
+	}
+}
+
+func TestReadableOnRequestReadRequiresTrueRequestAndConcreteTarget(t *testing.T) {
+	declarations := readableBrokerDeclarations()
+	for _, tc := range []struct {
+		name, requests string
+		wantGrant      bool
+	}{
+		{"true plus named target", `{"github":{"read":true,"repos":["acme/private"]}}`, true},
+		{"false read request", `{"github":{"read":false,"repos":["acme/private"]}}`, false},
+		{"true without target", `{"github":{"read":true}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ReadableAllowanceInput{User: readableMap(t, `{"allow":{"github":{"on_request":["read"]}}}`), Workspace: readableMap(t, `{"requests":`+tc.requests+`}`), SelectedPacks: []string{"github"}, Declarations: declarations}
+			plan, err := ResolveReadableAllowance(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gate, err := ProduceReadableGateInput(t.TempDir(), plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := false
+			for _, source := range gate.Sources {
+				for _, grant := range source.Grants {
+					if grant.Kind == brokerscope.KindRead {
+						got = true
+					}
+				}
+			}
+			if got != tc.wantGrant {
+				t.Fatalf("read grant=%v want %v gate=%#v", got, tc.wantGrant, gate)
+			}
+			if tc.name == "true without target" {
+				if len(gate.Sources) != 0 || len(gate.ReadCapabilities) != 1 || !gate.ReadCapabilities[0].OnRequest || !gate.ReadCapabilities[0].Requested || gate.ReadCapabilities[0].RequestStatus != ReadableRequestGranted {
+					t.Fatalf("scope-free read capability metadata was erased or treated as a repository grant: %#v", gate)
+				}
+			}
+		})
+	}
+}
+
+func TestReadableMultipleBrokerDeclarationsPerPackMaterializeDeclaredGrantKinds(t *testing.T) {
+	declarations := []ReadableBrokerDeclaration{
+		{Pack: "shared", Label: "git-broker", Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "*", Grants: []string{"create-branch", "branch"}}, ReadCapability: "fetch", KindCapabilities: map[string]string{"create-branch": "new_branches", "branch": "push"}},
+		{Pack: "shared", Label: "deployment-broker", Brokered: loopholedecl.Brokered{Source: "deployment", RemoteHost: "github.com", Grants: []string{"deploy"}}, ReadCapability: "read", KindCapabilities: map[string]string{"deploy": "deploy"}},
+	}
+	ws := t.TempDir()
+	writeReadableGitConfig(t, ws, "[remote \"origin\"]\n\turl = https://github.com/acme/app.git\n")
+	plan, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch","new_branches"]},"deployment":{"always":["read","deploy"]}}}`),
+		Workspace: readableMap(t, `{"requests":{"deployment":{"deploy":true}}}`), SelectedPacks: []string{"shared"}, Declarations: declarations})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate, err := ProduceReadableGateInput(ws, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.Sources) != 2 || gate.Sources[0].Source != "git" || gate.Sources[1].Source != "deployment" {
+		t.Fatalf("broker declaration order/identity, plan=%#v gate=%#v", plan.Sources, gate.Sources)
+	}
+	if !containsReadableGrant(gate.Sources[1].Grants, brokerscope.Grant{Kind: "deploy", Repo: "github.com/acme/app"}) {
+		t.Fatalf("declared repo-only grant kind was dropped: %#v", gate.Sources[1])
+	}
+
+	ambiguous := append([]ReadableBrokerDeclaration(nil), declarations...)
+	ambiguous[0].Settings = []loopholedecl.Setting{{Key: "profile", Type: loopholedecl.SettingTypeString, Scope: loopholedecl.SettingScopeUser}}
+	ambiguous[1].Settings = []loopholedecl.Setting{{Key: "profile", Type: loopholedecl.SettingTypeString, Scope: loopholedecl.SettingScopeUser}}
+	_, err = ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"shared":{"profile":"x"}}}`), Workspace: readableMap(t, `{}`), SelectedPacks: []string{"shared"}, Declarations: ambiguous})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous setting declarations") {
+		t.Fatalf("same-key pack setting collision error = %v", err)
+	}
+}
+
+func TestReadableBranchOperandShapeComesFromDeclaredGrantKind(t *testing.T) {
+	declaration := ReadableBrokerDeclaration{Pack: "scm", Label: "scm-broker", Brokered: loopholedecl.Brokered{Source: "scm", RemoteHost: "*", Grants: []string{"branch"}}, ReadCapability: "fetch", KindCapabilities: map[string]string{"branch": "publish"}}
+	ws := t.TempDir()
+	writeReadableGitConfig(t, ws, "[remote \"origin\"]\n\turl = https://github.com/acme/app.git\n")
+	plan, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"scm":{"always":["fetch"],"on_request":["publish"]}}}`), Workspace: readableMap(t, `{"requests":{"scm":{"publish":["release"]}}}`), SelectedPacks: []string{"scm"}, Declarations: []ReadableBrokerDeclaration{declaration}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate, err := ProduceReadableGateInput(ws, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.Sources) != 1 {
+		t.Fatalf("branch request produced no source: %#v", gate)
+	}
+	if !containsReadableGrant(gate.Sources[0].Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/app", Branch: "release"}) {
+		t.Fatalf("declared branch-shaped capability did not materialize: %#v", gate.Sources)
+	}
+}
+
+func TestReadableUnselectedSourceCollisionDoesNotShadowSelectedDeclaration(t *testing.T) {
+	selected := readableBrokerDeclarations()[0]
+	unselected := selected
+	unselected.Pack = "other"
+	unselected.Label = "other-git-broker"
+	plan, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch"]}}}`), Workspace: readableMap(t, `{}`), SelectedPacks: []string{"git"}, Declarations: []ReadableBrokerDeclaration{unselected, selected}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Sources) != 1 || plan.Sources[0].Pack != "git" {
+		t.Fatalf("unselected declaration shadowed selected source: %#v", plan.Sources)
+	}
+}
+
+func TestReadableObservedSourceRetainsFailedAndExcludedScopeWithoutGrant(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*testing.T, string)
+	}{
+		{"symlink config problem", func(t *testing.T, ws string) {
+			writeReadableGitConfig(t, ws, "")
+			config := filepath.Join(ws, ".git", "config")
+			if err := os.Remove(config); err != nil {
+				t.Fatal(err)
+			}
+			outside := filepath.Join(t.TempDir(), "config")
+			if err := os.WriteFile(outside, []byte(`[remote "origin"]\nurl=https://github.com/acme/app.git\n`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, config); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"excluded credential remote", func(t *testing.T, ws string) {
+			writeReadableGitConfig(t, ws, "[remote \"origin\"]\n\turl = https://token@github.com/acme/app.git\n")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := t.TempDir()
+			tc.setup(t, ws)
+			plan, err := ResolveReadableAllowance(ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch"]}}}`), Workspace: readableMap(t, `{}`), SelectedPacks: []string{"git"}, Declarations: readableBrokerDeclarations()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gate, err := ProduceReadableGateInput(ws, plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(gate.Sources) != 0 || len(gate.ObservedSources) != 1 {
+				t.Fatalf("problem/exclusion became authority or was lost: %#v", gate)
+			}
+			observed := gate.ObservedSources[0]
+			if observed.Source != "git" || observed.RemoteHost != "*" {
+				t.Fatalf("selected-source identity lost: %#v", observed)
+			}
+			if tc.name == "symlink config problem" && observed.Read.Problem == "" {
+				t.Fatal("read Problem was lost")
+			}
+			if tc.name == "excluded credential remote" && len(observed.Read.Excluded) == 0 {
+				t.Fatal("excluded-URL diagnostics were lost")
+			}
+		})
+	}
+}
+
+func TestReadableSelectedPackWithoutSettingsOnlyProducesNudge(t *testing.T) {
+	input := ReadableAllowanceInput{User: readableMap(t, `{}`), Workspace: readableMap(t, `{}`), SelectedPacks: []string{"auth"}, PackSettings: []ReadablePackDeclaration{{Pack: "auth", Settings: []loopholedecl.Setting{{Key: "token", Type: loopholedecl.SettingTypeString, Scope: loopholedecl.SettingScopeUser}}}}}
+	plan, err := ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.PackSettings) != 0 || len(plan.Diagnostics) != 1 || !strings.Contains(plan.Diagnostics[0], "no allow.auth settings") {
+		t.Fatalf("missing-setting nudge served a default or was absent: %#v", plan)
+	}
+	gate, err := ProduceReadableGateInput(t.TempDir(), plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.PackSettings) != 0 || len(gate.Sources) != 0 {
+		t.Fatalf("default credential setting reached the gate: %#v", gate)
+	}
+}
+
+func TestReadableTableOffAndEmptyListRemainDistinctWithoutActivation(t *testing.T) {
+	declarations := []ReadablePackDeclaration{{Pack: "auth", Settings: []loopholedecl.Setting{{Key: "profile", Type: loopholedecl.SettingTypeString, Scope: loopholedecl.SettingScopeUser}, {Key: "visible", Type: loopholedecl.SettingTypeStringList, Scope: loopholedecl.SettingScopeWorkspace}, {Key: "count", Type: loopholedecl.SettingTypeInt, Scope: loopholedecl.SettingScopeUser}}}}
+	input := ReadableAllowanceInput{User: readableMap(t, `{"allow":{"auth":"off"}}`), Workspace: readableMap(t, `{"requests":{"auth":"off"}}`), SelectedPacks: []string{"auth"}, PackSettings: declarations}
+	plan, err := ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.TableTombstones) != 2 || plan.TableTombstones[0].Path != "allow.auth" || plan.TableTombstones[1].Path != "requests.auth" || len(plan.PackSettings) != 0 || len(plan.Sources) != 0 {
+		t.Fatalf("table-off changed selection/settings or lost removal metadata: %#v", plan)
+	}
+	tombstonePlan := plan
+	tombstoneGate, err := ProduceReadableGateInput(t.TempDir(), tombstonePlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tombstoneGate.TableTombstones) != 2 || len(tombstoneGate.PackSettings) != 0 || len(tombstoneGate.Sources) != 0 {
+		t.Fatalf("gate lost removal metadata or served tombstones: %#v", tombstoneGate)
+	}
+	input.User = readableMap(t, `{"allow":{"auth":{"profile":"off","visible":[""],"count":9223372036854775807}}}`)
+	input.Workspace = readableMap(t, `{}`)
+	plan, err = ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := plan.PackSettings["auth"]
+	if settings["profile"] != "off" || !reflect.DeepEqual(settings["visible"], []string{""}) || settings["count"] != int(^uint(0)>>1) {
+		t.Fatalf("literal off, empty string list item, or integer normalization changed: %#v", settings)
+	}
+	input.User = readableMap(t, `{"allow":{"auth":{"count":1.0}}}`)
+	if _, err := ResolveReadableAllowance(input); err == nil {
+		t.Fatal("floating-point setting was accepted as an integer")
+	}
+}
+
+func writeReadableGitConfig(t *testing.T, ws, config string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(ws, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, ".git", "config"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func containsReadableGrant(grants []brokerscope.Grant, want brokerscope.Grant) bool {
+	return containsValue(grants, want)
+}
+func containsReadableEntry(entries []EntryRepo, repo, origin string) bool {
+	for _, entry := range entries {
+		if strings.EqualFold(entry.Repo, repo) && containsValue(entry.Files, origin) {
+			return true
+		}
+	}
+	return false
+}
+func containsValue[T comparable](values []T, want T) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
