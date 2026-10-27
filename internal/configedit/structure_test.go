@@ -116,18 +116,33 @@ func TestPlanEditSetTOMLAssignedKindWithoutInternalComment(t *testing.T) {
 	}
 }
 
-func TestPlanEditSetTOMLContainerKindCommentConflictNamesNextStep(t *testing.T) {
+func TestPlanEditSetTOMLContainerKindPreservesComments(t *testing.T) {
 	before := []byte("value = [1, # retain\r\n  2]\r\nother = 3\r\n")
-	_, err := PlanEdit(before, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "value"}}, Value: map[string]any{"next": 3}})
-	if err == nil || !strings.Contains(err.Error(), "remove the comment first") {
-		t.Fatalf("expected actionable refusal for unrepresentable comment placement, got %v", err)
+	plan, err := PlanEdit(before, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "value"}}, Value: map[string]any{"next": 3}})
+	if err != nil {
+		t.Fatalf("expected commented compound-kind change to succeed: %v", err)
 	}
+	assertOrderedComments(t, before, plan.Updated, configdoc.TOML)
+	wantValue, err := semanticValue(map[string]any{"next": int64(3)}, configdoc.TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTOMLEditMeaning(t, plan.Updated, "value", wantValue, "other", int64(3))
 }
 
-func TestPlanEditSetTOMLHeaderKindNamesRepresentableNextStep(t *testing.T) {
-	_, err := PlanEdit([]byte("[settings]\nvalue=1\n"), configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "settings"}}, Value: []any{}})
-	if err == nil || !strings.Contains(err.Error(), "remove that full table path") {
-		t.Fatalf("missing actionable TOML header-kind refusal: %v", err)
+func TestPlanEditSetTOMLHeaderKindChange(t *testing.T) {
+	plan, err := PlanEdit([]byte("[settings]\nvalue=1\n"), configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "settings"}}, Value: []any{}})
+	if err != nil {
+		t.Fatalf("expected table-to-array change to succeed: %v", err)
+	}
+	got, err := configdoc.Parse(plan.Updated, configdoc.TOML)
+	if err != nil {
+		t.Fatalf("invalid result: %v\n%s", err, plan.Updated)
+	}
+	value, ok := got.Values.Get("settings")
+	items, valid := value.([]any)
+	if !ok || !valid || len(items) != 0 {
+		t.Fatalf("settings = %#v (exists=%t), want empty array", value, ok)
 	}
 }
 
@@ -355,23 +370,29 @@ func TestConfigEditApplyRemoveTOMLTable(t *testing.T) {
 	}
 }
 
-func TestConfigEditApplyTOMLCommentConflictDoesNotWrite(t *testing.T) {
+func TestConfigEditApplyTOMLCommentedKindChangePreservesComment(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	before := []byte("value=[1, # stay\n2]\n")
+	before := []byte("value=[1, # stay\n2]\nother = 2\n")
 	if err := os.WriteFile(path, before, 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Apply(path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "value"}}, Value: map[string]any{"new": true}}, ApplyOptions{})
-	if err == nil || !strings.Contains(err.Error(), "remove the comment first") {
-		t.Fatalf("missing actionable Apply refusal: %v", err)
+	plan, err := Apply(path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "value"}}, Value: map[string]any{"new": true}}, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("expected commented structural Apply to succeed: %v", err)
 	}
 	got, readErr := os.ReadFile(path)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if !bytes.Equal(got, before) {
-		t.Fatalf("refusal changed original bytes: %q", got)
+	assertOrderedComments(t, before, got, configdoc.TOML)
+	wantValue, err := semanticValue(map[string]any{"new": true}, configdoc.TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTOMLEditMeaning(t, got, "value", wantValue, "other", int64(2))
+	if !bytes.Equal(got, plan.Updated) {
+		t.Fatalf("Apply bytes differ from plan: %q vs %q", got, plan.Updated)
 	}
 }
 

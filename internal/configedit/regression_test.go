@@ -123,9 +123,9 @@ func TestConfigEditIndentedTOMLArrayTableSetGrowthPlanAndApply(t *testing.T) {
 	cases := []struct {
 		name, before, want string
 	}{
-		{"spaces", "  [[items]]\nname='first'\n[stay]\nvalue=4\n", "  [[items]]\nname='first'\n[[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
-		{"tabs", "\t[[items]]\nname='first'\n[stay]\nvalue=4\n", "\t[[items]]\nname='first'\n[[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
-		{"crlf", "  [[items]]\r\nname='first'\r\n[stay]\r\nvalue=4\r\n", "  [[items]]\r\nname='first'\r\n[[items]]\r\nname = \"second\"\r\n[stay]\r\nvalue=4\r\n"},
+		{"spaces", "  [[items]]\nname='first'\n[stay]\nvalue=4\n", "  [[items]]\nname='first'\n  [[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
+		{"tabs", "\t[[items]]\nname='first'\n[stay]\nvalue=4\n", "\t[[items]]\nname='first'\n\t[[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
+		{"crlf", "  [[items]]\r\nname='first'\r\n[stay]\r\nvalue=4\r\n", "  [[items]]\r\nname='first'\r\n  [[items]]\r\nname = \"second\"\r\n[stay]\r\nvalue=4\r\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,26 +160,43 @@ func TestConfigEditIndentedTOMLArrayTableSetGrowthPlanAndApply(t *testing.T) {
 	}
 }
 
-func TestConfigEditNestedArrayTableGrowthRefusalOffersManualEdit(t *testing.T) {
+func TestConfigEditNestedArrayTableGrowthPlanAndApply(t *testing.T) {
 	before := []byte("[[parents]]\nname='first'\n[[parents.children]]\nname='only'\n[[parents]]\nname='second'\n")
 	mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "parents"}, {Index: 0, IsIndex: true}}, Value: map[string]any{"name": "first", "children": []any{map[string]any{"name": "only"}, map[string]any{"name": "added"}}}}
-	_, err := PlanEdit(before, configdoc.TOML, mutation)
-	if err == nil || !strings.Contains(err.Error(), "manually add") || !strings.Contains(err.Error(), "parents[0].children") || !strings.Contains(err.Error(), "[[parents.children]]") || strings.Contains(err.Error(), "Set the containing") {
-		t.Fatalf("expected a truthful manual-edit next step, got %v", err)
+	plan, err := PlanEdit(before, configdoc.TOML, mutation)
+	if err != nil {
+		t.Fatalf("PlanEdit nested growth: %v", err)
+	}
+	wantBytes := []byte("[[parents]]\nname='first'\n[[parents.children]]\nname='only'\n[[parents.children]]\nname = \"added\"\n[[parents]]\nname='second'\n")
+	if !bytes.Equal(plan.Updated, wantBytes) {
+		t.Fatalf("PlanEdit bytes\nwant %q\n got %q", wantBytes, plan.Updated)
+	}
+	wantValues, err := semanticValue(map[string]any{"parents": []any{map[string]any{"name": "first", "children": []any{map[string]any{"name": "only"}, map[string]any{"name": "added"}}}, map[string]any{"name": "second"}}}, configdoc.TOML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := configdoc.Parse(plan.Updated, configdoc.TOML)
+	if err != nil || !semanticEqual(parsed.Values, wantValues) {
+		t.Fatalf("PlanEdit values = %#v, err %v; want %#v", parsed, err, wantValues)
 	}
 	path := filepath.Join(t.TempDir(), "nested.toml")
 	if err := os.WriteFile(path, before, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Apply(path, configdoc.TOML, mutation, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "manually add") || !strings.Contains(err.Error(), "[[parents.children]]") {
-		t.Fatalf("Apply should report the same manual-edit alternative, got %v", err)
+	applied, err := Apply(path, configdoc.TOML, mutation, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply nested growth: %v", err)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, before) {
-		t.Fatalf("refused Apply changed bytes: %q", got)
+	if !bytes.Equal(got, wantBytes) || !bytes.Equal(applied.Updated, wantBytes) {
+		t.Fatalf("Apply bytes\nwant %q\n got %q (reported %q)", wantBytes, got, applied.Updated)
+	}
+	parsed, err = configdoc.Parse(got, configdoc.TOML)
+	if err != nil || !semanticEqual(parsed.Values, wantValues) {
+		t.Fatalf("Apply values = %#v, err %v; want %#v", parsed, err, wantValues)
 	}
 }
 
