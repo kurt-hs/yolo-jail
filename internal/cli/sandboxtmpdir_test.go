@@ -58,6 +58,10 @@ func newSandboxTmpdirLaunch(t *testing.T, shippedClaude bool) *sandboxTmpdirLaun
 }
 
 func newSandboxTmpdirLaunchWithContext(t *testing.T, shippedClaude, includeContext, nativeMarker bool) *sandboxTmpdirLaunch {
+	return newSandboxTmpdirLaunchWithMode(t, shippedClaude, includeContext, nativeMarker, macosuser.ModeSelf)
+}
+
+func newSandboxTmpdirLaunchWithMode(t *testing.T, shippedClaude, includeContext, nativeMarker bool, mode macosuser.Mode) *sandboxTmpdirLaunch {
 	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not found")
@@ -74,10 +78,13 @@ func newSandboxTmpdirLaunchWithContext(t *testing.T, shippedClaude, includeConte
 	if err := os.MkdirAll(userTmp, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	context, err := macosuser.MarshalSandboxTmpdirValidationContext(macosuser.SandboxTmpdirValidationContext{
-		Mode: macosuser.ModeSelf, Workspace: workspace, Home: home,
-		DarwinUserTempDir: userTmp,
-	})
+	contextData := macosuser.SandboxTmpdirValidationContext{
+		Mode: mode, Workspace: workspace, Home: home,
+	}
+	if mode == macosuser.ModeSelf {
+		contextData.DarwinUserTempDir = userTmp
+	}
+	context, err := macosuser.MarshalSandboxTmpdirValidationContext(contextData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +175,18 @@ func (h *sandboxTmpdirLaunch) run(t *testing.T, name string, env map[string]stri
 		}
 	}
 	return values, out, err
+}
+
+func TestAccountNestedTempFollowerPreservesAccountTMPDIR(t *testing.T) {
+	h := newSandboxTmpdirLaunchWithMode(t, true, true, true, macosuser.ModeAccount)
+	accountTmp := "/account/sandbox/tmp"
+	got, out, err := h.run(t, "claude", map[string]string{"TMPDIR": accountTmp})
+	if err != nil {
+		t.Fatalf("account nested Claude launch failed: %v\n%s", err, out)
+	}
+	if got["TMPDIR"] != accountTmp || got["CLAUDE_CODE_TMPDIR"] != accountTmp {
+		t.Errorf("account nested Claude env = %#v, want actual execution with both temp variables %q", got, accountTmp)
+	}
 }
 
 func TestShippedClaudeLauncherCarriesNativeTMPDIRToNestedClaude(t *testing.T) {
