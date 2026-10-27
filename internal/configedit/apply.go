@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
@@ -79,7 +78,7 @@ func applyWithOps(path string, format configdoc.Format, mutation Mutation, optio
 	if parseErr != nil {
 		return nil, restoreFailure(physical, before, fmt.Errorf("written document failed to parse: %w", parseErr), ops, mode)
 	}
-	if !reflect.DeepEqual(parsed.Values, plan.Expected) {
+	if !semanticEqual(parsed.Values, plan.Expected) {
 		return nil, restoreFailure(physical, before, fmt.Errorf("written document has unexpected effective values (expected %s; got %s)", describe(plan.Expected), describe(parsed.Values)), ops, mode)
 	}
 	if options.Verify != nil {

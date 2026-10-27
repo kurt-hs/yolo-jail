@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -64,25 +66,42 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 	noop := false
 	switch m.Action {
 	case Set:
+		old, exists := lookup(root, path)
+		normalized, err := semanticValue(m.Value, format)
+		if err != nil {
+			return nil, err
+		}
 		span, ok, e := doc.Index.Value(path...)
 		if e != nil {
 			return nil, e
 		}
 		if !ok {
+			if format == configdoc.TOML && exists {
+				desired := cloneMap(doc.Values)
+				if !setValue(desired, path, normalized) {
+					return nil, fmt.Errorf("cannot prepare expected structural config value")
+				}
+				return planStructuralSet(data, format, path, old, normalized, desired)
+			}
 			return nil, fmt.Errorf("cannot set missing config value")
 		}
-		old, _ := lookup(root, path)
-		normalized, err := semanticValue(m.Value, format)
-		if err != nil {
-			return nil, err
+		if !exists {
+			return nil, fmt.Errorf("cannot set missing config value")
 		}
-		if reflect.DeepEqual(old, normalized) {
+		if semanticEqual(old, normalized) {
 			noop = true
 			start, end = span.Start, span.End
 			break
 		}
 		start, end = span.Start, span.End
 		if hasCommentWithin(doc.Index.Comments(), span) {
+			if structureChangedDeep(old, normalized) {
+				desired := cloneMap(doc.Values)
+				if !setValue(desired, path, normalized) {
+					return nil, fmt.Errorf("cannot prepare expected structural config value")
+				}
+				return planStructuralSet(data, format, path, old, normalized, desired)
+			}
 			hunks, err = planCommentedSet(doc, path, old, normalized)
 			if err != nil {
 				return nil, err
@@ -166,6 +185,57 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		}
 		setValue(root, path, append(append([]any(nil), items...), normalized))
 	case Remove:
+		if format == configdoc.TOML && last.IsIndex {
+			item, ok, e := doc.Index.Item(path...)
+			if e != nil {
+				return nil, e
+			}
+			if ok && item.Start < len(data) && data[item.Start] == '[' {
+				items, valid := parent.([]any)
+				if !valid || last.Index < 0 || last.Index >= len(items) {
+					return nil, fmt.Errorf("remove target is not an array-table item")
+				}
+				if len(items) == 1 {
+					if pathHasIndex(parentPath) {
+						return nil, fmt.Errorf("cannot represent an empty nested array-table after removing its last item without changing the containing table; remove the containing key at %s instead", tomlPathString(parentPath))
+					}
+					ranges, handled, e := tomlStructureRanges(doc, path)
+					if e != nil {
+						return nil, e
+					}
+					if !handled {
+						return nil, fmt.Errorf("cannot locate TOML array-table item for removal")
+					}
+					hunks = commentPreservingHunks(data, ranges, doc.Index.Comments())
+					emptyKey := tomlPathString(parentPath) + " = []" + newlineOf(data)
+					hunks = append([]Hunk{{Start: 0, End: 0, Before: nil, After: []byte(emptyKey)}}, hunks...)
+					setValue(root, parentPath, []any{})
+					break
+				}
+				ranges, handled, e := tomlStructureRanges(doc, path)
+				if e != nil {
+					return nil, e
+				}
+				if handled {
+					hunks = commentPreservingHunks(data, ranges, doc.Index.Comments())
+					setValue(root, parentPath, append(append([]any(nil), items[:last.Index]...), items[last.Index+1:]...))
+					break
+				}
+			}
+		}
+		if !last.IsIndex && format == configdoc.TOML {
+			if _, exists := lookup(root, path); exists {
+				ranges, handled, e := tomlStructureRanges(doc, path)
+				if e != nil {
+					return nil, e
+				}
+				if handled {
+					hunks = commentPreservingHunks(data, ranges, doc.Index.Comments())
+					deleteValue(root, path)
+					break
+				}
+			}
+		}
 		if last.IsIndex {
 			item, ok, e := doc.Index.Item(path...)
 			if e != nil {
@@ -244,7 +314,7 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 		if err != nil {
 			return nil, fmt.Errorf("planned splice does not parse: %w", err)
 		}
-		if !reflect.DeepEqual(planned.Values, root) {
+		if !semanticEqual(planned.Values, root) {
 			return nil, fmt.Errorf("planned splice changes effective document values: expected %#v, got %#v", root, planned.Values)
 		}
 	}
@@ -547,6 +617,462 @@ func semanticValue(value any, format configdoc.Format) (any, error) {
 	return value, nil
 }
 
+func tomlStructureRanges(doc *configdoc.Document, path []configdoc.Step) ([]configdoc.Span, bool, error) {
+	var ranges []configdoc.Span
+	var walk func([]configdoc.Step, any) error
+	walk = func(at []configdoc.Step, value any) error {
+		switch node := value.(type) {
+		case *jsonx.OrderedMap:
+			if len(at) > 0 {
+				span, ok, err := doc.Index.Table(at...)
+				if err != nil {
+					return err
+				}
+				if ok && span.Start < len(doc.Bytes) && doc.Bytes[span.Start] == '[' {
+					ranges = append(ranges, span)
+				}
+				member, found, err := doc.Index.Member(at...)
+				if err != nil {
+					return err
+				}
+				if found {
+					ranges = append(ranges, member)
+					return nil
+				}
+			}
+			for _, key := range node.Keys() {
+				child, _ := node.Get(key)
+				if err := walk(appendStep(at, configdoc.Step{Key: key}), child); err != nil {
+					return err
+				}
+			}
+		case []any:
+			if len(at) > 0 {
+				member, found, err := doc.Index.Member(at...)
+				if err != nil {
+					return err
+				}
+				if found {
+					ranges = append(ranges, member)
+					return nil
+				}
+			}
+			for i, child := range node {
+				childPath := appendStep(at, configdoc.Step{Index: i, IsIndex: true})
+				item, ok, err := doc.Index.Item(childPath...)
+				if err != nil {
+					return err
+				}
+				if ok && item.Start < len(doc.Bytes) && doc.Bytes[item.Start] == '[' {
+					ranges = append(ranges, item)
+				}
+				if err := walk(childPath, child); err != nil {
+					return err
+				}
+			}
+		default:
+			if len(at) > 0 {
+				member, found, err := doc.Index.Member(at...)
+				if err != nil {
+					return err
+				}
+				if found {
+					ranges = append(ranges, member)
+				}
+			}
+		}
+		return nil
+	}
+	value, ok := lookup(doc.Values, path)
+	if !ok {
+		return nil, false, nil
+	}
+	if err := walk(path, value); err != nil {
+		return nil, false, err
+	}
+	if len(ranges) == 0 {
+		return nil, false, nil
+	}
+	sort.Slice(ranges, func(i, j int) bool { return ranges[i].Start < ranges[j].Start })
+	merged := make([]configdoc.Span, 0, len(ranges))
+	for _, span := range ranges {
+		if span.Start < 0 || span.End > len(doc.Bytes) || span.End < span.Start {
+			return nil, false, fmt.Errorf("invalid TOML structural span")
+		}
+		if len(merged) > 0 && span.Start <= merged[len(merged)-1].End {
+			if span.End > merged[len(merged)-1].End {
+				merged[len(merged)-1].End = span.End
+			}
+			continue
+		}
+		merged = append(merged, span)
+	}
+	return merged, true, nil
+}
+
+func commentPreservingHunks(data []byte, ranges []configdoc.Span, comments []configdoc.Span) []Hunk {
+	hunks := make([]Hunk, 0, len(ranges))
+	for _, span := range ranges {
+		hunks = append(hunks, Hunk{Start: span.Start, End: span.End, Before: append([]byte(nil), data[span.Start:span.End]...), After: preserveComments(data, span.Start, span.End, comments)})
+	}
+	return hunks
+}
+
+func deleteValue(root *jsonx.OrderedMap, path []configdoc.Step) {
+	if len(path) == 0 {
+		return
+	}
+	parent, ok := lookup(root, path[:len(path)-1])
+	if !ok {
+		return
+	}
+	last := path[len(path)-1]
+	if last.IsIndex {
+		if items, ok := parent.([]any); ok && last.Index >= 0 && last.Index < len(items) {
+			setValue(root, path[:len(path)-1], append(items[:last.Index], items[last.Index+1:]...))
+		}
+		return
+	}
+	if object, ok := parent.(*jsonx.OrderedMap); ok {
+		object.Delete(last.Key)
+	}
+}
+
+func pathHasIndex(path []configdoc.Step) bool {
+	for _, step := range path {
+		if step.IsIndex {
+			return true
+		}
+	}
+	return false
+}
+
+func tomlPathString(path []configdoc.Step) string {
+	var out strings.Builder
+	for _, step := range path {
+		if step.IsIndex {
+			out.WriteString(fmt.Sprintf("[%d]", step.Index))
+			continue
+		}
+		if out.Len() > 0 {
+			out.WriteByte('.')
+		}
+		out.WriteString(tomlKey(step.Key))
+	}
+	return out.String()
+}
+
+func structureChangedDeep(before, after any) bool {
+	oldMap, oldIsMap := before.(*jsonx.OrderedMap)
+	newMap, newIsMap := after.(*jsonx.OrderedMap)
+	if oldIsMap && newIsMap {
+		if !sameKeys(oldMap, newMap) {
+			return true
+		}
+		for _, key := range oldMap.Keys() {
+			a, _ := oldMap.Get(key)
+			b, _ := newMap.Get(key)
+			if structureChangedDeep(a, b) {
+				return true
+			}
+		}
+		return false
+	}
+	oldItems, oldArray := before.([]any)
+	newItems, newArray := after.([]any)
+	if oldIsMap || newIsMap || oldArray || newArray {
+		if oldArray && newArray {
+			if len(oldItems) != len(newItems) {
+				return true
+			}
+			for i := range oldItems {
+				if structureChangedDeep(oldItems[i], newItems[i]) {
+					return true
+				}
+			}
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// planStructuralSet expresses a shape change as positioned member/item edits. Each
+// step reparses the preceding bytes through configdoc, so no source coordinates go stale.
+func planStructuralSet(data []byte, format configdoc.Format, path []configdoc.Step, before, after any, expected *jsonx.OrderedMap) (*Plan, error) {
+	original := append([]byte(nil), data...)
+	var reconcile func([]configdoc.Step, any, any) error
+	reconcile = func(at []configdoc.Step, old, next any) error {
+		if reflect.DeepEqual(old, next) {
+			return nil
+		}
+		oldMap, oldIsMap := old.(*jsonx.OrderedMap)
+		newMap, newIsMap := next.(*jsonx.OrderedMap)
+		if oldIsMap && newIsMap {
+			for _, key := range oldMap.Keys() {
+				if _, exists := newMap.Get(key); !exists {
+					p, err := PlanEdit(data, format, Mutation{Action: Remove, Path: appendStep(at, configdoc.Step{Key: key})})
+					if err != nil {
+						return err
+					}
+					data = p.Updated
+				}
+			}
+			for _, key := range newMap.Keys() {
+				nv, _ := newMap.Get(key)
+				ov, exists := oldMap.Get(key)
+				if !exists {
+					p, err := PlanEdit(data, format, Mutation{Action: Add, Path: appendStep(at, configdoc.Step{Key: key}), Value: nv})
+					if err != nil {
+						return err
+					}
+					data = p.Updated
+					continue
+				}
+				if err := reconcile(appendStep(at, configdoc.Step{Key: key}), ov, nv); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		oldItems, oldArray := old.([]any)
+		newItems, newArray := next.([]any)
+		if oldArray && newArray {
+			for i := len(oldItems) - 1; i >= len(newItems); i-- {
+				p, err := PlanEdit(data, format, Mutation{Action: Remove, Path: appendStep(at, configdoc.Step{Index: i, IsIndex: true})})
+				if err != nil {
+					return err
+				}
+				data = p.Updated
+			}
+			for i := len(oldItems); i < len(newItems); i++ {
+				var updated []byte
+				var err error
+				if format == configdoc.TOML && tomlArrayTableAt(data, at) {
+					updated, err = appendTOMLArrayTableItem(data, at, newItems[i])
+				} else {
+					updated, err = appendArrayOccurrence(data, format, at, newItems[i])
+				}
+				if err != nil {
+					return err
+				}
+				data = updated
+			}
+			for i := 0; i < len(oldItems) && i < len(newItems); i++ {
+				if err := reconcile(appendStep(at, configdoc.Step{Index: i, IsIndex: true}), oldItems[i], newItems[i]); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if oldIsMap || newIsMap || oldArray || newArray {
+			updated, err := replaceStructuralKind(data, format, at, next)
+			if err != nil {
+				return err
+			}
+			data = updated
+			return nil
+		}
+		p, err := PlanEdit(data, format, Mutation{Action: Set, Path: at, Value: next})
+		if err != nil {
+			return err
+		}
+		data = p.Updated
+		return nil
+	}
+	if err := reconcile(path, before, after); err != nil {
+		return nil, err
+	}
+	parsed, err := configdoc.Parse(data, format)
+	if err != nil {
+		return nil, fmt.Errorf("planned structural splice does not parse: %w", err)
+	}
+	if !semanticEqual(parsed.Values, expected) {
+		return nil, fmt.Errorf("planned structural splice changes effective document values: expected %#v, got %#v", expected, parsed.Values)
+	}
+	start, end := commonDifference(original, data)
+	newEnd := len(data) - (len(original) - end)
+	return &Plan{Format: format, Original: original, Updated: append([]byte(nil), data...), Expected: expected, Noop: bytes.Equal(original, data), Hunks: []Hunk{{Start: start, End: end, Before: append([]byte(nil), original[start:end]...), After: append([]byte(nil), data[start:newEnd]...)}}}, nil
+}
+
+func tomlArrayTableAt(data []byte, path []configdoc.Step) bool {
+	doc, err := configdoc.Parse(data, configdoc.TOML)
+	if err != nil {
+		return false
+	}
+	value, ok := lookup(doc.Values, path)
+	items, valid := value.([]any)
+	if !ok || !valid || len(items) == 0 {
+		return false
+	}
+	itemPath := appendStep(path, configdoc.Step{Index: 0, IsIndex: true})
+	span, ok, err := doc.Index.Item(itemPath...)
+	return err == nil && ok && span.Start < len(data) && data[span.Start] == '['
+}
+
+func appendTOMLArrayTableItem(data []byte, path []configdoc.Step, value any) ([]byte, error) {
+	doc, err := configdoc.Parse(data, configdoc.TOML)
+	if err != nil {
+		return nil, err
+	}
+	rows, ok := lookup(doc.Values, path)
+	items, valid := rows.([]any)
+	if !ok || !valid || len(items) == 0 {
+		return nil, fmt.Errorf("cannot locate existing TOML array-table rows")
+	}
+	keys := make([]string, len(path))
+	for i, step := range path {
+		if step.IsIndex {
+			return nil, fmt.Errorf("cannot append a nested array-table through an indexed parent; set the containing array-table item instead")
+		}
+		keys[i] = tomlKey(step.Key)
+	}
+	row, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		return nil, fmt.Errorf("TOML array-table item must be an object")
+	}
+	lastPath := appendStep(path, configdoc.Step{Index: len(items) - 1, IsIndex: true})
+	last, found, err := doc.Index.Item(lastPath...)
+	if err != nil || !found || last.Start >= len(data) || data[last.Start] != '[' {
+		return nil, fmt.Errorf("cannot locate final TOML array-table header")
+	}
+	end := last.End
+	nl := newlineOf(data)
+	var out []byte
+	if end > 0 && data[end-1] != '\n' {
+		out = append(out, []byte(nl)...)
+	}
+	out = append(out, []byte("[["+strings.Join(keys, ".")+"]]"+nl)...)
+	for _, key := range row.Keys() {
+		field, _ := row.Get(key)
+		encoded, e := configdoc.EncodeValue(field, configdoc.TOML)
+		if e != nil {
+			return nil, e
+		}
+		out = append(out, []byte(tomlKey(key)+" = "+string(encoded)+nl)...)
+	}
+	updated := splice(data, end, end, out)
+	if _, err := configdoc.Parse(updated, configdoc.TOML); err != nil {
+		return nil, fmt.Errorf("appended TOML array-table item does not parse: %w", err)
+	}
+	return updated, nil
+}
+
+func appendArrayOccurrence(data []byte, format configdoc.Format, path []configdoc.Step, value any) ([]byte, error) {
+	doc, err := configdoc.Parse(data, format)
+	if err != nil {
+		return nil, err
+	}
+	span, ok, err := doc.Index.Value(path...)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("cannot locate array for structural set")
+	}
+	current, ok := lookup(doc.Values, path)
+	items, valid := current.([]any)
+	if !ok || !valid {
+		return nil, fmt.Errorf("structural set target is not an array")
+	}
+	start, end, replacement, err := appendArray(doc, path, span, items, value)
+	if err != nil {
+		return nil, err
+	}
+	updated := splice(data, start, end, replacement)
+	if _, err := configdoc.Parse(updated, format); err != nil {
+		return nil, fmt.Errorf("structural array splice does not parse: %w", err)
+	}
+	return updated, nil
+}
+
+func semanticEqual(a, b any) bool {
+	am, aok := a.(*jsonx.OrderedMap)
+	bm, bok := b.(*jsonx.OrderedMap)
+	if aok || bok {
+		if !aok || !bok || am.Len() != bm.Len() {
+			return false
+		}
+		for _, key := range am.Keys() {
+			av, _ := am.Get(key)
+			bv, ok := bm.Get(key)
+			if !ok || !semanticEqual(av, bv) {
+				return false
+			}
+		}
+		return true
+	}
+	aa, aok := a.([]any)
+	ba, bok := b.([]any)
+	if aok || bok {
+		if !aok || !bok || len(aa) != len(ba) {
+			return false
+		}
+		for i := range aa {
+			if !semanticEqual(aa[i], ba[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+func replaceStructuralKind(data []byte, format configdoc.Format, path []configdoc.Step, value any) ([]byte, error) {
+	doc, err := configdoc.Parse(data, format)
+	if err != nil {
+		return nil, err
+	}
+	if format == configdoc.TOML {
+		_, found, err := doc.Index.Member(path...)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, fmt.Errorf("cannot change a TOML table/header kind at %s; remove that full table path, then add the replacement under a representable TOML key", tomlPathString(path))
+		}
+	}
+	span, ok, err := doc.Index.Value(path...)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("cannot locate structure-changing value")
+	}
+	if format == configdoc.TOML && hasCommentWithin(doc.Index.Comments(), span) {
+		return nil, fmt.Errorf("cannot change a TOML value's container kind at %s while preserving comments inside that value; remove the comment first or make edits that keep the container kind", tomlPathString(path))
+	}
+	encoded, err := configdoc.EncodeValue(value, format)
+	if err != nil {
+		return nil, err
+	}
+	trivia := preserveComments(data, span.Start, span.End, doc.Index.Comments())
+	replacement := append(encoded, trivia...)
+	if format == configdoc.JSONC {
+		trivia = preserveCommentPositions(data, span.Start, span.End, doc.Index.Comments())
+		replacement = append(trivia, encoded...)
+	}
+	updated := splice(data, span.Start, span.End, replacement)
+	if _, err := configdoc.Parse(updated, format); err != nil {
+		return nil, fmt.Errorf("structure-changing splice does not parse: %w; use a TOML value form that can represent the requested structure", err)
+	}
+	return updated, nil
+}
+
+func commonDifference(before, after []byte) (int, int) {
+	start := 0
+	for start < len(before) && start < len(after) && before[start] == after[start] {
+		start++
+	}
+	end := len(before)
+	newEnd := len(after)
+	for end > start && newEnd > start && before[end-1] == after[newEnd-1] {
+		end--
+		newEnd--
+	}
+	return start, end
+}
+
 func planCommentedSet(doc *configdoc.Document, path []configdoc.Step, old, next any) ([]Hunk, error) {
 	var hunks []Hunk
 	var walk func([]configdoc.Step, any, any) error
@@ -646,6 +1172,27 @@ func applyHunks(data []byte, hunks []Hunk) []byte {
 	return updated
 }
 
+func preserveCommentPositions(data []byte, start, end int, comments []configdoc.Span) []byte {
+	out := append([]byte(nil), data[start:end]...)
+	for i := start; i < end; i++ {
+		b := data[i]
+		if b == ' ' || b == '\t' || b == '\r' || b == '\n' {
+			continue
+		}
+		inside := false
+		for _, comment := range comments {
+			if i >= comment.Start && i < comment.End {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			out[i-start] = ' '
+		}
+	}
+	return out
+}
+
 func preserveComments(data []byte, start, end int, comments []configdoc.Span) []byte {
 	var out []byte
 	for i := start; i < end; i++ {
@@ -736,12 +1283,67 @@ func removeArrayItem(doc *configdoc.Document, parent []configdoc.Step, index int
 	spacing := append([]byte(nil), doc.Bytes[commaAfter+1:end]...)
 	return comma, end, append([]byte(","), spacing...), nil
 }
+func jsonMemberSharesLine(doc *configdoc.Document, parent []configdoc.Step, member configdoc.Span, object *jsonx.OrderedMap) bool {
+	line := lineStartAt(doc.Bytes, member.Start)
+	for _, key := range object.Keys() {
+		span, ok, _ := doc.Index.Value(appendStep(parent, configdoc.Step{Key: key})...)
+		if ok && span.Start != member.End && lineStartAt(doc.Bytes, span.Start) == line {
+			return true
+		}
+	}
+	return false
+}
+
+func removeJSONInlineMember(doc *configdoc.Document, parent []configdoc.Step, member configdoc.Span, object *jsonx.OrderedMap) (int, int, []byte, error) {
+	data := doc.Bytes
+	key := findMemberKey(doc, parent, member)
+	keys := object.Keys()
+	position := -1
+	for i, candidate := range keys {
+		if candidate == key {
+			position = i
+			break
+		}
+	}
+	if position < 0 {
+		return 0, 0, nil, fmt.Errorf("cannot locate same-line JSONC member")
+	}
+	if position+1 < len(keys) {
+		next, ok, err := doc.Index.Value(appendStep(parent, configdoc.Step{Key: keys[position+1]})...)
+		if err != nil || !ok {
+			return 0, 0, nil, fmt.Errorf("cannot locate following same-line JSONC member")
+		}
+		comma := findComma(data, member.End, next.Start, doc.Index.Comments())
+		if comma < 0 {
+			return 0, 0, nil, fmt.Errorf("cannot locate same-line JSONC separator")
+		}
+		start, end := member.Start, comma+1
+		return start, end, preserveComments(data, start, end, doc.Index.Comments()), nil
+	}
+	if position > 0 {
+		previous, ok, err := doc.Index.Value(appendStep(parent, configdoc.Step{Key: keys[position-1]})...)
+		if err != nil || !ok {
+			return 0, 0, nil, fmt.Errorf("cannot locate preceding same-line JSONC member")
+		}
+		comma := findComma(data, previous.End, member.Start, doc.Index.Comments())
+		if comma < 0 {
+			return 0, 0, nil, fmt.Errorf("cannot locate preceding same-line JSONC separator")
+		}
+		start, end := comma, member.End
+		return start, end, preserveComments(data, start, end, doc.Index.Comments()), nil
+	}
+	return member.Start, member.End, preserveComments(data, member.Start, member.End, doc.Index.Comments()), nil
+}
+
 func removeJSONMember(doc *configdoc.Document, member configdoc.Span, parentPath []configdoc.Step) (int, int, []byte, error) {
 	data := doc.Bytes
 	v, ok := lookup(doc.Values, parentPath)
 	obj, valid := v.(*jsonx.OrderedMap)
 	if !ok || !valid {
 		return 0, 0, nil, fmt.Errorf("JSONC parent is not an object")
+	}
+	if jsonMemberSharesLine(doc, parentPath, member, obj) {
+		return removeJSONInlineMember(doc, parentPath, member, obj)
 	}
 	line := lineStartAt(data, member.Start)
 	end := lineEndAt(data, member.End)
