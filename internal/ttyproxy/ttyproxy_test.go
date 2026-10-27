@@ -2417,6 +2417,41 @@ func TestPtySlaveDescriptorsHaveSingleFileOwners(t *testing.T) {
 	if rawClosesDescriptor(fixture, "s") {
 		t.Fatal("terminal-reset fixture raw-closes a slave descriptor still owned by an os.File")
 	}
+
+	callerarmPath := filepath.Join(filepath.Dir(currentFile), "callerarm_test.go")
+	callerarm := parseProxyFunction(t, callerarmPath, "TestAHandleIsInertOnceTheRunIsOver")
+	callerarmOwners, callerarmCloses, callerarmNewFiles := fileOwnersAndCloses(callerarm)
+	if callerarmNewFiles != 1 || len(callerarmOwners) != 1 || callerarmOwners[0] != "hostTTY" || callerarmCloses["hostTTY"] != 1 ||
+		rawClosesDescriptor(callerarm, "slave") || !callsIdentifier(callerarm, "stopDrain") || !receivesIdentifier(callerarm, "drainDone") {
+		t.Fatalf("caller-arm TTY fixture must close its hostTTY owner and stop/join its drainer: NewFile=%d owners=%v closes=%v", callerarmNewFiles, callerarmOwners, callerarmCloses)
+	}
+}
+
+func callsIdentifier(fn *ast.FuncDecl, name string) bool {
+	found := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if ok {
+			ident, ok := call.Fun.(*ast.Ident)
+			found = found || ok && ident.Name == name
+		}
+		return true
+	})
+	return found
+}
+
+func receivesIdentifier(fn *ast.FuncDecl, name string) bool {
+	found := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		recv, ok := node.(*ast.UnaryExpr)
+		if !ok || recv.Op != token.ARROW {
+			return true
+		}
+		ident, ok := recv.X.(*ast.Ident)
+		found = found || ok && ident.Name == name
+		return true
+	})
+	return found
 }
 
 func productionPtyOwnerCallpath(fn *ast.FuncDecl) bool {
