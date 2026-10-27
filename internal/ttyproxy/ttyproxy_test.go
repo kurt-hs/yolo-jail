@@ -606,6 +606,8 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal, holdStderr b
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	// Cmd.Wait otherwise waits for copied stderr until every inherited pipe writer closes.
+	// WaitDelay forces EOF on those pipes after its bound; if the child itself exited
+	// unsuccessfully, Wait still reports its ExitError rather than ErrWaitDelay.
 	// Keep this bound inside childDeadline so the signal test can report a stuck helper.
 	cmd.WaitDelay = childDeadline - time.Second
 	if err := cmd.Start(); err != nil {
@@ -614,26 +616,6 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal, holdStderr b
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	var heldStderr *os.File
-	if holdStderr {
-		helperStderr := fmt.Sprintf("/proc/%d/fd/2", cmd.Process.Pid)
-		want, err := os.Stat(helperStderr)
-		if err != nil {
-			t.Fatalf("stat owned helper stderr pipe: %v", err)
-		}
-		heldStderr, err = os.OpenFile(helperStderr, os.O_WRONLY|syscall.O_CLOEXEC, 0)
-		if err != nil {
-			t.Fatalf("hold owned helper stderr pipe: %v", err)
-		}
-		got, err := heldStderr.Stat()
-		if err != nil {
-			_ = heldStderr.Close()
-			t.Fatalf("stat held helper stderr pipe: %v", err)
-		}
-		if !os.SameFile(want, got) || got.Mode()&os.ModeNamedPipe == 0 {
-			_ = heldStderr.Close()
-			t.Fatalf("held stderr identity = same:%v mode:%v, want the owned helper's pipe", os.SameFile(want, got), got.Mode())
-		}
-	}
 	closeHeldStderr := func() {
 		if heldStderr != nil {
 			_ = heldStderr.Close()
@@ -664,6 +646,26 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal, holdStderr b
 		_ = cmd.Process.Kill()
 		<-done
 	}()
+	if holdStderr {
+		helperStderr := fmt.Sprintf("/proc/%d/fd/2", cmd.Process.Pid)
+		want, err := os.Stat(helperStderr)
+		if err != nil {
+			t.Fatalf("stat owned helper stderr pipe: %v", err)
+		}
+		heldStderr, err = os.OpenFile(helperStderr, os.O_WRONLY|syscall.O_CLOEXEC, 0)
+		if err != nil {
+			t.Fatalf("hold owned helper stderr pipe: %v", err)
+		}
+		got, err := heldStderr.Stat()
+		if err != nil {
+			_ = heldStderr.Close()
+			t.Fatalf("stat held helper stderr pipe: %v", err)
+		}
+		if !os.SameFile(want, got) || got.Mode()&os.ModeNamedPipe == 0 {
+			_ = heldStderr.Close()
+			t.Fatalf("held stderr identity = same:%v mode:%v, want the owned helper's pipe", os.SameFile(want, got), got.Mode())
+		}
+	}
 	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
 		t.Fatalf("target did not start before TTY pressure: %v stderr=%q", err, stderr.String())
 	}
@@ -2411,11 +2413,64 @@ func TestResetTerminalFdSelection(t *testing.T) {
 	})
 }
 
-func TestPtySlaveDescriptorsHaveSingleFileOwners(t *testing.T) {
-	_, currentFile, _, ok := runtime.Caller(0)
+func TestSignalFixtureRegistersCleanupBeforeOwnedStderrProbes(t *testing.T) {
+	fn := parseProxyFunction(t, mustCurrentTestFile(t), "runFullTTYSignalCancellation")
+	if !signalFixtureCleanupPrecedesStderrProbe(fn) {
+		t.Fatal("signal fixture must start its sole Wait goroutine and register child/pipe cleanup before probing the owned helper stderr FD")
+	}
+}
+
+func signalFixtureCleanupPrecedesStderrProbe(fn *ast.FuncDecl) bool {
+	start, wait, cleanup, probe, waits := -1, -1, -1, -1, 0
+	for i, stmt := range fn.Body.List {
+		ast.Inspect(stmt, func(node ast.Node) bool {
+			switch n := node.(type) {
+			case *ast.CallExpr:
+				if selector, ok := n.Fun.(*ast.SelectorExpr); ok {
+					receiver, _ := selector.X.(*ast.Ident)
+					if receiver != nil && receiver.Name == "cmd" && selector.Sel.Name == "Start" {
+						start = i
+					}
+					if receiver != nil && receiver.Name == "cmd" && selector.Sel.Name == "Wait" {
+						waits++
+						wait = i
+					}
+					if selector.Sel.Name == "Stat" || selector.Sel.Name == "OpenFile" {
+						probe = i
+					}
+				}
+			case *ast.DeferStmt:
+				if callContainsIdentifier(n.Call, "closeHeldStderr") && callContainsIdentifier(n.Call, "Kill") && callContainsIdentifier(n.Call, "done") {
+					cleanup = i
+				}
+			}
+			return true
+		})
+	}
+	return start >= 0 && waits == 1 && wait > start && cleanup > wait && probe > cleanup
+}
+
+func callContainsIdentifier(call *ast.CallExpr, name string) bool {
+	found := false
+	ast.Inspect(call, func(node ast.Node) bool {
+		ident, ok := node.(*ast.Ident)
+		found = found || ok && ident.Name == name
+		return true
+	})
+	return found
+}
+
+func mustCurrentTestFile(t *testing.T) string {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate test source")
 	}
+	return filename
+}
+
+func TestPtySlaveDescriptorsHaveSingleFileOwners(t *testing.T) {
+	currentFile := mustCurrentTestFile(t)
 	productionPath := filepath.Join(filepath.Dir(currentFile), "ttyproxy.go")
 	productionBytes, err := os.ReadFile(productionPath)
 	if err != nil {
