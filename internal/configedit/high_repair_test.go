@@ -114,10 +114,10 @@ func highRepairCases() []highRepairCase {
 		{
 			name:     "Set chooses earliest eligible descendant after explicit indexed parent",
 			before:   "[[parents]]\nid=1\n[parents.group.child]\nx=2\n[parents.group]\nkeep=3\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
-			after:    "[[parents]]\nid=1\n\n[parents.group]\nkeep=3\nchild = \"v\"\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n\n\n[parents.group]\nkeep=3\nchild = \"v\"\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
 			mutation: Mutation{Action: Set, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "group"}, {Key: "child"}}, Value: "v"},
 			want: map[string]any{"parents": []any{
-				map[string]any{"group": map[string]any{"keep": int64(3), "child": "v", "info": map[string]any{"z": int64(4)}}},
+				map[string]any{"id": int64(1), "group": map[string]any{"keep": int64(3), "child": "v", "info": map[string]any{"z": int64(4)}}},
 				map[string]any{"id": int64(2)},
 			}},
 		},
@@ -127,7 +127,7 @@ func highRepairCases() []highRepairCase {
 			after:    "[[parents]]\nid=1\n[parents.group.child]\nx=2\n[parents.group]\nkeep=3\nnew = true\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
 			mutation: Mutation{Action: Add, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "group"}, {Key: "new"}}, Value: true},
 			want: map[string]any{"parents": []any{
-				map[string]any{"group": map[string]any{"keep": int64(3), "new": true, "child": map[string]any{"x": int64(2)}, "info": map[string]any{"z": int64(4)}}},
+				map[string]any{"id": int64(1), "group": map[string]any{"keep": int64(3), "new": true, "child": map[string]any{"x": int64(2)}, "info": map[string]any{"z": int64(4)}}},
 				map[string]any{"id": int64(2)},
 			}},
 		},
@@ -204,7 +204,9 @@ func TestConfigEditHighRepairPlanEdit(t *testing.T) {
 			}
 			parsed, err := configdoc.Parse(plan.Updated, configdoc.TOML)
 			if err != nil || !semanticEqual(parsed.Values, want) {
-				t.Fatalf("PlanEdit values = %#v, err %v; want independently built %#v", parsed, err, want)
+				got, _ := configdoc.EncodeValue(parsed.Values, configdoc.TOML)
+				wantBytes, _ := configdoc.EncodeValue(want, configdoc.TOML)
+				t.Fatalf("PlanEdit values = %s, err %v; want independently built %s", got, err, wantBytes)
 			}
 		})
 	}
@@ -233,7 +235,9 @@ func TestConfigEditHighRepairApply(t *testing.T) {
 			}
 			parsed, err := configdoc.Parse(got, configdoc.TOML)
 			if err != nil || !semanticEqual(parsed.Values, want) {
-				t.Fatalf("Apply values = %#v, err %v; want independently built %#v", parsed, err, want)
+				gotValue, _ := configdoc.EncodeValue(parsed.Values, configdoc.TOML)
+				wantBytes, _ := configdoc.EncodeValue(want, configdoc.TOML)
+				t.Fatalf("Apply values = %s, err %v; want independently built %s", gotValue, err, wantBytes)
 			}
 		})
 	}
