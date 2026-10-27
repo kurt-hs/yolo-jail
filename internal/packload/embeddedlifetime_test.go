@@ -16,7 +16,9 @@ package packload_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	_ "github.com/mschulkind-oss/yolo-jail/internal/packreg" // registers the embedded packs
@@ -248,6 +251,118 @@ func TestReleaseEmbeddedForExitStopsReacquisition(t *testing.T) {
 		t.Fatalf("terminal pack-tree child failed: %v\n%s", err, output)
 	}
 	t.Logf("terminal pack-tree child trace:\n%s", output)
+}
+
+// TestReleaseEmbeddedForExitStopsReacquisitionFromExternalBinary copies this actual test
+// executable outside the checkout and runs the public lifecycle target there. cmd/go's $WORK
+// makes the process tree a sibling of its test binary; ordinary CI therefore cannot exercise
+// the independent-TMPDIR root inventory unless a normal test launches an external copy.
+func TestReleaseEmbeddedForExitStopsReacquisitionFromExternalBinary(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	moduleRoot := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(moduleRoot, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(moduleRoot)
+		if parent == moduleRoot {
+			t.Fatalf("could not find go.mod above package cwd %q", cwd)
+		}
+		moduleRoot = parent
+	}
+	moduleRoot, err = filepath.EvalSymlinks(moduleRoot)
+	if err != nil {
+		t.Fatalf("resolve module root: %v", err)
+	}
+
+	fixture, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve external-binary fixture: %v", err)
+	}
+	rel, err := filepath.Rel(moduleRoot, fixture)
+	if err != nil || rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
+		t.Fatalf("external-binary fixture %q is not outside checkout %q (relative path %q, error %v)", fixture, moduleRoot, rel, err)
+	}
+
+	source, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err = filepath.EvalSymlinks(source)
+	if err != nil {
+		t.Fatalf("resolve compiled test executable: %v", err)
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceInfo.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("compiled test executable %q has no execute permission: %v", source, sourceInfo.Mode())
+	}
+
+	externalBinary := filepath.Join(fixture, "packload-lifecycle.test")
+	in, err := os.Open(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.OpenFile(externalBinary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, sourceInfo.Mode().Perm())
+	if err != nil {
+		in.Close()
+		t.Fatal(err)
+	}
+	_, copyErr := io.Copy(out, in)
+	inErr, outErr := in.Close(), out.Close()
+	if copyErr != nil {
+		t.Fatalf("copy compiled test executable: %v", copyErr)
+	}
+	if inErr != nil {
+		t.Fatalf("close compiled test executable source: %v", inErr)
+	}
+	if outErr != nil {
+		t.Fatalf("close external test executable: %v", outErr)
+	}
+	if err := os.Chmod(externalBinary, sourceInfo.Mode().Perm()); err != nil {
+		t.Fatalf("preserve compiled test executable mode: %v", err)
+	}
+	externalInfo, err := os.Stat(externalBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if externalInfo.Mode().Perm() != sourceInfo.Mode().Perm() {
+		t.Fatalf("external executable mode %v differs from compiled source mode %v", externalInfo.Mode().Perm(), sourceInfo.Mode().Perm())
+	}
+
+	lifecycleTMP := filepath.Join(fixture, "lifecycle-tmp")
+	if err := os.Mkdir(lifecycleTMP, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, externalBinary, "-test.run=^TestReleaseEmbeddedForExitStopsReacquisition$", "-test.count=1", "-test.v", "-test.timeout=20s")
+	cmd.Dir = cwd
+	var env []string
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if key != "TMPDIR" && key != "TMP" && key != "TEMP" && key != "YOLO_PACKLOAD_TERMINAL_CHILD" {
+			env = append(env, item)
+		}
+	}
+	cmd.Env = append(env, "TMPDIR="+lifecycleTMP, "TMP="+lifecycleTMP, "TEMP="+lifecycleTMP)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("external-binary terminal lifecycle failed (binary=%q cwd=%q): %v\n%s", externalBinary, cmd.Dir, err, output)
+	}
+	trace := string(output)
+	if strings.Count(trace, "lease=held") != 2 || strings.Count(trace, "within-fixture-TMPDIR=true") != 2 {
+		t.Fatalf("external-binary lifecycle did not observe both held roots inside its physical TMPDIR (binary=%q):\n%s", externalBinary, trace)
+	}
+	if strings.Count(trace, "absent=true") != 2 || !strings.Contains(trace, "inventory=[] (empty)") {
+		t.Fatalf("external-binary lifecycle did not remove both roots and leave an empty TMPDIR (binary=%q):\n%s", externalBinary, trace)
+	}
+	t.Logf("external-binary=%q mode=%v cwd=%q lifecycle-TMPDIR=%q; public lifecycle child trace:\n%s", externalBinary, externalInfo.Mode().Perm(), cwd, lifecycleTMP, trace)
 }
 
 // TestReleaseEmbeddedKeepsTheSharedTreeAndReadopts: a release gives back this process's lease,
