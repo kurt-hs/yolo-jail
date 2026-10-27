@@ -81,6 +81,17 @@ end)`)
 	}
 }
 
+func TestProjectProviderSemanticsRejectsSecondaryViaEvenWhenServiceMatches(t *testing.T) {
+	pack := providerDeriveFixture(t, `yolo.derive("probe", "snapshot", function(ctx) return {} end)`)
+	input := ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{
+		{Name: "p", Via: "wire-bridge"}, {Name: "q", Via: "wire-bridge"},
+	}, Selection: ActiveProviderSelection{Default: []string{"p", "q"}}, Receivers: ProviderReceivers([]*packload.Pack{pack})}
+	_, _, err := ProjectProviderSemantics(input, []ProviderDeriveRequest{{Receiver: "probe", Pack: pack, Surface: "snapshot", ViaRoutes: map[string]ProviderViaRoute{"wire-bridge": {URL: "https://bridge.example", APIKeyEnvName: "TOKEN"}}}})
+	if err == nil || !strings.Contains(err.Error(), "q") || !strings.Contains(err.Error(), "wire-bridge") || !strings.Contains(err.Error(), "remove or reselect") {
+		t.Fatalf("secondary via must refuse even when service matches, with remedy: %v", err)
+	}
+}
+
 func TestProjectProviderSemanticsPreservesAbsentButClearsExplicitEmptyModelRows(t *testing.T) {
 	pack := providerDeriveFixture(t, `yolo.derive("probe", "snapshot", function(ctx) return { models = ctx.providers.p.models } end)`)
 	input := ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{{Name: "p", ModelRows: map[string]packdecl.ProviderModel{}}},

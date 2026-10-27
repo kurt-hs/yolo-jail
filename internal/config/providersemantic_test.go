@@ -206,6 +206,12 @@ func TestResolveActiveProvidersValidatesSharedNameNamespaceAndActionableSelectio
 	if err != nil || len(both.ByReceiver["assistant"]) != 2 || both.ByReceiver["assistant"][0].Model != "p-opus" || both.ByReceiver["assistant"][1].Model != "q-opus" {
 		t.Fatalf("qualified variants should coexist: %#v, %v", both, err)
 	}
+	for _, selectors := range [][]string{{"p", "p/opus"}, {"p", "alias-p"}} {
+		duplicates := []packdecl.ProviderContribution{{Name: "p", Alias: "alias-p", Variants: map[string]packdecl.ProviderVariant{"opus": {}}}, {Name: "q", Variants: map[string]packdecl.ProviderVariant{"opus": {}}}}
+		if _, err := ResolveActiveProviders(duplicates, ActiveProviderSelection{Default: selectors}, []ProviderReceiver{{Bin: "assistant", HoldsProviderSets: true}}); err == nil || !strings.Contains(err.Error(), "keep one") {
+			t.Errorf("selectors %v resolving to duplicate provider should refuse actionably: %v", selectors, err)
+		}
+	}
 	nativeVariant, err := ResolveActiveProviders(pairs, ActiveProviderSelection{Default: []string{"p/native"}}, []ProviderReceiver{{Bin: "assistant"}})
 	if err != nil || nativeVariant.ByReceiver["assistant"][0].Target.Native || nativeVariant.ByReceiver["assistant"][0].Target.Variant != "native" {
 		t.Fatalf("only bare native is reserved: %#v, %v", nativeVariant, err)
@@ -292,6 +298,44 @@ func TestComposeProviderModelsRefusesInvalidFactsTwinsAndPrices(t *testing.T) {
 	unknownMaker := packdecl.ProviderContribution{Name: "p", ModelRows: map[string]packdecl.ProviderModel{"opaque-id": {Price: validPrice}}}
 	if _, err := ComposeProviderModels(unknownMaker, nil); err == nil || !strings.Contains(err.Error(), "vendor") {
 		t.Fatalf("ambiguous maker must be authored: %v", err)
+	}
+}
+
+func TestComposeProviderSemanticsPreservesAuthoredOrderThroughPiModelDerive(t *testing.T) {
+	packs := packload.Embedded()
+	defer packload.ReleaseEmbedded()
+	var piPack *packload.Pack
+	for _, pack := range packs {
+		if pack.Name == "pi" {
+			piPack = pack
+			break
+		}
+	}
+	provider := packdecl.ProviderContribution{Name: "semantic", ModelOrder: []string{"z", "a"}, ModelRows: map[string]packdecl.ProviderModel{
+		"z": {Name: "Zed", Vendor: "anthropic", Price: completePrice(1, 2, 3, 4), OpenRouterRouting: map[string]any{"order": []any{"anthropic"}}},
+		"a": {Name: "Alpha", Vendor: "anthropic", Price: completePrice(1, 2, 3, 4), OpenRouterRouting: map[string]any{"order": []any{"anthropic"}}},
+	}}
+	_, derives, err := ProjectProviderSemantics(ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{provider},
+		Selection: ActiveProviderSelection{Default: []string{"semantic"}}, Receivers: ProviderReceivers([]*packload.Pack{piPack})},
+		[]ProviderDeriveRequest{{Receiver: "pi", Pack: piPack, Surface: "model-lists", Context: luahook.DeriveCtx{Tables: map[string]map[string]any{"providers": {"semantic": map[string]any{"endpoints": map[string]any{"openai": map[string]any{"base_url": "https://models.example/v1", "wire_api": "openai-responses"}}}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers, ok := derives[0].Value["providers"].(map[string]any)
+	if !ok {
+		t.Fatalf("pi derive providers = %#v", derives[0].Value)
+	}
+	semantic, ok := providers["semantic"].(map[string]any)
+	if !ok {
+		t.Fatalf("pi derive semantic provider = %#v", providers)
+	}
+	rows, ok := semantic["models"].([]any)
+	if !ok || len(rows) != 2 {
+		t.Fatalf("pi derive semantic models = %#v", semantic)
+	}
+	ids := []string{rows[0].(map[string]any)["id"].(string), rows[1].(map[string]any)["id"].(string)}
+	if strings.Join(ids, ",") != "z,a" {
+		t.Fatalf("pi model list order = %v, want authored order [z a]", ids)
 	}
 }
 

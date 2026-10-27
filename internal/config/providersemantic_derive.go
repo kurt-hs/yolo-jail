@@ -79,8 +79,8 @@ func ProjectProviderSemantics(input ProviderSemanticInput, requests []ProviderDe
 		}
 		if len(selected) > 1 {
 			for i := 1; i < len(selected); i++ {
-				if selected[i].Via != "" && selected[i].Via != selected[0].Via {
-					return ProviderSemanticResult{}, nil, fmt.Errorf("packs/%s derive %s/%s: provider set spans via services %s and %s, but one derive context carries one route; use one via service or split the receiver selection", request.Pack.Name, request.Receiver, request.Surface, selected[0].Via, selected[i].Via)
+				if selected[i].Via != "" {
+					return ProviderSemanticResult{}, nil, fmt.Errorf("packs/%s derive %s/%s: secondary selected provider %s uses via service %s, but only the primary selection can supply a via route; remove or reselect %s", request.Pack.Name, request.Receiver, request.Surface, selected[i].Provider, selected[i].Via, selected[i].Provider)
 				}
 			}
 		}

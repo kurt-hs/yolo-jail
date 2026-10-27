@@ -343,10 +343,17 @@ func ResolveActiveProviders(declarations []packdecl.ProviderContribution, select
 			}
 		}
 		selected := make([]SelectedProvider, 0, len(names))
+		seenProviders := map[string]bool{}
 		for _, name := range names {
 			item, err := resolve(name)
 			if err != nil {
 				return ProviderSelectionResult{}, fmt.Errorf("active_provider.%s: %w", receiver, err)
+			}
+			if item.Provider != "" {
+				if seenProviders[item.Provider] {
+					return ProviderSelectionResult{}, fmt.Errorf("active_provider.%s: provider %s is selected more than once through different selectors; keep one", receiver, item.Provider)
+				}
+				seenProviders[item.Provider] = true
 			}
 			selected = append(selected, item)
 		}

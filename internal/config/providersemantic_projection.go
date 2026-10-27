@@ -53,7 +53,7 @@ func ProjectProviderModelsForLegacyDerives(models ReadableModels) (LegacyDeriveP
 		}
 		sort.Strings(order)
 	}
-	for _, id := range order {
+	for ordinal, id := range order {
 		model, ok := models.ByID[id]
 		if !ok {
 			return LegacyDeriveProjection{}, fmt.Errorf("model order names missing row %q", id)
@@ -64,6 +64,7 @@ func ProjectProviderModelsForLegacyDerives(models ReadableModels) (LegacyDeriveP
 		ids.Set(id, id)
 		facts := model.Facts
 		flat := jsonx.NewOrderedMap()
+		flat.Set("order", strconv.Itoa(ordinal))
 		setText := func(key, value string) {
 			if value != "" {
 				flat.Set(key, value)
