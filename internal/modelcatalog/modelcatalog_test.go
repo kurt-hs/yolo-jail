@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +30,38 @@ func ids(c Catalog) []string {
 
 // Every `id` string at any depth of every matched file is a known id, one segment matched at a
 // time: pi 0.99.1's shape, {"<api>": {"chat:<id>": {"id": "<id>", …}}}, and a list of objects.
+func TestReadCollectsOfflineCanonicalModelFactsWithoutFillingDefaults(t *testing.T) {
+	pkg := t.TempDir()
+	writeFile(t, filepath.Join(pkg, "catalog.json"), `{"models":[
+		{"id":"global.anthropic.opus-5","vendor":"anthropic","api":"anthropic","context":1000000,"accepts":["text","image"],"price":{"input":1,"output":2,"cache_read":0.1,"cache_write":0.2}},
+		{"id":"vendor/unknown","name":"Unknown","base":"model-base","extends":"shared","compact_at":1000,"openrouter_routing":{"order":["anthropic"]}}
+	]}`)
+	got, err := ReadCanonicalFacts(pkg, []string{"catalog.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := Read(pkg, []string{"catalog.json"})
+	if len(legacy.Facts) != 0 || !legacy.IDs["global.anthropic.opus-5"] {
+		t.Fatalf("legacy agent catalog reader must remain ids-only: %#v", legacy)
+	}
+	facts, ok := got.Facts["global.anthropic.opus-5"]
+	if !ok || facts.API != "anthropic" || facts.Context != 1_000_000 || facts.Price == nil || facts.Price.CacheWrite == nil || *facts.Price.CacheWrite != .2 {
+		t.Fatalf("offline model facts = %#v", got.Facts)
+	}
+	unknown, ok := got.Facts["vendor/unknown"]
+	if !ok || unknown.Name != "Unknown" || unknown.Base != "model-base" || unknown.Extends != "shared" || unknown.CompactAt != 1000 || unknown.OpenRouterRouting["order"] == nil || unknown.MaxTokens != 0 || unknown.Price != nil {
+		t.Fatalf("catalog facts invented defaults or lost an authored field: %#v", unknown)
+	}
+}
+
+func TestReadCanonicalFactsRefusesMalformedAuthoredFacts(t *testing.T) {
+	pkg := t.TempDir()
+	writeFile(t, filepath.Join(pkg, "facts.json"), `{"id":"model-x","price":{"input":"free"}}`)
+	if _, err := ReadCanonicalFacts(pkg, []string{"facts.json"}); err == nil || !strings.Contains(err.Error(), "model-x") {
+		t.Fatalf("malformed canonical fact source should name its model and fail: %v", err)
+	}
+}
+
 func TestReadCollectsEveryIDTheMatchedFilesName(t *testing.T) {
 	pkg := t.TempDir()
 	writeFile(t, filepath.Join(pkg, "package.json"), `{"name": "agent", "version": "1.2.3"}`)
