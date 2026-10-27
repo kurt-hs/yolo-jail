@@ -214,8 +214,9 @@ func TestReadableAlwaysPushNeedsNamedTargetAndAlwaysNewBranchesNeedsRead(t *test
 		{"always push without target", `{"allow":{"git":{"always":["fetch","push"]}}}`, `{}`, false},
 		{"always push with explicit target", `{"allow":{"git":{"always":["fetch","push"]}}}`, `{"requests":{"git":{"push":["main"]}}}`, true},
 		{"new branches false", `{"allow":{"git":{"always":["fetch"],"on_request":["new_branches"]}}}`, `{"requests":{"git":{"new_branches":false}}}`, false},
-		{"new branches needs read", `{"allow":{"git":{"always":["new_branches"]}}}`, `{}`, false},
-		{"always new branches requires a concrete request", `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, `{"requests":{"git":{"new_branches":true}}}`, true},
+		{"always new branches lacks its read prerequisite", `{"allow":{"git":{"always":["new_branches"]}}}`, `{}`, false},
+		{"always new branches on concrete scope", `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, `{}`, true},
+		{"requested always new branches stays concrete", `{"allow":{"git":{"always":["fetch","new_branches"]}}}`, `{"requests":{"git":{"new_branches":true}}}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ws := t.TempDir()
@@ -232,7 +233,7 @@ func TestReadableAlwaysPushNeedsNamedTargetAndAlwaysNewBranchesNeedsRead(t *test
 			}
 			branchGrant := false
 			wantKind := ""
-			if tc.name == "always new branches requires a concrete request" {
+			if strings.HasPrefix(tc.name, "always new branches") {
 				wantKind = "create-branch"
 			}
 			for _, source := range gate.Sources {
