@@ -384,6 +384,23 @@ func TestGroupedTOMLMatchesLegacyPublicContributionReaders(t *testing.T) {
 	assertContributionParity(t, "strict", old, strict)
 }
 
+func TestGroupedManifestParityPreservesNamespacedSkillsTier(t *testing.T) {
+	legacy, problems := Decode([]byte(`{"name":"namespaced-fixture","description":"Namespaced fixture.","skills_tier":"namespaced"}`))
+	if len(problems) != 0 {
+		t.Fatalf("valid legacy metadata rejected: %v", problems)
+	}
+	grouped, problems := DecodeTOML([]byte("name = \"namespaced-fixture\"\ndescription = \"Namespaced fixture.\"\nskills_tier = \"namespaced\"\n"))
+	if len(problems) != 0 {
+		t.Fatalf("valid grouped metadata rejected: %v", problems)
+	}
+	if legacy.Name != grouped.Name || legacy.Description != grouped.Description || legacy.SkillsTier != grouped.SkillsTier {
+		t.Fatalf("manifest header metadata differs: legacy=%#v grouped=%#v", legacy, grouped)
+	}
+	if grouped.SkillsTier != "namespaced" || !grouped.WantsNamespacedSkills() {
+		t.Fatalf("positive namespaced tier was not preserved: SkillsTier=%q WantsNamespacedSkills=%t", grouped.SkillsTier, grouped.WantsNamespacedSkills())
+	}
+}
+
 func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 	t.Helper()
 	// The fixture-built row has no legacy install hints. Its grouped declaration omits
@@ -399,6 +416,10 @@ func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 		}
 	}
 	old = &legacyWithGroupedDefaults
+	if old.Name != got.Name || old.Description != got.Description || old.SkillsTier != got.SkillsTier {
+		t.Errorf("%s manifest header metadata differs: legacy name/description/skills_tier=%q/%q/%q grouped=%q/%q/%q", reader,
+			old.Name, old.Description, old.SkillsTier, got.Name, got.Description, got.SkillsTier)
+	}
 	want, have := old.Contributions(), got.Contributions()
 	if len(want) != len(have) {
 		t.Fatalf("%s Contributions count=%d, want %d", reader, len(have), len(want))
