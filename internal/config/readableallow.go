@@ -165,6 +165,8 @@ type ReadableGateInput struct {
 	PackSettings           map[string]map[string]any
 	PackSettingOrigins     map[string]map[string][]string
 	TableTombstones        []ReadableTableTombstone
+	// Differences require an explicit no-write migration/gate decision; never ignore them and claim equivalence.
+	Differences []string
 }
 
 // ResolveReadableAllowance validates canonical values against explicit selected declarations.
@@ -391,13 +393,9 @@ func ResolveReadableAllowance(input ReadableAllowanceInput) (ReadableAllowancePl
 					if !selected[policy.Pack] {
 						continue
 					}
-					if !slices.Contains(policy.Always, policy.ReadCapability) && !(slices.Contains(policy.OnRequest, policy.ReadCapability) && readableReadRequested(table, policy.ReadCapability)) {
-						plan.Requests = append(plan.Requests, ReadableRequestResult{Path: path, Files: cloneOrigins(input.WorkspaceOrigins[path]), Capability: "repos", Value: repo,
-							Status: ReadableRequestSkipped, Reason: "a named repository is scope input, not permission; add " + policy.ReadCapability + " to allow." + name + ".always to grant read at the human gate"})
-						continue
-					}
 					policy.Repos = appendReadableRepo(policy.Repos, ReadableRepoRequest{Repository: repo, Path: path, Files: cloneOrigins(input.WorkspaceOrigins[path])})
-					plan.Requests = append(plan.Requests, ReadableRequestResult{Path: path, Files: cloneOrigins(input.WorkspaceOrigins[path]), Capability: "repos", Value: repo, Status: ReadableRequestGranted})
+					plan.Requests = append(plan.Requests, ReadableRequestResult{Path: path, Files: cloneOrigins(input.WorkspaceOrigins[path]), Capability: "repos", Value: repo,
+						Status: ReadableRequestGranted, Reason: "repository identity is scope input only; each selected consumer's own read allowance still applies"})
 				}
 				continue
 			}
@@ -605,6 +603,15 @@ func ProduceReadableGateInput(workspace string, plan ReadableAllowancePlan) (Rea
 			}
 		}
 
+		var valid []ReadableGrantDecision
+		for i := range decisions {
+			if !brokerscope.ValidGrant(decisions[i].Grant) {
+				input.Differences = appendReadableDifference(input.Differences, fmt.Sprintf("%s target %q cannot be serialized as grant %q; preserve the typed target and write nothing until the scope is representable", policy.Source, decisions[i].Grant.Repo, decisions[i].Grant.String()))
+				continue
+			}
+			valid = append(valid, decisions[i])
+		}
+		decisions = valid
 		if len(decisions) == 0 {
 			continue
 		}
@@ -637,7 +644,9 @@ func WithReadableGateInput(workspace string, plan ReadableAllowancePlan, consume
 // ReadableLegacyGrantProjection carries the exact concrete canonical grants and every mismatch;
 // a legacy scope the canonical list cannot express is a migration difference, never a wildcard.
 type ReadableLegacyGrantProjection struct {
-	Raw           []brokerscope.Grant
+	Raw []brokerscope.Grant
+	// Targets retains identities even when the legacy grant grammar cannot serialize them.
+	Targets       []ReadableRepository
 	Concrete      []brokerscope.Grant
 	ScopeFreeRead bool
 	Differences   []string
@@ -669,12 +678,13 @@ func CompareReadableLegacyGrants(source string, legacy, canonical []brokerscope.
 // scope before comparison. Raw grants remain beside the expansion for provenance and migration;
 // an empty scope expands to no grant and never to a global permission.
 func ExpandReadableLegacyGrants(source string, raw []brokerscope.Grant, targets []ReadableRepository) ReadableLegacyGrantProjection {
-	projection := ReadableLegacyGrantProjection{Raw: append([]brokerscope.Grant(nil), raw...)}
+	projection := ReadableLegacyGrantProjection{Raw: append([]brokerscope.Grant(nil), raw...), Targets: cloneReadableRepositories(targets)}
 	concrete := map[string]bool{}
 	for _, target := range targets {
 		identity := target.RemoteHost + "/" + target.Repository
-		if brokerscope.ValidGrant(brokerscope.Grant{Kind: brokerscope.KindRead, Repo: identity}) {
-			concrete[strings.ToLower(identity)] = true
+		concrete[strings.ToLower(identity)] = true
+		if !brokerscope.ValidGrantRepo(identity) {
+			projection.Differences = appendReadableDifference(projection.Differences, fmt.Sprintf("legacy %s target %q cannot be serialized as a concrete grant; preserve its typed target/raw state and write nothing until the scope is representable", source, identity))
 		}
 	}
 	for _, grant := range raw {
@@ -692,9 +702,11 @@ func ExpandReadableLegacyGrants(source string, raw []brokerscope.Grant, targets 
 			for _, target := range targets {
 				identity := target.RemoteHost + "/" + target.Repository
 				grant.Repo = identity
-				if brokerscope.ValidGrant(grant) {
-					projection.Concrete = appendReadableConcreteGrant(projection.Concrete, grant)
+				if !brokerscope.ValidGrant(grant) {
+					projection.Differences = appendReadableDifference(projection.Differences, fmt.Sprintf("legacy %s target %q cannot serialize grant %q; preserve typed target/raw state and write nothing", source, identity, grant.String()))
+					continue
 				}
+				projection.Concrete = appendReadableConcreteGrant(projection.Concrete, grant)
 			}
 			continue
 		}
@@ -705,6 +717,13 @@ func ExpandReadableLegacyGrants(source string, raw []brokerscope.Grant, targets 
 		projection.Concrete = appendReadableConcreteGrant(projection.Concrete, grant)
 	}
 	return projection
+}
+
+func appendReadableDifference(differences []string, difference string) []string {
+	if !slices.Contains(differences, difference) {
+		return append(differences, difference)
+	}
+	return differences
 }
 
 func appendReadableConcreteGrant(grants []brokerscope.Grant, grant brokerscope.Grant) []brokerscope.Grant {
@@ -909,8 +928,11 @@ func readableTable(config *jsonx.OrderedMap, key string) (*jsonx.OrderedMap, err
 		return jsonx.NewOrderedMap(), nil
 	}
 	value, found := config.Get(key)
-	if !found || value == nil {
+	if !found {
 		return jsonx.NewOrderedMap(), nil
+	}
+	if value == nil {
+		return nil, fmt.Errorf("%s: expected a table", key)
 	}
 	table, ok := asMap(value)
 	if !ok {
@@ -1163,12 +1185,6 @@ func readableBrokerIndex(policies []ReadableBrokerPolicy, source string) int {
 	}
 	return -1
 }
-func readableReadRequested(table *jsonx.OrderedMap, capability string) bool {
-	value, found := table.Get(capability)
-	requested, ok := value.(bool)
-	return found && ok && requested
-}
-
 func readableReadRequestedFromResults(requests []ReadableRequestResult, source, capability string) bool {
 	path := "requests." + source + "." + capability
 	for _, request := range requests {
@@ -1221,7 +1237,7 @@ func readableTargets(policy ReadableBrokerPolicy, remotes brokerscope.Read) []Re
 				continue
 			}
 		}
-		if !brokerscope.ValidRepo(repo) {
+		if policy.RemoteHost != brokerscope.AnyRemoteHost && !brokerscope.ValidRepo(repo) {
 			continue
 		}
 		out = appendReadableRepository(out, ReadableRepository{Source: policy.Source, RemoteHost: host, Repository: repo, Origin: "remote " + remote.Name})
