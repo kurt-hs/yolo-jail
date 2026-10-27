@@ -641,7 +641,7 @@ func runFullTTYSignalCancellation(t *testing.T, sig syscall.Signal, holdStderr b
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	// Cmd.Wait otherwise waits for copied stderr until every inherited pipe writer closes.
-	// WaitDelay forces EOF on those pipes after its bound; if the child itself exited
+	// WaitDelay forcibly closes those copied pipes after its bound; if the child itself exited
 	// unsuccessfully, Wait still reports its ExitError rather than ErrWaitDelay.
 	// Keep this bound inside childDeadline so the signal test can report a stuck helper.
 	cmd.WaitDelay = childDeadline - time.Second
@@ -1146,12 +1146,12 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		if err := waitForFile(control+".cancel-published", time.Now().Add(childDeadline)); err != nil {
 			t.Fatalf("caller Handle.Terminate did not publish cancellation from StageResumed: %v", err)
 		}
+		if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline)); err != nil {
+			t.Fatalf("StageResumed marker was not observed before checking child input: %v", err)
+		}
 		published, err := os.ReadFile(control + ".cancel-published")
 		if err != nil || string(published) != "terminated" {
 			t.Fatalf("caller Handle.Terminate result = %q err=%v", published, err)
-		}
-		if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline)); err != nil {
-			t.Fatalf("StageResumed callback did not return before checking child input: %v", err)
 		}
 		inputErr := waitPressureMarker(t, control, 'R', time.Now().Add(childDeadline))
 		if err := os.WriteFile(control+".kill", []byte("observed"), 0600); err != nil {
@@ -2485,6 +2485,72 @@ func TestResetTerminalFdSelection(t *testing.T) {
 		terminalStdoutFD, terminalStderrFD = 1, 2
 		resetTerminal(-1)
 	})
+}
+
+func TestCallerCancellationPublicationReadFollowsResumeReceipt(t *testing.T) {
+	fn := parseProxyFunction(t, mustCurrentTestFile(t), "runSuspendResumePreservesOutputQueueOrder")
+	if !callerCancellationPublicationReadFollowsResumeReceipt(fn) {
+		t.Fatal("caller cancellation contents must be read only after the StageResumed marker is observed")
+	}
+}
+
+func callerCancellationPublicationReadFollowsResumeReceipt(fn *ast.FuncDecl) bool {
+	matchingBranches, validOrder := 0, true
+	ast.Inspect(fn, func(node ast.Node) bool {
+		branch, ok := node.(*ast.IfStmt)
+		if !ok {
+			return true
+		}
+		condition, ok := branch.Cond.(*ast.Ident)
+		if !ok || condition.Name != "cancelDuringResume" {
+			return true
+		}
+
+		var read, receipt token.Pos
+		readCount, receiptCount := 0, 0
+		ast.Inspect(branch.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch function := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				receiver, ok := function.X.(*ast.Ident)
+				if ok && receiver.Name == "os" && function.Sel.Name == "ReadFile" && len(call.Args) == 1 &&
+					controlPathHasSuffix(call.Args[0], ".cancel-published") {
+					read, readCount = call.Pos(), readCount+1
+				}
+			case *ast.Ident:
+				if function.Name == "waitPressureMarker" && len(call.Args) >= 3 && controlPathHasSuffix(call.Args[1], ".proxy") {
+					marker, ok := call.Args[2].(*ast.BasicLit)
+					if ok && marker.Value == "'R'" {
+						receipt, receiptCount = call.Pos(), receiptCount+1
+					}
+				}
+			}
+			return true
+		})
+		if readCount == 0 && receiptCount == 0 {
+			return true
+		}
+		matchingBranches++
+		validOrder = validOrder && readCount == 1 && receiptCount == 1 && receipt < read
+		return true
+	})
+	return matchingBranches == 1 && validOrder
+}
+
+func controlPathHasSuffix(expression ast.Expr, suffix string) bool {
+	path, ok := expression.(*ast.BinaryExpr)
+	if !ok || path.Op != token.ADD {
+		return false
+	}
+	control, ok := path.X.(*ast.Ident)
+	if !ok || control.Name != "control" {
+		return false
+	}
+	literal, ok := path.Y.(*ast.BasicLit)
+	return ok && literal.Kind == token.STRING && literal.Value == strconv.Quote(suffix)
 }
 
 func TestSignalFixtureRegistersCleanupBeforeOwnedStderrProbes(t *testing.T) {
