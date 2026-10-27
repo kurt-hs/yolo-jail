@@ -565,6 +565,57 @@ func reobserveUncertainHome(home string, p homeProcess, deadline time.Time, prob
 	}
 }
 
+// reobserveTransientEmptyArguments handles the bounded interval where a previously classifiable
+// HOME-owned process has empty argv on revalidation. It never signals an empty or
+// unreadable argv: the same start time and a fresh matching HOME observation are required before
+// the refreshed arguments can return to the ordinary stop classification.
+func reobserveTransientEmptyArguments(home string, p homeProcess, snapshot stopProcessSnapshot, deadline time.Time, probes stopProcessProbes) (refreshed homeProcess, observed stopProcessSnapshot, live, departed, retried bool, err error) {
+	if p.argsErr != nil || len(p.args) == 0 || p.statErr != nil || p.startTime == "" ||
+		!p.homeMatched || p.homeErr != nil || p.lateHomeErr != nil || probes.home == nil {
+		return p, snapshot, true, false, false, nil
+	}
+	retried = true
+	for {
+		if snapshot.gone {
+			return p, snapshot, false, false, true, nil
+		}
+		if snapshot.startTime != p.startTime {
+			return p, snapshot, false, false, true, fmt.Errorf("revalidating %s while argv was empty: pid now names a different process", p)
+		}
+		matches, homeErr := probes.home(p.pid, home)
+		if homeDeparted(homeErr) || (homeErr == nil && !matches) {
+			awaitHomeDeparture(home, p, deadline, probes)
+			return p, snapshot, false, true, true, nil
+		}
+		if homeErr != nil && !errors.Is(homeErr, errHomeObservationUnknown) {
+			return p, snapshot, false, false, true, fmt.Errorf("revalidating %s HOME ownership while argv was empty: %w", p, homeErr)
+		}
+		if homeErr == nil && matches && len(snapshot.args) > 0 {
+			p.args = append([]string(nil), snapshot.args...)
+			p.argsErr = nil
+			p.homeErr = nil
+			p.homeMatched = true
+			return p, snapshot, true, false, true, nil
+		}
+		if !time.Now().Before(deadline) {
+			if homeErr != nil {
+				return p, snapshot, false, false, true, fmt.Errorf("revalidating %s while argv was empty: HOME ownership remained unreadable through the stop bound: %w", p, homeErr)
+			}
+			original := fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
+			return p, snapshot, false, false, true, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
+		}
+		pause := time.Until(deadline)
+		if pause > 50*time.Millisecond {
+			pause = 50 * time.Millisecond
+		}
+		time.Sleep(pause)
+		snapshot, err = probes.inspect(p.pid)
+		if err != nil {
+			return p, snapshot, false, false, true, fmt.Errorf("revalidating %s while waiting for classifiable arguments: %w", p, err)
+		}
+	}
+}
+
 func stopDiagnosticErrorClass(err error) string {
 	switch {
 	case err == nil:
@@ -742,8 +793,24 @@ func refreshStopListing(home string, procs []homeProcess, deadline time.Time, pr
 				current = append(current, p)
 				continue
 			}
-			original := fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
-			return nil, false, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
+			refreshed, observed, stillLive, ownershipDeparted, retried, err := reobserveTransientEmptyArguments(home, p, snapshot, deadline, probes)
+			if err != nil {
+				return nil, false, err
+			}
+			if ownershipDeparted {
+				departed = true
+				continue
+			}
+			if retried {
+				if !stillLive {
+					continue
+				}
+				p, snapshot = refreshed, observed
+			}
+			if len(snapshot.args) == 0 {
+				original := fmt.Errorf("revalidating %s before signalling: live process has no classifiable arguments", p)
+				return nil, false, fmt.Errorf("%w; %s", original, emptyArgStopDiagnostic(p, snapshot))
+			}
 		}
 		p.args = snapshot.args
 		p.argsErr = nil
@@ -2257,6 +2324,170 @@ func TestStopHomeProcessesLiveEmptyArgumentsIncludesBoundedDiagnostic(t *testing
 		t.Errorf("stop = %v, %v (lists %d, inspections %d, signals %d); want original fail-closed decision and no signal",
 			stopped, err, listCalls, inspectCalls, killCalls)
 	}
+}
+
+func TestStopHomeProcessesReobservesTransientEmptyArguments(t *testing.T) {
+	const home = "/test/home"
+	const pid = 61001
+	const startTime = "987650"
+	listed := homeProcess{
+		pid: pid, ppid: 1,
+		args:      []string{"/usr/bin/env", "-i", "HOME=" + home, "PATH=/bin", "/bin/sh", "-c", "worker"},
+		startTime: startTime, homeMatched: true,
+	}
+	liveEmpty := stopProcessSnapshot{
+		startTime: startTime, state: "R", stateFound: true,
+		flags: 1 << 22, flagsFound: true,
+	}
+	classified := liveEmpty
+	classified.args = append([]string(nil), listed.args...)
+
+	t.Run("listed arguments reappear for the same live HOME-owned process", func(t *testing.T) {
+		listCalls, inspectCalls, homeCalls, killCalls := 0, 0, 0, 0
+		probes := stopProcessProbes{
+			list: func(string) []homeProcess {
+				listCalls++
+				if listCalls == 1 {
+					return []homeProcess{listed}
+				}
+				return nil
+			},
+			inspect: func(int) (stopProcessSnapshot, error) {
+				inspectCalls++
+				switch inspectCalls {
+				case 1: // The observed listed-argv -> empty-argv/live-R transition.
+					return liveEmpty, nil
+				case 2:
+					if killCalls != 0 {
+						t.Fatal("signalled before arguments became classifiable")
+					}
+					return classified, nil
+				case 3:
+					return classified, nil // final identity/argv validation before SIGTERM
+				default:
+					return stopProcessSnapshot{gone: true}, nil
+				}
+			},
+			home: func(int, string) (bool, error) { homeCalls++; return true, nil },
+			kill: func(gotPID int, signal syscall.Signal) error {
+				killCalls++
+				if gotPID != pid || signal != syscall.SIGTERM {
+					t.Errorf("signal (%d, %v), want (%d, SIGTERM)", gotPID, signal, pid)
+				}
+				return nil
+			},
+		}
+
+		stopped, err := stopHomeProcessesWithinWithProbes(home, 500*time.Millisecond, 0, probes)
+		if err != nil || len(stopped) != 1 || killCalls != 1 || listCalls != 2 || inspectCalls < 4 || homeCalls == 0 {
+			t.Fatalf("stop=%v, %v (lists=%d inspections=%d HOME=%d signals=%d); want same-identity reclassification then one bounded SIGTERM and confirmed exit",
+				stopped, err, listCalls, inspectCalls, homeCalls, killCalls)
+		}
+	})
+
+	t.Run("gone pid", func(t *testing.T) {
+		killCalls := 0
+		probes := stopProcessProbes{
+			list:    func(string) []homeProcess { return []homeProcess{listed} },
+			inspect: func(int) (stopProcessSnapshot, error) { return stopProcessSnapshot{gone: true}, nil },
+			kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		if _, err := stopHomeProcessesWithinWithProbes(home, 0, 0, probes); err != nil || killCalls != 0 {
+			t.Fatalf("stop error=%v, signals=%d; gone pid must not be signalled", err, killCalls)
+		}
+	})
+
+	t.Run("reused pid", func(t *testing.T) {
+		killCalls := 0
+		probes := stopProcessProbes{
+			list: func(string) []homeProcess { return []homeProcess{listed} },
+			inspect: func(int) (stopProcessSnapshot, error) {
+				return stopProcessSnapshot{args: classified.args, startTime: "replacement"}, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+			kill: func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		if _, err := stopHomeProcessesWithinWithProbes(home, 0, 0, probes); err == nil || !strings.Contains(err.Error(), "different process") || killCalls != 0 {
+			t.Fatalf("stop error=%v, signals=%d; pid reuse must remain fail-closed", err, killCalls)
+		}
+	})
+
+	t.Run("foreign HOME", func(t *testing.T) {
+		listCalls, inspectCalls, killCalls := 0, 0, 0
+		probes := stopProcessProbes{
+			list: func(string) []homeProcess {
+				listCalls++
+				if listCalls == 1 {
+					return []homeProcess{listed}
+				}
+				return nil
+			},
+			inspect: func(int) (stopProcessSnapshot, error) {
+				inspectCalls++
+				if inspectCalls == 1 {
+					return liveEmpty, nil
+				}
+				return stopProcessSnapshot{gone: true}, nil
+			},
+			home: func(int, string) (bool, error) { return false, errHomeOwnershipChanged },
+			kill: func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		if _, err := stopHomeProcessesWithinWithProbes(home, 100*time.Millisecond, 0, probes); err != nil || killCalls != 0 || listCalls != 2 || inspectCalls != 2 {
+			t.Fatalf("stop error=%v (lists=%d inspections=%d signals=%d); foreign HOME must be released and relisted, never signalled", err, listCalls, inspectCalls, killCalls)
+		}
+	})
+
+	t.Run("persistent empty argv", func(t *testing.T) {
+		inspectCalls, killCalls := 0, 0
+		probes := stopProcessProbes{
+			list: func(string) []homeProcess { return []homeProcess{listed} },
+			inspect: func(int) (stopProcessSnapshot, error) {
+				inspectCalls++
+				return liveEmpty, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+			kill: func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		started := time.Now()
+		_, err := stopHomeProcessesWithinWithProbes(home, 40*time.Millisecond, 0, probes)
+		if err == nil || !strings.Contains(err.Error(), "no classifiable arguments") || inspectCalls < 2 || killCalls != 0 || time.Since(started) > time.Second {
+			t.Fatalf("stop error=%v (inspections=%d signals=%d elapsed=%s); persistent empty argv must fail closed within the supplied bound", err, inspectCalls, killCalls, time.Since(started))
+		}
+	})
+
+	t.Run("unreadable argv", func(t *testing.T) {
+		killCalls := 0
+		probes := stopProcessProbes{
+			list:    func(string) []homeProcess { return []homeProcess{listed} },
+			inspect: func(int) (stopProcessSnapshot, error) { return stopProcessSnapshot{}, os.ErrPermission },
+			home:    func(int, string) (bool, error) { return true, nil },
+			kill:    func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		if _, err := stopHomeProcessesWithinWithProbes(home, 0, 0, probes); err == nil || !errors.Is(err, os.ErrPermission) || killCalls != 0 {
+			t.Fatalf("stop error=%v, signals=%d; unreadable argv must remain fail-closed", err, killCalls)
+		}
+	})
+
+	t.Run("unsupported exit evidence", func(t *testing.T) {
+		unsupported := liveEmpty
+		unsupported.state = "?"
+		unsupported.flagsFound = false
+		unsupported.flagsErr = errProcessStatFlagsUnavailable
+		inspectCalls, killCalls := 0, 0
+		probes := stopProcessProbes{
+			list: func(string) []homeProcess { return []homeProcess{listed} },
+			inspect: func(int) (stopProcessSnapshot, error) {
+				inspectCalls++
+				return unsupported, nil
+			},
+			home: func(int, string) (bool, error) { return true, nil },
+			kill: func(int, syscall.Signal) error { killCalls++; return nil },
+		}
+		_, err := stopHomeProcessesWithinWithProbes(home, 40*time.Millisecond, 0, probes)
+		if err == nil || !strings.Contains(err.Error(), "no classifiable arguments") || inspectCalls < 2 || killCalls != 0 {
+			t.Fatalf("stop error=%v (inspections=%d signals=%d); unsupported process state/flags must not prove exit or permit signalling", err, inspectCalls, killCalls)
+		}
+	})
 }
 
 func TestStopHomeProcessesRevalidatesBeforeSignalling(t *testing.T) {
