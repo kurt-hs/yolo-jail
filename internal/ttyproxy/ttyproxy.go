@@ -761,8 +761,6 @@ type outputSink struct {
 	canceled atomic.Bool
 }
 
-func (s *outputSink) write(data []byte) error { return s.writeTo(s.fd, data) }
-
 func (s *outputSink) writeTo(fd int, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
