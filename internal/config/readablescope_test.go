@@ -1,0 +1,605 @@
+package config
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
+)
+
+func readableScopeBroker(pack, source, label, host, readCapability string, grants []string, kinds map[string]string) ScopeBroker {
+	decl := &ReadableBrokerDeclaration{Pack: pack, Label: label,
+		Brokered:       loopholedecl.Brokered{Source: source, RemoteHost: host, Grants: grants},
+		ReadCapability: readCapability, KindCapabilities: kinds}
+	return ScopeBroker{Source: source, Label: label, RemoteHost: host, GrantKinds: grants, Readable: decl}
+}
+
+func readableScopeEntry(entries []EntryRepo, repo, file string) bool {
+	for _, entry := range entries {
+		if entry.Repo == repo && inList(entry.Files, file) {
+			return true
+		}
+	}
+	return false
+}
+
+func writeReadableScopeRemote(t *testing.T, workspace, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(workspace, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, ".git", "config"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeReadableScopeUser(t *testing.T, home, body string) {
+	t.Helper()
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userDir, "config.toml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadableLegacyBranchProjectionNamesOnlyUnrepresentableRepository(t *testing.T) {
+	first := brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/first", Branch: "main"}
+	second := brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/second", Branch: "main"}
+	projection := CompareReadableLegacyGrants("git", []brokerscope.Grant{first}, []brokerscope.Grant{first, second})
+	if len(projection.Raw) != 1 || projection.Raw[0] != first || len(projection.Concrete) != 2 {
+		t.Fatalf("projection lost its legacy or concrete semantics: %#v", projection)
+	}
+	if len(projection.Differences) != 1 || !strings.Contains(projection.Differences[0], second.String()) || strings.Contains(projection.Differences[0], first.String()) || !strings.Contains(projection.Differences[0], "rather than write") {
+		t.Fatalf("migration difference did not isolate the widened repository: %#v", projection.Differences)
+	}
+}
+
+func TestReadableScopeProducerReadsProjectRequestThroughPublicGateBoundary(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.github]\nalways = [\"read\"]\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/shared\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil)
+	check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	if len(check.Sources) != 1 {
+		t.Fatalf("scope sources = %#v", check.Sources)
+	}
+	source := check.Sources[0]
+	if !readableScopeEntry(source.Entry, "acme/shared", WorkspaceTOMLConfigName) {
+		t.Fatalf("the real gate consumer dropped the named request: %#v", source)
+	}
+	want := brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/shared"}
+	if !containsGrant(source.Grants, want) || !containsGrant(source.UserGrants, want) {
+		t.Fatalf("the concrete user ceiling was not delivered through the gate consumer: %#v", source)
+	}
+	if source.Dormant {
+		t.Fatal("a concrete requested repository with readable authority was treated as dormant")
+	}
+}
+
+func TestReadableGitRequestKeepsConcreteRemoteAndNewRequestOriginAtGate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\non_request = [\"push\"]\n")
+	workspace := t.TempDir()
+	writeReadableScopeRemote(t, workspace, "[remote \"origin\"]\nurl = https://github.com/acme/repo.git\n")
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.git]\npush = [\"main\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("git", "git", "git-broker", "*", "fetch", []string{"branch"}, map[string]string{"branch": "push"})
+	check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	if len(check.Sources) != 1 || check.Sources[0].Dormant {
+		t.Fatalf("Git's selected declaration did not produce a live gate source: %#v", check)
+	}
+	source := check.Sources[0]
+	if len(source.Read.Remotes) != 1 || source.Read.Remotes[0].Repo != "https://github.com/acme/repo.git" {
+		t.Fatalf("the existing remote-url scope was changed: %#v", source.Read)
+	}
+	if !containsGrant(source.Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/repo", Branch: "main"}) {
+		t.Fatalf("the declared push request did not become a concrete branch grant: %#v", source.Grants)
+	}
+	report, err := ScopeChanges(workspace, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.ScopeChanged || len(report.EntryEdits) == 0 || report.EntryEdits[0].Key != "requests.git.push" || !inList(report.EntryEdits[0].Files, WorkspaceTOMLConfigName) {
+		t.Fatalf("gate remediation projected the request back to a legacy key: %#v", report)
+	}
+	for _, edit := range report.EntryEdits {
+		if !strings.HasPrefix(edit.Key, "requests.") {
+			t.Errorf("readable grant remediation uses non-request key %q", edit.Key)
+		}
+	}
+}
+
+func TestReadableScopeAdaptsLegacyUserReadCeilingForReadableWorkspaceRequest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(userDir, "config.jsonc"), []byte(`{"brokered":{"github":{"grants":[{"kind":"read","repo":"*"}]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/shared\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil)
+	check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	if len(check.Sources) != 1 || !readableScopeEntry(check.Sources[0].Entry, "acme/shared", WorkspaceTOMLConfigName) {
+		t.Fatalf("legacy user allowance did not preserve the readable project request: %#v", check)
+	}
+	want := brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/shared"}
+	if !containsGrant(check.Sources[0].Grants, want) {
+		t.Fatalf("legacy read * did not become a concrete gate grant for the requested repo: %#v", check.Sources[0])
+	}
+}
+
+func TestReadableNamedRepositoryForRemoteURLBrokerFailsClosedWithTypedTargetNotice(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\n[allow.github]\nalways = [\"read\"]\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/private\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokers := []ScopeBroker{
+		readableScopeBroker("git", "git", "git-broker", "*", "fetch", nil, nil),
+		readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil),
+	}
+	check := NewScopeCheck(workspace, brokers, read)
+	if check.ReadableInput == nil || len(check.ReadableInput.AdditionalRepositories) != 1 || check.ReadableInput.AdditionalRepositories[0].Repository != "acme/private" {
+		t.Fatalf("H scope adapter lost the typed outside-Git repository request: %#v", check.ReadableInput)
+	}
+	var git, github *ScopeSource
+	for i := range check.Sources {
+		switch check.Sources[i].Source {
+		case "git":
+			git = &check.Sources[i]
+		case "github":
+			github = &check.Sources[i]
+		}
+	}
+	if git == nil || !strings.Contains(git.Read.Problem, "github.com/acme/private") || !strings.Contains(git.Read.Problem, "git remote add") {
+		t.Fatalf("unrepresentable typed target was silently lost instead of failing closed: %#v", check)
+	}
+	if containsGrant(git.Grants, brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/private"}) {
+		t.Fatalf("unrepresentable target gained Git broker grant: %#v", git.Grants)
+	}
+	if github == nil || !readableScopeEntry(github.Entry, "acme/private", WorkspaceTOMLConfigName) || !containsGrant(github.Grants, brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/private"}) {
+		t.Fatalf("the named-host broker lost its representable target: %#v", github)
+	}
+}
+
+func TestDormantReadableSourceDropsStaleUnusableScopeWithoutPrompt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.github]\nalways = []\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := githubScope(origin)
+	if err := RecordApproval(workspace, decode(t, `{}`), stale); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil)
+	check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	if len(check.Sources) != 1 || !check.Sources[0].Dormant {
+		t.Fatalf("no-read source should be dormant: %#v", check)
+	}
+	prompter := &reportPrompter{accept: true}
+	ok, err := CheckConfigAndScopeChanges(workspace, decode(t, `{}`), check, true, false, prompter)
+	if err != nil || !ok || prompter.got != nil {
+		t.Fatalf("dropping unusable stale scope prompted: ok=%v err=%v report=%#v", ok, err, prompter.got)
+	}
+	record, _, err := readScopeRecord(ApprovalScopePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record) != 0 {
+		t.Fatalf("dormant source preserved stale scope/grants: %#v", record)
+	}
+	sources, err := readSourcesRecord(ApprovalScopeSourcesPath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := sources["github"]; exists {
+		t.Fatalf("dormant source preserved stale provenance: %#v", sources)
+	}
+}
+
+func TestReadableScopeVacuousStateHasNoPhantomRecordAndRealRemovalPromptsOnce(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("git", "git", "git-broker", "*", "fetch", []string{"create-branch", "branch"}, map[string]string{"create-branch": "new_branches", "branch": "push"})
+	readGate := func() *ScopeCheck {
+		t.Helper()
+		read, err := ReadWorkspaceForGate(workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	}
+	check := readGate()
+	if len(check.Sources) != 1 || !check.Sources[0].Dormant || len(check.Sources[0].Grants) != 0 {
+		t.Fatalf("vacuous scope should have no usable grants: %#v", check)
+	}
+	prompter := &reportPrompter{accept: true}
+	ok, err := CheckConfigAndScopeChanges(workspace, decode(t, `{}`), check, true, false, prompter)
+	if err != nil || !ok || prompter.got != nil {
+		t.Fatalf("vacuous scope prompted or failed: ok=%v err=%v report=%#v", ok, err, prompter.got)
+	}
+	stored, _, err := readScopeRecord(ApprovalScopePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := stored["git"]; exists {
+		t.Fatalf("a vacuous scope created a phantom source record: %#v", stored)
+	}
+	if _, exists := stored[grantsRecordKey("git")]; exists {
+		t.Fatalf("a ceiling alone created a phantom grant record: %#v", stored)
+	}
+	storedSources, err := readSourcesRecord(ApprovalScopeSourcesPath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := storedSources["git"]; exists {
+		t.Fatalf("a vacuous scope created a phantom source record: %#v", storedSources)
+	}
+
+	writeReadableScopeRemote(t, workspace, "[remote \"origin\"]\nurl = https://github.com/acme/repo.git\n")
+	prompter = &reportPrompter{accept: true}
+	ok, err = CheckConfigAndScopeChanges(workspace, decode(t, `{}`), readGate(), true, false, prompter)
+	if err != nil || !ok || prompter.got == nil || !prompter.got.ScopeChanged {
+		t.Fatalf("first concrete remote did not prompt: ok=%v err=%v report=%#v", ok, err, prompter.got)
+	}
+
+	writeReadableScopeRemote(t, workspace, "")
+	prompter = &reportPrompter{accept: true}
+	ok, err = CheckConfigAndScopeChanges(workspace, decode(t, `{}`), readGate(), true, false, prompter)
+	if err != nil || !ok || prompter.got == nil || !prompter.got.ScopeChanged || !strings.Contains(strings.Join(prompter.got.ScopeBlock, "\n"), "removed") {
+		t.Fatalf("removing prior real scope did not prompt once: ok=%v err=%v report=%#v", ok, err, prompter.got)
+	}
+	prompter = &reportPrompter{accept: true}
+	ok, err = CheckConfigAndScopeChanges(workspace, decode(t, `{}`), readGate(), true, false, prompter)
+	if err != nil || !ok || prompter.got != nil {
+		t.Fatalf("accepted removal prompted again: ok=%v err=%v report=%#v", ok, err, prompter.got)
+	}
+	stored, _, err = readScopeRecord(ApprovalScopePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedSources, err = readSourcesRecord(ApprovalScopeSourcesPath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := stored["git"]; exists {
+		t.Fatalf("an emptied source retained a phantom scope key: %#v", stored)
+	}
+	if _, exists := storedSources["git"]; exists {
+		t.Fatalf("an emptied source retained a phantom source key: %#v", storedSources)
+	}
+}
+
+func TestReadableRequestSourcesMustBeInsideWorkspace(t *testing.T) {
+	for _, mode := range []string{"include", "symlink"} {
+		t.Run(mode, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			writeReadableScopeUser(t, home, "[allow.github]\nalways = [\"read\"]\n")
+			workspace := t.TempDir()
+			outside := filepath.Join(t.TempDir(), "outside.toml")
+			if err := os.WriteFile(outside, []byte("[requests.github]\nrepos = [\"acme/private\"]\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			config := filepath.Join(workspace, WorkspaceTOMLConfigName)
+			if mode == "include" {
+				parts := filepath.Join(workspace, "parts")
+				if err := os.MkdirAll(parts, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(outside, filepath.Join(parts, "requests.toml")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(config, []byte("include_if_found = ['parts/requests.toml']\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Symlink(outside, config); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ReadWorkspaceForGate(workspace); err == nil || !strings.Contains(err.Error(), "outside this workspace") {
+				t.Fatalf("outside readable request accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestReadableSemanticRequestErrorsAreFatalBeforeApproval(t *testing.T) {
+	for _, approved := range []bool{false, true} {
+		t.Run(map[bool]string{false: "first-use", true: "previously-approved"}[approved], func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\non_request = [\"push\"]\n")
+			workspace := t.TempDir()
+			writeReadableScopeRemote(t, workspace, "[remote \"origin\"]\nurl = https://github.com/acme/repo.git\n")
+			if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.git]\npush = [\"bad..name\"]\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			broker := readableScopeBroker("git", "git", "git-broker", "*", "fetch", []string{"branch"}, map[string]string{"branch": "push"})
+			if approved {
+				if err := RecordApproval(workspace, decode(t, `{}`), &ScopeCheck{Sources: []ScopeSource{{Source: "git", Label: "git-broker", Grants: []brokerscope.Grant{{Kind: "read", Repo: "github.com/acme/repo"}}}}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			read, err := ReadWorkspaceForGate(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+			prompter := &reportPrompter{accept: true}
+			ok, err := CheckConfigAndScopeChanges(workspace, decode(t, `{}`), check, true, false, prompter)
+			if err == nil || ok || prompter.got != nil {
+				t.Fatalf("semantic error was not fatal before approval: ok=%v err=%v prompt=%#v", ok, err, prompter.got)
+			}
+			var authorityErr *ReadableAuthorityError
+			if !errors.As(err, &authorityErr) {
+				t.Fatalf("gate returned untyped authority failure: %T %v", err, err)
+			}
+			if approved && !containsGrant(ApprovedGrants(workspace, "git"), brokerscope.Grant{Kind: "read", Repo: "github.com/acme/repo"}) {
+				t.Fatal("fatal readable request error overwrote the previously approved grant")
+			}
+		})
+	}
+}
+
+func TestReadableGitRequestForExistingRemotePreservesExistingGrants(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\non_request = [\"push\"]\n")
+	workspace := t.TempDir()
+	writeReadableScopeRemote(t, workspace, "[remote \"origin\"]\nurl = https://github.com/acme/repo.git\n")
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/repo\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokers := []ScopeBroker{
+		readableScopeBroker("git", "git", "git-broker", "*", "fetch", []string{"branch"}, map[string]string{"branch": "push"}),
+		readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil),
+	}
+	check := NewScopeCheck(workspace, brokers, read)
+	for i := range check.Sources {
+		if check.Sources[i].Source == "git" && !containsGrant(check.Sources[i].Grants, brokerscope.Grant{Kind: "read", Repo: "github.com/acme/repo"}) {
+			t.Fatalf("request for configured remote erased its Git read grant: %#v", check.Sources[i])
+		}
+	}
+}
+
+func TestReadableLegacyWorkspaceScopeAndGrantsSurviveReadableUserAllowance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.github]\nalways = [\"read\"]\non_request = [\"push\"]\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceConfigName), []byte(`{"packs":["github"],"brokered":{"github":{"repos":["acme/one","acme/two"],"grants":[{"kind":"branch","repo":"github.com/acme/one","branch":"main"}]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("github", "github", "github-broker", "github.com", "read", []string{"branch"}, map[string]string{"branch": "push"})
+	check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	if check.ReadableInput == nil || len(check.ReadableInput.AdditionalRepositories) != 2 ||
+		check.ReadableInput.AdditionalRepositories[0].Repository != "acme/one" || check.ReadableInput.AdditionalRepositories[1].Repository != "acme/two" {
+		t.Fatalf("legacy named-host targets did not reach the shared producer input before gate projection: %#v", check.ReadableInput)
+	}
+	if len(check.Sources) != 1 || !readableScopeEntry(check.Sources[0].Entry, "acme/one", WorkspaceConfigName) || !readableScopeEntry(check.Sources[0].Entry, "acme/two", WorkspaceConfigName) {
+		t.Fatalf("legacy workspace repositories were discarded: %#v", check.Sources)
+	}
+	if !containsGrant(check.Sources[0].Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/one", Branch: "main"}) {
+		t.Fatalf("legacy repository-specific grant was discarded: %#v", check.Sources[0].Grants)
+	}
+}
+
+func TestReadableLegacyGitBranchGrantMatchesOnlyItsExactRemote(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\non_request = [\"push\"]\n[allow.github]\nalways = [\"read\"]\n")
+	workspace := t.TempDir()
+	writeReadableScopeRemote(t, workspace, "[remote \"one\"]\nurl = git@github.com:acme/one.git\n[remote \"two\"]\nurl = git@github.com:acme/two.git\n")
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceConfigName), []byte(`{"packs":["git","github"],"brokered":{"git":{"grants":[{"kind":"branch","repo":"github.com/acme/one","branch":"main"}]},"github":{"repos":["acme/three"]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokers := []ScopeBroker{
+		readableScopeBroker("git", "git", "git-broker", "*", "fetch", []string{"branch"}, map[string]string{"branch": "push"}),
+		readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil),
+	}
+	check := NewScopeCheck(workspace, brokers, read)
+	var gitSource *ScopeSource
+	for i := range check.Sources {
+		if check.Sources[i].Source == "git" {
+			gitSource = &check.Sources[i]
+		}
+	}
+	if gitSource == nil || !containsGrant(gitSource.Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/one", Branch: "main"}) {
+		t.Fatalf("legacy exact-remote branch grant disappeared: %#v", check.Sources)
+	}
+	if containsGrant(gitSource.Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/two", Branch: "main"}) {
+		t.Fatalf("first-remote branch grant widened to the second remote: %#v", gitSource.Grants)
+	}
+	if check.ReadableInput == nil || len(check.ReadableInput.AdditionalRepositories) != 1 || check.ReadableInput.AdditionalRepositories[0].Source != "github" || check.ReadableInput.AdditionalRepositories[0].Repository != "acme/three" {
+		t.Fatalf("legacy named-host target did not reach other gate consumers: %#v", check.ReadableInput)
+	}
+}
+
+func TestReadableRecordApprovalRejectsFatalBeforeAnyWrite(t *testing.T) {
+	for _, approved := range []bool{false, true} {
+		t.Run(map[bool]string{false: "first-use", true: "previously-approved"}[approved], func(t *testing.T) {
+			workspace := approvalWorkspace(t)
+			if approved {
+				if err := RecordApproval(workspace, decode(t, `{"packages":["jq"]}`), githubScope(origin)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			paths := []string{ApprovalSnapshotPath(workspace), ApprovalScopePath(workspace), ApprovalScopeSourcesPath(workspace)}
+			before := make(map[string][]byte, len(paths))
+			for _, path := range paths {
+				before[path], _ = os.ReadFile(path)
+			}
+			fatal := &ReadableAuthorityError{Cause: errors.New("malformed authority")}
+			err := RecordApproval(workspace, decode(t, `{"packages":["changed"]}`), &ScopeCheck{Fatal: fatal, Sources: []ScopeSource{{Source: "github", Label: "github-broker"}}})
+			if !errors.Is(err, fatal) {
+				t.Fatalf("RecordApproval error = %v, want fatal authority error", err)
+			}
+			for _, path := range paths {
+				after, readErr := os.ReadFile(path)
+				if approved && readErr != nil {
+					t.Fatalf("previous approval file %s disappeared: %v", path, readErr)
+				}
+				if string(after) != string(before[path]) {
+					t.Fatalf("fatal authority changed %s: before=%q after=%q", path, before[path], after)
+				}
+				if !approved && readErr == nil {
+					t.Fatalf("first-use fatal authority created %s", path)
+				}
+			}
+		})
+	}
+}
+
+func TestReadableRemovingLastRepositoryUsesAuthoredRequestKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.github]\nalways = [\"read\"]\n")
+	workspace := t.TempDir()
+	requestPath := filepath.Join(workspace, WorkspaceTOMLConfigName)
+	if err := os.WriteFile(requestPath, []byte("[requests.github]\nrepos = [\"acme/shared\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil)
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RecordApproval(workspace, decode(t, `{}`), NewScopeCheck(workspace, []ScopeBroker{broker}, read)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(requestPath, []byte("[requests.github]\nrepos = []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err = ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := ScopeChanges(workspace, NewScopeCheck(workspace, []ScopeBroker{broker}, read))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.EntryEdits) != 1 || report.EntryEdits[0].Key != "requests.github.repos" {
+		t.Fatalf("removing final request lost authored remediation key: %#v", report.EntryEdits)
+	}
+}
+
+func TestReadableNamedHostLegacyGrantUsesActualRemoteWithoutRepoEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.github]\nalways = [\"read\"]\non_request = [\"push\"]\n")
+	workspace := t.TempDir()
+	writeReadableScopeRemote(t, workspace, "[remote \"origin\"]\nurl = https://github.com/acme/one.git\n")
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceConfigName), []byte(`{"packs":["github"],"brokered":{"github":{"grants":[{"kind":"branch","repo":"github.com/acme/one","branch":"main"}]}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker := readableScopeBroker("github", "github", "github-broker", "github.com", "read", []string{"branch"}, map[string]string{"branch": "push"})
+	check := NewScopeCheck(workspace, []ScopeBroker{broker}, read)
+	if len(check.Sources) != 1 || !containsGrant(check.Sources[0].Grants, brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/one", Branch: "main"}) {
+		t.Fatalf("legacy named-host grant without explicit repos disappeared: %#v", check.Sources)
+	}
+}
+
+func TestReadableRepositoryEntryEditsUseAuthoredRequestKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.github]\nalways = [\"read\"]\n")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/shared\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := NewScopeCheck(workspace, []ScopeBroker{readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil)}, read)
+	report, err := ScopeChanges(workspace, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.EntryEdits) != 1 || report.EntryEdits[0].Key != "requests.github.repos" {
+		t.Fatalf("repository remediation does not name the authored request key: %#v", report.EntryEdits)
+	}
+	for _, edit := range report.EntryEdits {
+		if strings.HasPrefix(edit.Key, "brokered.") {
+			t.Errorf("remediation references rejected key %q", edit.Key)
+		}
+	}
+}

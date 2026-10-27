@@ -130,9 +130,11 @@ type srcOrigin struct {
 // srcNode mirrors one value of a composed config. Nodes are never modified once built: a merge
 // builds new nodes and shares the subtrees it does not change, as MergeConfig shares values.
 type srcNode struct {
-	writers []srcOrigin         // lowest precedence first; the last one's value won
-	keys    map[string]*srcNode // an object's members
-	elems   []*srcNode          // a list's elements, in the composed list's order
+	writers    []srcOrigin         // lowest precedence first; the last one's value won
+	keys       map[string]*srcNode // an object's members
+	elems      []*srcNode          // a list's elements, in the composed list's order
+	clearList  bool                // a TOML empty-list reset that survives include composition
+	clearTable bool                // a TOML "off" reset for a table-shaped value
 }
 
 func (n *srcNode) key(k string) *srcNode {
@@ -231,9 +233,11 @@ func replacedBy(old, override *srcNode) *srcNode {
 		return nil
 	}
 	return &srcNode{
-		writers: concatWriters(old.writers, override.writers),
-		keys:    override.keys,
-		elems:   override.elems,
+		writers:    concatWriters(old.writers, override.writers),
+		keys:       override.keys,
+		elems:      override.elems,
+		clearList:  old.clearList || override.clearList,
+		clearTable: old.clearTable || override.clearTable,
 	}
 }
 
@@ -328,6 +332,7 @@ func (s *Sources) AnnotateOne(msg string) string {
 	if len(origins) == 0 {
 		return msg
 	}
+	msg = readableDiagnosticPathForOrigin(msg, origins[0])
 	if origins[0].host != "" {
 		// Set in a host file this jail reads a launch copy of: the location goes after the
 		// message, with the step that makes an edit there count (launchorigins.go).
@@ -339,6 +344,38 @@ func (s *Sources) AnnotateOne(msg string) string {
 		out += " (also written at " + strings.Join(locs[1:], ", ") + ")"
 	}
 	return out
+}
+
+func readableDiagnosticPathForOrigin(message string, origin srcOrigin) string {
+	if origin.file == nil || origin.file.format == configdoc.TOML || len(origin.steps) == 0 {
+		return message
+	}
+
+	// B2 validation projects these legacy roots to readable paths. Recover the spelling from
+	// the selected source node, while leaving effective list indexes and any deeper suffix intact.
+	root := origin.steps[0].String()
+	var canonicalRoot string
+	switch root {
+	case "packages":
+		canonicalRoot = "install.nix"
+	case "mise_tools":
+		canonicalRoot = "install.mise"
+	case "gpu":
+		canonicalRoot = "machine.gpu"
+	case "resources":
+		canonicalRoot = "machine.resources"
+	default:
+		return message
+	}
+	authoredPrefix := "config." + root
+	canonicalPrefix := "config." + canonicalRoot
+	if !strings.HasPrefix(message, canonicalPrefix) {
+		return message
+	}
+	if len(message) > len(canonicalPrefix) && !strings.ContainsRune(".[ :", rune(message[len(canonicalPrefix)])) {
+		return message
+	}
+	return authoredPrefix + message[len(canonicalPrefix):]
 }
 
 // Locations is every place Annotate would name for path, spelled as the validators spell it

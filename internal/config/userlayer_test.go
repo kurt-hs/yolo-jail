@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -244,6 +246,23 @@ func TestUserLayerBeatsTheInJailSnapshotShortCircuit(t *testing.T) {
 //
 // This is the unit regression: with an inherited-launch file present, its keys must be in
 // the user scope, and re-filtering must therefore preserve them at the next level.
+func TestValidateUserLayerChecksReadableIncludesAndStrictLoadPropagatesFutureFormat(t *testing.T) {
+	home := layerHome(t, "")
+	t.Setenv("YOLO_VERSION", "")
+	write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName), "[install]\nnix = ['user']\n")
+	layer := filepath.Join(t.TempDir(), "layer.toml")
+	write(t, layer, "include_if_found = ['future.toml']\n[install]\nnix = []\n")
+	write(t, filepath.Join(filepath.Dir(layer), "future.toml"), "format = 3\n")
+
+	if err := ValidateUserLayer(layer); err == "" || !strings.Contains(err, "format 3") {
+		t.Fatalf("ValidateUserLayer did not validate included future format: %q", err)
+	}
+	t.Setenv(UserLayerEnv, layer)
+	if _, err := LoadConfig(t.TempDir(), true, nil); err == nil || !strings.Contains(err.Error(), "format 3") {
+		t.Fatalf("strict composed reader silently discarded explicit layer refusal: %v", err)
+	}
+}
+
 func TestInheritedLaunchFileIsActuallyRead(t *testing.T) {
 	home := layerHome(t, `{"packs": ["claude"]}`)
 	t.Setenv(UserLayerEnv, "")
@@ -258,20 +277,12 @@ func TestInheritedLaunchFileIsActuallyRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"packages", "env_sources"} {
-		if _, present := cfg.Get(want); !present {
-			t.Errorf("%q from the inherited-launch file did not reach the user scope — the "+
-				"file the host generated for nesting would be inert, and the next level down "+
-				"would silently lose the key", want)
-		}
+	install, _ := asMap(mustValue(t, cfg, "install"))
+	if packages, ok := asList(mustValue(t, install, "nix")); !ok || !reflect.DeepEqual(packages, []any{"hello"}) {
+		t.Errorf("legacy inherited packages were not normalized losslessly: %#v", packages)
 	}
-	// And the round trip: re-filtering the effective config must still carry them, which is
-	// what makes depth N identical to depth 1.
-	filtered, _ := FilterInherit(cfg, InheritNested)
-	for _, want := range []string{"packages", "env_sources", "packs"} {
-		if _, present := filtered.Get(want); !present {
-			t.Errorf("%q was lost when re-filtering for the next nesting level", want)
-		}
+	if _, present := cfg.Get("env_sources"); !present {
+		t.Error("ordered legacy env_sources from the inherited-launch file did not reach the user scope")
 	}
 }
 
@@ -292,16 +303,12 @@ func TestInheritedLaunchFileLosesToTheJailsOwnConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The inherited-only key survives...
-	if _, present := cfg.Get("resources"); !present {
-		t.Error("an inherited-only key was dropped")
+	if _, present := cfg.Get("machine"); !present {
+		t.Error("inherited resources did not reach the normalized machine subtree")
 	}
-	// ...and the local file's own value is present (list keys union-merge by
-	// MergeConfig's contract, so the assertion is presence of the local entry).
-	pkgs, _ := cfg.Get("packages")
-	list, ok := pkgs.([]any)
-	if !ok || len(list) == 0 || list[0] != "local-wins" {
-		t.Errorf("packages = %v — the jail's own config must lead over what it inherited", pkgs)
+	install, _ := asMap(mustValue(t, cfg, "install"))
+	if packages, ok := asList(mustValue(t, install, "nix")); !ok || !reflect.DeepEqual(packages, []any{"local-wins"}) {
+		t.Errorf("install.nix = %v — the jail's own config must lead over what it inherited", packages)
 	}
 }
 

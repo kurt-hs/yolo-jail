@@ -53,10 +53,10 @@ func refreshConfiguredPacks(say, warn func(string), during func() (waiting func(
 		if e.Embedded() || e.IsLocal() {
 			continue
 		}
-		if addr, err := packsrc.Parse(e.Source); err != nil || addr.IsLocal() {
+		if addr, err := e.PackAddress(); err != nil || addr.IsLocal() {
 			continue // a bad address is reported by resolution, by name
 		}
-		git = append(git, packsrc.RefreshPack{Name: e.Name, Source: e.Source})
+		git = append(git, e.RefreshSpec(false))
 	}
 	if len(git) == 0 {
 		return

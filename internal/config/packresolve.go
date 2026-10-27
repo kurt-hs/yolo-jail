@@ -113,7 +113,11 @@ func ResolvePack(entry PackEntry, spec ResolvePackSpec) (ResolvedPack, error) {
 	var out ResolvedPack
 	var root string
 	if entry.Embedded() {
-		p, err := embeddedPackNamed(entry.Name)
+		name := entry.EmbeddedName
+		if name == "" {
+			name = entry.Name
+		}
+		p, err := embeddedPackNamed(name)
 		if err != nil {
 			return fail(err)
 		}
@@ -125,13 +129,19 @@ func ResolvePack(entry PackEntry, spec ResolvePackSpec) (ResolvedPack, error) {
 		root = p.Root
 	} else {
 		addr, err := packsrc.Parse(entry.Source)
+		if entry.AllowDefaultRef {
+			addr, err = packsrc.ParsePackAddress(entry.Source)
+		}
 		if err != nil {
 			return fail(err)
 		}
 		store := &packsrc.Store{Dir: paths.PacksDir(), Getenv: spec.Getenv, Ctx: spec.Ctx,
 			NoWait: spec.NoWait, Detached: spec.Detached}
 		var res *packsrc.Resolved
-		if spec.ReadOnlyStore {
+		if entry.AllowDefaultRef && addr.Ref == "" {
+			res, err = store.ResolvePackDefault(addr, entry.Name, entry.Slug(), entry.Source,
+				packsrc.LockPath(paths.UserConfigPath()), spec.ReadOnlyStore)
+		} else if spec.ReadOnlyStore {
 			res, err = store.ResolveExisting(addr, entry.Slug())
 		} else {
 			res, err = store.Resolve(addr, entry.Slug())
@@ -173,7 +183,15 @@ func ResolvePack(entry PackEntry, spec ResolvePackSpec) (ResolvedPack, error) {
 	// A USE READ (packload.LoadDirForUse): every notch and verb acts on what this resolves, so a
 	// contribution this build cannot read is skipped and named in Pack.SkewNotes rather than
 	// failing the pack (docs/reference/patched-forks.md PF-D68). Each caller says so its own way.
-	out.Pack, out.Problems = packload.LoadDirForUse(loadFrom, entry.Name)
+	packName := entry.Name
+	if entry.EmbeddedName != "" {
+		packName = entry.EmbeddedName
+	}
+	load := packload.LoadDirForUse
+	if followsSymlinks(entry) {
+		load = packload.LoadDirForLocalUse
+	}
+	out.Pack, out.Problems = load(loadFrom, packName)
 	if out.Pack != nil && len(out.Problems) > 0 && len(out.Pack.SkewNotes) > 0 {
 		// A REFUSED PACK SAYS WHAT WAS SKIPPED TOO (PF-D75): every caller's refusal prints Problems
 		// alone, and a problem may be one only the skip left, such as a restriction kept without the
@@ -251,7 +269,7 @@ func ResolvePackForProcess(entry PackEntry, spec ResolvePackSpec) (ResolvedPack,
 // EmbeddedPackEntry is the entry a bare `packs: ["<name>"]` lowers to, for a caller that selects an
 // embedded pack no config line named: the selection closure's additions (`needs`, `via`).
 func EmbeddedPackEntry(name string) PackEntry {
-	return PackEntry{Source: embeddedSourceFor(name), Name: name, IsEmbedded: true}
+	return PackEntry{Source: embeddedSourceFor(name), Name: name, EmbeddedName: name, IsEmbedded: true}
 }
 
 // embeddedPackNamed is the embedded pack of this name from the one materialization, or why there

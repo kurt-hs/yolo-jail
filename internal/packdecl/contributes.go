@@ -1721,6 +1721,10 @@ func (m *Manifest) RequiredBins() []DepRequirement {
 // another pack owns contributes keys as a config-overlay does; launch flags merge into the
 // binary's launch flags. It is not a second config writer — it is a notch-gated patch.
 type AutonomyPosture struct {
+	// configLocations is the source row for each surface DTO in Config. Grouped TOML
+	// retains these separately because Config stays engine-neutral JSON.
+	configLocations []ManifestLocation
+	configReplaces  []bool
 	// Config patches config surfaces while the notch selects this posture. Reuses the config
 	// surface schema — agent/name identify the target surface, path and codec are required as
 	// for every surface entry, managed carries the keys — kept as RawMessage for the same
@@ -1807,10 +1811,14 @@ func PostureOf(autonomy bool) Posture {
 	return PostureGuarded
 }
 
-// AutonomyLaunch is a per-binary launch-flag set within a posture.
+// AutonomyLaunch is a per-binary launch-flag set within a posture. Grouped launch rows carry
+// their own source and replacement metadata so a consumer can fold them without collapsing rows.
 type AutonomyLaunch struct {
-	Bin   string   `json:"bin"`
-	Flags []string `json:"flags,omitempty"`
+	Bin      string           `json:"bin"`
+	Flags    []string         `json:"flags,omitempty"`
+	Origin   ManifestOrigin   `json:"-"`
+	Location ManifestLocation `json:"-"`
+	Replace  bool             `json:"-"`
 }
 
 // AutonomyContribution is a pack's autonomy declaration: the two postures. Returns nil
@@ -1829,9 +1837,28 @@ func (m *Manifest) AutonomyContributions() *AutonomyContribution {
 		if c.Kind != KindAutonomy {
 			continue
 		}
-		return &AutonomyContribution{Autonomous: c.Autonomous, Guarded: c.Guarded}
+		return &AutonomyContribution{Autonomous: cloneAutonomyPosture(c.Autonomous), Guarded: cloneAutonomyPosture(c.Guarded)}
 	}
 	return nil
+}
+
+func cloneAutonomyPosture(p *AutonomyPosture) *AutonomyPosture {
+	if p == nil {
+		return nil
+	}
+	out := *p
+	out.Config = append(json.RawMessage(nil), p.Config...)
+	out.Launch = append([]AutonomyLaunch(nil), p.Launch...)
+	for i := range out.Launch {
+		out.Launch[i].Flags = append([]string(nil), p.Launch[i].Flags...)
+	}
+	out.Lists = append([]PostureList(nil), p.Lists...)
+	for i := range out.Lists {
+		out.Lists[i].Add = append(json.RawMessage(nil), p.Lists[i].Add...)
+	}
+	out.configLocations = append([]ManifestLocation(nil), p.configLocations...)
+	out.configReplaces = append([]bool(nil), p.configReplaces...)
+	return &out
 }
 
 // PostureFor returns the posture selected by an autonomy policy: the autonomous posture
@@ -2688,24 +2715,20 @@ func (m *Manifest) MountContributions() []Mount {
 type ConfigOverlay struct {
 	// Surface is the target surface identity, "agent/name".
 	Surface string
-	// Profile is the optional gate: when non-empty, the contribution applies only while
-	// that name is the active profile for the surface's owning agent (the identity's agent
-	// segment). Empty is unconditional — the behavior before the field existed.
+	// Profile gates the overlay on the active profile for the target agent.
 	Profile string
-	// Config is the raw `config` body — the keys this pack asserts onto the target.
-	// Decoded by internal/agentcfg/manifest (DecodeOverlay), kept as RawMessage for the
-	// same reason Contribution.Raw is: packdecl stays free of the engine dependency.
-	//
-	// For a POSTURE OVERLAY (Posture set) it is instead ONE ENTRY of the posture's `config`
-	// array, a surface DTO ({agent, name, path, codec, managed}), which the collector decodes
-	// with manifest.DecodePostureOverlay.
+	// Config is the raw overlay body or, for a posture overlay, one surface DTO.
+	// It stays raw so packdecl does not depend on the surface engine.
 	Config json.RawMessage
-	// Posture is "" for a `config-overlay` contribution, and the posture an autonomy `config`
-	// entry sits under for one OverlayContributions yields from an autonomy contribution — a
-	// POSTURE OVERLAY once the collector finds that the entry names a surface its own pack does
-	// not declare (AutonomyPosture.Config). OverlayContributions is the one projection that
-	// sets it; ConfigOverlayContributions never does.
+	// Posture is empty for a config-overlay contribution and otherwise identifies the
+	// selected autonomy half whose surface row yielded this posture overlay.
 	Posture Posture
+	// Origin, Location and Replace retain format-specific composition metadata. For a
+	// posture overlay, Location identifies that nested config array row rather than only
+	// the enclosing autonomy declaration.
+	Origin   ManifestOrigin   `json:"-"`
+	Location ManifestLocation `json:"-"`
+	Replace  bool             `json:"-"`
 }
 
 // ConfigOverlayContributions returns every config-overlay the pack declares, in
@@ -2723,7 +2746,8 @@ func (m *Manifest) ConfigOverlayContributions() []ConfigOverlay {
 	var out []ConfigOverlay
 	for _, c := range m.Contributions() {
 		if c.Kind == KindConfigOverlay {
-			out = append(out, ConfigOverlay{Surface: c.Surface, Profile: c.Profile, Config: c.Raw})
+			out = append(out, ConfigOverlay{Surface: c.Surface, Profile: c.Profile, Config: append(json.RawMessage(nil), c.Raw...),
+				Origin: c.Origin, Location: c.Location, Replace: c.Replace})
 		}
 	}
 	return out
@@ -2754,7 +2778,8 @@ func (m *Manifest) OverlayContributions() []ConfigOverlay {
 	for _, c := range m.Contributions() {
 		switch c.Kind {
 		case KindConfigOverlay:
-			out = append(out, ConfigOverlay{Surface: c.Surface, Profile: c.Profile, Config: c.Raw})
+			out = append(out, ConfigOverlay{Surface: c.Surface, Profile: c.Profile, Config: append(json.RawMessage(nil), c.Raw...),
+				Origin: c.Origin, Location: c.Location, Replace: c.Replace})
 		case KindAutonomy:
 			if seenAutonomy {
 				continue
@@ -2771,7 +2796,7 @@ func (m *Manifest) OverlayContributions() []ConfigOverlay {
 				if err := json.Unmarshal(half.decl.Config, &entries); err != nil {
 					continue
 				}
-				for _, entry := range entries {
+				for i, entry := range entries {
 					var id struct {
 						Agent string `json:"agent"`
 						Name  string `json:"name"`
@@ -2779,8 +2804,17 @@ func (m *Manifest) OverlayContributions() []ConfigOverlay {
 					if err := json.Unmarshal(entry, &id); err != nil {
 						continue
 					}
+					location := ManifestLocation{File: c.Origin.File, Key: fmt.Sprintf("%s.%s.config[%d]", c.Location.Key, half.posture, i)}
+					replace := c.Replace
+					if i < len(half.decl.configLocations) {
+						location = half.decl.configLocations[i]
+					}
+					if i < len(half.decl.configReplaces) {
+						replace = half.decl.configReplaces[i]
+					}
 					out = append(out, ConfigOverlay{Surface: id.Agent + "/" + id.Name,
-						Config: entry, Posture: half.posture})
+						Config: append(json.RawMessage(nil), entry...), Posture: half.posture,
+						Origin: c.Origin, Location: location, Replace: replace})
 				}
 			}
 		}

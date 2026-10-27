@@ -12,6 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
+	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
 const readableConfigFormat = 2
@@ -54,9 +55,11 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 	file := &srcFile{path: path, data: data, format: configdoc.TOML, document: doc,
 		contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
 	if !record {
-		return doc.Values, file, nil, nil
+		return doc.Values, file, readableResetTree(doc.Values, nil), nil
 	}
-	return doc.Values, file, fileTree(file, doc.Values), nil
+	node := fileTree(file, doc.Values)
+	markReadableRemovalValues(node, doc.Values, nil)
+	return doc.Values, file, node, nil
 }
 
 func normalizeTOMLNumbers(value any) error {
@@ -101,21 +104,23 @@ func normalizeTOMLNumber(value any) (any, error) {
 }
 
 func consumeReadableFormat(values *jsonx.OrderedMap, label, path string) error {
+	visibleLabel := termsafe.Visible(label)
+	visiblePath := termsafe.Visible(path)
 	version, present := values.Get("format")
 	if !present {
 		return nil
 	}
 	n, ok := jsonx.AsInt(version)
 	if !ok {
-		return configErr("%s: format must be the integer 2 (got %s)", label, reprAny(version))
+		return configErr("%s: format must be the integer 2 (got %s)", visibleLabel, reprAny(version))
 	}
 	if n > readableConfigFormat {
-		return configErr("%s is format %d; this yolo reads format 2. Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started", label, n)
+		return configErr("%s is format %d; this yolo reads format 2. Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started", visibleLabel, n)
 	}
 	if n != readableConfigFormat {
-		backup := shquote.Join([]string{"cp", "-p", path, path + ".backup"})
-		moveAside := shquote.Join([]string{"mv", path, path + ".disabled"})
-		return configErr("%s: format %d is unsupported in a TOML file; TOML config files use format 2. The file being refused is %s. First confirm a non-config backup path does not already exist and preserve it with `%s`; then manually rewrite its contents as TOML format 2, checking every key against the accepted TOML schema before using it. changing or removing the format marker alone is not a conversion. If this is original legacy JSONC/JSON content, retain or restore those bytes under their original legacy JSONC/JSON filename, then move this unsupported TOML file out of active config filenames with `%s` after confirming that non-config destination does not already exist; never rename legacy bytes to `.toml`. No lossless or equivalence-checked migration is available", label, n, path, backup, moveAside)
+		backup := termsafe.Visible(shquote.Join([]string{"cp", "-p", path, path + ".backup"}))
+		moveAside := termsafe.Visible(shquote.Join([]string{"mv", path, path + ".disabled"}))
+		return configErr("%s: format %d is unsupported in a TOML file; TOML config files use format 2. The file being refused is %s. First confirm a non-config backup path does not already exist and preserve it with `%s`; then manually rewrite its contents as TOML format 2, checking every key against the accepted TOML schema before using it. changing or removing the format marker alone is not a conversion. If this is original legacy JSONC/JSON content, retain or restore those bytes under their original legacy JSONC/JSON filename, then move this unsupported TOML file out of active config filenames with `%s` after confirming that non-config destination does not already exist; never rename legacy bytes to `.toml`. No lossless or equivalence-checked migration is available", visibleLabel, n, visiblePath, backup, moveAside)
 	}
 	values.Delete("format")
 	return nil

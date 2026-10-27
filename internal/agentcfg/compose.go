@@ -185,6 +185,10 @@ type Overlay struct {
 	// Data is the decoded object layer (map[string]any). A nil/non-object entry
 	// is skipped as absent.
 	Data any
+	// AppendArrays applies the grouped-manifest default: arrays append in order,
+	// suppressing entries already present. Legacy layers and explicit replacement
+	// leave this false and retain merge-patch array replacement.
+	AppendArrays bool
 }
 
 // Layer names used in Provenance and Explain output.
@@ -408,31 +412,26 @@ func Compose(in Inputs) (*Result, error) {
 	// Track provenance by folding the same ascending-precedence layer list the
 	// engine folds, recording which named layer last touched each top-level key.
 	prov := map[string]string{}
-	preLayers := []struct {
-		name string
-		data any
-	}{
-		{layerDefaults, in.Surface.Defaults},
-		{layerHost, host},
-		{layerWorkspace, in.Workspace},
+	type composeLayer struct {
+		name         string
+		data         any
+		appendArrays bool
+	}
+	preLayers := []composeLayer{
+		{name: layerDefaults, data: in.Surface.Defaults},
+		{name: layerHost, data: host},
+		{name: layerWorkspace, data: in.Workspace},
 	}
 	// config-overlay contributions fold in after workspace, in order (later pack
 	// wins), each labelled with its pack so an override is attributable (OQ2).
 	for _, ov := range in.Overlays {
-		preLayers = append(preLayers, struct {
-			name string
-			data any
-		}{layerConfigOverlay + ":" + ov.Pack, ov.Data})
+		preLayers = append(preLayers, composeLayer{
+			name: layerConfigOverlay + ":" + ov.Pack, data: ov.Data, appendArrays: ov.AppendArrays,
+		})
 	}
 	preLayers = append(preLayers,
-		struct {
-			name string
-			data any
-		}{layerOverlay, in.Overlay},
-		struct {
-			name string
-			data any
-		}{layerComputed, in.Computed},
+		composeLayer{name: layerOverlay, data: in.Overlay},
+		composeLayer{name: layerComputed, data: in.Computed},
 	)
 
 	// The object layers actually folded, kept past the branch: the literal-null
@@ -527,7 +526,11 @@ func Compose(in Inputs) (*Result, error) {
 						prov[k] = l.name
 					}
 				}
-				folded = deepMerge(folded, m)
+				if l.appendArrays {
+					folded = mergeAppendingArrays(folded, m)
+				} else {
+					folded = deepMerge(folded, m)
+				}
 				if i == overlayIdx {
 					overlayMap = m
 				}

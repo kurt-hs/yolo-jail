@@ -1776,7 +1776,7 @@ func packInstallPins(out, errw io.Writer, color, repinForks bool) int {
 		if e.Embedded() {
 			continue
 		}
-		addr, err := packsrc.Parse(e.Source)
+		addr, err := e.PackAddress()
 		if err != nil {
 			fmt.Fprintf(errw, "yolo pack install: %s: %v\n", e.Name, err)
 			unparsed[e.Name] = true
@@ -1790,7 +1790,7 @@ func packInstallPins(out, errw io.Writer, color, repinForks bool) int {
 			locals = append(locals, packsrc.LockEntry{Name: e.Name, Source: e.Source})
 			continue
 		}
-		git = append(git, packsrc.RefreshPack{Name: e.Name, Source: e.Source})
+		git = append(git, e.RefreshSpec(repinForks))
 	}
 
 	// NO HOST-ACCESS PROMPT. There was one here — it printed every claim the fetched pack

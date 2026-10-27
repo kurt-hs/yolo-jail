@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -37,17 +39,67 @@ type WorkspaceRead struct {
 // and refusing a `brokered` value any file outside the workspace wrote (WW-D17), so the entry
 // the gate shows is only ever this workspace's own. Its error names the file.
 func ReadWorkspaceForGate(workspace string) (*WorkspaceRead, error) {
-	cfg, src, err := LoadWorkspaceConfigWithSources(workspaceOrCwd(workspace), true, func(string) {})
+	workspace = workspaceOrCwd(workspace)
+	var cfg *jsonx.OrderedMap
+	var src *Sources
+	var err error
+	if hasReadableWorkspaceFile(workspace) {
+		cfg, src, err = LoadReadableWorkspaceConfigWithSources(workspace, true, func(string) {})
+	} else {
+		cfg, src, err = LoadWorkspaceConfigWithSources(workspace, true, func(string) {})
+	}
 	if err != nil {
 		return nil, err
 	}
 	if probs := brokeredOutsideProblems(src.node().key(brokeredKey)); len(probs) > 0 {
 		return nil, configErr("%s", probs[0])
 	}
+	if probs := readableRequestsOutsideProblems(src.node().key("requests")); len(probs) > 0 {
+		return nil, configErr("%s", probs[0])
+	}
 	if cfg == nil {
 		cfg = jsonx.NewOrderedMap()
 	}
 	return &WorkspaceRead{Config: cfg, sources: src}, nil
+}
+
+func readableRequestsOutsideProblems(n *srcNode) []string {
+	var out []string
+	seen := map[string]bool{}
+	var visit func(*srcNode)
+	visit = func(node *srcNode) {
+		if node == nil {
+			return
+		}
+		for _, writer := range node.writerList() {
+			if writer.file == nil || writer.file.contained || seen[writer.file.path] {
+				continue
+			}
+			seen[writer.file.path] = true
+			out = append(out, writer.String()+": config.requests: written in a file outside this workspace; readable requests are accepted only from this workspace's own config files")
+		}
+		keys := make([]string, 0, len(node.keys))
+		for key := range node.keys {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			visit(node.keys[key])
+		}
+		for _, child := range node.elems {
+			visit(child)
+		}
+	}
+	visit(n)
+	return out
+}
+func hasReadableWorkspaceFile(workspace string) bool {
+	for _, name := range []string{WorkspaceTOMLConfigName, WorkspaceLocalTOMLConfigName} {
+		if _, err := os.Stat(filepath.Join(workspace, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // EntryRepo is one repository a workspace's `brokered.<source>.repos` lists.
@@ -198,9 +250,12 @@ func inList(list []string, s string) bool {
 // whose remotes make up its scope (loopholedecl.Brokered).
 type ScopeBroker struct {
 	Source, Label, RemoteHost string
-	// GrantKinds are the grant kinds the source defines (loopholedecl.Brokered.Grants): a
-	// workspace grant of any other kind reaches no scope.
+	// GrantKinds are the kinds this source declares; a workspace request of any other kind
+	// reaches no scope.
 	GrantKinds []string
+	// Readable is the explicit capability projection for the selected source. Runtime callers
+	// may supply it as they adopt the readable allowance contract; absence preserves legacy reads.
+	Readable *ReadableBrokerDeclaration
 }
 
 // NewScopeCheck is the scope part in play for brokers: each one's remotes, read from the
@@ -217,6 +272,9 @@ type ScopeBroker struct {
 func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead) *ScopeCheck {
 	if len(brokers) == 0 {
 		return nil
+	}
+	if check, ok := readableScopeCheck(workspace, brokers, read); ok {
+		return check
 	}
 	rec, _, _ := readScopeRecord(ApprovalScopePath(workspace))
 	check := &ScopeCheck{}

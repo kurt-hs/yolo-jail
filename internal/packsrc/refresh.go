@@ -98,6 +98,10 @@ type RefreshPack struct {
 	// Refresh resolves the remote's advertised HEAD and pins its commit. Legacy
 	// address callers leave it false and retain Parse's mandatory-ref semantics.
 	AllowDefaultRef bool
+	// PreserveDefaultPin is the install producer's hold: forced installs retain a
+	// previously resolved remote-default lock. Ordinary Force callers keep the
+	// existing explicit-update behavior; launch refreshes do not force.
+	PreserveDefaultPin bool
 }
 
 // RefreshOptions tunes one Refresh call.
@@ -193,8 +197,15 @@ func (s *Store) Refresh(packs []RefreshPack, opts RefreshOptions) ([]Outcome, er
 	if interval <= 0 {
 		interval = BranchRefreshInterval
 	}
+	needDefaultPin := false
+	for _, pack := range packs {
+		if pack.AllowDefaultRef && opts.Force && pack.PreserveDefaultPin {
+			needDefaultPin = true
+			break
+		}
+	}
 	var previous *Lock
-	if opts.LockPath != "" && !opts.Force {
+	if opts.LockPath != "" && (!opts.Force || needDefaultPin) {
 		var err error
 		previous, err = LoadLock(opts.LockPath)
 		if err != nil {
@@ -223,7 +234,7 @@ func (s *Store) Refresh(packs []RefreshPack, opts RefreshOptions) ([]Outcome, er
 			outcomes[i].Err = fmt.Errorf("pack %s omits ?ref= but has no lockfile to pin the remote default branch — provide a lockfile or write an explicit ref", p.Name)
 			continue
 		}
-		if a.Kind == KindGit && a.Ref == "" && previous != nil {
+		if a.Kind == KindGit && a.Ref == "" && previous != nil && (!opts.Force || p.PreserveDefaultPin) {
 			if locked, ok := previous.Get(p.Name); ok && locked.Source == p.Source &&
 				locked.Ref != "" && locked.Commit != "" {
 				// An omitted ref is a commit pin, not a floating branch. Normal launches

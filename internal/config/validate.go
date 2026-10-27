@@ -63,6 +63,8 @@ type LoopholeResolver interface {
 // existence checks (config.mounts). resolver supplies known loopholes
 // (nil => none).
 func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver) (errors []string, warnings []string) {
+	readableInput := config
+	config, projection := projectReadableB2ForValidation(config)
 	if workspace == "" {
 		workspace = cwd()
 	}
@@ -88,6 +90,9 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 	validateEphemeralStorage(config, errs)
 	validateMacosLogRetired(config, errs, warns)
 	validateNetwork(config, errs, warns)
+	for _, message := range projection.errors {
+		add(errs, message)
+	}
 	validateSecurity(config, errs)
 	validateHostProcessesRetired(config, errs, warns)
 	validateMiseTools(config, errs)
@@ -110,6 +115,9 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 	validateAgentsMdExtra(config, errs)
 	validateBriefingProvenance(config, errs)
 	validateEnvSources(config, errs)
+	if projection.env {
+		validateReadableEnvironment(readableInput, errs)
+	}
 	validateCacheRelocations(config, workspace, errs, warns)
 	validateWritableHomeDirs(config, errs)
 	validateHostFiles(config, workspace, errs)
@@ -134,6 +142,10 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 
 	errors = *errs
 	warnings = *warns
+	if projection.changed {
+		errors = projectReadableValidationMessages(errors, projection)
+		warnings = projectReadableValidationMessages(warnings, projection)
+	}
 	if errors == nil {
 		errors = []string{}
 	}

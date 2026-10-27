@@ -89,8 +89,10 @@ type ReadableBrokerPolicy struct {
 	Always              []string
 	OnRequest           []string
 	Repos               []ReadableRepoRequest
-	AlwaysOrigins       []string
-	OnRequestOrigins    []string
+	// RepoPath survives an empty repository list so removals retain their authored remediation key.
+	RepoPath         string
+	AlwaysOrigins    []string
+	OnRequestOrigins []string
 }
 
 // ReadableRepoRequest is a requested concrete OWNER/REPO in the declared source's namespace.
@@ -115,6 +117,7 @@ type ReadableGateSource struct {
 	Label      string
 	RemoteHost string
 	Read       brokerscope.Read
+	EntryKey   string
 	Entry      []EntryRepo
 	Targets    []ReadableRepository
 	Grants     []brokerscope.Grant
@@ -127,6 +130,7 @@ type ReadableObservedSource struct {
 	Source     string
 	Label      string
 	RemoteHost string
+	EntryKey   string
 	Read       brokerscope.Read
 	Targets    []ReadableRepository
 }
@@ -379,6 +383,7 @@ func ResolveReadableAllowance(input ReadableAllowanceInput) (ReadableAllowancePl
 			path := "requests." + name + "." + key
 			value := readableValue(table, key)
 			if key == "repos" {
+				policy.RepoPath = path
 				if policy.RemoteHost == brokerscope.AnyRemoteHost {
 					return plan, fmt.Errorf("%s: declared remote_host %q cannot accept OWNER/REPO additions; request repositories through a selected named-host source", path, brokerscope.AnyRemoteHost)
 				}
@@ -511,7 +516,8 @@ func ProduceReadableGateInput(workspace string, plan ReadableAllowancePlan) (Rea
 			}
 		}
 		input.ReadCapabilities = append(input.ReadCapabilities, readCapability)
-		observed := ReadableObservedSource{Source: policy.Source, Label: policy.Label, RemoteHost: policy.RemoteHost, Read: cloneBrokerScopeRead(remotes), Targets: cloneReadableRepositories(targets)}
+		observed := ReadableObservedSource{Source: policy.Source, Label: policy.Label, RemoteHost: policy.RemoteHost,
+			EntryKey: policy.RepoPath, Read: cloneBrokerScopeRead(remotes), Targets: cloneReadableRepositories(targets)}
 		input.ObservedSources = append(input.ObservedSources, observed)
 		readAlways := slices.Contains(policy.Always, policy.ReadCapability)
 		readRequested := slices.Contains(policy.OnRequest, policy.ReadCapability) && readableReadRequestedFromResults(input.Requests, policy.Source, policy.ReadCapability)
@@ -624,7 +630,7 @@ func ProduceReadableGateInput(workspace string, plan ReadableAllowancePlan) (Rea
 			grants[i] = decisions[i].Grant
 		}
 		input.Sources = append(input.Sources, ReadableGateSource{Source: policy.Source, Label: policy.Label, RemoteHost: policy.RemoteHost,
-			Read: cloneBrokerScopeRead(remotes), Entry: entries, Targets: targets, Grants: grants, Decisions: decisions})
+			EntryKey: policy.RepoPath, Read: cloneBrokerScopeRead(remotes), Entry: entries, Targets: targets, Grants: grants, Decisions: decisions})
 	}
 	return input, nil
 }

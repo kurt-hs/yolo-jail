@@ -90,17 +90,23 @@ type PackEntry struct {
 	// (localPackAddress has the reasoning).
 	Source string `json:"source"`
 
-	// Name is the pack's short name, used for the staging dir, `yolo pack ls`, and
-	// provenance. Defaults to a slug derived from Source when not given.
-	//
-	// NEVER EMPTY once lowered, and that is load-bearing rather than tidy: this is the
-	// name packload.LoadDir is handed, so filling it here is what stops a pack.json
-	// `name` from becoming the effective name. It has to be derivable from the config
-	// line ALONE — the staging dir and the pack-drop prune key on Slug() before anything
-	// is fetched or read, and a git source has no tree to consult at this point. See
-	// packload.Pack's Name field comment for the full story, and
-	// TestEveryLoweredPackEntryCarriesAName for the guarantee.
+	// Name is the author-facing pack handle. A qualified handle remains distinct from
+	// the source tree and from Slug, which is the filesystem staging identity.
 	Name string `json:"name"`
+
+	// SourceID identifies the named source (or direct git repository) that produced this
+	// entry. LocalPath is the expanded address path; PhysicalPath is its symlink-resolved
+	// identity. Neither replaces the authored handle or lock address.
+	SourceID     string `json:"sourceID,omitempty"`
+	LocalPath    string `json:"-"`
+	PhysicalPath string `json:"-"`
+
+	// EmbeddedName is the shipped pack identity behind an explicit yolo/<name> handle.
+	EmbeddedName string `json:"embeddedName,omitempty"`
+
+	// AllowDefaultRef carries the authored omitted-ref state into the resolver and the
+	// refresh adapter. It is never inferred from an empty ref in a legacy address.
+	AllowDefaultRef bool `json:"allowDefaultRef,omitempty"`
 
 	// Only and Exclude filter the pack tree by glob, applied in that order. `only`
 	// is a documented first-line ergonomic, not an escape hatch: "give me just
@@ -174,7 +180,7 @@ const (
 
 // Embedded marks a pack as yolo-shipped. Set by the embedded-pack loader, never by
 // config — an entry a user writes can only ever be local or fetched.
-func (p PackEntry) Embedded() bool { return p.IsEmbedded }
+func (p PackEntry) Embedded() bool { return p.IsEmbedded || p.EmbeddedName != "" }
 
 // Origin returns the pack's content origin.
 func (p PackEntry) Origin() Origin {
@@ -247,17 +253,44 @@ func LoadPackEntries() ([]PackEntry, []string, error) {
 // warnings, never an entry problem.
 func loadPackEntries(warn Warn) ([]PackEntry, []string, error) {
 	userPath := paths.UserConfigPath()
-	// loadUserScopeConfig, not LoadJSONCWithIncludes: the same direct read of the user file
-	// (so workspace scope stays inexpressible — see the file header) PLUS any --user-layer.
-	// `packs` is the key the layer exists for, since installing a loophole from inside a jail
-	// means naming the pack that carries it.
-	userCfg, err := loadUserScopeConfig(userPath, userPath, true, warn)
+	_, _, readable, pathErr := resolveUserConfigPath(userPath)
+	if pathErr != nil {
+		return nil, nil, pathErr
+	}
+	var userCfg *jsonx.OrderedMap
+	var sources *Sources
+	var err error
+	if readable {
+		userCfg, sources, err = LoadReadableUserScopeConfigWithSources(true, warn)
+	} else {
+		userCfg, err = loadUserScopeConfig(userPath, userPath, true, warn)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 	var entries []PackEntry
 	var problems []string
-	if v, present := userCfg.Get(packsKey); present && v != nil {
+	if readable {
+		var rawSources any
+		if value, ok := userCfg.Get("pack_sources"); ok {
+			rawSources = value
+		}
+		sourceDefs, sourceErr := packsrc.ParseSourceDefinitions(rawSources)
+		if sourceErr != nil {
+			problem := "config.pack_sources: " + sourceErr.Error()
+			if key, _, ok := strings.Cut(sourceErr.Error(), ":"); ok {
+				if locations := sources.Locations("config." + key); len(locations) > 0 {
+					problem = locations[0] + ": " + sourceErr.Error()
+				}
+			}
+			problems = append(problems, problem)
+		}
+		if v, present := userCfg.Get(packsKey); present && v != nil && sourceErr == nil {
+			var entryProblems []string
+			entries, entryProblems = checkReadablePacks(v, sourceDefs, sources)
+			problems = append(problems, entryProblems...)
+		}
+	} else if v, present := userCfg.Get(packsKey); present && v != nil {
 		entries, problems = checkPacks(v)
 	}
 	// THE CONVENTIONAL LOCAL PACK, appended LAST. See localPackEntry for why it is here at
@@ -604,13 +637,12 @@ func checkPackName(name, itemPath string) string {
 // not merely ignored, because a silently-inert key looks exactly like a broken
 // feature.
 func validatePacks(workspace string, errs *[]string) {
-	userPath := paths.UserConfigPath()
-	if userCfg, err := loadUserScopeConfig(userPath, userPath, false, func(string) {}); err == nil && userCfg != nil {
-		if v, present := userCfg.Get(packsKey); present && v != nil {
-			_, problems := checkPacks(v)
-			for _, p := range problems {
-				add(errs, p)
-			}
+	_, problems, err := LoadPackEntries()
+	if err != nil {
+		add(errs, "config.packs: "+err.Error())
+	} else {
+		for _, problem := range problems {
+			add(errs, problem)
 		}
 	}
 	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})

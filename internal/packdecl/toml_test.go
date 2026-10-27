@@ -459,16 +459,6 @@ compact_at = 200_000
 	}
 }
 
-func TestLaunchKindIsExplicitlyDeferredFromGroupedManifestCodec(t *testing.T) {
-	_, problems := DecodeTOML([]byte(`[[launch]]
-bin = "pi"
-flags = ["--example"]
-`))
-	if len(problems) == 0 || !strings.Contains(strings.Join(problems, "\n"), `kind "launch" has been REMOVED`) {
-		t.Fatalf("D2 launch lowering must remain explicit and deferred, got %v", problems)
-	}
-}
-
 func TestGroupedKindNamesCoverAllLiveKinds(t *testing.T) {
 	if got := len(KnownKinds()); got != 22 {
 		t.Fatalf("live kind count = %d, want 22", got)

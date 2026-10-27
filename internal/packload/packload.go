@@ -71,6 +71,9 @@ type Pack struct {
 	// the directory name so it cannot drift into a second spelling
 	// (TestEmbeddedPackManifestNamesMatchTheirDirs).
 	Name string
+	// OverlayFiles are direct files discovered under the conventional overlays/ directory.
+	// Their owner identity and codec are resolved by packoverlay.Collect against the selected set.
+	OverlayFiles []OverlayFile
 	// LaunchName is the name the host LAUNCH loaded this pack under, set only by the jail's
 	// loader, which reads it from the staged tree's record (PackTreeEntry.Name); "" everywhere
 	// else, where Name is that name already.
@@ -1002,7 +1005,7 @@ func OverrideSkewTolerance(tolerant bool) (restore func()) {
 }
 
 func LoadDir(root, name string) (*Pack, []string) {
-	return loadDir(root, name, false)
+	return loadDir(root, name, false, false)
 }
 
 // LoadDirForUse is LoadDir for a USE READ on the host (packdecl.DecodeForUse): a read whose
@@ -1019,26 +1022,33 @@ func LoadDir(root, name string) (*Pack, []string) {
 // yolo ships), which refuses the same manifest by name. In the jail both read tolerantly
 // (TolerateSkew).
 func LoadDirForUse(root, name string) (*Pack, []string) {
-	return loadDir(root, name, true)
+	return loadDir(root, name, true, false)
 }
 
-func loadDir(root, name string, forUse bool) (*Pack, []string) {
+// LoadDirForLocalUse is a host use read for a pack whose origin the caller has already
+// resolved as trusted local content. It follows local content links while retaining the same
+// host use-read decoder and validation behavior as LoadDirForUse. It does not mark the returned
+// pack Local or grant it any execution authority; the caller remains responsible for origin.
+func LoadDirForLocalUse(root, name string) (*Pack, []string) {
+	return loadDir(root, name, true, true)
+}
+
+func loadDir(root, name string, forUse, followLocalLinks bool) (*Pack, []string) {
 	decl := &packdecl.Manifest{}
-	var problems, skewNotes []string
-	var data []byte
-	var manifestFound string
-	for _, mName := range []string{"pack.jsonc", packdecl.ManifestName} {
-		d, err := os.ReadFile(filepath.Join(root, mName))
-		if err == nil {
-			data = d
-			manifestFound = mName
-			break
-		} else if !os.IsNotExist(err) {
-			return nil, []string{"pack " + name + ": " + err.Error()}
-		}
+	data, manifestFound, discoveryProblem := discoverManifest(root)
+	if discoveryProblem != "" {
+		return nil, []string{"pack " + name + ": " + discoveryProblem}
 	}
+	var problems, skewNotes []string
 	if manifestFound != "" {
+		decodeTOML := manifestFound == packdecl.ManifestTOMLName
 		switch {
+		case tolerateUnknownFields && decodeTOML:
+			decl, problems, skewNotes = packdecl.DecodeTOMLTolerant(data)
+		case forUse && decodeTOML:
+			decl, problems, skewNotes = packdecl.DecodeTOMLForUse(data)
+		case decodeTOML:
+			decl, problems = packdecl.DecodeTOML(data)
 		case tolerateUnknownFields:
 			decl, problems, skewNotes = packdecl.DecodeTolerant(data)
 		case forUse:
@@ -1065,9 +1075,37 @@ func loadDir(root, name string, forUse bool) (*Pack, []string) {
 	if name == "" {
 		name = filepath.Base(root)
 	}
+	homeFiles, homeProblems := discoverHomeFiles(root, followLocalLinks)
+	for i, problem := range homeProblems {
+		homeProblems[i] = "pack " + name + ": " + problem
+	}
+	if len(homeFiles) > 0 {
+		homeDecl := &packdecl.Manifest{Contributes: homeFiles}
+		for _, problem := range homeDecl.Validate() {
+			homeProblems = append(homeProblems, fmt.Sprintf("pack %s: home/: %s", name, problem))
+		}
+		for _, homeFile := range homeFiles {
+			for _, existing := range decl.Contributions() {
+				if existing.Kind == packdecl.KindFiles && existing.Into == homeFile.Into {
+					homeProblems = append(homeProblems, fmt.Sprintf("pack %s: home/%s and its declared files contribution both target %q; keep one source", name, strings.TrimPrefix(homeFile.From, "home/"), homeFile.Into))
+				}
+			}
+		}
+		decl.Contributes = append(decl.Contributes, homeFiles...)
+	}
+	problems = append(problems, homeProblems...)
+	overlayFiles, overlayProblems := discoverOverlayFiles(root, followLocalLinks)
+	for i, problem := range overlayProblems {
+		overlayProblems[i] = "pack " + name + ": " + problem
+	}
+	problems = append(problems, overlayProblems...)
+	if manifestFound == "" {
+		decl.Description = packDescription(root, decl, manifestFound)
+	}
 	problems = append(problems, reservedBriefingFiles(root, name)...)
 	return &Pack{
-		Name: name, Root: root, Decl: decl, SkewNotes: skewNotes,
+		Name: name, OverlayFiles: overlayFiles,
+		Root: root, Decl: decl, SkewNotes: skewNotes,
 	}, problems
 }
 

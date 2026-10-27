@@ -326,6 +326,9 @@ func CheckConfigAndScopeChanges(workspace string, config *jsonx.OrderedMap, scop
 // its projection (approvalConfigPart), and the entry is already in scope.
 func ApproveConfigAndScope(workspace string, config *jsonx.OrderedMap, scope *ScopeCheck,
 	isTTY, acceptNonInteractive bool, prompter ChangePrompter) (bool, map[string][]ScopeRepo, error) {
+	if scope != nil && scope.Fatal != nil {
+		return false, nil, scope.Fatal
+	}
 	snapshotPath := ApprovalSnapshotPath(workspace)
 	currentJSON, err := SnapshotJSON(approvalConfigPart(config))
 	if err != nil {
