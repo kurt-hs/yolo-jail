@@ -84,13 +84,13 @@ func TestConfigEditStructuralCompletionApply(t *testing.T) {
 
 func assertStructuralCompletionMeaning(t *testing.T, data []byte, tc structuralCase) {
 	t.Helper()
-	parsed, err := configdoc.Parse(data, tc.format)
-	if err != nil {
-		t.Fatalf("updated document does not parse: %v", err)
-	}
 	want, err := semanticValue(expectedStructuralDocument(tc.name), tc.format)
 	if err != nil {
 		t.Fatalf("prepare independent expected values: %v", err)
+	}
+	parsed, err := configdoc.Parse(data, tc.format)
+	if err != nil {
+		t.Fatalf("updated document does not parse: %v", err)
 	}
 	if !semanticEqual(parsed.Values, want) {
 		t.Fatalf("document values = %#v, want %#v", parsed.Values, want)

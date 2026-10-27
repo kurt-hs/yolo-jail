@@ -238,9 +238,28 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 					}
 					hunks = commentPreservingHunks(data, ranges, doc.Index.Comments())
 					if pathHasIndex(parentPath) {
-						name := path[len(path)-2].Key
-						prefix := []byte(tomlKey(name) + " = []" + newlineOf(data))
-						hunks[0].After = append(prefix, hunks[0].After...)
+						scope := parentPath[:len(parentPath)-1]
+						lastKey := parentPath[len(parentPath)-1]
+						if lastKey.IsIndex {
+							return nil, fmt.Errorf("nested array-table parent has no empty-list key")
+						}
+						insertAt, insertEnd, insertion, insertErr := insertMember(doc, scope, lastKey.Key, []any{})
+						if insertErr != nil {
+							return nil, insertErr
+						}
+						insertHunk := Hunk{Start: insertAt, End: insertEnd, Before: append([]byte(nil), data[insertAt:insertEnd]...), After: insertion}
+						combined := false
+						for i := range hunks {
+							if hunks[i].Start == insertAt {
+								hunks[i].After = append(append([]byte(nil), insertion...), hunks[i].After...)
+								combined = true
+								break
+							}
+						}
+						if !combined {
+							hunks = append(hunks, insertHunk)
+						}
+						sort.Slice(hunks, func(i, j int) bool { return hunks[i].Start < hunks[j].Start })
 					} else {
 						emptyKey := tomlPathString(parentPath) + " = []" + newlineOf(data)
 						hunks = append([]Hunk{{Start: 0, End: 0, Before: nil, After: []byte(emptyKey)}}, hunks...)
@@ -409,17 +428,46 @@ func insertMember(doc *configdoc.Document, parent []configdoc.Step, key string, 
 		}
 		return last.End, last.End, []byte(", " + name + " = " + string(encoded)), nil
 	}
+	name := tomlKey(key)
+	if (len(parent) > 0 && parent[len(parent)-1].IsIndex) || (ok && tomlHeaderAt(doc.Bytes, span)) {
+		_, at, descendant, e := tomlScopeInsertion(doc, parent)
+		if e != nil {
+			return 0, 0, nil, e
+		}
+		if descendant {
+			text := []byte(name + " = " + string(encoded) + newlineOf(doc.Bytes))
+			if at > 0 && doc.Bytes[at-1] != '\n' {
+				text = append([]byte(newlineOf(doc.Bytes)), text...)
+			}
+			return at, at, text, nil
+		}
+	}
+	if !pathHasIndex(parent) && !(ok && span.Start < len(doc.Bytes) && tomlHeaderAt(doc.Bytes, span)) {
+		fullPath := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Key: key})
+		at, found, err := firstTOMLHeaderUnder(doc, nil)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if !found {
+			at = len(doc.Bytes)
+		}
+		text := []byte(tomlPathString(fullPath) + " = " + string(encoded) + newlineOf(doc.Bytes))
+		if at > 0 && doc.Bytes[at-1] != '\n' {
+			text = append([]byte(newlineOf(doc.Bytes)), text...)
+		}
+		return at, at, text, nil
+	}
 	end := len(doc.Bytes)
 	if ok {
 		end = span.End
 	}
-	name := tomlKey(key)
 	text := []byte(name + " = " + string(encoded) + newlineOf(doc.Bytes))
 	if end > 0 && doc.Bytes[end-1] != '\n' {
 		text = append([]byte(newlineOf(doc.Bytes)), text...)
 	}
 	return end, end, text, nil
 }
+
 func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []configdoc.Step, key string, value []byte) (int, int, []byte, error) {
 	data := doc.Bytes
 	open, close := table.Start, table.End
@@ -968,26 +1016,147 @@ func tomlHeaderAt(data []byte, span configdoc.Span) bool {
 	return start < len(data) && data[start] == '['
 }
 
+func firstTOMLHeaderUnder(doc *configdoc.Document, prefix []configdoc.Step) (int, bool, error) {
+	first := len(doc.Bytes)
+	found := false
+	var walk func([]configdoc.Step, any) error
+	walk = func(path []configdoc.Step, value any) error {
+		switch node := value.(type) {
+		case *jsonx.OrderedMap:
+			if len(path) > len(prefix) && configPathHasPrefix(path, prefix) {
+				span, header, err := isTOMLHeaderTable(doc, path)
+				if err != nil {
+					return err
+				}
+				if header && span.Start < first {
+					first, found = span.Start, true
+				}
+			}
+			for _, key := range node.Keys() {
+				child, _ := node.Get(key)
+				if err := walk(appendStep(path, configdoc.Step{Key: key}), child); err != nil {
+					return err
+				}
+			}
+		case []any:
+			for i, child := range node {
+				itemPath := appendStep(path, configdoc.Step{Index: i, IsIndex: true})
+				if header, err := isTOMLArrayTableItem(doc, itemPath); err != nil {
+					return err
+				} else if header && len(itemPath) > len(prefix) && configPathHasPrefix(itemPath, prefix) {
+					span, _, err := doc.Index.Item(itemPath...)
+					if err != nil {
+						return err
+					}
+					if span.Start < first {
+						first, found = span.Start, true
+					}
+				}
+				if err := walk(itemPath, child); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := walk(nil, doc.Values); err != nil {
+		return 0, false, err
+	}
+	return first, found, nil
+}
+
+func configPathHasPrefix(path, prefix []configdoc.Step) bool {
+	if len(path) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func tomlScopeInsertion(doc *configdoc.Document, scope []configdoc.Step) (configdoc.Span, int, bool, error) {
+	var table configdoc.Span
+	var header bool
+	if len(scope) > 0 && scope[len(scope)-1].IsIndex {
+		var ok bool
+		var err error
+		table, ok, err = doc.Index.Item(scope...)
+		if err != nil || !ok {
+			return configdoc.Span{}, 0, false, err
+		}
+		header, err = isTOMLArrayTableItem(doc, scope)
+		if err != nil {
+			return configdoc.Span{}, 0, false, err
+		}
+	} else {
+		var err error
+		table, header, err = isTOMLHeaderTable(doc, scope)
+		if err != nil {
+			return configdoc.Span{}, 0, false, err
+		}
+	}
+	if !header {
+		return configdoc.Span{}, 0, false, nil
+	}
+	if at, found, err := firstTOMLHeaderUnder(doc, scope); err != nil {
+		return configdoc.Span{}, 0, false, err
+	} else if found {
+		return table, at, true, nil
+	}
+	return table, table.End, false, nil
+}
+
+func nestedHeaderKindAssignment(doc *configdoc.Document, path []configdoc.Step, value []byte) (int, []byte, error) {
+	if len(path) < 2 || path[len(path)-1].IsIndex {
+		return 0, nil, fmt.Errorf("nested TOML table replacement has no key path")
+	}
+	scope := path[:len(path)-1]
+	key := tomlKey(path[len(path)-1].Key)
+	assignment := []byte(key + " = " + string(value) + newlineOf(doc.Bytes))
+	if table, at, descendant, err := tomlScopeInsertion(doc, scope); err != nil {
+		return 0, nil, err
+	} else if table.End > 0 || at > 0 || descendant {
+		if at > 0 && doc.Bytes[at-1] != '\n' {
+			assignment = append([]byte(newlineOf(doc.Bytes)), assignment...)
+		}
+		return at, assignment, nil
+	}
+	if pathHasIndex(scope) {
+		return 0, nil, fmt.Errorf("cannot locate the indexed TOML parent scope")
+	}
+	at, found, err := firstTOMLHeaderUnder(doc, scope)
+	if err != nil {
+		return 0, nil, err
+	}
+	if !found {
+		return 0, nil, fmt.Errorf("cannot locate descendant TOML header for implicit parent")
+	}
+	header := []byte("[" + tomlPathString(scope) + "]" + newlineOf(doc.Bytes))
+	if at > 0 && doc.Bytes[at-1] != '\n' {
+		header = append([]byte(newlineOf(doc.Bytes)), header...)
+	}
+	return at, append(header, assignment...), nil
+}
+
 func rootTableValueInsertion(doc *configdoc.Document, path []configdoc.Step) (int, bool, error) {
 	if len(path) != 1 || path[0].IsIndex {
 		return 0, false, nil
 	}
-	target, isHeader, err := isTOMLHeaderTable(doc, path)
+	_, isHeader, err := isTOMLHeaderTable(doc, path)
 	if err != nil || !isHeader {
 		return 0, false, err
 	}
-	earliest := target.Start
-	for _, key := range doc.Values.Keys() {
-		candidate := []configdoc.Step{{Key: key}}
-		span, header, e := isTOMLHeaderTable(doc, candidate)
-		if e != nil {
-			return 0, false, e
-		}
-		if header && span.Start < earliest {
-			earliest = span.Start
-		}
+	earliest, found, err := firstTOMLHeaderUnder(doc, nil)
+	if err != nil {
+		return 0, false, err
 	}
-	return earliest, earliest < target.Start, nil
+	if !found {
+		return 0, false, nil
+	}
+	return earliest, true, nil
 }
 
 func tomlArrayTableAt(data []byte, path []configdoc.Step) bool {
@@ -1143,25 +1312,44 @@ func replaceStructuralKind(data []byte, format configdoc.Format, path []configdo
 				return nil, err
 			}
 			hunks := commentPreservingHunks(data, ranges, doc.Index.Comments())
-			if insertAt, moveToRoot, err := rootTableValueInsertion(doc, path); err != nil {
-				return nil, err
-			} else if moveToRoot {
-				assignment := append([]byte(tomlKey(path[0].Key)+" = "), encoded...)
-				assignment = append(assignment, []byte(newlineOf(data))...)
-				hunks = append(hunks, Hunk{Start: insertAt, End: insertAt, After: assignment})
-				sort.Slice(hunks, func(i, j int) bool { return hunks[i].Start < hunks[j].Start })
-			} else {
-				first := ranges[0]
-				indentEnd := first.Start
-				for indentEnd < len(data) && (data[indentEnd] == ' ' || data[indentEnd] == '\t') {
-					indentEnd++
+			if len(path) == 1 {
+				insertAt, moveToRoot, err := rootTableValueInsertion(doc, path)
+				if err != nil {
+					return nil, err
 				}
-				assignment := append([]byte(nil), data[first.Start:indentEnd]...)
-				assignment = append(assignment, []byte(tomlKey(path[len(path)-1].Key)+" = ")...)
-				assignment = append(assignment, encoded...)
-				assignment = append(assignment, []byte(newlineOf(data))...)
-				hunks[0].After = append(assignment, hunks[0].After...)
+				if moveToRoot {
+					assignment := append([]byte(tomlKey(path[0].Key)+" = "), encoded...)
+					assignment = append(assignment, []byte(newlineOf(data))...)
+					combined := false
+					for i := range hunks {
+						if hunks[i].Start == insertAt {
+							hunks[i].After = append(append([]byte(nil), assignment...), hunks[i].After...)
+							combined = true
+							break
+						}
+					}
+					if !combined {
+						hunks = append(hunks, Hunk{Start: insertAt, End: insertAt, After: assignment})
+					}
+				}
+			} else {
+				insertAt, assignment, err := nestedHeaderKindAssignment(doc, path, encoded)
+				if err != nil {
+					return nil, err
+				}
+				combined := false
+				for i := range hunks {
+					if hunks[i].Start == insertAt {
+						hunks[i].After = append(append([]byte(nil), assignment...), hunks[i].After...)
+						combined = true
+						break
+					}
+				}
+				if !combined {
+					hunks = append(hunks, Hunk{Start: insertAt, End: insertAt, After: assignment})
+				}
 			}
+			sort.Slice(hunks, func(i, j int) bool { return hunks[i].Start < hunks[j].Start })
 			updated := applyHunks(data, hunks)
 			if _, err := configdoc.Parse(updated, format); err != nil {
 				return nil, fmt.Errorf("TOML table kind splice does not parse: %w", err)
