@@ -45,7 +45,7 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 	if err := normalizeTOMLNumbers(doc.Values); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := consumeReadableFormat(doc.Values, label); err != nil {
+	if err := consumeReadableFormat(doc.Values, label, path); err != nil {
 		return nil, nil, nil, err
 	}
 	if err := validateReadableTOML(doc.Values, scope, label, doc.Index); err != nil {
@@ -100,7 +100,7 @@ func normalizeTOMLNumber(value any) (any, error) {
 	}
 }
 
-func consumeReadableFormat(values *jsonx.OrderedMap, label string) error {
+func consumeReadableFormat(values *jsonx.OrderedMap, label, path string) error {
 	version, present := values.Get("format")
 	if !present {
 		return nil
@@ -113,8 +113,9 @@ func consumeReadableFormat(values *jsonx.OrderedMap, label string) error {
 		return configErr("%s is format %d; this yolo reads format 2. Upgrade with `yolo update`, or `just install` from a checkout. Nothing was started", label, n)
 	}
 	if n != readableConfigFormat {
-		backup := shquote.Join([]string{"cp", "-p", label, label + ".backup"})
-		return configErr("%s: format %d is unsupported in a TOML file; TOML config files use format 2. First confirm a non-config backup path does not already exist and preserve this file with `%s`; then manually rewrite its contents as TOML format 2, checking every key against the accepted TOML schema before using it. changing or removing the format marker alone is not a conversion; no lossless or equivalence-checked migration is available", label, n, backup)
+		backup := shquote.Join([]string{"cp", "-p", path, path + ".backup"})
+		moveAside := shquote.Join([]string{"mv", path, path + ".disabled"})
+		return configErr("%s: format %d is unsupported in a TOML file; TOML config files use format 2. The file being refused is %s. First confirm a non-config backup path does not already exist and preserve it with `%s`; then manually rewrite its contents as TOML format 2, checking every key against the accepted TOML schema before using it. changing or removing the format marker alone is not a conversion. If this is original legacy JSONC/JSON content, retain or restore those bytes under their original legacy JSONC/JSON filename, then move this unsupported TOML file out of active config filenames with `%s` after confirming that non-config destination does not already exist; never rename legacy bytes to `.toml`. No lossless or equivalence-checked migration is available", label, n, path, backup, moveAside)
 	}
 	values.Delete("format")
 	return nil

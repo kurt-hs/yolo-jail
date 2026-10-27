@@ -10,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 func TestLoadReadableWorkspaceConfigReadsReadableInstall(t *testing.T) {
@@ -622,17 +623,29 @@ func TestReadableUserScopeCollisionOffersSafeManualResolution(t *testing.T) {
 }
 
 func TestReadableTOMLUnsupportedFormatOffersSafeManualRewrite(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "supplied-workspace")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Clean(dir) == filepath.Clean(cwd) {
+		t.Fatalf("test workspace unexpectedly equals CWD: %s", dir)
+	}
 	path := filepath.Join(dir, paths.WorkspaceConfigTOMLName)
 	document := "format = 1\npackages = ['legacy']\n"
 	write(t, path, document)
 	before := snapshotReadableConfigDir(t, dir)
 
-	_, err := LoadReadableWorkspaceConfig(dir, true, nil)
+	_, err = LoadReadableWorkspaceConfig(dir, true, nil)
 	if err == nil {
 		t.Fatal("format-1 TOML was accepted")
 	}
-	for _, want := range []string{filepath.Base(path), "format 1", "format 2", "backup path does not already exist", "cp -p yolo-jail.toml yolo-jail.toml.backup", "manually rewrite", "TOML", "schema", "before using it", "changing or removing the format marker alone is not a conversion"} {
+	backupCommand := shquote.Join([]string{"cp", "-p", path, path + ".backup"})
+	moveAsideCommand := shquote.Join([]string{"mv", path, path + ".disabled"})
+	for _, want := range []string{path, "format 1", "format 2", "backup path does not already exist", backupCommand, "manually rewrite", "TOML", "schema", "before using it", "changing or removing the format marker alone is not a conversion", "original legacy JSONC/JSON filename", moveAsideCommand, "never rename legacy bytes to `.toml`"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("unsupported-format error %q does not contain safe recovery guidance %q", err, want)
 		}
