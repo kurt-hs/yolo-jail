@@ -1,0 +1,36 @@
+# Permanent production-caller mutation controls
+
+These are unchanged excerpts from the original `cli-output-error-red.log` and `cli-output-error-green-after-red.log`. The RED mutates both production caller pins in `internal/cli/run/sessionoutputerror_test.go`; the shared helper test still passes, so helper-only coverage cannot produce this failure. Restoring the pins yields GREEN. No command output is reconstructed.
+
+## Both production callsites removed (RED)
+
+```text
+=== RUN   TestARuntimeThatNeverStartedLeavesNoPackTree
+--- PASS: TestARuntimeThatNeverStartedLeavesNoPackTree (0.02s)
+=== RUN   TestSessionRunOutputErrorNamesTheTerminalCauseAndNextStep
+--- PASS: TestSessionRunOutputErrorNamesTheTerminalCauseAndNextStep (0.00s)
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer
+    sessionoutputerror_test.go:75: runContainer must report runArmedSession errors through reportSessionRunError after the session call
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting
+    sessionoutputerror_test.go:75: attachExisting must report runArmedSession errors through reportSessionRunError after the session call
+--- FAIL: TestFreshAndAttachSessionErrorCallsitesArePinned (0.00s)
+    --- FAIL: TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer (0.00s)
+    --- FAIL: TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting (0.00s)
+FAIL
+FAIL	github.com/mschulkind-oss/yolo-jail/internal/cli/run	0.030s
+FAIL
+```
+
+## Restored caller controls (GREEN)
+
+```text
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer
+=== RUN   TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting
+--- PASS: TestFreshAndAttachSessionErrorCallsitesArePinned (0.00s)
+    --- PASS: TestFreshAndAttachSessionErrorCallsitesArePinned/runContainer (0.00s)
+    --- PASS: TestFreshAndAttachSessionErrorCallsitesArePinned/attachExisting (0.00s)
+PASS
+ok  github.com/mschulkind-oss/yolo-jail/internal/cli/run	0.031s
+```

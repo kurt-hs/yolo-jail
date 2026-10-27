@@ -1,0 +1,56 @@
+# Pressure and cancellation controls
+
+These are unchanged excerpts from original captured test output; provenance is stated outside each excerpt. They are not regenerated or reconstructed.
+
+## Initial output-pressure regression (RED)
+
+Source: original `output-pressure-baseline-red.txt`, test command recorded in the capture.
+
+```text
+=== RUN   TestOutputPressureDoesNotStopInputForwarding
+    ttyproxy_test.go:336: input did not reach the child while its output pipe was full; helper wait=<nil> stderr="" captured=131122 bytes
+--- FAIL: TestOutputPressureDoesNotStopInputForwarding (2.14s)
+FAIL
+FAIL	github.com/mschulkind-oss/yolo-jail/internal/ttyproxy	2.144s
+FAIL
+rc=1
+```
+
+## Permanent production package controls (GREEN)
+
+Source: original `lead-focused8.log`, exact focused test run on the retained 63f candidate. This excerpt retains the original reported input/output counts and elapsed result.
+
+```text
+=== RUN   TestSuspendResumePreservesOutputQueueOrder/queued-termination-after-stop
+--- PASS: TestSuspendResumePreservesOutputQueueOrder (6.07s)
+    --- PASS: TestSuspendResumePreservesOutputQueueOrder/foreground-resume (2.07s)
+    --- PASS: TestSuspendResumePreservesOutputQueueOrder/background-child-exit (2.03s)
+    --- PASS: TestSuspendResumePreservesOutputQueueOrder/queued-termination-after-stop (1.97s)
+=== RUN   TestLargePasteDeadlockPinsNonblockingMasterForwarding
+LargePaste flow: host input=65536/65536 paste-written=65536/65536 output-drained=131148/131148
+--- PASS: TestLargePasteDeadlockPinsNonblockingMasterForwarding (0.01s)
+PASS
+ok  github.com/mschulkind-oss/yolo-jail/internal/ttyproxy  8.793s
+```
+
+## Compiled queued-cancel mutation control
+
+Source: original `final-mutation-red.stdout.raw` and `committed-focused.stdout.raw` captures from the permanent compiled control; the first removes the production cancellation check, the second restores it. These are actual program outputs, not manually assembled expected text.
+
+RED:
+
+```text
+--- FAIL: TestSuspendResumePreservesOutputQueueOrder (2.07s)
+    --- FAIL: TestSuspendResumePreservesOutputQueueOrder/caller-cancel-published-during-resume (2.07s)
+        ttyproxy_test.go:1173: owned child consumed ordinary queued input after caller Handle.Terminate published cancellation; input="SDWR"
+FAIL
+FAIL	github.com/mschulkind-oss/yolo-jail/internal/ttyproxy	2.074s
+```
+
+Restored GREEN:
+
+```text
+ok  github.com/mschulkind-oss/yolo-jail/internal/ttyproxy  12.106s
+```
+
+The separate baseline pressure failure and compiled cancellation mutation are distinct controls. Neither establishes the cause of an unrelated historical Kitty incident.

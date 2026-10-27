@@ -1,0 +1,32 @@
+> Original independent review body. Source provenance is recorded in [`README.md`](./README.md).
+> Redaction: private durable-host filesystem path literals were replaced; no review judgment or technical statement was edited.
+
+## Review
+
+**Targeted verdict: PASS. Merge verdict: OK with notes — not landing clearance.** No issues found.
+
+Closure artifact returned for persistence at `[REDACTED: private durable-host evidence path]`.
+
+### Mapped finding closure
+
+- **Fixed: original Apple P1 CLOSED.** `internal/cli/run/run.go:2270–2301` retains assembly → applied facts/host-file backings → successful refresh, then delivers Apple Container briefings. `helpers.go:105–109` propagates beneath-root copy errors; the production caller refuses with the writable-home/rerun remedy. Assembly no longer copies briefings early. Independently reran fresh-home, replacement-byte, copy-error, assembler-deferral and production-callsite coverage: **rc0**. Functional historical **RED1**, distinct from the earlier compile failure, remains preserved.
+- **Fixed: original renderer P1 and cross-placeholder/title follow-up CLOSED.** `internal/jailcontent/mechanicsrender.go:64–66,85–97,158–164` normalizes static titles before facts and substitutes known static paths in one pass, without reparsing inserted facts as templates. Config/local/log paths are inserted afterward. Both public `RenderBuiltinSkills` literal-path regressions (`mechanicsrender_test.go:34,92`) independently passed uncached: **rc0**, covering `/workspace`, `/home/agent`, template-looking and title-looking values. Historical functional **RED1 → GREEN0** receipts remain; no golden relaxation.
+- **Fixed: original stream-doc P2 CLOSED at the actual cited paragraph.** `docs/reference/report-tiers.md:385–398` now distinguishes launcher presentation writers from ordinary command/session streams, separately qualifies caller-routed automatic capture, and retains the native exception. The additional persistence clarification at `:510–518` agrees. This matches `internal/cli/run/launchlog.go:50–54,160–161`; editing only the later paragraph would not have closed the original finding. Supplied follow-up reports Vantage **rc0**; I verified the text/source contract, not a new Vantage execution.
+
+### Authorized af42 integration/scope bridge
+
+- **Correct:** `internal/config/workspacescopefacts.go:8–14,60–86` restores the descriptive config-domain `Path`/`When` API. Whole-key facts intersect current **legacy** `SchemaKeys`, top-level user-only scope and the actual predicate; null-accepted roots carry the non-null qualification. Unsupported/retired roots do not become whole-key guidance. Fresh returned slices prevent caller mutation.
+- **Correct:** conditional facts at `:38–52` match current deciders: provider-root and individual-provider nulls refuse; present routing fields—including null endpoints/platform/key pointers—refuse, while region:null passes (`validateproviders.go:422–517`). RW mounts refuse workspace scope while RO remains allowed; host-file scope depends on a host source, not copy mode, and inline/source-less entries remain allowed. Loophole install/env, non-manifest doctor and manifest user-setting conditions remain distinct. Wildcards describe arbitrary map keys/items, not newly accepted literal keys.
+- **Correct:** descriptive metadata does **not** gate authorization. Exhaustive symbol search found no validator reads of the facts tables and no remaining `workspaceScopeRestriction` gate. Public `ValidateConfig` tests (`workspacescope_test.go:152–231`) require actual provider/whole-key refusals and unchanged enforcement after returned-metadata mutation. Existing public loophole/provider/RW tests retain positive and negative controls.
+- **Correct:** independent Git comparisons returned **0** for af42’s actual validator/extracted provider-profile files, schema, loader, mount/broker deciders, predicate, config-plan, vendor and unactivated library sources; differing bytes would fail those checks. `ReadableSchemaKeys` has only test callers, not reader activation. The existing mechanics adapter/consumer is unchanged from 555; its scope/timing test independently passed.
+
+### Checks and provenance
+
+- Independently ran **26 focused top-level tests**, all passing uncached under only `env -u TMPDIR -u NODE_OPTIONS`, with real HOME/shared Go defaults unchanged. These checks would reject missing/stale AC copies, corrupted literal paths, missing scope refusals or metadata-controlled enforcement.
+- Reviewed actual final rc/log artifacts: config and readable-library packages, constructor, mechanics consumer, provider-doc checks, four focused integrations **rc0**; Python checks **29/14 PASS**. Integration log records matching image identity. These supplied checks were not wholesale rerun here.
+- Resolved census sets: constructor still pins `prepare.go`; convergence retains execmonitor/hostrun reads. Five removed entries remain source-read-empty root listings. Generator completed **147 packages / 14,844 tests / 894 reading tests in 32 packages**. The first **600-second timeout** remains preserved without invented rc; durable-TMPDIR generation is artifact evidence, **not qualified Go PASS**.
+- Original `high-review-block-55566dd6.md` remains authoritative for 555 and untouched. Historical cd0 **FAIL**, private-environment passes and unauthorized-tag provenance are not rewritten as approval.
+
+**Limits:** targeted closure plus authorized scope/new-base integration only; no second broad review. Native macOS, live Apple Container, real-rootless and reachability behavior remain unmeasured. Root’s TTY owner remains excluded. **Whole `check-ci` and full integration remain UNRUN**, pending Root’s serial QA lease; no main landing authorized.
+
+**Identity:** exact owned ae70 cwd asserted before checks and at end; HEAD stayed `12acfa691feaba3970de85c4648effa5fc7adf9a`, af42 remained an ancestor, and final tree/index/untracked status was clean. No source/index/ref/helper-cache mutation, fixture-source materialization, fallback or new privilege performed.
