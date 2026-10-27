@@ -2420,6 +2420,27 @@ func TestSignalFixtureRegistersCleanupBeforeOwnedStderrProbes(t *testing.T) {
 	}
 }
 
+func TestSignalFixtureCleanupOracleIgnoresUnrelatedControlFileStats(t *testing.T) {
+	fn := parseProxyFunction(t, mustCurrentTestFile(t), "runFullTTYSignalCancellation")
+	controlStat := &ast.ExprStmt{X: &ast.CallExpr{
+		Fun:  &ast.SelectorExpr{X: ast.NewIdent("os"), Sel: ast.NewIdent("Stat")},
+		Args: []ast.Expr{&ast.BinaryExpr{X: ast.NewIdent("control"), Op: token.ADD, Y: &ast.BasicLit{Kind: token.STRING, Value: `".pid"`}}},
+	}}
+	for _, tc := range []struct {
+		name  string
+		index int
+	}{{name: "before owned probe", index: 0}, {name: "after owned probe", index: len(fn.Body.List)}} {
+		copyFn := *fn
+		copyFn.Body = &ast.BlockStmt{List: append([]ast.Stmt(nil), fn.Body.List...)}
+		copyFn.Body.List = append(copyFn.Body.List, nil)
+		copy(copyFn.Body.List[tc.index+1:], copyFn.Body.List[tc.index:len(copyFn.Body.List)-1])
+		copyFn.Body.List[tc.index] = controlStat
+		if !signalFixtureCleanupPrecedesStderrProbe(&copyFn) {
+			t.Errorf("unrelated control-file Stat %s changed cleanup ordering", tc.name)
+		}
+	}
+}
+
 func signalFixtureCleanupPrecedesStderrProbe(fn *ast.FuncDecl) bool {
 	start, wait, cleanup, probe, waits := -1, -1, -1, -1, 0
 	for i, stmt := range fn.Body.List {
@@ -2435,7 +2456,7 @@ func signalFixtureCleanupPrecedesStderrProbe(fn *ast.FuncDecl) bool {
 						waits++
 						wait = i
 					}
-					if selector.Sel.Name == "Stat" || selector.Sel.Name == "OpenFile" {
+					if isOwnedHelperStderrProbe(n) && (probe < 0 || i < probe) {
 						probe = i
 					}
 				}
@@ -2448,6 +2469,25 @@ func signalFixtureCleanupPrecedesStderrProbe(fn *ast.FuncDecl) bool {
 		})
 	}
 	return start >= 0 && waits == 1 && wait > start && cleanup > wait && probe > cleanup
+}
+
+func isOwnedHelperStderrProbe(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	receiver, _ := selector.X.(*ast.Ident)
+	if receiver == nil {
+		return false
+	}
+	if receiver.Name == "heldStderr" {
+		return selector.Sel.Name == "Stat"
+	}
+	if receiver.Name != "os" || selector.Sel.Name != "Stat" && selector.Sel.Name != "OpenFile" || len(call.Args) == 0 {
+		return false
+	}
+	argument, ok := call.Args[0].(*ast.Ident)
+	return ok && argument.Name == "helperStderr"
 }
 
 func callContainsIdentifier(call *ast.CallExpr, name string) bool {
