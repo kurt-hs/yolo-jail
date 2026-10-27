@@ -111,6 +111,80 @@ func highRepairCases() []highRepairCase {
 			mutation: Mutation{Action: Append, Path: steps("items"), Value: map[string]any{"name": "second"}},
 			want:     map[string]any{"items": []any{map[string]any{"name": "first"}, map[string]any{"name": "second"}}},
 		},
+		{
+			name:     "Set chooses earliest eligible descendant after explicit indexed parent",
+			before:   "[[parents]]\nid=1\n[parents.group.child]\nx=2\n[parents.group]\nkeep=3\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n\n[parents.group]\nkeep=3\nchild = \"v\"\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
+			mutation: Mutation{Action: Set, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "group"}, {Key: "child"}}, Value: "v"},
+			want: map[string]any{"parents": []any{
+				map[string]any{"group": map[string]any{"keep": int64(3), "child": "v", "info": map[string]any{"z": int64(4)}}},
+				map[string]any{"id": int64(2)},
+			}},
+		},
+		{
+			name:     "Add chooses earliest eligible descendant after explicit indexed parent",
+			before:   "[[parents]]\nid=1\n[parents.group.child]\nx=2\n[parents.group]\nkeep=3\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n[parents.group.child]\nx=2\n[parents.group]\nkeep=3\nnew = true\n[parents.group.info]\nz=4\n[[parents]]\nid=2\n",
+			mutation: Mutation{Action: Add, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "group"}, {Key: "new"}}, Value: true},
+			want: map[string]any{"parents": []any{
+				map[string]any{"group": map[string]any{"keep": int64(3), "new": true, "child": map[string]any{"x": int64(2)}, "info": map[string]any{"z": int64(4)}}},
+				map[string]any{"id": int64(2)},
+			}},
+		},
+		{
+			name:     "root append follows reopened descendant after unrelated root table",
+			before:   "[[items]]\nname='first'\n[other]\nx=1\n[items.info]\ny=2\n",
+			after:    "[[items]]\nname='first'\n[other]\nx=1\n[items.info]\ny=2\n[[items]]\nname = \"second\"\n",
+			mutation: Mutation{Action: Append, Path: steps("items"), Value: map[string]any{"name": "second"}},
+			want:     map[string]any{"items": []any{map[string]any{"name": "first", "info": map[string]any{"y": int64(2)}}, map[string]any{"name": "second"}}, "other": map[string]any{"x": int64(1)}},
+		},
+		{
+			name:     "nested append crosses unrelated root header but stops at next owner row",
+			before:   "[[parents]]\nid=1\n[[parents.children]]\nname='first'\n[other]\nx=1\n[parents.children.details]\ny=2\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n[[parents.children]]\nname='first'\n[other]\nx=1\n[parents.children.details]\ny=2\n[[parents.children]]\nname = \"second\"\n[[parents]]\nid=2\n",
+			mutation: Mutation{Action: Append, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "children"}}, Value: map[string]any{"name": "second"}},
+			want: map[string]any{"parents": []any{
+				map[string]any{"id": int64(1), "children": []any{map[string]any{"name": "first", "details": map[string]any{"y": int64(2)}}, map[string]any{"name": "second"}}},
+				map[string]any{"id": int64(2)},
+			}, "other": map[string]any{"x": int64(1)}},
+		},
+		{
+			name:     "indexed parent Set growth crosses unrelated root header but stops at next owner row",
+			before:   "[[parents]]\nid=1\n[[parents.children]]\nname='first'\n[other]\nx=1\n[parents.children.details]\ny=2\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n[[parents.children]]\nname='first'\n[other]\nx=1\n[parents.children.details]\ny=2\n[[parents.children]]\nname = \"second\"\n[[parents]]\nid=2\n",
+			mutation: Mutation{Action: Set, Path: []configdoc.Step{{Key: "parents"}, row(0)}, Value: map[string]any{"id": int64(1), "children": []any{map[string]any{"name": "first", "details": map[string]any{"y": int64(2)}}, map[string]any{"name": "second"}}}},
+			want: map[string]any{"parents": []any{
+				map[string]any{"id": int64(1), "children": []any{map[string]any{"name": "first", "details": map[string]any{"y": int64(2)}}, map[string]any{"name": "second"}}},
+				map[string]any{"id": int64(2)},
+			}, "other": map[string]any{"x": int64(1)}},
+		},
+		{
+			name:     "Set synthesizes implicit indexed parent after unrelated root header",
+			before:   "[[parents]]\nid=1\n[other]\nz=3\n[parents.group.child]\nx=2\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n[other]\nz=3\n[parents.group]\nchild = \"v\"\n\n\n[[parents]]\nid=2\n",
+			mutation: Mutation{Action: Set, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "group"}, {Key: "child"}}, Value: "v"},
+			want: map[string]any{"parents": []any{
+				map[string]any{"id": int64(1), "group": map[string]any{"child": "v"}},
+				map[string]any{"id": int64(2)},
+			}, "other": map[string]any{"z": int64(3)}},
+		},
+		{
+			name:     "singleton Remove synthesizes implicit indexed parent after unrelated root header",
+			before:   "[[parents]]\nid=1\n[other]\nz=3\n[[parents.group.children]]\nname='only'\n[[parents]]\nid=2\n",
+			after:    "[[parents]]\nid=1\n[other]\nz=3\n[parents.group]\nchildren = []\n\n\n[[parents]]\nid=2\n",
+			mutation: Mutation{Action: Remove, Path: []configdoc.Step{{Key: "parents"}, row(0), {Key: "group"}, {Key: "children"}, {Index: 0, IsIndex: true}}},
+			want: map[string]any{"parents": []any{
+				map[string]any{"id": int64(1), "group": map[string]any{"children": []any{}}},
+				map[string]any{"id": int64(2)},
+			}, "other": map[string]any{"z": int64(3)}},
+		},
+		{
+			name:     "new fields inherit indentation from existing sibling spans",
+			before:   "  [[items]]\n\tname='first'\n",
+			after:    "  [[items]]\n\tname='first'\n  [[items]]\n\tname = \"second\"\n\tz = true\n",
+			mutation: Mutation{Action: Append, Path: steps("items"), Value: map[string]any{"name": "second", "z": true}},
+			want:     map[string]any{"items": []any{map[string]any{"name": "first"}, map[string]any{"name": "second", "z": true}}},
+		},
 	}
 }
 
