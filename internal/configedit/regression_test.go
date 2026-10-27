@@ -123,9 +123,9 @@ func TestConfigEditIndentedTOMLArrayTableSetGrowthPlanAndApply(t *testing.T) {
 	cases := []struct {
 		name, before, want string
 	}{
-		{"spaces", "  [[items]]\nname='first'\n[stay]\nvalue=4\n", "  [[items]]\nname='first'\n[[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
-		{"tabs", "\t[[items]]\nname='first'\n[stay]\nvalue=4\n", "\t[[items]]\nname='first'\n[[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
-		{"crlf", "  [[items]]\r\nname='first'\r\n[stay]\r\nvalue=4\r\n", "  [[items]]\r\nname='first'\r\n[[items]]\r\nname = \"second\"\r\n[stay]\r\nvalue=4\r\n"},
+		{"spaces", "  [[items]]\nname='first'\n[stay]\nvalue=4\n", "  [[items]]\nname='first'\n  [[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
+		{"tabs", "\t[[items]]\nname='first'\n[stay]\nvalue=4\n", "\t[[items]]\nname='first'\n\t[[items]]\nname = \"second\"\n[stay]\nvalue=4\n"},
+		{"crlf", "  [[items]]\r\nname='first'\r\n[stay]\r\nvalue=4\r\n", "  [[items]]\r\nname='first'\r\n  [[items]]\r\nname = \"second\"\r\n[stay]\r\nvalue=4\r\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -167,6 +167,10 @@ func TestConfigEditNestedArrayTableGrowthPlanAndApply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlanEdit nested growth: %v", err)
 	}
+	wantBytes := []byte("[[parents]]\nname='first'\n[[parents.children]]\nname='only'\n[[parents.children]]\nname = \"added\"\n[[parents]]\nname='second'\n")
+	if !bytes.Equal(plan.Updated, wantBytes) {
+		t.Fatalf("PlanEdit bytes\nwant %q\n got %q", wantBytes, plan.Updated)
+	}
 	wantValues, err := semanticValue(map[string]any{"parents": []any{map[string]any{"name": "first", "children": []any{map[string]any{"name": "only"}, map[string]any{"name": "added"}}}, map[string]any{"name": "second"}}}, configdoc.TOML)
 	if err != nil {
 		t.Fatal(err)
@@ -187,8 +191,8 @@ func TestConfigEditNestedArrayTableGrowthPlanAndApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, plan.Updated) || !bytes.Equal(got, applied.Updated) {
-		t.Fatalf("Apply differs from the PlanEdit golden: %q", got)
+	if !bytes.Equal(got, wantBytes) || !bytes.Equal(applied.Updated, wantBytes) {
+		t.Fatalf("Apply bytes\nwant %q\n got %q (reported %q)", wantBytes, got, applied.Updated)
 	}
 	parsed, err = configdoc.Parse(got, configdoc.TOML)
 	if err != nil || !semanticEqual(parsed.Values, wantValues) {

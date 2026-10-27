@@ -429,6 +429,17 @@ func insertMember(doc *configdoc.Document, parent []configdoc.Step, key string, 
 		return last.End, last.End, []byte(", " + name + " = " + string(encoded)), nil
 	}
 	name := tomlKey(key)
+	if pathHasIndex(parent) && !(ok && tomlHeaderAt(doc.Bytes, span)) {
+		if at, headerPath, implicit, e := indexedImplicitTOMLScope(doc, parent); e != nil {
+			return 0, 0, nil, e
+		} else if implicit {
+			text := []byte("[" + tomlHeaderPathString(headerPath) + "]" + newlineOf(doc.Bytes) + name + " = " + string(encoded) + newlineOf(doc.Bytes))
+			if at > 0 && doc.Bytes[at-1] != '\n' {
+				text = append([]byte(newlineOf(doc.Bytes)), text...)
+			}
+			return at, at, text, nil
+		}
+	}
 	if (len(parent) > 0 && parent[len(parent)-1].IsIndex) || (ok && tomlHeaderAt(doc.Bytes, span)) {
 		_, at, descendant, e := tomlScopeInsertion(doc, parent)
 		if e != nil {
@@ -826,6 +837,120 @@ func deleteValue(root *jsonx.OrderedMap, path []configdoc.Step) {
 	}
 }
 
+func indexedOwnerPath(path []configdoc.Step) ([]configdoc.Step, bool) {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i].IsIndex {
+			return append([]configdoc.Step(nil), path[:i+1]...), true
+		}
+	}
+	return nil, false
+}
+
+func tomlHeaderPathString(path []configdoc.Step) string {
+	var out strings.Builder
+	for _, step := range path {
+		if step.IsIndex {
+			continue
+		}
+		if out.Len() > 0 {
+			out.WriteByte('.')
+		}
+		out.WriteString(tomlKey(step.Key))
+	}
+	return out.String()
+}
+
+// indexedImplicitTOMLScope locates an implicit table beneath a concrete array-table row.
+// Its returned path omits source row indices because TOML headers cannot express them.
+func indexedImplicitTOMLScope(doc *configdoc.Document, scope []configdoc.Step) (int, []configdoc.Step, bool, error) {
+	ownerPath, ok := indexedOwnerPath(scope)
+	if !ok || len(ownerPath) == len(scope) {
+		return 0, nil, false, nil
+	}
+	owner, found, err := doc.Index.Item(ownerPath...)
+	if err != nil || !found {
+		return 0, nil, false, err
+	}
+	arrayTable, err := isTOMLArrayTableItem(doc, ownerPath)
+	if err != nil || !arrayTable {
+		return 0, nil, false, err
+	}
+	at, hasDescendant, err := firstTOMLHeaderUnder(doc, scope)
+	if err != nil {
+		return 0, nil, false, err
+	}
+	if !hasDescendant || at < owner.Start || at >= owner.End {
+		return 0, nil, false, nil
+	}
+	return at, append([]configdoc.Step(nil), scope...), true, nil
+}
+
+func tomlArrayTableDescendantEnd(doc *configdoc.Document, target []configdoc.Step, initial int) (int, error) {
+	end := initial
+	var walk func([]configdoc.Step, any) error
+	walk = func(path []configdoc.Step, value any) error {
+		switch node := value.(type) {
+		case *jsonx.OrderedMap:
+			if len(path) > len(target) && configPathHasPrefix(path, target) {
+				span, header, err := isTOMLHeaderTable(doc, path)
+				if err != nil {
+					return err
+				}
+				if header && span.End > end {
+					end = span.End
+				}
+			}
+			for _, key := range node.Keys() {
+				child, _ := node.Get(key)
+				if err := walk(appendStep(path, configdoc.Step{Key: key}), child); err != nil {
+					return err
+				}
+			}
+		case []any:
+			for i, child := range node {
+				itemPath := appendStep(path, configdoc.Step{Index: i, IsIndex: true})
+				if len(itemPath) > len(target) && configPathHasPrefix(itemPath, target) {
+					span, header, err := doc.Index.Item(itemPath...)
+					if err != nil {
+						return err
+					}
+					arrayTable, err := isTOMLArrayTableItem(doc, itemPath)
+					if err != nil {
+						return err
+					}
+					if header && arrayTable && span.End > end {
+						end = span.End
+					}
+				}
+				if err := walk(itemPath, child); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := walk(nil, doc.Values); err != nil {
+		return 0, err
+	}
+	return end, nil
+}
+
+func tomlArrayFieldIndent(doc *configdoc.Document, itemPath []configdoc.Step, row *jsonx.OrderedMap, key string) string {
+	fieldPath := appendStep(itemPath, configdoc.Step{Key: key})
+	span, found, err := doc.Index.Member(fieldPath...)
+	if err == nil && found {
+		return inferIndent(doc.Bytes, span.Start)
+	}
+	keys := row.Keys()
+	if len(keys) > 0 {
+		fieldPath = appendStep(itemPath, configdoc.Step{Key: keys[len(keys)-1]})
+		if span, found, err := doc.Index.Member(fieldPath...); err == nil && found {
+			return inferIndent(doc.Bytes, span.Start)
+		}
+	}
+	return ""
+}
+
 func pathHasIndex(path []configdoc.Step) bool {
 	for _, step := range path {
 		if step.IsIndex {
@@ -1103,7 +1228,7 @@ func tomlScopeInsertion(doc *configdoc.Document, scope []configdoc.Step) (config
 	}
 	if at, found, err := firstTOMLHeaderUnder(doc, scope); err != nil {
 		return configdoc.Span{}, 0, false, err
-	} else if found {
+	} else if found && at > table.Start && at < table.End {
 		return table, at, true, nil
 	}
 	return table, table.End, false, nil
@@ -1125,6 +1250,16 @@ func nestedHeaderKindAssignment(doc *configdoc.Document, path []configdoc.Step, 
 		return at, assignment, nil
 	}
 	if pathHasIndex(scope) {
+		if at, headerPath, implicit, err := indexedImplicitTOMLScope(doc, scope); err != nil {
+			return 0, nil, err
+		} else if implicit {
+			header := []byte("[" + tomlHeaderPathString(headerPath) + "]" + newlineOf(doc.Bytes))
+			assignment = append(header, assignment...)
+			if at > 0 && doc.Bytes[at-1] != '\n' {
+				assignment = append([]byte(newlineOf(doc.Bytes)), assignment...)
+			}
+			return at, assignment, nil
+		}
 		return 0, nil, fmt.Errorf("cannot locate the indexed TOML parent scope")
 	}
 	at, found, err := firstTOMLHeaderUnder(doc, scope)
@@ -1200,20 +1335,34 @@ func appendTOMLArrayTableItem(data []byte, path []configdoc.Step, value any) ([]
 	if err != nil || tableErr != nil || !found || !arrayTable || !tomlHeaderAt(data, last) {
 		return nil, fmt.Errorf("cannot locate final TOML array-table header")
 	}
-	end := last.End
+	end, err := tomlArrayTableDescendantEnd(doc, lastPath, last.End)
+	if err != nil {
+		return nil, err
+	}
+	if ownerPath, ok := indexedOwnerPath(path); ok {
+		owner, found, err := doc.Index.Item(ownerPath...)
+		if err != nil || !found {
+			return nil, fmt.Errorf("cannot locate owning TOML array-table item")
+		}
+		if end > owner.End {
+			end = owner.End
+		}
+	}
 	nl := newlineOf(data)
 	var out []byte
 	if end > 0 && data[end-1] != '\n' {
 		out = append(out, []byte(nl)...)
 	}
-	out = append(out, []byte("[["+strings.Join(keys, ".")+"]]"+nl)...)
+	headerIndent := inferIndent(data, last.Start)
+	out = append(out, []byte(headerIndent+"[["+strings.Join(keys, ".")+"]]"+nl)...)
 	for _, key := range row.Keys() {
 		field, _ := row.Get(key)
 		encoded, e := configdoc.EncodeValue(field, configdoc.TOML)
 		if e != nil {
 			return nil, e
 		}
-		out = append(out, []byte(tomlKey(key)+" = "+string(encoded)+nl)...)
+		fieldIndent := tomlArrayFieldIndent(doc, lastPath, row, key)
+		out = append(out, []byte(fieldIndent+tomlKey(key)+" = "+string(encoded)+nl)...)
 	}
 	updated := splice(data, end, end, out)
 	if _, err := configdoc.Parse(updated, configdoc.TOML); err != nil {
