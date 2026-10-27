@@ -19,6 +19,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentenv"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 // protocolAgentPack installs `claude` with the given protocol list (raw JSON, or "" for a
@@ -215,5 +216,39 @@ func TestTheGateRefusesBeforeAnythingIsComposed(t *testing.T) {
 	}
 	if vars != nil {
 		t.Errorf("vars = %#v, want nil: a refused pairing composes NOTHING", vars)
+	}
+}
+
+func TestGroupedBuiltInProviderOffPlanUsesProductionReachabilityGate(t *testing.T) {
+	readerRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(readerRoot, "derive.lua"), []byte(`yolo.derive("claude", "config", function(ctx) return {} end)`), 0o644); err != nil {
+		t.Fatalf("writing derive.lua: %v", err)
+	}
+	reader := &Pack{Name: "surface", Root: readerRoot}
+
+	for _, tc := range []struct {
+		name  string
+		plans string
+		want  bool
+	}{
+		{name: "off plan", plans: `p = "off"`, want: false},
+		{name: "named plan", plans: `p = { provider = "own" }`, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest, problems := packdecl.DecodeTOML([]byte(`[[program]]
+bin = "claude"
+via = "npm"
+package = "claude"
+built_in_providers = { names = ["own"], plans = { ` + tc.plans + ` } }
+`))
+			if len(problems) != 0 {
+				t.Fatalf("grouped program fixture rejected: %v", problems)
+			}
+			owner := &Pack{Name: "claude", Decl: manifest}
+			got := readsProviderTable([]*Pack{owner, reader}, owner, "claude", "p", true)
+			if got != tc.want {
+				t.Errorf("readsProviderTable = %t, want %t", got, tc.want)
+			}
+		})
 	}
 }
