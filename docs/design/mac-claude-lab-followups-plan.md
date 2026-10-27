@@ -67,10 +67,10 @@ The temp writer's broader scoped race command also failed at this same macos-use
 
 ## Focused native confirmation after parent publication
 
-1. Use the parent's published candidate and a disposable valid workspace under `/Users/Shared/yolo`, selected Claude only; do not repeat the full backend suite.
-2. In self mode verify as-shipped startup without manual temp/store overrides and record that scratch uses the session TMPDIR, not the host `/tmp/claude-<uid>`.
+1. Use the parent's published candidate and a disposable valid workspace under `/Users/Shared/yolo`, selected Claude only; do not repeat the full backend suite. Record launcher/Claude versions. After any user-scope mode or config edit, run `yolo check --no-build` before relaunching.
+2. In self mode launch Claude directly and verify as-shipped startup without manual temp/store overrides; record that scratch uses the session TMPDIR, not the host `/tmp/claude-<uid>`.
 3. Human `/login` in account mode: confirm prompt completion, broker enrollment and a refresh-token-free view. Do not inspect or alter other Keychains.
-4. Human Darwin `yolo host -- claude` with view on: confirm the managed store is used, login enrolls through its file, and the user's own bare Keychain entry remains unchanged. View off remains the own-login path.
-5. Human `/logout` in one native workspace: confirm maintenance/refresh do not recreate its view, another workspace remains signed in, and the next explicit launch reports re-sign-in. Machine logout is not requested.
+4. Human Darwin `YOLO_CLAUDE_CREDENTIAL_VIEW=1 yolo host -- claude`: confirm the managed store is used, login enrolls through its file, and the user's own bare Keychain entry remains unchanged. View off remains the own-login path.
+5. Human `/logout` in one native workspace: confirm maintenance/refresh do not recreate its view, another registered view remains signed in, and the next explicit launch reports re-sign-in. Machine logout is not requested.
 
 Record only status, fingerprints and non-secret paths. Subscription metadata/onboarding remain backlog; Apple Container networking remains a separate host diagnostic. Historical reports are not rewritten into successful results.
