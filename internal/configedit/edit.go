@@ -1272,17 +1272,7 @@ func tomlScopeInsertion(doc *configdoc.Document, scope []configdoc.Step) (config
 	if !header {
 		return configdoc.Span{}, 0, false, nil
 	}
-	limit := table.End
-	if ownerPath, ok := indexedOwnerPath(scope); ok {
-		_, boundary, hasOwner, err := indexedOwnerLifetime(doc, ownerPath)
-		if err != nil {
-			return configdoc.Span{}, 0, false, err
-		}
-		if hasOwner {
-			limit = boundary
-		}
-	}
-	if at, found, err := firstTOMLHeaderUnderBetween(doc, scope, table.Start, limit); err != nil {
+	if at, found, err := firstTOMLHeaderUnderBetween(doc, scope, table.Start, table.End); err != nil {
 		return configdoc.Span{}, 0, false, err
 	} else if found {
 		return table, at, true, nil
