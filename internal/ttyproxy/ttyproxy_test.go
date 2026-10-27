@@ -311,8 +311,8 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 					return err == nil && string(mode) == "foreground"
 				}
 			}
-			if os.Getenv("YOLO_TTYPROXY_SUSPEND_COMMIT_GATE") == "1" {
-				observer.beforeSuspend = func() {
+			if os.Getenv("YOLO_TTYPROXY_FINAL_CLAIM_GATE") == "1" {
+				observer.afterSuspendCommit = func() {
 					_ = writePressureReceipt(fifo+".proxy", 'C')
 					for {
 						if _, err := os.Stat(fifo + ".release"); err == nil {
@@ -745,11 +745,12 @@ func waitForTTYOutputPressure(t *testing.T, master int) bool {
 }
 
 func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
-	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false) })
-	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true) })
+	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false) })
+	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false) })
+	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true) })
 }
 
-func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit bool) {
+func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -903,7 +904,7 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		t.Fatal(err)
 	}
 	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
-		t.Fatalf("proxy did not snapshot the accepted output boundary: %v", err)
+		t.Fatalf("proxy did not snapshot the accepted output boundary before the provisional CAS: %v", err)
 	}
 	if _, err := unix.Write(master, []byte{0x1a}); err != nil {
 		t.Fatalf("repeat suspend request while drain is pending: %v", err)
@@ -930,8 +931,62 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		outputMu.Unlock()
 		t.Fatalf("proxy did not stop after ordered terminal reset (stages=%q boundary=%q captured=%d reset-at=%d drain-err=%v)", stages, boundary, len(seen), bytes.Index(seen, []byte(termReset)), readErr)
 	}
-	if err := waitPressureMarker(t, control+".proxy", 'Z', time.Now().Add(time.Second)); err != nil {
-		t.Fatalf("proxy did not report the suspend boundary: %v", err)
+	modeFD, err := unix.Open(fmt.Sprintf("/proc/%d/fd/0", cmd.Process.Pid), unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatalf("open the owned stopped helper's terminal descriptor: %v", err)
+	}
+	defer unix.Close(modeFD)
+	termios := mustGetTermios(t, modeFD)
+	if termios.Lflag&unix.ICANON == 0 || termios.Lflag&unix.ECHO == 0 || termios.Oflag&unix.OPOST == 0 {
+		t.Fatalf("host terminal was not cooked while the owned proxy was suspended: %+v", *termios)
+	}
+	if terminateAfterStop {
+		if err := unix.Kill(cmd.Process.Pid, syscall.SIGTERM); err != nil {
+			t.Fatalf("queue owned cancellation while stopped: %v", err)
+		}
+		if err := waitForPendingSignal(cmd.Process.Pid, syscall.SIGTERM, time.Now().Add(time.Second)); err != nil {
+			t.Fatalf("owned controller did not observe queued SIGTERM before continuation: %v", err)
+		}
+		if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
+			t.Fatalf("foreground-continue the owned stopped proxy: %v", err)
+		}
+		select {
+		case err := <-waitResult:
+			assertSignalExit(t, err, syscall.SIGTERM)
+		case <-time.After(3 * time.Second):
+			t.Fatal("queued cancellation was not honored after foreground continuation")
+		}
+		<-waitDone
+		stopDrain()
+		if ownedProcessStopped(cmd.Process.Pid) {
+			t.Fatal("proxy remained stopped after queued cancellation and continuation")
+		}
+		if after := mustGetTermios(t, modeFD); *after != *termios {
+			t.Fatalf("queued cancellation did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+		}
+		stages, _ := os.ReadFile(control + ".proxy")
+		if bytes.Contains(stages, []byte{'R'}) {
+			t.Fatalf("ordinary queued input resumed before queued cancellation: stages=%q", stages)
+		}
+		input, _ := os.ReadFile(control)
+		if bytes.Contains(input, []byte{'R'}) {
+			t.Fatalf("owned child consumed queued input before cancellation: %q", input)
+		}
+		pidBytes, err := os.ReadFile(control + ".pid")
+		if err != nil {
+			t.Fatal(err)
+		}
+		childPID, err := strconv.Atoi(string(pidBytes))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := unix.Kill(childPID, 0); !errors.Is(err, unix.ESRCH) {
+			t.Fatalf("queued cancellation left owned child %d alive: %v", childPID, err)
+		}
+		return
+	}
+	if err := os.WriteFile(control+".ownership", []byte("background"), 0600); err != nil {
+		t.Fatal(err)
 	}
 	boundaryBytes, err := os.ReadFile(control + ".boundary")
 	if err != nil {
@@ -940,17 +995,6 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	boundary, err := strconv.ParseUint(string(boundaryBytes), 10, 64)
 	if err != nil || boundary <= 1024 || boundary > uint64(1024+outputBytes) {
 		t.Fatalf("suspend boundary %q does not include delivered and outstanding segments within %d bytes", boundaryBytes, 1024+outputBytes)
-	}
-	modeFD, err := unix.Open(fmt.Sprintf("/proc/%d/fd/0", cmd.Process.Pid), unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
-	if err != nil {
-		t.Fatalf("open the owned stopped helper's terminal descriptor: %v", err)
-	}
-	termios := mustGetTermios(t, modeFD)
-	if termios.Lflag&unix.ICANON == 0 || termios.Lflag&unix.ECHO == 0 || termios.Oflag&unix.OPOST == 0 {
-		t.Fatalf("host terminal was not cooked while the owned proxy was suspended: %+v", *termios)
-	}
-	if err := os.WriteFile(control+".ownership", []byte("background"), 0600); err != nil {
-		t.Fatal(err)
 	}
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
@@ -964,6 +1008,9 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	}
 	if after := mustGetTermios(t, modeFD); *after != *termios {
 		t.Fatalf("background SIGCONT changed the shell-equivalent cooked terminal: before=%+v after=%+v", *termios, *after)
+	}
+	if err := waitPressureMarker(t, control+".proxy", 'Z', time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("proxy did not report its suspend syscall return after background continuation: %v", err)
 	}
 	if stage, err := os.ReadFile(control + ".proxy"); err != nil || !bytes.HasSuffix(stage, []byte{'Z'}) {
 		t.Fatalf("background SIGCONT unparked the proxy before foreground resume: stage=%q err=%v", stage, err)
@@ -1019,7 +1066,6 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if mode, err := os.ReadFile(control + ".resumed-mode"); !backgroundChildExit && (err != nil || string(mode) != "raw") {
 		t.Fatalf("host terminal mode after foreground SIGCONT = %q err=%v, want raw before queued output resumes", mode, err)
 	}
-	_ = unix.Close(modeFD)
 	select {
 	case err := <-waitResult:
 		if err != nil {
@@ -1085,7 +1131,7 @@ func TestOwnedChildExitPreemptsPendingSuspend(t *testing.T) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
 		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(readChunk), "YOLO_TTYPROXY_EXPECT_SUSPEND=1",
-		"YOLO_TTYPROXY_SUSPEND_COMMIT_GATE=1", "YOLO_TTYPROXY_EXIT_GATE_NEWLINE=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+		"YOLO_TTYPROXY_FINAL_CLAIM_GATE=1", "YOLO_TTYPROXY_EXIT_GATE_NEWLINE=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -1230,13 +1276,13 @@ func TestOwnedChildExitPreemptsPendingSuspend(t *testing.T) {
 	t.Fatal("final drain did not preserve the owned child's distinguishing newline")
 }
 
-func TestSuspendCommitCancellationPreemptsStop(t *testing.T) {
+func TestSuspendCancellationBeforeFinalSignalClaimPreemptsStop(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
-		t.Run(sig.String(), func(t *testing.T) { runSuspendCommitCancellation(t, sig) })
+		t.Run(sig.String(), func(t *testing.T) { runSuspendCancellationBeforeFinalSignalClaim(t, sig) })
 	}
 }
 
-func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
+func runSuspendCancellationBeforeFinalSignalClaim(t *testing.T, sig syscall.Signal) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -1252,7 +1298,7 @@ func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "YOLO_TTYPROXY_PRESSURE_HELPER=1", "YOLO_TTYPROXY_PRESSURE_FIFO="+control,
 		"YOLO_TTYPROXY_PRESSURE_BYTES="+strconv.Itoa(outputBytes), "YOLO_TTYPROXY_EXPECT_SUSPEND=1",
-		"YOLO_TTYPROXY_SUSPEND_COMMIT_GATE=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
+		"YOLO_TTYPROXY_FINAL_CLAIM_GATE=1", "YOLO_TTYPROXY_OUTPUT_ACK=1", "YOLO_TTYPROXY_ACK_AFTER_WRITE=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -1315,28 +1361,27 @@ func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
 		}
 	}()
 	if err := waitPressureMarker(t, control, 'S', time.Now().Add(childDeadline)); err != nil {
-		t.Fatalf("target did not start before stop-commit cancellation: %v stderr=%q", err, stderr.String())
+		t.Fatalf("target did not start before final-claim cancellation: %v stderr=%q", err, stderr.String())
 	}
 	if err := waitPressureMarker(t, control, 'W', time.Now().Add(childDeadline)); err != nil {
 		t.Fatalf("target did not finish its output prefix: %v stderr=%q", err, stderr.String())
 	}
 	if !waitForTTYOutputPressure(t, master) {
-		t.Fatal("host output PTY never saturated before stop-commit cancellation")
+		t.Fatal("host output PTY never saturated before final-claim cancellation")
 	}
 	if _, err := unix.Write(master, []byte{0x1a, 'q'}); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitForFile(control+".boundary", time.Now().Add(childDeadline)); err != nil {
-		t.Fatalf("proxy did not snapshot pending suspend before stop commit: %v", err)
+		t.Fatalf("proxy did not snapshot pending suspend before the final signal claim: %v", err)
 	}
 	if err := waitPressureMarker(t, control+".input", 'I', time.Now().Add(childDeadline)); err != nil {
-		t.Fatalf("proxy did not consume the suspend input: %v", err)
+		t.Fatalf("proxy did not consume suspend input before final signal claim: %v", err)
 	}
 	startDrainer()
 	start := time.Now()
-	// Draining completes the accepted prefix and reset; the fixture hook then
-	// holds the session lock after the suspend transition but before its final
-	// cancellation check and targeted stop.
+	// Draining completes the accepted prefix and reset; the fixture holds the old
+	// provisional CAS, before cancellation must win the final signal claim.
 	for !ownedProcessStopped(cmd.Process.Pid) {
 		if time.Since(start) > childDeadline {
 			t.Fatal("proxy did not enter actual stop after draining the accepted prefix")
@@ -1347,7 +1392,7 @@ func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if err := waitPressureMarker(t, control+".proxy", 'C', time.Now().Add(childDeadline)); err != nil {
-		t.Fatalf("proxy did not reach the stop-commit gate: %v", err)
+		t.Fatalf("proxy did not reach the provisional post-CAS gate: %v", err)
 	}
 	if err := cmd.Process.Signal(sig); err != nil {
 		t.Fatal(err)
@@ -1362,28 +1407,28 @@ func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
 	case waitErr := <-waitResult:
 		assertSignalExit(t, waitErr, sig)
 	case <-time.After(2 * time.Second):
-		t.Fatalf("%s at the stop-commit boundary did not preempt self-stop", sig)
+		t.Fatalf("%s at the provisional post-CAS boundary did not preempt the final signal claim", sig)
 	}
 	<-waitDone
 	close(readStopped)
 	<-drainDone
 	drainStopped = true
 	if after := mustGetTermios(t, slave); *after != *cooked {
-		t.Fatalf("%s at stop commit left host termios changed: before=%+v after=%+v", sig, *cooked, *after)
+		t.Fatalf("%s before final signal claim left host termios changed: before=%+v after=%+v", sig, *cooked, *after)
 	}
 	stage, err := os.ReadFile(control + ".proxy")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(stage, []byte{'Z'}) || bytes.Contains(stage, []byte{'R'}) {
-		t.Fatalf("%s at stop commit left latent suspend/resume stages %q", sig, stage)
+		t.Fatalf("%s before final signal claim left latent suspend/resume stages %q", sig, stage)
 	}
 	outputMu.Lock()
 	got := append([]byte(nil), captured...)
 	outputMu.Unlock()
 	want := append(outputPressurePrefix(outputBytes), []byte(termReset)...)
 	if !bytes.HasPrefix(got, want) {
-		t.Fatalf("stop-commit cancellation changed ordered prefix/reset: got=%d want-prefix=%d", len(got), len(want))
+		t.Fatalf("pre-claim cancellation changed ordered prefix/reset: got=%d want-prefix=%d", len(got), len(want))
 	}
 	pidBytes, err := os.ReadFile(control + ".pid")
 	if err != nil {
@@ -1394,8 +1439,34 @@ func runSuspendCommitCancellation(t *testing.T, sig syscall.Signal) {
 		t.Fatal(err)
 	}
 	if err := unix.Kill(pid, 0); !errors.Is(err, unix.ESRCH) {
-		t.Fatalf("owned child pid %d survived stop-commit cancellation: %v", pid, err)
+		t.Fatalf("owned child pid %d survived pre-claim cancellation: %v", pid, err)
 	}
+}
+
+func waitForPendingSignal(pid int, signal syscall.Signal, deadline time.Time) error {
+	mask := uint64(1) << (uint(signal) - 1)
+	statusPath := filepath.Join("/proc", strconv.Itoa(pid), "status")
+	for time.Now().Before(deadline) {
+		status, err := os.ReadFile(statusPath)
+		if err != nil {
+			return err
+		}
+		for _, line := range strings.Split(string(status), "\n") {
+			if !strings.HasPrefix(line, "SigPnd:") && !strings.HasPrefix(line, "ShdPnd:") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				continue
+			}
+			pending, err := strconv.ParseUint(fields[1], 16, 64)
+			if err == nil && pending&mask != 0 {
+				return nil
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return fmt.Errorf("signal %s was not observed queued for owned pid %d", signal, pid)
 }
 
 func ownedProcessStopped(pid int) bool {
@@ -2428,7 +2499,11 @@ func rawClosesDescriptor(fn *ast.FuncDecl, descriptor string) bool {
 	return found
 }
 
-// TestStageHookPlainPathOrder pins the stage-hook contract on the plain path.
+// The stage-hook order pin on the plain (non-TTY) path: spawned then exited,
+// and nothing else — the plain fallback has no drain and no termios to
+// restore, so those stages must stay silent rather than fire vacuously. The
+// pty path's stages are pinned end-to-end by the integration suite, where a
+// real terminal exists.
 func TestStageHookPlainPathOrder(t *testing.T) {
 	var stages []string
 	rc, err := RunWithProxyHooked([]string{"/bin/true"}, nil, nil, func(s string) {
