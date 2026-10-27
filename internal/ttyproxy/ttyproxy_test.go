@@ -375,6 +375,8 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 						time.Sleep(time.Millisecond)
 					}
 				}
+				// StageResumed is callback completion, not queue handoff: proxyLoop
+				// checks cancellation again and enqueues pending bytes only afterward.
 				marker := byte('?')
 				if stage == StageCancelRequested {
 					marker = 'A'
@@ -1034,27 +1036,29 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 			t.Fatalf("foreground-continue the owned stopped proxy: %v", err)
 		}
+		waitErr := error(nil)
 		select {
-		case err := <-waitResult:
-			assertSignalExit(t, err, syscall.SIGTERM)
+		case waitErr = <-waitResult:
 		case <-time.After(3 * time.Second):
 			t.Fatal("queued cancellation was not honored after foreground continuation")
 		}
 		<-waitDone
 		stopDrain()
+		stages, stagesErr := os.ReadFile(control + ".proxy")
+		input, inputErr := os.ReadFile(control)
+		resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
+		assertSignalExit(t, waitErr, syscall.SIGTERM)
 		if ownedProcessStopped(cmd.Process.Pid) {
 			t.Fatal("proxy remained stopped after queued cancellation and continuation")
 		}
 		if after := mustGetTermios(t, modeFD); *after != *termios {
 			t.Fatalf("queued cancellation did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
 		}
-		stages, _ := os.ReadFile(control + ".proxy")
-		if bytes.Contains(stages, []byte{'R'}) {
-			t.Fatalf("ordinary queued input resumed before queued cancellation: stages=%q", stages)
+		if inputErr != nil {
+			t.Fatalf("read owned child input receipt after queued cancellation: %v (proxy=%q mode=%q modeErr=%v)", inputErr, stages, resumedMode, modeErr)
 		}
-		input, _ := os.ReadFile(control)
 		if bytes.Contains(input, []byte{'R'}) {
-			t.Fatalf("owned child consumed queued input before cancellation: %q", input)
+			t.Fatalf("owned child consumed queued input before cancellation: child=%q proxy=%q proxyErr=%v resumed-mode=%q modeErr=%v", input, stages, stagesErr, resumedMode, modeErr)
 		}
 		pidBytes, err := os.ReadFile(control + ".pid")
 		if err != nil {
@@ -1143,37 +1147,46 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		t.Fatal(err)
 	}
 	if cancelDuringResume {
-		if err := waitForFile(control+".cancel-published", time.Now().Add(childDeadline)); err != nil {
-			t.Fatalf("caller Handle.Terminate did not publish cancellation from StageResumed: %v", err)
-		}
-		if err := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline)); err != nil {
-			t.Fatalf("StageResumed marker was not observed before checking child input: %v", err)
-		}
-		published, err := os.ReadFile(control + ".cancel-published")
-		if err != nil || string(published) != "terminated" {
-			t.Fatalf("caller Handle.Terminate result = %q err=%v", published, err)
-		}
+		cancelWaitErr := waitForFile(control+".cancel-published", time.Now().Add(childDeadline))
+		resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
 		inputErr := waitPressureMarker(t, control, 'R', time.Now().Add(childDeadline))
-		if err := os.WriteFile(control+".kill", []byte("observed"), 0600); err != nil {
-			t.Fatal(err)
-		}
+		killErr := os.WriteFile(control+".kill", []byte("observed"), 0600)
+		var waitErr error
 		select {
-		case err := <-waitResult:
-			assertSignalExit(t, err, syscall.SIGTERM)
+		case waitErr = <-waitResult:
 		case <-time.After(childDeadline):
-			t.Fatal("caller-owned child kill did not end the proxy after the observation gate")
+			proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+			childReceipt, childErr := os.ReadFile(control)
+			resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
+			t.Fatalf("caller-owned child kill did not end proxy after observation gate: wait=%v cancel-wait=%v resume-marker=%v input-wait=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", waitErr, cancelWaitErr, resumeMarkerErr, inputErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
 		}
 		<-waitDone
 		stopDrain()
+		proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+		childReceipt, childErr := os.ReadFile(control)
+		resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
+		published, publishedErr := os.ReadFile(control + ".cancel-published")
+		assertSignalExit(t, waitErr, syscall.SIGTERM)
 		if after := mustGetTermios(t, modeFD); *after != *termios {
-			t.Fatalf("caller cancellation did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+			t.Fatalf("caller cancellation did not preserve cooked terminal state: before=%+v after=%+v; proxy=%q child=%q resumed-mode=%q modeErr=%v", *termios, *after, proxyStages, childReceipt, resumedMode, modeErr)
+		}
+		if cancelWaitErr != nil || resumeMarkerErr != nil || publishedErr != nil || string(published) != "terminated" || killErr != nil {
+			t.Fatalf("caller resume-boundary receipts incomplete: cancel-wait=%v resume-marker=%v published=%q publishedErr=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", cancelWaitErr, resumeMarkerErr, published, publishedErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
 		}
 		if inputErr == nil {
-			input, _ := os.ReadFile(control)
-			t.Fatalf("owned child consumed ordinary queued input after caller Handle.Terminate published cancellation; input=%q", input)
+			t.Fatalf("owned child consumed ordinary queued input after caller Handle.Terminate published cancellation: proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
 		}
 		if !strings.Contains(inputErr.Error(), "timed out waiting for marker") {
-			t.Fatalf("could not determine whether the owned child consumed queued input: %v", inputErr)
+			t.Fatalf("could not determine whether owned child consumed queued input: input-wait=%v proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", inputErr, proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
+		}
+		if proxyErr != nil || childErr != nil {
+			t.Fatalf("read resume-boundary receipts: proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
+		}
+		if !bytes.Contains(proxyStages, []byte{'R'}) {
+			t.Fatalf("StageResumed callback completion was not observed after cancellation publication: proxy=%q child=%q resumed-mode=%q modeErr=%v", proxyStages, childReceipt, resumedMode, modeErr)
+		}
+		if bytes.Contains(childReceipt, []byte{'R'}) {
+			t.Fatalf("owned child consumed ordinary queued input after caller Handle.Terminate published cancellation: proxy=%q child=%q resumed-mode=%q modeErr=%v", proxyStages, childReceipt, resumedMode, modeErr)
 		}
 		return
 	}
