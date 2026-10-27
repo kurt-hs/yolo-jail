@@ -62,10 +62,10 @@ func (ctx SandboxTmpdirValidationContext) validate() error {
 }
 
 // SandboxTmpdirValidationProblem is the single policy predicate used by the direct run plan and
-// nested generated-program launches. Both modes check TMPDIR as before; only run-as-you's
-// deny-by-default profile checks program-specific overrides, and the shell environment is never a root.
+// nested generated-program launches. Only run-as-you's deny-by-default profile checks
+// program-specific overrides and TMPDIR; account mode retains the user's existing TMPDIR.
 func SandboxTmpdirValidationProblem(ctx SandboxTmpdirValidationContext, variable, value string) string {
-	if value == "" || (ctx.Mode != ModeSelf && variable != "TMPDIR") {
+	if ctx.Mode != ModeSelf || value == "" {
 		return ""
 	}
 	return composedTmpdirEnvProblem(variable, value,

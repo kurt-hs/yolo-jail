@@ -16,12 +16,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
-func baselineNodeRuntime(t *testing.T) {
-	t.Helper()
-	// These fixtures exercise captured baseline-runtime reuse, not inherited inspector instrumentation.
-	t.Setenv("NODE_OPTIONS", "")
-}
-
 func selectedNPMHostFloor(t *testing.T, f *selectedNPMFixture, v string) {
 	t.Helper()
 	original := newHostFloor
@@ -63,7 +57,6 @@ ln -s ../lib/node_modules/probe-pkg/bin/probe "$prefix/bin/probe"
 }
 
 func TestSelectedNPMHostPublicCompatibleReuseFreshAndMismatchFallback(t *testing.T) {
-	baselineNodeRuntime(t)
 	f := newSelectedNPMFixture(t)
 	req := selectedNPMUser(t, f, false)
 	selectedNPMSharedWorker(t)
@@ -134,7 +127,6 @@ func TestSelectedNPMHostPublicCompatibleReuseFreshAndMismatchFallback(t *testing
 }
 
 func TestSelectedNPMHostPublicInvalidatedCaptureReinstallsSameVersion(t *testing.T) {
-	baselineNodeRuntime(t)
 	for _, tc := range []struct {
 		name                string
 		fixed, fail, recent bool

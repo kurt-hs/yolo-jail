@@ -1308,7 +1308,8 @@ func stageCommandsNameEnvValue(cmds [][]string, content, key string) bool {
 // (packChannel.launchEnv); the session env file's YOLO_ lines never reach the bootstrap at all.
 func LauncherOwnedEnvNames() []string {
 	return []string{durable.EnvVar, paths.AllowMissingProgramsEnv, paths.NoProgramReadinessEnv,
-		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv, paths.MacosUserTmpdirContextEnv}
+		entrypoint.ForkBuildsEnv, entrypoint.PatchedTreesEnv, paths.MacosUserTmpdirContextEnv,
+		claudeSecurityCompatEnv}
 }
 
 // buildBootstrapEnv composes the env baked onto the `yolo internal darwin-bootstrap` self-exec

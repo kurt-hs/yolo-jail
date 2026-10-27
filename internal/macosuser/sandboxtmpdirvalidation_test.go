@@ -47,18 +47,20 @@ func TestSandboxTmpdirValidationSharesTheDirectRunPlanPolicy(t *testing.T) {
 	if got := SandboxTmpdirValidationProblem(account, "CLAUDE_CODE_TMPDIR", "/Users/you/tmp"); got != "" {
 		t.Errorf("account mode acquired a new temp refusal absent from direct run-plan semantics: %q", got)
 	}
-	accountTMPDIR := "/Users/you/code/alpha/account-tmp"
-	if got, want := SandboxTmpdirValidationProblem(account, "TMPDIR", accountTMPDIR),
-		composedTmpdirEnvProblem("TMPDIR", accountTMPDIR, []string{ctx.Workspace, ctx.Home}, false); got != want {
-		t.Errorf("account TMPDIR drifted from direct run-plan validation: got %q, direct %q", got, want)
+	accountTMPDIR := "/account/sandbox/tmp"
+	if got := SandboxTmpdirValidationProblem(account, "TMPDIR", accountTMPDIR); got != "" {
+		t.Errorf("account mode must preserve its inherited TMPDIR: %q", got)
+	}
+	if got := SandboxTmpdirValidationProblem(account, "CLAUDE_CODE_TMPDIR", "/outside/claude"); got != "" {
+		t.Errorf("account mode must not validate program-specific temp overrides: %q", got)
 	}
 	if err := ValidateSandboxTmpdirEnv(account, []string{"CLAUDE_CODE_TMPDIR"}, func(k string) string {
 		if k == "CLAUDE_CODE_TMPDIR" {
-			return "/Users/you/tmp"
+			return "/outside/claude"
 		}
 		return accountTMPDIR
 	}); err != nil {
-		t.Errorf("account mode added follower validation absent from direct run-plan semantics: %v", err)
+		t.Errorf("account mode added temp validation absent from direct run-plan semantics: %v", err)
 	}
 }
 

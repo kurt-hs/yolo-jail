@@ -1,6 +1,7 @@
 package claudesecurity
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"os"
@@ -153,6 +154,62 @@ func TestViewModeRefusesOnlyExactManagedService(t *testing.T) {
 		if got := Run(ViewMode, service, []string{"find-generic-password", "-s", serviceArg}, strings.NewReader(""), io.Discard, io.Discard, "/fake/security", runner); got != 0 || !called {
 			t.Fatalf("service %q was not passed through", serviceArg)
 		}
+	}
+}
+
+func TestInteractiveStopsForwardingWhenChildExitsWithOpenInput(t *testing.T) {
+	stdin, input := io.Pipe()
+	defer stdin.Close()
+	defer input.Close()
+	finished := make(chan int, 1)
+	runner := func(_ string, _ []string, childStdin io.Reader, _, _ io.Writer) int {
+		line, err := bufio.NewReader(childStdin).ReadString('\n')
+		if err != nil || line != "find-generic-password -s Other\n" {
+			t.Errorf("runner read %q, %v", line, err)
+		}
+		return 17
+	}
+	go func() {
+		finished <- Run(ViewMode, "Claude Code-credentials-5d0efea8", []string{"-i"}, stdin,
+			io.Discard, io.Discard, "/fake/security", runner)
+	}()
+	if _, err := io.WriteString(input, "find-generic-password -s Other\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-finished:
+		if code != 17 {
+			t.Fatalf("interactive status = %d, want child status 17", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("interactive filter waited for upstream EOF after the child exited")
+	}
+}
+
+func TestInteractiveProductionRunnerStopsAfterChildExitWithOpenInput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "security")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nIFS= read -r line\nexit 23\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stdin, input := io.Pipe()
+	defer stdin.Close()
+	defer input.Close()
+	finished := make(chan int, 1)
+	go func() {
+		finished <- Run(ViewMode, "Claude Code-credentials-5d0efea8", []string{"-i"}, stdin,
+			io.Discard, io.Discard, path, runSecurity)
+	}()
+	if _, err := io.WriteString(input, "find-generic-password -s Other\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-finished:
+		if code != 23 {
+			t.Fatalf("interactive production status = %d, want 23", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("production exec runner waited for upstream EOF after its child exited")
 	}
 }
 

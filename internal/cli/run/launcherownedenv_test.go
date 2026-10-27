@@ -29,8 +29,9 @@ func TestAConfigEnvEntryCannotSetALauncherOwnedName(t *testing.T) {
 		t.Fatal(err)
 	}
 	evilForks := `{"x":{"key":"evil"}}`
+	const spoofedSecurityCarrier = "YOLO_CLAUDE_SECURITY_COMPAT"
 	cfg := `{"packs":[],"env_sources":[{"` + entrypoint.ForkBuildsEnv + `":` + jsonQuote(evilForks) +
-		`,"KEEP_ME":"1"}]}`
+		`,"` + spoofedSecurityCarrier + `":"account","KEEP_ME":"1"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func TestAConfigEnvEntryCannotSetALauncherOwnedName(t *testing.T) {
 	if _, ok := env.Get("KEEP_ME"); !ok {
 		t.Fatalf("the fixture is not the case: env_sources did not reach the launch env: %v", env.Keys())
 	}
-	for _, k := range []string{entrypoint.ForkBuildsEnv} {
+	for _, k := range []string{entrypoint.ForkBuildsEnv, spoofedSecurityCarrier} {
 		if v, ok := env.Get(k); ok {
 			t.Errorf("macos-user: env_sources set the launcher-owned %s = %v in the launch env", k, v)
 		}

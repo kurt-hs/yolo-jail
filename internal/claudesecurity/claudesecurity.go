@@ -112,23 +112,83 @@ func interactiveInvocation(args []string) bool {
 }
 
 func runInteractive(mode, service string, args []string, stdin io.Reader, stdout, stderr io.Writer, path string, runner commandRunner) int {
-	reader := bufio.NewReader(stdin)
-	var pw *io.PipeWriter
+	type inputLine struct {
+		line []byte
+		err  error
+	}
+	lines := make(chan inputLine, 1)
+	stopReader := make(chan struct{})
+	go func() {
+		reader := bufio.NewReader(stdin)
+		for {
+			line, err := reader.ReadBytes('\n')
+			select {
+			case lines <- inputLine{line: line, err: err}:
+			case <-stopReader:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	defer close(stopReader)
+
+	var pw *os.File
 	var done chan int
-	start := func() {
-		pr, writer := io.Pipe()
+	var runnerFinished chan struct{}
+	start := func() error {
+		pr, writer, err := os.Pipe()
+		if err != nil {
+			return err
+		}
 		pw = writer
 		done = make(chan int, 1)
+		runnerFinished = make(chan struct{})
 		go func() {
 			code := runner(path, args, pr, stdout, stderr)
 			_ = pr.Close()
 			done <- code
+			close(runnerFinished)
 		}()
+		go func() {
+			<-runnerFinished
+			_ = pw.Close()
+		}()
+		return nil
+	}
+	closeInput := func() {
+		if closer, ok := stdin.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}
+	finishOnChildExit := func(code int, lastBlocked bool, blockedCode int) int {
+		if pw != nil {
+			_ = pw.Close()
+		}
+		closeInput()
+		if lastBlocked {
+			return blockedCode
+		}
+		return code
 	}
 	blockedCode := 0
 	lastBlocked := false
 	for {
-		line, err := reader.ReadBytes('\n')
+		if done != nil {
+			select {
+			case code := <-done:
+				return finishOnChildExit(code, lastBlocked, blockedCode)
+			default:
+			}
+		}
+		var item inputLine
+		select {
+		case item = <-lines:
+		case code := <-done:
+			return finishOnChildExit(code, lastBlocked, blockedCode)
+		}
+		line, err := item.line, item.err
 		if len(line) != 0 {
 			words, ok := parseWords(bytes.TrimSuffix(bytes.TrimSuffix(line, []byte("\n")), []byte("\r")))
 			code, blocked := 0, false
@@ -144,11 +204,17 @@ func runInteractive(mode, service string, args []string, stdin io.Reader, stdout
 			} else {
 				lastBlocked = false
 				if pw == nil {
-					start()
+					if startErr := start(); startErr != nil {
+						return 127
+					}
 				}
 				if _, werr := pw.Write(line); werr != nil {
-					_ = pw.CloseWithError(werr)
-					return <-done
+					_ = pw.Close()
+					childCode := <-done
+					if lastBlocked {
+						return blockedCode
+					}
+					return childCode
 				}
 			}
 		}
@@ -160,7 +226,7 @@ func runInteractive(mode, service string, args []string, stdin io.Reader, stdout
 					}
 					return 1
 				}
-				_ = pw.CloseWithError(err)
+				_ = pw.Close()
 				childCode := <-done
 				if lastBlocked {
 					return blockedCode
@@ -174,7 +240,9 @@ func runInteractive(mode, service string, args []string, stdin io.Reader, stdout
 		if lastBlocked {
 			return blockedCode
 		}
-		start()
+		if err := start(); err != nil {
+			return 127
+		}
 	}
 	_ = pw.Close()
 	childCode := <-done
