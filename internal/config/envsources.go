@@ -67,29 +67,45 @@ func ParseDotenv(text string) *jsonx.OrderedMap {
 // workspace root — the pre-ruling behavior, deliberately, for artifacts a newer loader
 // never touched.
 func AnchorEnvSources(cfg *jsonx.OrderedMap, dir string) {
+	anchorEnvSourceList(cfg, "env_sources", dir)
+}
+
+func anchorReadableEnvSources(cfg *jsonx.OrderedMap, dir string) {
+	AnchorEnvSources(cfg, dir)
+	if absolute, err := filepath.Abs(dir); err == nil {
+		dir = absolute
+	}
+	if envValue, ok := cfg.Get("env"); ok {
+		if env, ok := asMap(envValue); ok {
+			anchorEnvSourceList(env, "files", dir)
+		}
+	}
+}
+
+func anchorEnvSourceList(cfg *jsonx.OrderedMap, key, dir string) {
 	if cfg == nil {
 		return
 	}
-	v, present := cfg.Get("env_sources")
+	value, present := cfg.Get(key)
 	if !present {
 		return
 	}
-	list, ok := asList(v)
+	list, ok := asList(value)
 	if !ok {
 		return
 	}
 	changed := false
 	out := make([]any, len(list))
-	for i, e := range list {
-		if s, isStr := e.(string); isStr && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") {
+	for i, entry := range list {
+		if s, isString := entry.(string); isString && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") {
 			out[i] = filepath.Join(dir, s)
 			changed = true
 			continue
 		}
-		out[i] = e
+		out[i] = entry
 	}
 	if changed {
-		cfg.Set("env_sources", out)
+		cfg.Set(key, out)
 	}
 }
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -168,6 +169,28 @@ func TestCheckPacksRejectsBadEntries(t *testing.T) {
 		}
 		if !strings.Contains(problems[0], tc.want) {
 			t.Errorf("%s: problem %q missing %q", tc.body, problems[0], tc.want)
+		}
+	}
+}
+
+func TestCheckPacksRejectsDuplicatePhysicalLocalDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "tree")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "linked")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	entries, problems := checkPacks(decodeAny(t, `[`+
+		`{"source": "`+"file://"+filepath.ToSlash(root)+`", "name": "first"},`+
+		`{"source": "`+"file://"+filepath.ToSlash(alias)+`", "name": "second"}]`))
+	if len(entries) != 1 || len(problems) != 1 {
+		t.Fatalf("entries = %+v, problems = %v; want one accepted entry and one duplicate", entries, problems)
+	}
+	for _, want := range []string{"config.packs[0]", "config.packs[1]", "duplicate local pack directory"} {
+		if !strings.Contains(problems[0], want) {
+			t.Errorf("problem %q missing %q", problems[0], want)
 		}
 	}
 }

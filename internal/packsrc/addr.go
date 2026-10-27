@@ -50,8 +50,9 @@ type Addr struct {
 	// Path is the in-repo subdirectory (slash-separated, no leading or trailing
 	// slash). Empty means the repository root. For KindFile it is the local path.
 	Path string
-	// Ref is the git ref: a branch, tag, or full commit SHA. Always non-empty for
-	// KindGit; empty for KindFile.
+	// Ref is the git ref: a branch, tag, or full commit SHA. It is empty only for
+	// the omitted-ref form returned by ParsePackAddress, before Store.Refresh resolves
+	// the remote's default branch.
 	Ref string
 }
 
@@ -68,11 +69,25 @@ func IsFixedRef(ref string) bool {
 	return ok
 }
 
-// Parse parses and validates a pack address.
+// Parse parses and validates a pack address. Git refs are mandatory in the legacy
+// address grammar; readable pack sources use ParsePackAddress for the one approved
+// omitted-ref form.
 //
 // Every rejection names what is wrong and what to write instead: an address is
 // hand-written config, so a bare "invalid" would send the user to the source.
 func Parse(raw string) (Addr, error) {
+	return parseAddress(raw, false)
+}
+
+// ParsePackAddress parses the same source grammar as Parse but permits a git address
+// with no ref. Store.Refresh resolves that omission to the remote's advertised HEAD
+// once and records the branch and commit in the lockfile. Callers handling old patch
+// source addresses continue to use Parse and retain its mandatory-ref behavior.
+func ParsePackAddress(raw string) (Addr, error) {
+	return parseAddress(raw, true)
+}
+
+func parseAddress(raw string, allowDefaultRef bool) (Addr, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return Addr{}, fmt.Errorf("empty pack address")
@@ -87,7 +102,7 @@ func Parse(raw string) (Addr, error) {
 	case scheme == "file":
 		return parseFile(raw, rest)
 	case strings.HasPrefix(scheme, "git+"):
-		return parseGit(raw, strings.TrimPrefix(scheme, "git+"), rest)
+		return parseGit(raw, strings.TrimPrefix(scheme, "git+"), rest, allowDefaultRef)
 	default:
 		return Addr{}, fmt.Errorf("pack address %q: unsupported scheme %q "+
 			"(expected file://, git+ssh:// or git+https://)", raw, scheme)
@@ -141,7 +156,7 @@ func parseFile(raw, rest string) (Addr, error) {
 }
 
 // parseGit handles git+<transport>://host/repo[//subdir]?ref=...
-func parseGit(raw, transport, rest string) (Addr, error) {
+func parseGit(raw, transport, rest string, allowDefaultRef bool) (Addr, error) {
 	// `file` is accepted as a GIT transport (git+file:///path/to/repo.git), distinct
 	// from a plain file:// directory: it clones a local repository, so a ref means
 	// something. It is what makes this path testable against real git without a
@@ -179,7 +194,7 @@ func parseGit(raw, transport, rest string) (Addr, error) {
 		}
 	}
 
-	ref, err := refFromQuery(raw, query)
+	ref, err := refFromQuery(raw, query, allowDefaultRef)
 	if err != nil {
 		return Addr{}, err
 	}
@@ -199,9 +214,12 @@ func parseGit(raw, transport, rest string) (Addr, error) {
 	return Addr{Kind: KindGit, Raw: raw, Repo: repoURL, Path: subPath, Ref: ref}, nil
 }
 
-// refFromQuery extracts the MANDATORY ref.
-func refFromQuery(raw, query string) (string, error) {
+// refFromQuery extracts a ref, allowing it to be omitted only for readable pack addresses.
+func refFromQuery(raw, query string, allowDefault bool) (string, error) {
 	if query == "" {
+		if allowDefault {
+			return "", nil
+		}
 		return "", fmt.Errorf("pack address %q: missing required ?ref= — a git pack "+
 			"must be pinned (an unpinned source silently changes under you; write "+
 			"?ref=main if you really want to follow a branch)", raw)
