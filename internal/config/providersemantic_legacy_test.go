@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -270,12 +271,12 @@ func TestNormalizeLegacyProviderModelsDeeplyOwnsBothReturnedDeclarations(t *test
 		Name: "p", Alias: "alias", Model: "m", Variants: map[string]packdecl.ProviderVariant{"v": {
 			Model: "m", Options: map[string]packdecl.OptionDefault{"temperature": {Defaulted: true, Value: "0.2"}},
 			Subagents:     map[string]any{"roles": map[string]any{"worker": "m"}, "opaque": &opaque, "channel": channel, "nil": nil},
-			EnforceModels: &enforce, Capabilities: []string{}, Protocols: []string{"openai"},
-		}}, VariantOrder: []string{}, EveryModel: &packdecl.ProviderModel{Vendor: "acme", Reasoning: &flag, Price: price, Accepts: []string{}},
-		ModelRows: map[string]packdecl.ProviderModel{"m": {Vendor: "acme", Price: price, Accepts: []string{}}}, ModelOrder: []string{},
+			EnforceModels: &enforce, Capabilities: []string{"variant-capability"}, Protocols: []string{"openai"},
+		}}, VariantOrder: []string{"v"}, EveryModel: &packdecl.ProviderModel{Vendor: "acme", Reasoning: &flag, Price: price, Accepts: []string{"text"}},
+		ModelRows: map[string]packdecl.ProviderModel{"m": {Vendor: "acme", Price: price, Accepts: []string{"text"}}}, ModelOrder: []string{"m"},
 		Endpoints:     map[string]packdecl.ProviderEndpoint{"openai": {BaseURL: "https://example.test/v1", WireAPI: "openai-responses"}},
-		APIKeyEnvName: packdecl.EnvNames{}, RegionEnvName: []string{}, RegionFile: &packdecl.RegionFile{Path: ".aws/config", Key: "region"},
-		Models: nil, ModelOptions: nil, Options: map[string]packdecl.OptionDefault{"context_window": {Defaulted: true, Value: "500"}}, Capabilities: []string{},
+		APIKeyEnvName: packdecl.EnvNames{"API_KEY"}, RegionEnvName: []string{"AWS_REGION"}, RegionFile: &packdecl.RegionFile{Path: ".aws/config", Key: "region"},
+		Models: nil, ModelOptions: nil, Options: map[string]packdecl.OptionDefault{"context_window": {Defaulted: true, Value: "500"}}, Capabilities: []string{"provider-capability"},
 	}
 	got := NormalizeLegacyProviderModels(input, nil)
 	if got.Canonical == nil {
@@ -291,39 +292,178 @@ func TestNormalizeLegacyProviderModelsDeeplyOwnsBothReturnedDeclarations(t *test
 	variant.Options["temperature"] = packdecl.OptionDefault{Defaulted: true, Value: "9"}
 	variant.Subagents["roles"].(map[string]any)["worker"] = "changed"
 	*variant.Subagents["opaque"].(*int) = 9
-	variant.EnforceModels = boolPointer(true)
-	variant.Capabilities = []string{"changed"}
+	*variant.EnforceModels = true
+	variant.Capabilities[0] = "canonical-mutated"
 	variant.Protocols[0] = "changed"
 	got.Canonical.Variants["v"] = variant
-	got.Canonical.VariantOrder = append(got.Canonical.VariantOrder, "changed")
+	got.Canonical.VariantOrder[0] = "canonical-mutated"
 	got.Canonical.RegionFile.Path = "changed"
 	got.Canonical.Options["context_window"] = packdecl.OptionDefault{Defaulted: true, Value: "9"}
 	got.Canonical.Endpoints["openai"] = packdecl.ProviderEndpoint{BaseURL: "changed"}
-	got.Canonical.ModelOrder = append(got.Canonical.ModelOrder, "changed")
+	got.Canonical.ModelOrder[0] = "canonical-mutated"
 	modelRow := got.Canonical.ModelRows["m"]
-	modelRow.Accepts = []string{"image"}
+	modelRow.Accepts[0] = "image"
 	*modelRow.Price.Input = 9
 	got.Canonical.ModelRows["m"] = modelRow
 	*got.Canonical.EveryModel.Reasoning = false
 	*got.Canonical.EveryModel.Price.Output = 9
-	got.Canonical.Capabilities = []string{"changed"}
-	got.Canonical.APIKeyEnvName = packdecl.EnvNames{"changed"}
-	got.Canonical.RegionEnvName = []string{"changed"}
+	got.Canonical.Capabilities[0] = "canonical-mutated"
+	got.Canonical.APIKeyEnvName[0] = "canonical-mutated"
+	got.Canonical.RegionEnvName[0] = "canonical-mutated"
 	if got.Canonical.Variants["v"].Subagents["channel"] != channel || got.Canonical.Variants["v"].Subagents["nil"] != nil {
 		t.Error("non-JSON or nil subagent values were not preserved")
 	}
-	if input.Variants["v"].Options["temperature"].Value != "0.2" || input.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || opaque != 7 || *input.Variants["v"].EnforceModels || input.Variants["v"].Capabilities == nil || input.Variants["v"].Protocols[0] != "openai" || len(input.VariantOrder) != 0 || input.RegionFile.Path != ".aws/config" || input.Options["context_window"].Value != "500" || input.Endpoints["openai"].BaseURL != "https://example.test/v1" || input.ModelRows["m"].Accepts == nil || *input.ModelRows["m"].Price.Input != 1 || *input.EveryModel.Reasoning != true || *input.EveryModel.Price.Output != 2 || input.Capabilities == nil || len(input.APIKeyEnvName) != 0 || input.RegionEnvName == nil {
+	if input.Variants["v"].Options["temperature"].Value != "0.2" || input.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || opaque != 7 || *input.Variants["v"].EnforceModels || input.Variants["v"].Capabilities[0] != "variant-capability" || input.Variants["v"].Protocols[0] != "openai" || input.VariantOrder[0] != "v" || input.RegionFile.Path != ".aws/config" || input.Options["context_window"].Value != "500" || input.Endpoints["openai"].BaseURL != "https://example.test/v1" || input.ModelRows["m"].Accepts[0] != "text" || *input.ModelRows["m"].Price.Input != 1 || *input.EveryModel.Reasoning != true || *input.EveryModel.Price.Output != 2 || input.EveryModel.Accepts[0] != "text" || input.ModelOrder[0] != "m" || input.Capabilities[0] != "provider-capability" || input.APIKeyEnvName[0] != "API_KEY" || input.RegionEnvName[0] != "AWS_REGION" {
 		t.Errorf("canonical return aliases original declaration: %#v", input)
 	}
-	if first.Variants["v"].Options["temperature"].Value != "0.2" || second.Variants["v"].Options["temperature"].Value != "0.2" || *first.ModelRows["m"].Price.Input != 1 || *second.ModelRows["m"].Price.Input != 1 {
+	if first.Variants["v"].Options["temperature"].Value != "0.2" || second.Variants["v"].Options["temperature"].Value != "0.2" || *first.ModelRows["m"].Price.Input != 1 || *second.ModelRows["m"].Price.Input != 1 || first.VariantOrder[0] != "v" || second.VariantOrder[0] != "v" || first.Variants["v"].Capabilities[0] != "variant-capability" || second.Variants["v"].Capabilities[0] != "variant-capability" || first.Variants["v"].Protocols[0] != "openai" || second.Variants["v"].Protocols[0] != "openai" || first.RegionFile.Path != ".aws/config" || second.RegionFile.Path != ".aws/config" || first.ModelOrder[0] != "m" || second.ModelOrder[0] != "m" || first.ModelRows["m"].Accepts[0] != "text" || second.ModelRows["m"].Accepts[0] != "text" || first.Capabilities[0] != "provider-capability" || second.Capabilities[0] != "provider-capability" || first.APIKeyEnvName[0] != "API_KEY" || second.APIKeyEnvName[0] != "API_KEY" || first.RegionEnvName[0] != "AWS_REGION" || second.RegionEnvName[0] != "AWS_REGION" {
 		t.Errorf("canonical return aliases one or both restore returns: first=%#v second=%#v", first, second)
 	}
-	first.Variants["v"].Subagents["roles"].(map[string]any)["worker"] = "restore-mutated"
-	first.RegionFile.Path = "restore-mutated"
-	first.Capabilities = []string{"restore-mutated"}
-	if input.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || second.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "m" || got.Canonical.Variants["v"].Subagents["roles"].(map[string]any)["worker"] != "changed" || input.RegionFile.Path != ".aws/config" || second.RegionFile.Path != ".aws/config" || got.Canonical.RegionFile.Path != "changed" || input.Capabilities == nil || len(input.Capabilities) != 0 || second.Capabilities == nil || len(second.Capabilities) != 0 || got.Canonical.Capabilities[0] != "changed" {
-		t.Errorf("restore return is not independent from input/canonical/sibling returns")
+	firstVariant := first.Variants["v"]
+	*firstVariant.EnforceModels = true
+	firstVariant.Capabilities[0] = "first-mutated"
+	firstVariant.Protocols[0] = "first-mutated"
+	first.Variants["v"] = firstVariant
+	first.VariantOrder[0] = "first-mutated"
+	first.RegionFile.Path = "first-mutated"
+	first.ModelOrder[0] = "first-mutated"
+	first.ModelRows["m"] = func() packdecl.ProviderModel {
+		row := first.ModelRows["m"]
+		row.Accepts[0] = "first-mutated"
+		return row
+	}()
+	first.Capabilities[0] = "first-mutated"
+	first.APIKeyEnvName[0] = "first-mutated"
+	first.RegionEnvName[0] = "first-mutated"
+	if *input.Variants["v"].EnforceModels || *second.Variants["v"].EnforceModels || !*got.Canonical.Variants["v"].EnforceModels || input.Variants["v"].Capabilities[0] != "variant-capability" || second.Variants["v"].Capabilities[0] != "variant-capability" || got.Canonical.Variants["v"].Capabilities[0] != "canonical-mutated" || input.Variants["v"].Protocols[0] != "openai" || second.Variants["v"].Protocols[0] != "openai" || got.Canonical.Variants["v"].Protocols[0] != "changed" || input.VariantOrder[0] != "v" || second.VariantOrder[0] != "v" || got.Canonical.VariantOrder[0] != "canonical-mutated" || input.RegionFile.Path != ".aws/config" || second.RegionFile.Path != ".aws/config" || got.Canonical.RegionFile.Path != "changed" {
+		t.Errorf("first restore return aliases input, canonical, or sibling: first=%#v", first)
 	}
+	secondVariant := second.Variants["v"]
+	*secondVariant.EnforceModels = true
+	secondVariant.Capabilities[0] = "second-mutated"
+	secondVariant.Protocols[0] = "second-mutated"
+	second.Variants["v"] = secondVariant
+	second.VariantOrder[0] = "second-mutated"
+	second.RegionFile.Path = "second-mutated"
+	second.ModelOrder[0] = "second-mutated"
+	secondRow := second.ModelRows["m"]
+	secondRow.Accepts[0] = "second-mutated"
+	second.ModelRows["m"] = secondRow
+	second.Capabilities[0] = "second-mutated"
+	second.APIKeyEnvName[0] = "second-mutated"
+	second.RegionEnvName[0] = "second-mutated"
+	if *input.Variants["v"].EnforceModels || !*first.Variants["v"].EnforceModels || !*got.Canonical.Variants["v"].EnforceModels || input.Variants["v"].Capabilities[0] != "variant-capability" || first.Variants["v"].Capabilities[0] != "first-mutated" || got.Canonical.Variants["v"].Capabilities[0] != "canonical-mutated" || input.Variants["v"].Protocols[0] != "openai" || first.Variants["v"].Protocols[0] != "first-mutated" || got.Canonical.Variants["v"].Protocols[0] != "changed" || input.VariantOrder[0] != "v" || first.VariantOrder[0] != "first-mutated" || got.Canonical.VariantOrder[0] != "canonical-mutated" || input.RegionFile.Path != ".aws/config" || first.RegionFile.Path != "first-mutated" || got.Canonical.RegionFile.Path != "changed" {
+		t.Errorf("second restore return aliases input, canonical, or sibling: second=%#v", second)
+	}
+}
+
+func TestNormalizeLegacyProviderModelsRestoreReturnsOwnEveryNestedCategory(t *testing.T) {
+	price := completePrice(1, 2, 3, 4)
+	reasoning := true
+	enforce := false
+	opaque := 7
+	input := packdecl.ProviderContribution{
+		Name: "p", Variants: map[string]packdecl.ProviderVariant{"v": {
+			Options:       map[string]packdecl.OptionDefault{"temperature": {Value: "0.2"}},
+			Subagents:     map[string]any{"roles": map[string]any{"worker": "m"}, "opaque": &opaque},
+			EnforceModels: &enforce, Capabilities: []string{"variant-capability"}, Protocols: []string{"openai"},
+		}}, VariantOrder: []string{"v"},
+		EveryModel: &packdecl.ProviderModel{Vendor: "acme", Reasoning: &reasoning, Price: price, Accepts: []string{"text"}},
+		ModelRows:  map[string]packdecl.ProviderModel{"m": {Vendor: "acme", Price: price, Accepts: []string{"text"}}}, ModelOrder: []string{"m"},
+		Endpoints:    map[string]packdecl.ProviderEndpoint{"openai": {BaseURL: "https://example.test/v1"}},
+		Options:      map[string]packdecl.OptionDefault{"context_window": {Value: "500"}},
+		Capabilities: []string{"provider-capability"}, APIKeyEnvName: packdecl.EnvNames{"API_KEY"}, RegionEnvName: []string{"AWS_REGION"},
+		RegionFile: &packdecl.RegionFile{Path: ".aws/config"},
+	}
+	normalized := NormalizeLegacyProviderModels(input, nil)
+	if normalized.Canonical == nil {
+		t.Fatalf("canonical declaration: %#v", normalized.Differences)
+	}
+	first := normalized.RestoreLegacyProviderModels(input)
+	second := normalized.RestoreLegacyProviderModels(input)
+	base := ownershipProbeValues(input)
+	canonicalProbe := mutateOwnershipProbe(&*normalized.Canonical, "canonical")
+	if reflect.DeepEqual(ownershipProbeValues(*normalized.Canonical), base) || !reflect.DeepEqual(ownershipProbeValues(input), base) || !reflect.DeepEqual(ownershipProbeValues(first), base) || !reflect.DeepEqual(ownershipProbeValues(second), base) {
+		t.Errorf("Canonical mutation was not isolated across all deep categories")
+	}
+	firstProbe := mutateOwnershipProbe(&first, "first")
+	if reflect.DeepEqual(ownershipProbeValues(first), base) || !reflect.DeepEqual(ownershipProbeValues(input), base) || !reflect.DeepEqual(ownershipProbeValues(second), base) || !reflect.DeepEqual(ownershipProbeValues(*normalized.Canonical), canonicalProbe) {
+		t.Errorf("first Restore mutation aliases input, canonical, or second Restore")
+	}
+	secondProbe := mutateOwnershipProbe(&second, "second")
+	if reflect.DeepEqual(secondProbe, base) || !reflect.DeepEqual(ownershipProbeValues(input), base) || !reflect.DeepEqual(ownershipProbeValues(first), firstProbe) || !reflect.DeepEqual(ownershipProbeValues(*normalized.Canonical), canonicalProbe) {
+		t.Errorf("second Restore mutation aliases input, canonical, or first Restore")
+	}
+}
+
+type providerOwnershipProbe struct {
+	variantOption, subagent, variantCapability, variantProtocol, variantOrder string
+	opaque, providerEnforce                                                   int
+	regionFile, providerOption, endpoint                                      string
+	modelOrder, modelAccepts                                                  string
+	modelPrice, everyReasoning, everyPrice                                    float64
+	providerCapability, apiKeyEnv, regionEnv                                  string
+}
+
+func ownershipProbeValues(provider packdecl.ProviderContribution) providerOwnershipProbe {
+	variant := provider.Variants["v"]
+	row := provider.ModelRows["m"]
+	return providerOwnershipProbe{
+		variantOption:     variant.Options["temperature"].Value,
+		subagent:          variant.Subagents["roles"].(map[string]any)["worker"].(string),
+		variantCapability: variant.Capabilities[0], variantProtocol: variant.Protocols[0], variantOrder: provider.VariantOrder[0],
+		opaque: *variant.Subagents["opaque"].(*int), providerEnforce: boolAsInt(variant.EnforceModels),
+		regionFile: provider.RegionFile.Path, providerOption: provider.Options["context_window"].Value, endpoint: provider.Endpoints["openai"].BaseURL,
+		modelOrder: provider.ModelOrder[0], modelAccepts: row.Accepts[0], modelPrice: *row.Price.Input,
+		everyReasoning: boolAsFloat(provider.EveryModel.Reasoning), everyPrice: *provider.EveryModel.Price.Output,
+		providerCapability: provider.Capabilities[0], apiKeyEnv: string(provider.APIKeyEnvName[0]), regionEnv: provider.RegionEnvName[0],
+	}
+}
+
+func mutateOwnershipProbe(provider *packdecl.ProviderContribution, marker string) providerOwnershipProbe {
+	variant := provider.Variants["v"]
+	option := variant.Options["temperature"]
+	option.Value = marker
+	variant.Options["temperature"] = option
+	variant.Subagents["roles"].(map[string]any)["worker"] = marker
+	*variant.Subagents["opaque"].(*int)++
+	*variant.EnforceModels = !*variant.EnforceModels
+	variant.Capabilities[0] = marker
+	variant.Protocols[0] = marker
+	provider.Variants["v"] = variant
+	provider.VariantOrder[0] = marker
+	provider.RegionFile.Path = marker
+	option = provider.Options["context_window"]
+	option.Value = marker
+	provider.Options["context_window"] = option
+	endpoint := provider.Endpoints["openai"]
+	endpoint.BaseURL = marker
+	provider.Endpoints["openai"] = endpoint
+	provider.ModelOrder[0] = marker
+	row := provider.ModelRows["m"]
+	row.Accepts[0] = marker
+	*row.Price.Input++
+	provider.ModelRows["m"] = row
+	*provider.EveryModel.Reasoning = !*provider.EveryModel.Reasoning
+	*provider.EveryModel.Price.Output++
+	provider.Capabilities[0] = marker
+	provider.APIKeyEnvName[0] = marker
+	provider.RegionEnvName[0] = marker
+	return ownershipProbeValues(*provider)
+}
+
+func boolAsInt(value *bool) int {
+	if value != nil && *value {
+		return 1
+	}
+	return 0
+}
+
+func boolAsFloat(value *bool) float64 {
+	if value != nil && *value {
+		return 1
+	}
+	return 0
 }
 
 func TestNormalizeLegacyProviderModelsPreservesCapabilityReplacementPresenceForReceiver(t *testing.T) {
@@ -475,6 +615,279 @@ func TestNormalizeLegacyProviderModelsUsesPiExactReasoningGrammar(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestNormalizeLegacyProviderModelsRefusesPiUnconsumedPositiveIntegerAliases(t *testing.T) {
+	for _, tc := range []struct {
+		key          string
+		outputField  string
+		oldListValue string
+		oldListFound bool
+	}{
+		{key: "max_context_tokens", outputField: "contextWindow", oldListValue: "500", oldListFound: true},
+		{key: "max_output_tokens", outputField: "maxTokens", oldListFound: false},
+	} {
+		t.Run(tc.key+"/normalization", func(t *testing.T) {
+			_, provider := legacyPiIntegerAliasFixture(t, tc.key, "123")
+			got := NormalizeLegacyProviderModels(provider, nil)
+			if got.Canonical != nil {
+				t.Errorf("unconsumed alternate %s produced canonical facts: %#v", tc.key, got.Canonical.ModelRows)
+			}
+			if !hasProviderDifference(got.Differences, "model_options."+piLegacyTargetID+"."+tc.key) {
+				t.Errorf("alternate field difference must identify its exact authored spelling: %#v", got.Differences)
+			}
+		})
+		t.Run(tc.key+"/restore", func(t *testing.T) {
+			_, provider := legacyPiIntegerAliasFixture(t, tc.key, "123")
+			got := NormalizeLegacyProviderModels(provider, nil)
+			restored := got.RestoreLegacyProviderModels(provider)
+			if value := restored.ModelOptions[piLegacyTargetID][tc.key]; value == nil || *value != "123" || got.Snapshot.ModelOptions[piLegacyTargetID][tc.key] == nil || *got.Snapshot.ModelOptions[piLegacyTargetID][tc.key] != "123" {
+				t.Errorf("alternate spelling did not survive snapshot/restore: snapshot=%#v restored=%#v", got.Snapshot.ModelOptions, restored.ModelOptions)
+			}
+		})
+		for _, surface := range []string{"models", "model-lists"} {
+			t.Run(tc.key+"/shipped-pi-"+surface, func(t *testing.T) {
+				assertLegacyPiAlternateDifference(t, tc.key, tc.outputField, tc.oldListValue, tc.oldListFound, "123", surface)
+			})
+		}
+	}
+}
+
+func TestNormalizeLegacyProviderModelsSupportsEquivalentPrimaryIntegerSpellings(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		facts string
+	}{
+		{name: "primary fields", facts: `"context_window":"123","max_tokens":"123"`},
+		{name: "alternate plus equal primary", facts: `"context_window":"123","max_context_tokens":"123","max_tokens":"123","max_output_tokens":"123"`},
+	} {
+		t.Run(tc.name+"/normalization", func(t *testing.T) {
+			_, provider := legacyPiIntegerFactFixture(t, tc.facts)
+			got := NormalizeLegacyProviderModels(provider, nil)
+			if got.Canonical == nil || len(got.Differences) != 0 {
+				t.Errorf("consumed primary/equivalent integer facts should remain supported: %#v", got.Differences)
+			}
+		})
+		t.Run(tc.name+"/actual-pi", func(t *testing.T) {
+			assertLegacyPiEquivalentFacts(t, tc.facts)
+		})
+	}
+}
+
+func TestNormalizeLegacyProviderModelsRefusesZeroIntegerFieldsBeforePiFallback(t *testing.T) {
+	for _, tc := range []struct {
+		key         string
+		primary     string
+		outputField string
+	}{
+		{key: "context_window", primary: "context_window", outputField: "contextWindow"},
+		{key: "max_context_tokens", primary: "context_window", outputField: "contextWindow"},
+		{key: "max_tokens", primary: "max_tokens", outputField: "maxTokens"},
+		{key: "max_output_tokens", primary: "max_tokens", outputField: "maxTokens"},
+	} {
+		t.Run(tc.key+"/normalization", func(t *testing.T) {
+			_, provider := legacyPiIntegerAliasFixture(t, tc.key, "0")
+			got := NormalizeLegacyProviderModels(provider, nil)
+			if got.Canonical != nil {
+				t.Errorf("authored zero %s produced canonical facts: %#v", tc.key, got.Canonical.ModelRows)
+			}
+			if !hasProviderDifference(got.Differences, "model_options."+piLegacyTargetID+"."+tc.key) {
+				t.Errorf("zero refusal must name authored field %s: %#v", tc.key, got.Differences)
+			}
+		})
+		t.Run(tc.key+"/restore", func(t *testing.T) {
+			_, provider := legacyPiIntegerAliasFixture(t, tc.key, "0")
+			got := NormalizeLegacyProviderModels(provider, nil)
+			restored := got.RestoreLegacyProviderModels(provider)
+			if value := restored.ModelOptions[piLegacyTargetID][tc.key]; value == nil || *value != "0" {
+				t.Errorf("raw zero %s did not restore: %#v", tc.key, restored.ModelOptions)
+			}
+		})
+		t.Run(tc.key+"/shipped-pi-zero-to-fallback", func(t *testing.T) {
+			assertLegacyPiZeroFallback(t, tc.key, tc.primary, tc.outputField)
+		})
+	}
+}
+
+const piLegacyTargetID = "global.openai.gpt-6-luna"
+const piLegacyOtherID = "global.openai.gpt-6-astral"
+
+func legacyPiIntegerAliasFixture(t *testing.T, key, value string) (*packload.Pack, packdecl.ProviderContribution) {
+	t.Helper()
+	return legacyPiIntegerFactFixture(t, `"`+key+`":"`+value+`"`)
+}
+
+func legacyPiIntegerFactFixture(t *testing.T, integerFacts string) (*packload.Pack, packdecl.ProviderContribution) {
+	return legacyPiIntegerProviderFixture(t, "openai", piLegacyTargetID, piLegacyOtherID, integerFacts)
+}
+
+func legacyPiIntegerProviderFixture(t *testing.T, providerName, targetID, otherID, integerFacts string) (*packload.Pack, packdecl.ProviderContribution) {
+	t.Helper()
+	fields := `"options":{"context_window":"500","max_tokens":"500"},"endpoints":{"openai":{"base_url":"https://example.test/v1","wire_api":"openai-responses"}},"models":{"` + targetID + `":"` + targetID + `","` + otherID + `":"` + otherID + `"},"model_options":{"` + targetID + `":{"vendor":"openai","name":"GPT-6 Luna","wire_id":"` + targetID + `",` + integerFacts + `,"cost_input":"1","cost_output":"2","cost_cache_read":"3","cost_cache_write":"4"},"` + otherID + `":{"vendor":"openai","name":"GPT-6 Astral","wire_id":"` + otherID + `","context_window":"100","max_tokens":"50","cost_input":"1","cost_output":"2","cost_cache_read":"3","cost_cache_write":"4"}}`
+	return loadLegacyPiProvider(t, providerName, fields)
+}
+
+func legacyPiNarrowedTable(t *testing.T, provider *packload.Pack) *jsonx.OrderedMap {
+	return legacyPiNarrowedProviderTable(t, provider, "openai", piLegacyTargetID)
+}
+
+func legacyPiNarrowedProviderTable(t *testing.T, provider *packload.Pack, providerName, targetID string) *jsonx.OrderedMap {
+	t.Helper()
+	root := t.TempDir()
+	manifest := `{"contributes":[{"kind":"models","provider":"` + providerName + `","only":["` + targetID + `"]}]}`
+	if err := os.WriteFile(filepath.Join(root, "pack.json"), []byte(manifest), 0600); err != nil {
+		t.Fatalf("write models-only pack: %v", err)
+	}
+	narrow, problems := packload.LoadDir(root, "pi-models-only")
+	if narrow == nil || len(problems) != 0 {
+		t.Fatalf("load models-only pack: %#v", problems)
+	}
+	table, err := packload.ComposeProviders(nil, []*packload.Pack{provider, narrow})
+	if err != nil {
+		t.Fatalf("old packload.ComposeProviders with only contribution: %v", err)
+	}
+	entry, ok := table.Get(providerName)
+	if !ok {
+		t.Fatalf("composed old provider table omits %s: %#v", providerName, table)
+	}
+	providerEntry, ok := entry.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("old openai entry is %T", entry)
+	}
+	models, ok := providerEntry.Get("models")
+	modelMap, mapOK := models.(*jsonx.OrderedMap)
+	if !ok || !mapOK || !reflect.DeepEqual(modelMap.Keys(), []string{targetID}) {
+		t.Fatalf("old models-only contribution did not narrow old table: %#v", models)
+	}
+	if only, ok := providerEntry.Get(packload.ModelsOnlyKey); !ok || only != true {
+		t.Fatalf("old composed table lacks models-only presence: %#v", providerEntry)
+	}
+	return table
+}
+
+func unsafeTypedIntegerAttempt(provider packdecl.ProviderContribution, key, value, targetID string) packdecl.ProviderContribution {
+	provider.Models, provider.ModelOptions = nil, nil
+	row := packdecl.ProviderModel{Vendor: "openai", Name: "GPT-6 Luna", WireID: targetID, Price: completePrice(1, 2, 3, 4)}
+	parsed, _ := strconv.ParseInt(value, 10, 64)
+	switch key {
+	case "context_window", "max_context_tokens":
+		row.Context = parsed
+	case "max_tokens", "max_output_tokens":
+		row.MaxTokens = parsed
+	}
+	provider.ModelRows = map[string]packdecl.ProviderModel{targetID: row}
+	provider.ModelOrder = []string{targetID}
+	return provider
+}
+
+func assertLegacyPiAlternateDifference(t *testing.T, key, field, oldListValue string, oldListFound bool, value, surface string) {
+	t.Helper()
+	providerName, targetID, otherID := "openai", piLegacyTargetID, piLegacyOtherID
+	if surface == "models" {
+		providerName, targetID, otherID = "p", "m", "n"
+	}
+	piPack := shippedPiPack(t)
+	oldPack, provider := legacyPiIntegerProviderFixture(t, providerName, targetID, otherID, `"`+key+`":"`+value+`"`)
+	oldTable := legacyPiNarrowedProviderTable(t, oldPack, providerName, targetID)
+	ctx := luahook.DeriveCtx{BuiltInProviders: packload.BuiltInProvidersFor([]*packload.Pack{piPack}, "pi"), Tables: toDeriveTables(t, map[string]any{"providers": jsonx.Plain(oldTable)})}
+	oldOutput := runShippedPi(t, piPack, surface, oldTable, ctx)
+	attempt := unsafeTypedIntegerAttempt(provider, key, value, targetID)
+	input := ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{attempt}, Selection: ActiveProviderSelection{Default: []string{providerName}}, Receivers: ProviderReceivers([]*packload.Pack{piPack})}
+	_, outputs, err := ProjectProviderSemantics(input, []ProviderDeriveRequest{{Receiver: "pi", Pack: piPack, Surface: surface, Context: ctx}})
+	if err != nil || len(outputs) != 1 {
+		t.Errorf("public ProjectProviderSemantics %s attempt: outputs=%#v err=%v", surface, outputs, err)
+		return
+	}
+	oldValue, oldFound := piRenderedModelField(oldOutput, targetID, field)
+	newValue, newFound := piRenderedModelField(outputs[0].Value, targetID, field)
+	if !newFound || (surface == "models" && !oldFound) {
+		t.Errorf("actual shipped pi %s row field %s missing: old=%#v new=%#v", surface, field, oldOutput, outputs[0].Value)
+		return
+	}
+	if surface == "model-lists" {
+		if oldFound != oldListFound || (oldListFound && fmt.Sprint(oldValue) != oldListValue) || fmt.Sprint(newValue) != value {
+			t.Errorf("narrowed Pi model-lists did not expose %s legacy fallback/absence→typed difference: old=%v (found=%t) new=%v; outputs old=%#v new=%#v", key, oldValue, oldFound, newValue, oldOutput, outputs[0].Value)
+		}
+	} else if fmt.Sprint(oldValue) != value || fmt.Sprint(newValue) != value {
+		t.Errorf("Pi models consumed %s differently than its authored value: old=%v new=%v; outputs old=%#v new=%#v", key, oldValue, newValue, oldOutput, outputs[0].Value)
+	}
+}
+
+func assertLegacyPiEquivalentFacts(t *testing.T, integerFacts string) {
+	t.Helper()
+	for _, surface := range []string{"models", "model-lists"} {
+		providerName, targetID, otherID := "openai", piLegacyTargetID, piLegacyOtherID
+		if surface == "models" {
+			providerName, targetID, otherID = "p", "m", "n"
+		}
+		piPack := shippedPiPack(t)
+		oldPack, provider := legacyPiIntegerProviderFixture(t, providerName, targetID, otherID, integerFacts)
+		oldTable := legacyPiNarrowedProviderTable(t, oldPack, providerName, targetID)
+		normalized := NormalizeLegacyProviderModels(provider, nil)
+		if normalized.Canonical == nil {
+			t.Errorf("primary/equivalent fields have no canonical candidate: %#v", normalized.Differences)
+			continue
+		}
+		canonical := *normalized.Canonical
+		canonical.ModelRows = map[string]packdecl.ProviderModel{targetID: canonical.ModelRows[targetID]}
+		canonical.ModelOrder = []string{targetID}
+		ctx := luahook.DeriveCtx{BuiltInProviders: packload.BuiltInProvidersFor([]*packload.Pack{piPack}, "pi"), Tables: toDeriveTables(t, map[string]any{"providers": jsonx.Plain(oldTable)})}
+		oldOutput := runShippedPi(t, piPack, surface, oldTable, ctx)
+		_, outputs, err := ProjectProviderSemantics(ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{canonical}, Selection: ActiveProviderSelection{Default: []string{providerName}}, Receivers: ProviderReceivers([]*packload.Pack{piPack})}, []ProviderDeriveRequest{{Receiver: "pi", Pack: piPack, Surface: surface, Context: ctx}})
+		if err != nil || len(outputs) != 1 {
+			t.Errorf("ProjectProviderSemantics %s parity attempt: %#v %v", surface, outputs, err)
+			continue
+		}
+		if !reflect.DeepEqual(oldOutput, outputs[0].Value) {
+			t.Errorf("old ComposeProviders→shipped pi %s differs for consumed exact/equivalent facts: old=%#v projected=%#v", surface, oldOutput, outputs[0].Value)
+		}
+	}
+}
+
+func assertLegacyPiZeroFallback(t *testing.T, key, primary, field string) {
+	t.Helper()
+	piPack := shippedPiPack(t)
+	oldPack, provider := legacyPiIntegerProviderFixture(t, "p", "m", "n", `"`+key+`":"0"`)
+	oldTable := legacyPiNarrowedProviderTable(t, oldPack, "p", "m")
+	ctx := luahook.DeriveCtx{BuiltInProviders: packload.BuiltInProvidersFor([]*packload.Pack{piPack}, "pi"), Tables: toDeriveTables(t, map[string]any{"providers": jsonx.Plain(oldTable)})}
+	oldOutput := runShippedPi(t, piPack, "models", oldTable, ctx)
+	attempt := unsafeTypedIntegerAttempt(provider, primary, "0", "m")
+	_, outputs, err := ProjectProviderSemantics(ProviderSemanticInput{Declarations: []packdecl.ProviderContribution{attempt}, Selection: ActiveProviderSelection{Default: []string{"p"}}, Receivers: ProviderReceivers([]*packload.Pack{piPack})}, []ProviderDeriveRequest{{Receiver: "pi", Pack: piPack, Surface: "models", Context: ctx}})
+	if err != nil || len(outputs) != 1 {
+		t.Errorf("public ProjectProviderSemantics zero %s fallback attempt: %#v %v", key, outputs, err)
+		return
+	}
+	oldValue, oldFound := piRenderedModelField(oldOutput, "m", field)
+	newValue, newFound := piRenderedModelField(outputs[0].Value, "m", field)
+	if !oldFound || !newFound || fmt.Sprint(oldValue) != "0" || fmt.Sprint(newValue) != "500" {
+		t.Errorf("actual Pi zero→provider fallback for %s = old(%v,%t), typed(%v,%t), outputs old=%#v new=%#v", key, oldValue, oldFound, newValue, newFound, oldOutput, outputs[0].Value)
+	}
+}
+
+func piRenderedModelField(output map[string]any, id, field string) (any, bool) {
+	var search func(any) (any, bool)
+	search = func(value any) (any, bool) {
+		switch node := value.(type) {
+		case map[string]any:
+			if node["id"] == id {
+				result, ok := node[field]
+				return result, ok
+			}
+			for _, child := range node {
+				if result, ok := search(child); ok {
+					return result, true
+				}
+			}
+		case []any:
+			for _, child := range node {
+				if result, ok := search(child); ok {
+					return result, true
+				}
+			}
+		}
+		return nil, false
+	}
+	return search(output)
 }
 
 func hasProviderDifference(differences []ProviderModelDifference, path string) bool {
