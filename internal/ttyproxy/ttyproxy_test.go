@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -2207,12 +2210,17 @@ func TestResetTerminalFdSelection(t *testing.T) {
 			t.Skip(err)
 		}
 		defer unix.Close(m)
-		defer unix.Close(s)
 
-		os.Stdout = os.NewFile(uintptr(s), "stdout")
+		stdoutFile := os.NewFile(uintptr(s), "stdout")
+		os.Stdout = stdoutFile
 		os.Stderr = origStderr
 		terminalStdoutFD, terminalStderrFD = s, 2
 		_ = unix.SetNonblock(m, true)
+
+		defer func() {
+			os.Stdout = origStdout
+			_ = stdoutFile.Close()
+		}()
 
 		resetTerminal(-1)
 
@@ -2232,12 +2240,17 @@ func TestResetTerminalFdSelection(t *testing.T) {
 			t.Skip(err)
 		}
 		defer unix.Close(m)
-		defer unix.Close(s)
 
+		stderrFile := os.NewFile(uintptr(s), "stderr")
 		os.Stdout = origStdout // non-tty under go test
-		os.Stderr = os.NewFile(uintptr(s), "stderr")
+		os.Stderr = stderrFile
 		terminalStdoutFD, terminalStderrFD = 1, s
 		_ = unix.SetNonblock(m, true)
+
+		defer func() {
+			os.Stderr = origStderr
+			_ = stderrFile.Close()
+		}()
 
 		resetTerminal(-1)
 
@@ -2252,19 +2265,19 @@ func TestResetTerminalFdSelection(t *testing.T) {
 	})
 
 	t.Run("writes to inFd when neither stdout nor stderr is tty", func(t *testing.T) {
-		m, s, err := openPty()
+		m, inFD, err := openPty()
 		if err != nil {
 			t.Skip(err)
 		}
 		defer unix.Close(m)
-		defer unix.Close(s)
+		defer unix.Close(inFD)
 
 		os.Stdout = origStdout
 		os.Stderr = origStderr
 		terminalStdoutFD, terminalStderrFD = 1, 2
 		_ = unix.SetNonblock(m, true)
 
-		resetTerminal(s)
+		resetTerminal(inFD)
 
 		buf := make([]byte, 256)
 		n, err := unix.Read(m, buf)
@@ -2284,11 +2297,138 @@ func TestResetTerminalFdSelection(t *testing.T) {
 	})
 }
 
-// The stage-hook order pin on the plain (non-TTY) path: spawned then exited,
-// and nothing else — the plain fallback has no drain and no termios to
-// restore, so those stages must stay silent rather than fire vacuously. The
-// pty path's stages are pinned end-to-end by the integration suite, where a
-// real terminal exists.
+func TestPtySlaveDescriptorsHaveSingleFileOwners(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate test source")
+	}
+	production := parseProxyFunction(t, filepath.Join(filepath.Dir(currentFile), "ttyproxy.go"), "RunWithProxyObserved")
+	productionOwners, productionCloses := fileOwnersAndCloses(production)
+	if len(productionOwners) != 1 || productionOwners[0] != "ptyFile" || productionCloses["ptyFile"] < 2 {
+		t.Fatalf("production slave owners=%v closes=%v, want one ptyFile closed on both start outcomes", productionOwners, productionCloses)
+	}
+	if !childStreamsShareOwner(production, "ptyFile") {
+		t.Fatal("production child stdin/stdout/stderr no longer share the one owned slave file")
+	}
+
+	fixture := parseProxyFunction(t, currentFile, "TestResetTerminalFdSelection")
+	fixtureOwners, fixtureCloses := fileOwnersAndCloses(fixture)
+	if len(fixtureOwners) != 2 || fixtureCloses["stdoutFile"] != 1 || fixtureCloses["stderrFile"] != 1 {
+		t.Fatalf("terminal-reset fixture owners=%v closes=%v, want stdoutFile/stderrFile each explicitly closed by their owner", fixtureOwners, fixtureCloses)
+	}
+	if rawClosesDescriptor(fixture, "s") {
+		t.Fatal("terminal-reset fixture raw-closes a slave descriptor still owned by an os.File")
+	}
+}
+
+func parseProxyFunction(t *testing.T, filename, name string) *ast.FuncDecl {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, nil, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", filename, err)
+	}
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == name {
+			return fn
+		}
+	}
+	t.Fatalf("%s has no function %s", filename, name)
+	return nil
+}
+
+func fileOwnersAndCloses(fn *ast.FuncDecl) ([]string, map[string]int) {
+	var owners []string
+	closes := make(map[string]int)
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		switch n := node.(type) {
+		case *ast.AssignStmt:
+			for i, rhs := range n.Rhs {
+				call, ok := rhs.(*ast.CallExpr)
+				if !ok || !isOSNewFile(call) || i >= len(n.Lhs) {
+					continue
+				}
+				if owner, ok := n.Lhs[i].(*ast.Ident); ok {
+					owners = append(owners, owner.Name)
+				}
+			}
+		case *ast.CallExpr:
+			if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" {
+				if owner, ok := sel.X.(*ast.Ident); ok {
+					closes[owner.Name]++
+				}
+			}
+		}
+		return true
+	})
+	return owners, closes
+}
+
+func isOSNewFile(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "NewFile" {
+		return false
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	return ok && pkg.Name == "os"
+}
+
+func childStreamsShareOwner(fn *ast.FuncDecl, owner string) bool {
+	for _, stmt := range fn.Body.List {
+		assign, ok := stmt.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 3 || len(assign.Rhs) != 3 {
+			continue
+		}
+		fields := map[string]bool{}
+		for _, lhs := range assign.Lhs {
+			selector, ok := lhs.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Stdin" && selector.Sel.Name != "Stdout" && selector.Sel.Name != "Stderr" {
+				fields = nil
+				break
+			}
+			fields[selector.Sel.Name] = true
+		}
+		if fields == nil || len(fields) != 3 {
+			continue
+		}
+		shared := true
+		for _, rhs := range assign.Rhs {
+			ident, ok := rhs.(*ast.Ident)
+			if !ok || ident.Name != owner {
+				shared = false
+				break
+			}
+		}
+		if shared {
+			return true
+		}
+	}
+	return false
+}
+
+func rawClosesDescriptor(fn *ast.FuncDecl, descriptor string) bool {
+	found := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "Close" {
+			return true
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok || pkg.Name != "unix" {
+			return true
+		}
+		arg, ok := call.Args[0].(*ast.Ident)
+		found = found || ok && arg.Name == descriptor
+		return true
+	})
+	return found
+}
+
+// TestStageHookPlainPathOrder pins the stage-hook contract on the plain path.
 func TestStageHookPlainPathOrder(t *testing.T) {
 	var stages []string
 	rc, err := RunWithProxyHooked([]string{"/bin/true"}, nil, nil, func(s string) {
