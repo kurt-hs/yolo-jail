@@ -12,14 +12,16 @@ import (
 
 func TestLegacyAttachRefreshPreservesPriorMechanicsAndDoesNotPromoteDesiredInputs(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		envToken       string
-		sheetToken     string
-		priorMechanics bool
+		name            string
+		envToken        string
+		sheetToken      string
+		priorMechanics  bool
+		appliedSnapshot bool
 	}{
 		{name: "missing authenticated snapshot with existing mechanics", priorMechanics: true},
 		{name: "snapshot for another token", envToken: "trusted-launch-token", sheetToken: "different-launch-token", priorMechanics: true},
 		{name: "matching snapshot but missing mount record", envToken: "trusted-launch-token", sheetToken: "trusted-launch-token", priorMechanics: true},
+		{name: "authenticated snapshot and matching live mount record", envToken: "trusted-launch-token", sheetToken: "trusted-launch-token", appliedSnapshot: true},
 		{name: "no prior mechanics files", priorMechanics: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -49,9 +51,20 @@ func TestLegacyAttachRefreshPreservesPriorMechanicsAndDoesNotPromoteDesiredInput
 				}
 			}
 			if tc.sheetToken != "" {
-				if err := writeMechanicsApplied(cname, tc.sheetToken, &jailcontent.FactSheet{
-					WorkspacePath: "/wrong/workspace", Briefing: jailcontent.BriefingInput{Mechanism: "wrong-backend"},
-				}); err != nil {
+				facts := &jailcontent.FactSheet{
+					WorkspacePath: "/wrong/workspace",
+					Briefing:      jailcontent.BriefingInput{Workspace: ws, Mechanism: "podman"},
+				}
+				if tc.appliedSnapshot {
+					facts.AppliedAgentsMDExtra = "APPLIED_LAUNCH_GUIDANCE"
+					facts.SkillsDelivery = "live read-only bind"
+				}
+				if err := writeMechanicsApplied(cname, tc.sheetToken, facts); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.appliedSnapshot {
+				if err := writeCtxMountRecord(cname, tc.envToken, []ctxMountEntry{{Source: "/applied/host-source", Dest: "/ctx/applied"}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -89,10 +102,32 @@ func TestLegacyAttachRefreshPreservesPriorMechanicsAndDoesNotPromoteDesiredInput
 						t.Errorf("legacy attach changed prior mechanics %s: got %q, err %v", rel, got, err)
 					}
 				}
-			} else if _, err := os.Stat(mechanicsDir); !os.IsNotExist(err) {
-				t.Errorf("legacy attach invented mechanics staging for an old jail: stat err %v", err)
+			} else if !tc.appliedSnapshot {
+				if _, err := os.Stat(mechanicsDir); !os.IsNotExist(err) {
+					t.Errorf("legacy attach invented mechanics staging for an old jail: stat err %v", err)
+				}
 			}
-			if got := claudeBriefingOf(t, cname); strings.Contains(got, "UNTRUSTED_CURRENT_AGENTS_MD_EXTRA") {
+			if tc.appliedSnapshot {
+				briefing := claudeBriefingOf(t, cname)
+				for _, want := range []string{"APPLIED_LAUNCH_GUIDANCE", "/ctx/applied"} {
+					if !strings.Contains(briefing, want) {
+						t.Errorf("authenticated attach briefing omitted applied value %q:\n%s", want, briefing)
+					}
+				}
+				if strings.Contains(briefing, "UNTRUSTED_CURRENT_AGENTS_MD_EXTRA") {
+					t.Errorf("authenticated attach promoted current desired guidance:\n%s", briefing)
+				}
+				mapPath := filepath.Join(mechanicsDir, "host-map.md")
+				got, err := os.ReadFile(mapPath)
+				if err != nil {
+					t.Fatalf("read refreshed applied host map: %v", err)
+				}
+				for _, want := range []string{"/ctx/applied", "/applied/host-source"} {
+					if !strings.Contains(string(got), want) {
+						t.Errorf("authenticated attach host map omitted applied value %q:\n%s", want, got)
+					}
+				}
+			} else if got := claudeBriefingOf(t, cname); strings.Contains(got, "UNTRUSTED_CURRENT_AGENTS_MD_EXTRA") {
 				t.Errorf("legacy attach promoted current agents_md_extra into the running briefing:\n%s", got)
 			}
 			if _, err := os.Stat(filepath.Join(mechanicsDir, "..", "unapplied-workspace-skill")); !os.IsNotExist(err) {

@@ -64,6 +64,13 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == testAsYoloArg {
 		os.Exit(Main(append([]string{"yolo"}, os.Args[2:]...)))
 	}
+	// Generated Claude security shims self-exec this test binary in the fixture. The
+	// opt-in marker routes only that subprocess through the real CLI entry point; ordinary
+	// test-binary invocations remain under TestMain and cannot accidentally dispatch.
+	if os.Getenv("YOLO_TEST_CLAUDE_SECURITY_DISPATCH") == "1" &&
+		len(os.Args) > 2 && os.Args[1] == "internal" && os.Args[2] == "claude-security" {
+		os.Exit(Main(os.Args))
+	}
 	if len(os.Args) > 1 && os.Args[1] == testFakeAgentArg {
 		os.Exit(fakeAgentMain())
 	}

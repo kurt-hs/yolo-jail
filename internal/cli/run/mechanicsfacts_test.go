@@ -304,15 +304,25 @@ func TestFreshMechanicsRefreshFollowsStoreAndHostFileDecisions(t *testing.T) {
 	text := string(body)
 	store := strings.Index(text, "storePkgs, storePkgsOK := o.planStorePackages")
 	hostFiles := strings.Index(text, "hostFiles, hfErr = config.LoadHostFiles")
-	refresh := strings.LastIndex(text, "o.refreshJailBriefings(cname")
+	refresh, persist := -1, -1
+	if hostFiles >= 0 {
+		refresh = strings.Index(text[hostFiles:], "o.refreshJailBriefings(cname")
+		if refresh >= 0 {
+			refresh += hostFiles
+			persist = strings.Index(text[refresh:], "writeMechanicsApplied(cname, in.ctxMountsToken, facts)")
+			if persist >= 0 {
+				persist += refresh
+			}
+		}
+	}
 	if !strings.Contains(text, "mechanicsWorkspaceReadonlyFromArgv(o, facts, cfg, runCmd, rt)") ||
 		!strings.Contains(text, "mechanicsHostFileBackings(facts, hostFiles, runCmd, rt, wsState)") ||
 		!strings.Contains(text, "facts.HostLoopback = hostLoopbackFromArgv(runCmd)") ||
 		!strings.Contains(text, "hostNixMountedFromArgv(runCmd)") {
 		t.Fatal("fresh facts no longer consume assembled argv host-file, loopback, and Nix decisions")
 	}
-	if store < 0 || hostFiles < 0 || refresh < 0 || !(store < hostFiles && hostFiles < refresh) {
-		t.Fatalf("fresh mechanics refresh must follow actual store and host-file decisions (store=%d hostFiles=%d refresh=%d)", store, hostFiles, refresh)
+	if store < 0 || hostFiles < 0 || refresh < 0 || persist < 0 || !(store < hostFiles && hostFiles < refresh && refresh < persist) {
+		t.Fatalf("fresh mechanics refresh and applied snapshot must follow actual store and host-file decisions (store=%d hostFiles=%d refresh=%d persist=%d)", store, hostFiles, refresh, persist)
 	}
 }
 
