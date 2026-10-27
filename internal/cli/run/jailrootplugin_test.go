@@ -16,13 +16,18 @@ package run
 // call site deleted.
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 // rootModFiles is a mod as Claude Code's own tutorial lays it out: a manifest declaring no
@@ -135,6 +140,69 @@ func TestAJailNamesAFlatRootModThatCannotArrive(t *testing.T) {
 	}
 }
 
+// Copy the actual test binary outside cmd/go's work tree and invoke the real two-subtest caller in
+// a fresh process. That makes its first Embedded call independent of the parent test binary's cache.
+func TestAJailRefusesARootModWhoseNameIsAPathFirstCall(t *testing.T) {
+	const childEnv = "YOLO_TEST_JAIL_ROOT_MOD_EXTERNAL_FIRSTCALL"
+	if os.Getenv(childEnv) == "1" {
+		return
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(dir, "jailroot-first-call.test")
+	copy, err := os.OpenFile(copyPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(copy, source); err != nil {
+		copy.Close()
+		t.Fatal(err)
+	}
+	if err := copy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(copyPath, info.Mode().Perm()); err != nil {
+		t.Fatal(err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, copyPath,
+		"-test.run=^TestAJailRefusesARootModWhoseNameIsAPath(FirstCall)?$", "-test.count=1", "-test.timeout=50s")
+	cmd.Dir = cwd
+	cmd.Env = make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, childEnv+"=") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, childEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("fresh external test binary failed (%v):\n%s", err, out)
+	}
+}
+
 // THE RESERVED CHILD STILL HOLDS on the new path: a mod that calls itself `synced`, the name
 // packs/claude reserves for Claude Code's sync root, is withheld from ~/.claude/skills and said.
 func TestAJailWithholdsARootModUnderAReservedName(t *testing.T) {
@@ -173,6 +241,13 @@ func TestAJailSendsARootModOnlyToTheAgentItsPackAddresses(t *testing.T) {
 // staging owns, and "synced/<x>" inside the child packs/claude reserves. Both are refused, and the
 // launch names the rename to make.
 func TestAJailRefusesARootModWhoseNameIsAPath(t *testing.T) {
+	// Load the process-lifetime embedded tree before either subtest redirects TMPDIR. An external
+	// test binary keys its shared cache from TMPDIR, so loading it inside the first fixture would
+	// leave the second subtest holding Pack.Roots in that fixture's directory after cleanup.
+	if packs := packload.Embedded(); len(packs) == 0 {
+		t.Fatalf("Embedded() is empty: %v", packload.EmbeddedProblems())
+	}
+
 	for _, tc := range []struct{ label, name string }{
 		{"leaving the staging", "../../zz-escaped-mod"},
 		{"entering a reserved child", "synced/planted"},
