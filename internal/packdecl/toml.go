@@ -146,27 +146,30 @@ func decodeTOML(data []byte, mode manifestReadMode) (*Manifest, []string, []stri
 	}
 	var m *Manifest
 	var skipped []string
+	var retainedIndexes []int
 	switch mode {
 	case manifestStrict:
-		var strict []string
-		m, strict = Decode(encoded)
-		problems = strict
+		m, problems = Decode(encoded)
+		if m != nil {
+			retainedIndexes = make([]int, len(m.Contributes))
+			for i := range retainedIndexes {
+				retainedIndexes[i] = i
+			}
+		}
 	case manifestUse:
-		m, problems, skipped = DecodeForUse(encoded)
+		m, problems, skipped, retainedIndexes = decodeForUseWithIndexes(encoded)
 	case manifestTolerant:
-		m, problems, skipped = DecodeTolerant(encoded)
+		m, problems, skipped, retainedIndexes = decodeTolerantWithIndexes(encoded)
 	}
 	if m == nil {
 		return nil, locateTOMLProblems(problems, groups, root, doc), append(preSkipped, locateTOMLProblems(skipped, groups, root, doc)...)
 	}
 	m.Origin = ManifestOrigin{Format: ManifestFormatTOML, File: ManifestTOMLName}
-	usedGroups := make(map[int]bool, len(groups))
-	for i := range m.Contributes {
-		entry, groupIndex, ok := matchGroupedContribution(m.Contributes[i], groups, usedGroups)
-		if !ok {
+	for i, groupIndex := range retainedIndexes {
+		if i >= len(m.Contributes) || groupIndex < 0 || groupIndex >= len(groups) {
 			continue
 		}
-		usedGroups[groupIndex] = true
+		entry := groups[groupIndex]
 		m.Contributes[i].Origin = m.Origin
 		m.Contributes[i].Location = entry.location
 		m.Contributes[i].Replace = entry.replace
@@ -209,7 +212,7 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 					problems = append(problems, formatManifestLocation(loc, "provider declaration must be a table"))
 					continue
 				}
-				loc := locationFor(doc, []configdoc.Step{{Key: "providers"}, {Key: name}}, "providers."+name)
+				loc := locationForProvider(doc, name)
 				copyFields := cloneMap(fields)
 				replace, err := takeReplace(copyFields)
 				if err != nil {
@@ -267,6 +270,20 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 						delete(copyFields, "set")
 					}
 				}
+				if kind == KindProgram {
+					if err := normalizeProgramDefaults(copyFields); err != nil {
+						problems = append(problems, formatManifestLocation(loc, err.Error()))
+						continue
+					}
+					if err := normalizeBuiltInProviderPlanOff(copyFields); err != nil {
+						problems = append(problems, formatManifestLocation(loc, err.Error()))
+						continue
+					}
+				} else if kind == KindState {
+					if _, authored := copyFields["scope"]; !authored {
+						copyFields["scope"] = "workspace"
+					}
+				}
 				replace, err := takeReplace(copyFields)
 				if err != nil {
 					problems = append(problems, formatManifestLocation(loc, "replace: "+err.Error()))
@@ -288,6 +305,86 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 		out["contributes"] = contributes
 	}
 	return out, groups, problems, skipped
+}
+
+func normalizeBuiltInProviderPlanOff(fields map[string]any) error {
+	declaration, ok := fields["built_in_providers"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	plans, ok := declaration["plans"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, name := range sortedKeys(plans) {
+		value, ok := plans[name].(string)
+		if !ok {
+			continue
+		}
+		if value != "off" {
+			return fmt.Errorf("built_in_providers.plans.%s must be a table or the reserved string %q", name, "off")
+		}
+		plans[name] = nil
+	}
+	return nil
+}
+
+// normalizeProgramDefaults lowers grouped TOML's concise host package hints and pack-tree
+// executable default into the legacy Contribution shape; it never supplies a delivery via.
+func normalizeProgramDefaults(fields map[string]any) error {
+	bin, _ := fields["bin"].(string)
+	install, hasInstall := fields["install"]
+	delete(fields, "install")
+	if _, isFork := fields["fork_of"]; isFork {
+		if hasInstall {
+			return fmt.Errorf("install is not available on a source fork")
+		}
+		return nil
+	}
+
+	packages := make(map[string]string, len(installManagers)+1)
+	defaultPackage := bin
+	if hasInstall {
+		switch value := install.(type) {
+		case string:
+			defaultPackage = value
+		case map[string]any:
+			for _, manager := range sortedKeys(value) {
+				packageName, ok := value[manager].(string)
+				if !ok {
+					return fmt.Errorf("install.%s must be a string", manager)
+				}
+				if manager == "default" {
+					defaultPackage = packageName
+					continue
+				}
+				if !installManagerNames[manager] {
+					return fmt.Errorf("install has unknown manager %q (use default, brew, apt, dnf, pacman, nix, or brew-cask)", manager)
+				}
+				packages[manager] = packageName
+			}
+		default:
+			return fmt.Errorf("install must be a string or table")
+		}
+	}
+	for _, manager := range installManagers {
+		if _, overridden := packages[manager]; !overridden {
+			packages[manager] = defaultPackage
+		}
+	}
+	fields["install_hints"] = packages
+	if fields["via"] == "pack" {
+		if _, authored := fields["run"]; !authored {
+			fields["run"] = bin
+		}
+	}
+	return nil
+}
+
+var installManagers = []string{"brew", "apt", "dnf", "pacman", "nix"}
+
+var installManagerNames = map[string]bool{
+	"brew": true, "apt": true, "dnf": true, "pacman": true, "nix": true, "brew-cask": true,
 }
 
 func isGroupedKind(group string, value any) bool {
@@ -317,6 +414,8 @@ func groupedRename(kind Kind, fields map[string]any) (*fieldRename, string) {
 	scope := ""
 	if kind == KindConfigOverlay {
 		scope = "overlay"
+	} else if kind == KindProgram {
+		scope = "program"
 	}
 	for _, key := range sortedKeys(fields) {
 		if rename, ok := renamedFieldInScope(scope, key); ok {
@@ -802,6 +901,62 @@ func takeReplace(fields map[string]any) (bool, error) {
 	return value, nil
 }
 
+func locationForProvider(doc *configdoc.Document, name string) ManifestLocation {
+	path := []configdoc.Step{{Key: "providers"}, {Key: name}}
+	location := locationFor(doc, path, "providers."+name)
+	if location.Line > 0 {
+		return location
+	}
+	start, found := firstIndexedDescendant(doc, path, valueAtPath(doc.Values, path))
+	if !found {
+		return location
+	}
+	line, column := doc.Index.Position(start)
+	location.Line, location.Column = line, column
+	return location
+}
+
+func firstIndexedDescendant(doc *configdoc.Document, path []configdoc.Step, value any) (int, bool) {
+	var first int
+	found := false
+	consider := func(span configdoc.Span, ok bool, err error) {
+		if err == nil && ok && (!found || span.Start < first) {
+			first, found = span.Start, true
+		}
+	}
+	span, ok, err := doc.Index.Item(path...)
+	consider(span, ok, err)
+	span, ok, err = doc.Index.Table(path...)
+	consider(span, ok, err)
+	span, ok, err = doc.Index.Member(path...)
+	consider(span, ok, err)
+	span, ok, err = doc.Index.Value(path...)
+	consider(span, ok, err)
+	if table, ok := value.(*jsonx.OrderedMap); ok {
+		for _, key := range table.Keys() {
+			childPath := append(append([]configdoc.Step(nil), path...), configdoc.Step{Key: key})
+			child, _ := table.Get(key)
+			childStart, childFound := firstIndexedDescendant(doc, childPath, child)
+			if childFound && (!found || childStart < first) {
+				first, found = childStart, true
+			}
+		}
+	}
+	return first, found
+}
+
+func valueAtPath(root *jsonx.OrderedMap, path []configdoc.Step) any {
+	var current any = root
+	for _, step := range path {
+		table, ok := current.(*jsonx.OrderedMap)
+		if !ok || step.IsIndex {
+			return nil
+		}
+		current, _ = table.Get(step.Key)
+	}
+	return current
+}
+
 func locationFor(doc *configdoc.Document, path []configdoc.Step, key string) ManifestLocation {
 	span, ok, err := doc.Index.Item(path...)
 	if err != nil || !ok {
@@ -837,19 +992,6 @@ func cloneMap(input map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
-}
-
-func matchGroupedContribution(c Contribution, groups []groupedContribution, used map[int]bool) (groupedContribution, int, bool) {
-	for i, group := range groups {
-		if used[i] || group.kind != c.Kind {
-			continue
-		}
-		if stringValue(group.value["name"]) != c.Name || stringValue(group.value["bin"]) != c.Bin || stringValue(group.value["surface"]) != c.Surface || stringValue(group.value["from"]) != c.From || stringValue(group.value["path"]) != c.Path || stringValue(group.value["hook"]) != c.Hook || stringValue(group.value["provider"]) != c.Provider {
-			continue
-		}
-		return group, i, true
-	}
-	return groupedContribution{}, -1, false
 }
 
 func stringValue(value any) string {

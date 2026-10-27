@@ -227,3 +227,24 @@ func TestBuildSourceDropsTheRefAndKeepsTheSubdirectory(t *testing.T) {
 		t.Error("a build source parses as an address, so a source as written could equal it")
 	}
 }
+
+func TestParsePackAddressAllowsOmittedRefButLegacyParseDoesNot(t *testing.T) {
+	raw := "git+https://github.com/acme/yolo-packs//tools"
+	if _, err := Parse(raw); err == nil || !strings.Contains(err.Error(), "missing required ?ref=") {
+		t.Fatalf("legacy Parse(%q) error = %v, want mandatory-ref refusal", raw, err)
+	}
+	addr, err := ParsePackAddress(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addr.Kind != KindGit || addr.Repo != "https://github.com/acme/yolo-packs" || addr.Path != "tools" || addr.Ref != "" {
+		t.Fatalf("ParsePackAddress(%q) = %+v", raw, addr)
+	}
+	explicit, err := Parse(raw + "?ref=trunk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addr.CacheKey() == explicit.CacheKey() {
+		t.Fatalf("default and explicit refs collided in the store: %q", addr.CacheKey())
+	}
+}
