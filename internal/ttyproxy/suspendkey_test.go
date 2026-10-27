@@ -111,7 +111,7 @@ func TestProxyLoopSuspendsOnEscapeEncodedCtrlZ(t *testing.T) {
 	})
 }
 
-func assertProxySuspends(t *testing.T, input string, want bool) {
+func assertProxySuspends(t *testing.T, input string, want bool, afterParentClose ...func(uintptr)) {
 	t.Helper()
 	signal.Ignore(syscall.SIGTSTP)
 	defer signal.Reset(syscall.SIGTSTP)
@@ -141,6 +141,7 @@ func assertProxySuspends(t *testing.T, input string, want bool) {
 	c := exec.Command("sleep", "10")
 	c.Stdin, c.Stdout, c.Stderr = slave, slave, slave
 	if err := c.Start(); err != nil {
+		_ = slave.Close()
 		t.Fatalf("start child: %v", err)
 	}
 	loopDone := make(chan struct{})
@@ -152,7 +153,10 @@ func assertProxySuspends(t *testing.T, input string, want bool) {
 			t.Error("the proxy loop never returned once its child was killed")
 		}
 	}()
-	unix.Close(childSlave)
+	_ = slave.Close()
+	for _, observe := range afterParentClose {
+		observe(slave.Fd())
+	}
 
 	cooked, err := unix.IoctlGetTermios(hostSlave, unix.TCGETS)
 	if err != nil {
