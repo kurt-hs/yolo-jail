@@ -497,6 +497,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 |---|---|---|
 | IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../reference/attach-skew.md#why-its-this-way) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
+| [IC3 — selected GPU graphics-driver tree](../design/gpu-graphics.md) | A / X | Build from the [completed plan](../design/gpu-graphics-plan.md); a real Linux GPU host still owes tree and Mesa-version verification, and the separate card-node ioctl remains unproven. |
 | IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). The original test changes and the doorway, housekeeping and floor-test repairs remain in main ancestry; portable root-sudo scanner fixes are in `cab34b522` and `201c4009e`. The earlier `4e7b9b92b` commit was documentation-only. Native-Mac reruns remain unverified. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness
