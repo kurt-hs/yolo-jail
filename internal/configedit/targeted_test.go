@@ -129,6 +129,9 @@ func TestApplyTargetedUsesProjectForBothScopeDespiteUserAndLocalOrigins(t *testi
 		t.Fatalf("reported path = %s, want %s", result.Path, project)
 	}
 	projectAfter, err := os.ReadFile(project)
+	if err != nil {
+		t.Fatal(err)
+	}
 	assertMatrixDocumentValue(t, projectAfter, configdoc.TOML, []string{"machine", "resources", "cpus"}, int64(4))
 	effective, err := config.LoadReadableConfig(workspace, true, nil)
 	if err != nil {

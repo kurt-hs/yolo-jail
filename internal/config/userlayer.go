@@ -112,32 +112,6 @@ func ValidateUserLayer(path string) string {
 	return ""
 }
 
-// applyUserLayer merges the --user-layer file OVER a user-scope config, at user-level
-// precedence. Returns base unchanged when no layer is set or it cannot be read.
-//
-// PRECEDENCE, stated exactly: the layer sits at user level, so a WORKSPACE config still
-// wins over it (LoadConfig merges workspace over user, and this only changes the user
-// half). Within the user level the layer wins over config.jsonc and its includes, which is
-// what "layer this in as if it were user-level" has to mean for the flag to be useful —
-// a layer that lost to the file it is meant to adjust could not adjust anything.
-//
-// The provenance (sources.go) is folded the same way, so a refusal of a key the layer wrote
-// names the layer.
-func applyUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode) {
-	path := UserLayerPath()
-	if path == "" {
-		return base, baseNode
-	}
-	layer, layerNode, err := loadWithIncludes(path, "--user-layer "+path, false, func(string) {}, nil, record, readAt{})
-	if err != nil || layer == nil || layer.Len() == 0 {
-		return base, baseNode
-	}
-	if base == nil {
-		base = jsonx.NewOrderedMap()
-	}
-	return mergeConfig(base, layer, baseNode, layerNode)
-}
-
 // UserScopeConfig is the standard format-aware user-scope read: the selected user file,
 // includes, config.d fragments, inherited launch layer and explicit --user-layer.
 func UserScopeConfig(strict bool, warn Warn) (*jsonx.OrderedMap, error) {
@@ -231,14 +205,6 @@ func loadReadableUserScopeWithInputUse(path string, strict bool, warn Warn, reco
 	return cfg, node, nil
 }
 
-func applyReadableUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	return applyReadableUserLayerWithReadInput(base, baseNode, record, nil)
-}
-
-func applyReadableUserLayerWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
-	return applyReadableUserLayerWithInputUse(base, baseNode, record, input, nil)
-}
-
 func applyReadableUserLayerWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	path := UserLayerPath()
 	if path == "" {
@@ -275,36 +241,6 @@ func InheritedLaunchPath() string {
 		return toml
 	}
 	return filepath.Join(dir, "inherited-launch.jsonc")
-}
-
-// applyInheritedLaunch merges the inherited nested-launch file UNDER config.jsonc.
-//
-// WHY THIS EXISTS, and it was a real defect caught by running two real nesting levels: the
-// host writes this file (run/inheritscope.go) but nothing read it, so its keys —
-// `packages`, `env_sources`, `resources`, `network`, and the rest of the launch composition —
-// reached a jail and stopped there. Measured: at depth 2 the nested file had LOST `packages`
-// and `env_sources` relative to depth 1, because depth 1's effective config never contained
-// them. That is precisely the "a rule changes with nesting" failure R6 forbids, and it made
-// R2's whole file inert.
-//
-// PRECEDENCE: UNDER config.jsonc, not over it. The inherited file is what the OUTER scope
-// handed down; a jail's own config.jsonc (and any --user-layer on top) is the more local
-// statement and must win — the same direction as user-under-workspace one level up. The
-// provenance (sources.go) is folded the same way, so a refused key the file carries names it.
-func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool) (*jsonx.OrderedMap, *srcNode) {
-	return applyInheritedLaunchWithReadInput(base, baseNode, record, readable, clearEmptyLists, nil)
-}
-
-func applyInheritedLaunchWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode) {
-	return applyInheritedLaunchWithInputUse(base, baseNode, record, readable, clearEmptyLists, input, nil)
-}
-
-func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode) {
-	result, node, err := applyInheritedLaunchWithStrictInputUse(base, baseNode, record, readable, clearEmptyLists, input, inputUsed, false)
-	if err != nil {
-		return base, baseNode
-	}
-	return result, node
 }
 
 func inheritedLaunchPathForRead(strict bool) (string, error) {

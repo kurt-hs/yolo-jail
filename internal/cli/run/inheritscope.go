@@ -167,24 +167,6 @@ func inheritScopeFilesWithSelector(effective *jsonx.OrderedMap, src *config.Sour
 	return files, unknown, nil
 }
 
-// inheritedScope renders this launch's generated user-scope files (inheritScopeFiles) and says
-// what went wrong with the render, for every backend's delivery: the container path mounts each
-// file (userConfigMountArgs) and the macos-user arm lays it into the home overlay
-// (macosUserInheritedScope). A render that failed delivers nothing, and says so.
-//
-// stamped puts the launch time in each header (inheritStamp). A delivery reused across launches
-// while its bytes are unchanged passes false, because a timestamp makes every launch's bytes new.
-func (o *Options) inheritedScope(rt string, stamped bool) []inheritScopeFile {
-	files, err := o.inheritedScopeWithSelector(rt, stamped, nil)
-	if err == nil {
-		return files
-	}
-	o.pr(o.Stderr).print("[yellow]Warning: could not render this jail's inherited user config (" +
-		err.Error() + ") — in-jail `yolo check`, `pack` and `loopholes` will see no " +
-		"user scope[/yellow]")
-	return nil
-}
-
 func (o *Options) inheritedScopeWithSelector(rt string, stamped bool, selectLegacy func(config.InheritScope, configdoc.Format) (bool, error)) ([]inheritScopeFile, error) {
 	out := o.pr(o.Stderr)
 	stamp := ""

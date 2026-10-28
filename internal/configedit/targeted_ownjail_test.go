@@ -48,7 +48,7 @@ func TestResolveAndApplyTargetedOwnJailUsesAuthoredProjectAndLocal(t *testing.T)
 			t.Setenv("YOLO_WORKSPACE", "")
 			t.Setenv(config.UserLayerEnv, "")
 			user := filepath.Join(home, ".config", "yolo-jail", tc.userName)
-			userOverride := filepath.Join(filepath.Dir(user), strings.Replace(tc.userName, filepath.Ext(tc.userName), "", 1)+"-host-overrides"+filepath.Ext(tc.userName))
+			var userOverride string
 			// Keep the include spelling identical to the authored filename.
 			if tc.format == configdoc.JSONC {
 				userOverride = filepath.Join(filepath.Dir(user), "host-overrides.jsonc")

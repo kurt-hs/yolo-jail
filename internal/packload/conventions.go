@@ -30,10 +30,6 @@ func discoverHomeFilesFiltered(root string, followLocalLinks bool, only, exclude
 	return discoverHomeFilesWithOps(root, hostPackTreeOps(), only, exclude)
 }
 
-func discoverHomeFilesFS(fsys fs.FS) ([]packdecl.Contribution, []string) {
-	return discoverHomeFilesWithOps(".", fsPackTreeOps(fsys), nil, nil)
-}
-
 func discoverHomeFilesWithOps(root string, ops packTreeOps, only, exclude []string) ([]packdecl.Contribution, []string) {
 	homeRoot := ops.join(root, "home")
 	info, err := ops.lstat(homeRoot)
@@ -235,10 +231,6 @@ func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []
 	return discoverOverlayFilesWithOps(root, followLocalLinks, hostPackTreeOps(), nil, nil)
 }
 
-func discoverOverlayFilesFS(fsys fs.FS) ([]OverlayFile, []string) {
-	return discoverOverlayFilesWithOps(".", false, fsPackTreeOps(fsys), nil, nil)
-}
-
 func discoverOverlayFilesWithOps(root string, followLocalLinks bool, ops packTreeOps, only, exclude []string) ([]OverlayFile, []string) {
 	dir := ops.join(root, "overlays")
 	info, err := ops.lstat(dir)
@@ -352,10 +344,6 @@ func discoverManifestWith(root string, stat func(string) (os.FileInfo, error), r
 		return nil, "", err.Error()
 	}
 	return data, name, ""
-}
-
-func pathExists(path string) (bool, error) {
-	return pathExistsWith(path, os.Lstat)
 }
 
 func pathExistsWith(path string, stat func(string) (os.FileInfo, error)) (bool, error) {

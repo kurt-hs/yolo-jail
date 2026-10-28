@@ -299,7 +299,7 @@ func resolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 			authored = append([]configdoc.Step(nil), key...)
 		}
 		if choice.Kind == EditTargetAutomatic && !mapped && editTargetPathHasIndex(key) {
-			return ResolvedEditTarget{}, fmt.Errorf("User config key %s has no consumed authored source for its indexed target", strings.Join(parts, "."))
+			return ResolvedEditTarget{}, fmt.Errorf("user config key %s has no consumed authored source for its indexed target", strings.Join(parts, "."))
 		}
 	} else {
 		name := WorkspaceConfigName
@@ -658,7 +658,7 @@ func userSectionTarget(sources *Sources, key []configdoc.Step, files map[string]
 			physical = filepath.Clean(physical)
 			entry, ok := files[physical]
 			if !ok {
-				return editTargetFile{}, nil, false, fmt.Errorf("User section source %s was not consumed by the scoped graph", f.path)
+				return editTargetFile{}, nil, false, fmt.Errorf("user section source %s was not consumed by the scoped graph", f.path)
 			}
 			entry.logical = f.path
 			if !bindAuthoredPath {
@@ -666,19 +666,19 @@ func userSectionTarget(sources *Sources, key []configdoc.Step, files map[string]
 			}
 			if lastIndex >= 0 {
 				if ancestors[n].pathLength <= lastIndex {
-					return editTargetFile{}, nil, false, fmt.Errorf("User indexed target has no consumed authored element at %s", strings.Join(stepPathNames(key), "."))
+					return editTargetFile{}, nil, false, fmt.Errorf("user indexed target has no consumed authored element at %s", strings.Join(stepPathNames(key), "."))
 				}
 				if err := requireUniqueIndexedOrigin(selected); err != nil {
 					return editTargetFile{}, nil, false, err
 				}
 				if countEditTargetIndices(origin.documentSteps) < countEditTargetIndices(key[:ancestors[n].pathLength]) {
-					return editTargetFile{}, nil, false, fmt.Errorf("User indexed target has no authored index mapping at %s", strings.Join(stepPathNames(key), "."))
+					return editTargetFile{}, nil, false, fmt.Errorf("user indexed target has no authored index mapping at %s", strings.Join(stepPathNames(key), "."))
 				}
 			}
 			authored := append([]configdoc.Step(nil), origin.documentSteps...)
 			for _, step := range key[ancestors[n].pathLength:] {
 				if step.IsIndex {
-					return editTargetFile{}, nil, false, fmt.Errorf("User target has no consumed authored source for an indexed suffix")
+					return editTargetFile{}, nil, false, fmt.Errorf("user target has no consumed authored source for an indexed suffix")
 				}
 				authored = append(authored, step)
 			}
@@ -737,7 +737,7 @@ func requireUniqueIndexedOrigin(node *srcNode) error {
 			continue
 		}
 		if physical != physicalPath || !sameEditTargetPath(origin.documentSteps, documentPath) {
-			return fmt.Errorf("User indexed element has ambiguous authored sources; refusing to choose one")
+			return fmt.Errorf("user indexed element has ambiguous authored sources; refusing to choose one")
 		}
 	}
 	return nil

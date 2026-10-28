@@ -25,7 +25,7 @@ func applyProspectiveTargeted(workspace string, target config.ResolvedEditTarget
 	if err != nil {
 		return nil, fmt.Errorf("plan prospective TOML edit: %w", err)
 	}
-	validatedSnapshot, err := validateProspectiveTarget(workspace, target, plan.Updated, true, options)
+	_, err = validateProspectiveTarget(workspace, target, plan.Updated, true, options)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func applyProspectiveTargeted(workspace string, target config.ResolvedEditTarget
 	if err := target.VerifyProspectiveAbsence(); err != nil {
 		return nil, err
 	}
-	validatedSnapshot, err = validateProspectiveTarget(workspace, target, plan.Updated, false, options)
+	validatedSnapshot, err := validateProspectiveTarget(workspace, target, plan.Updated, false, options)
 	if err != nil {
 		return nil, err
 	}

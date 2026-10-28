@@ -1040,15 +1040,6 @@ func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs
 	}
 }
 
-// brokeredGrantProblems is every problem in a workspace `brokered` value's `grants` entries: the
-// errors, the warnings (none today), and the errors that depend on the user's
-// own config (a kind it does not allow), which the caller weakens in a jail. A kind the source
-// does not define is known only through the resolver: with none, or for a source no known
-// loophole brokers, that check is skipped (UnbrokeredSourceWarnings names such a source).
-func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userKind []string) {
-	return brokeredGrantProblemsWithUser(v, resolver, UserScopeConfigOrEmpty())
-}
-
 func brokeredGrantProblemsWithUser(v any, resolver LoopholeResolver, user *jsonx.OrderedMap) (errs, warns, userKind []string) {
 	sources, ok := asMap(v)
 	if !ok {

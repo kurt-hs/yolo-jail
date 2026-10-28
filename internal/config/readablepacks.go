@@ -7,19 +7,9 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
-	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
-
-// checkReadablePacks lowers format-2 authored handles without accepting legacy path
-// sugar. A legacy-origin layer entry keeps its original grammar through checkPackEntry.
-func checkReadablePacks(raw any, definitions map[string]packsrc.SourceDefinition, sources *Sources) ([]PackEntry, []string) {
-	if _, ok := asList(raw); !ok {
-		return nil, []string{"config.packs: expected a list of pack handles"}
-	}
-	return checkReadablePacksFromEmbeddedNames(raw, definitions, sources, packload.EmbeddedNames())
-}
 
 func checkReadablePacksFromEmbeddedNames(raw any, definitions map[string]packsrc.SourceDefinition, sources *Sources, embeddedNames []string) ([]PackEntry, []string) {
 	list, ok := asList(raw)

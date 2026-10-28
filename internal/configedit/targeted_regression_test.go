@@ -516,6 +516,9 @@ func TestApplyTargetedPreservesEmptyTOMLPreimageForStaleChecks(t *testing.T) {
 				t.Fatalf("resolved empty preimage must be detached non-nil empty: %#v", expected)
 			}
 			expected = append(expected, 'x')
+			if len(expected) != 1 || expected[0] != 'x' {
+				t.Fatal("could not mutate detached expected bytes")
+			}
 			if again := target.ExpectedBytes(); again == nil || len(again) != 0 {
 				t.Fatalf("expected-byte accessor leaked mutable storage: %#v", again)
 			}

@@ -650,11 +650,6 @@ func LoadConfigWithoutWorkspaceFileWithSources(workspace string, strict bool, wa
 	return m, sourcesOf(n), err
 }
 
-// loadConfig is LoadConfig, with the provenance beside it when record is set.
-func loadConfig(workspace string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	return composeConfig(workspace, strict, warn, record, true)
-}
-
 // composeConfig is loadConfig, with the per-workspace file merged last when withWorkspaceFile
 // is set.
 func composeConfig(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool) (*jsonx.OrderedMap, *srcNode, error) {

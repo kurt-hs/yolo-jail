@@ -827,11 +827,6 @@ func UnmarshalPacks(wire string) ([]PackEntry, error) {
 	return entries, nil
 }
 
-// embeddedPackName resolves a bare entry to an embedded pack name.
-func embeddedPackName(s string) (string, bool) {
-	return embeddedPackNameFromNames(s, packload.EmbeddedNames())
-}
-
 func embeddedPackNameFromNames(s string, names []string) (string, bool) {
 	for _, n := range names {
 		if n == s {
@@ -848,15 +843,6 @@ func embeddedPackNameFromNames(s string, names []string) (string, bool) {
 // pack is never resolved through the pack store, so a URL suggesting a path would invite a
 // reader to look for one.
 func embeddedSourceFor(name string) string { return "embedded:" + name }
-
-// unknownEmbeddedMessage explains a bare entry that matched no embedded pack.
-//
-// It lists what IS available, because the failure is otherwise indistinguishable from a
-// malformed URL — and the most likely cause is a typo in a tool name, where showing the
-// real list is the whole fix.
-func unknownEmbeddedMessage(s string) string {
-	return unknownEmbeddedMessageFromNames(s, packload.EmbeddedNames())
-}
 
 func unknownEmbeddedMessageFromNames(s string, names []string) string {
 	// A PATH-SHAPED entry is a forgotten scheme, not a misspelled pack name. Offering a

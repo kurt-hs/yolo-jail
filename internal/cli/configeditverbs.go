@@ -18,12 +18,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
-// runConfigEdit implements the generic readable-config edit verbs. Public dispatch and help are
-// owned by the serial CLI integration; callers pass the selected subcommand as args[0].
-func runConfigEdit(args []string) int {
-	return runConfigEditWithPostWriteCheck(args, os.Stdout, os.Stderr, configEditWorkspace())
-}
-
 func configEditWorkspace() string {
 	if config.InJail() {
 		return config.JailWorkspace()

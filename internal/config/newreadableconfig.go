@@ -253,14 +253,6 @@ func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, er
 	return filepath.Join(dir, name), filepath.Join(dir, name), name == paths.UserConfigTOMLName, nil
 }
 
-func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	return loadUserConfigFragmentsWithReadInput(base, baseNode, dir, strict, warn, seen, record, nil)
-}
-
-func loadUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
-	return loadUserConfigFragmentsWithInputUse(base, baseNode, dir, strict, warn, seen, record, input, nil)
-}
-
 func loadUserConfigFragmentsWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	fragmentDir := filepath.Join(dir, "config.d")
 	entries, err := os.ReadDir(fragmentDir)
@@ -312,14 +304,6 @@ func loadUserConfigFragmentsWithInputUse(base *jsonx.OrderedMap, baseNode *srcNo
 		merged, mergedNode = mergeReadableConfig(merged, fragment, mergedNode, node, nil)
 	}
 	return merged, mergedNode, nil
-}
-
-func mergeUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	return mergeUserConfigFragmentsWithReadInput(base, baseNode, dir, strict, warn, seen, record, nil)
-}
-
-func mergeUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
-	return mergeUserConfigFragmentsWithInputUse(base, baseNode, dir, strict, warn, seen, record, input, nil)
 }
 
 func mergeUserConfigFragmentsWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {

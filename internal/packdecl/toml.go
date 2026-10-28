@@ -912,14 +912,14 @@ func DecodeProviderTable(root *jsonx.OrderedMap) (ProviderTable, error) {
 	if !present {
 		return result, nil
 	}
-	providers, ok := raw.(*jsonx.OrderedMap)
+	_, ok := raw.(*jsonx.OrderedMap)
 	if !ok {
 		return result, fmt.Errorf("providers must be a table keyed by provider name")
 	}
 	orderedRoot, _ := jsonx.DeepCopy(root).(*jsonx.OrderedMap)
 	orderedProvidersRaw, _ := orderedRoot.Get("providers")
 	orderedProviders := orderedProvidersRaw.(*jsonx.OrderedMap)
-	providers = orderedProviders
+	providers := orderedProviders
 	doc := &configdoc.Document{Values: orderedRoot}
 	for _, name := range providers.Keys() {
 		value, _ := orderedProviders.Get(name)
@@ -931,7 +931,7 @@ func DecodeProviderTable(root *jsonx.OrderedMap) (ProviderTable, error) {
 			orderedProviders.Delete(name)
 			continue
 		}
-		fields, ok := orderedProviderMap(value)
+		_, ok := orderedProviderMap(value)
 		if !ok {
 			return ProviderTable{}, fmt.Errorf("providers.%s: provider declaration must be a table", name)
 		}
@@ -976,7 +976,7 @@ func DecodeProviderTable(root *jsonx.OrderedMap) (ProviderTable, error) {
 				result.DisabledVariants[name] = variantsOff
 			}
 		}
-		fields, _ = orderedProviderMap(value)
+		fields, _ := orderedProviderMap(value)
 		if unknown := providerShapeUnknownField(fields); unknown != "" {
 			return ProviderTable{}, fmt.Errorf("unknown provider model field %q", "providers."+name+"."+unknown)
 		}
