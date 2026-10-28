@@ -1,6 +1,7 @@
 package run
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +13,11 @@ import (
 
 func TestOrdinaryProgramCaptureCallerClassifiesDecodedCAAndProxyInputs(t *testing.T) {
 	for _, tc := range []struct {
-		name, config, dotenv, wantKey, wantReason string
-		wantUnsupported                           bool
+		name, config, dotenv, wantKey, wantReason, wantMiseTools string
+		wantUnsupported                                          bool
 	}{
 		{name: "no-profile-baseline", config: `{}`},
+		{name: "legacy mise override reaches ordinary preparation", config: `{"mise_tools":{"probe":"1.0.0"}}`, wantMiseTools: `"probe":"1.0.0"`},
 		{name: "inline-lowercase-proxy", config: `{"env_sources":[{"https_proxy":"http://proxy.invalid:3128"}]}`, wantKey: "https_proxy", wantUnsupported: true},
 		{name: "inline-mixed-case-ca", config: `{"env_sources":[{"sSl_CeRt_FiLe":"/fixture/custom-ca.pem"}]}`, wantKey: "sSl_CeRt_FiLe", wantUnsupported: true},
 		{name: "dotenv-proxy", config: `{"env_sources":[".capture.env"]}`, dotenv: "hTtPs_PrOxY=http://proxy.invalid:3128\n", wantKey: "hTtPs_PrOxY", wantUnsupported: true},
@@ -63,6 +65,13 @@ func TestOrdinaryProgramCaptureCallerClassifiesDecodedCAAndProxyInputs(t *testin
 			}
 			if request.Env == nil || request.Fingerprint == "" || request.Act == nil || request.Platform == "" {
 				t.Fatalf("caller did not build a normal production request: %+v", request)
+			}
+			if tc.wantMiseTools != "" {
+				wire, present := request.Env.Lookup("YOLO_MISE_TOOLS")
+				var mise map[string]string
+				if !present || json.Unmarshal([]byte(wire), &mise) != nil || mise["probe"] != "1.0.0" {
+					t.Fatalf("standard-reader legacy mise override not passed to program preparation: %q, present=%t", wire, present)
+				}
 			}
 			if wire, ok := envValue(argv, entrypoint.ProgramCapturesEnv); ok && wire != "{}" {
 				t.Fatalf("customized consumer runtime received a sealed capture: %s", wire)

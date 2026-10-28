@@ -13,6 +13,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/reporoot"
 )
@@ -66,6 +67,48 @@ func selectedNPMUser(t *testing.T, f *selectedNPMFixture, updates bool) run.Prog
 		t.Fatalf("user/runtime fingerprint mismatch %s %s %v", userFP, fingerprint, err)
 	}
 	return run.ProgramCaptureRequest{Packs: selected.packs, Env: ordinarySelectionEnvironment(cfg, selected.packs), Runtime: "podman", Platform: captureJailPlatform(), Fingerprint: fingerprint, RepoRoot: f.root, Workspace: workspace, Act: &run.ActInterrupt{}}
+}
+
+func TestStandardReaderLegacyMiseOverrideExcludesNPMProgramFromFreshPreparation(t *testing.T) {
+	f := newSelectedNPMFixture(t)
+	req := selectedNPMUser(t, f, false)
+	writeFile(t, filepath.Join(req.Workspace, paths.WorkspaceConfigLegacyJSONCName), `{"mise_tools":{"probe":"1.2.3"}}`)
+
+	cfg, err := config.LoadConfig(req.Workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ := cfg.Get("install")
+	installMap, ok := install.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("standard reader omitted canonical install table: %#v", install)
+	}
+	mise, present := installMap.Get("mise")
+	miseMap, ok := mise.(*jsonx.OrderedMap)
+	if !present || !ok {
+		t.Fatalf("standard reader did not lower workspace mise_tools into install.mise: %#v", cfg)
+	}
+	pin, pinPresent := miseMap.Get("probe")
+	if !pinPresent || pin != "1.2.3" {
+		t.Fatalf("standard reader did not preserve the workspace mise pin: %#v", cfg)
+	}
+	if _, legacyPresent := cfg.Get("mise_tools"); legacyPresent {
+		t.Fatalf("standard reader retained the legacy mise_tools root: %#v", cfg)
+	}
+
+	req.Env = ordinarySelectionEnvironment(cfg, req.Packs)
+	req.Fresh = true
+	vector, err := selectedOrdinaryInputs(req.Env, req.Packs, entrypoint.ProgramFreshRefresh, req.Platform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vector) != 0 {
+		t.Fatalf("fresh ordinary preparation selected program overridden by the workspace's mise tool: %+v", vector)
+	}
+	prepared, err := prepareOrdinaryForLaunch(req, io.Discard)
+	if err != nil || len(prepared) != 0 {
+		t.Fatalf("fresh launch preparation = %v, %v; want no unnecessary preparation/refusal", prepared, err)
+	}
 }
 
 func selectedNPMSharedWorker(t *testing.T) *sync.WaitGroup {

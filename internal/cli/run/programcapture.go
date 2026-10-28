@@ -93,7 +93,12 @@ func (o *Options) prepareOrdinaryPrograms(cfg *jsonx.OrderedMap, rt, repoRoot st
 		return 0
 	}
 	_, servers := agentServerTables(cfg, false, packs)
-	e := entrypoint.NewEnv(map[string]string{"YOLO_MISE_TOOLS": jsonDumpsOrEmptyObj(cfgMap(cfg, "mise_tools")), "YOLO_MCP_SERVERS": jsonDumpsOrEmptyObj(servers)})
+	miseTools := cfgMap(cfgMap(cfg, "install"), "mise")
+	if miseTools == nil {
+		// Direct callers that have not crossed the format-aware reader retain the legacy shape.
+		miseTools = cfgMap(cfg, "mise_tools")
+	}
+	e := entrypoint.NewEnv(map[string]string{"YOLO_MISE_TOOLS": jsonDumpsOrEmptyObj(miseTools), "YOLO_MCP_SERVERS": jsonDumpsOrEmptyObj(servers)})
 	reason := OrdinaryRuntimeUnsupported(cfg, o.Getenv("YOLO_STORE_PACKAGES") == "1")
 	if channel != nil {
 		compositions := []packload.EnvComposition{channel.scope.SharedEnv()}
