@@ -170,6 +170,22 @@ func TestDiscoverCarriesOwningPackFromSelectedModule(t *testing.T) {
 	}
 }
 
+func TestDiscoverRejectsSameCanonicalNameFromDifferentSelectedPacks(t *testing.T) {
+	root := t.TempDir()
+	modules := make([]PackModule, 0, 2)
+	for _, owner := range []string{"git-owner-a", "git-owner-b"} {
+		module := mkdir(t, filepath.Join(root, owner, "git-broker"))
+		writeManifest(t, module, map[string]any{"name": "git-broker", "description": "selected broker"})
+		modules = append(modules, PackModule{Dir: module, Pack: owner, HostExecApproved: true})
+	}
+	loaded := Discover(DiscoverOptions{IncludeDisabled: true, PackModules: modules})
+	for _, loophole := range loaded {
+		if loophole.Name == "git-broker" {
+			t.Fatalf("conflicting selected owners resolved to pack %q; a same-name broker alias must be rejected before overwrite", loophole.Pack)
+		}
+	}
+}
+
 func TestLoadsMinimalManifest(t *testing.T) {
 	md := modsDir(t)
 	mod := mkdir(t, filepath.Join(md, "my-mod"))

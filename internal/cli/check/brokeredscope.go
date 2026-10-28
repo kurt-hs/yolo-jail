@@ -30,12 +30,16 @@ func brokeredScopeForCheck(workspace string, merged *jsonx.OrderedMap, rt string
 			Brokered: *lp.Brokered, Settings: lp.Settings})
 	}
 	selected := make([]config.ReadablePackDeclaration, 0)
+	selectedBrokers := make([]config.ReadableSelectedBroker, 0)
 	for _, lp := range set.All() {
 		if lp.Source == loopholes.SourcePack {
 			selected = append(selected, config.ReadablePackDeclaration{Pack: lp.Pack, Settings: lp.Settings})
+			if lp.Brokered != nil && lp.Brokered.ReadCapability != "" {
+				selectedBrokers = append(selectedBrokers, config.ReadableSelectedBroker{Pack: lp.Pack, Label: lp.Name, Brokered: *lp.Brokered})
+			}
 		}
 	}
-	return config.NewSelectedScopeCheck(workspace, brokers, read, selected)
+	return config.NewSelectedScopeCheck(workspace, brokers, read, selected, selectedBrokers)
 }
 
 func scopeSourcesOf(s *config.ScopeCheck) []config.ScopeSource {

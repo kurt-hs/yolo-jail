@@ -45,12 +45,16 @@ func (o *Options) brokeredScopeCheck(rt string, cfg *jsonx.OrderedMap, read *con
 			Brokered: *lp.Brokered, Settings: lp.Settings})
 	}
 	selected := make([]config.ReadablePackDeclaration, 0)
+	selectedBrokers := make([]config.ReadableSelectedBroker, 0)
 	for _, lp := range set.All() {
 		if lp.Source == loopholes.SourcePack {
 			selected = append(selected, config.ReadablePackDeclaration{Pack: lp.Pack, Settings: lp.Settings})
+			if lp.Brokered != nil && lp.Brokered.ReadCapability != "" {
+				selectedBrokers = append(selectedBrokers, config.ReadableSelectedBroker{Pack: lp.Pack, Label: lp.Name, Brokered: *lp.Brokered})
+			}
 		}
 	}
-	check := config.NewSelectedScopeCheck(o.Workspace, brokers, read, selected)
+	check := config.NewSelectedScopeCheck(o.Workspace, brokers, read, selected, selectedBrokers)
 	for _, s := range check.Sources {
 		if s.Read.Problem != "" {
 			// Said at the gate, whether or not the approved scope differs: a scope that reads

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
@@ -23,10 +24,10 @@ func (e *ReadableAuthorityError) Unwrap() error { return e.Cause }
 // scope producer. Callers opt in by passing the selected source declaration; legacy callers keep
 // their current read path until their runtime handoff supplies that declaration.
 func readableScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead) (*ScopeCheck, bool) {
-	return readableScopeCheckWithSettings(workspace, brokers, read, nil, false)
+	return readableScopeCheckWithSettings(workspace, brokers, read, nil, nil, false)
 }
 
-func readableScopeCheckWithSettings(workspace string, brokers []ScopeBroker, read *WorkspaceRead, selectedSettings []ReadablePackDeclaration, requireIdentity bool) (*ScopeCheck, bool) {
+func readableScopeCheckWithSettings(workspace string, brokers []ScopeBroker, read *WorkspaceRead, selectedSettings []ReadablePackDeclaration, selectedDeclarations []ReadableBrokerDeclaration, requireIdentity bool) (*ScopeCheck, bool) {
 	if read == nil || read.Config == nil {
 		return nil, false
 	}
@@ -62,22 +63,35 @@ func readableScopeCheckWithSettings(workspace string, brokers []ScopeBroker, rea
 			selectedPacks = append(selectedPacks, pack.Pack)
 		}
 	}
-	for _, broker := range brokers {
-		if !selectedSeen[broker.Readable.Pack] {
-			if requireIdentity {
-				return readableScopeFailure(workspace, brokers, fmt.Errorf("broker %q owning pack %q is absent from the resolved selected set", broker.Source, broker.Readable.Pack)), true
+	declarations := make([]ReadableBrokerDeclaration, 0, len(selectedDeclarations)+len(brokers))
+	if requireIdentity {
+		for _, declaration := range selectedDeclarations {
+			if declaration.Pack == "" || !selectedSeen[declaration.Pack] {
+				return readableScopeFailure(workspace, brokers, fmt.Errorf("selected broker declaration lacks selected-pack provenance")), true
 			}
-			selectedSeen[broker.Readable.Pack] = true
-			selectedPacks = append(selectedPacks, broker.Readable.Pack)
+			declarations = append(declarations, readableBrokerDeclaration(declaration.Pack, declaration.Label, declaration.Brokered, nil))
 		}
-	}
-	declarations := make([]ReadableBrokerDeclaration, 0, len(brokers))
-	for _, broker := range brokers {
-		declaration := *broker.Readable
-		if !selectedSeen[declaration.Pack] {
-			return readableScopeFailure(workspace, brokers, fmt.Errorf("broker %q owning pack %q is absent from the resolved selected set", broker.Source, declaration.Pack)), true
+		for _, broker := range brokers {
+			matched := false
+			for _, declaration := range declarations {
+				if declaration.Pack == broker.Readable.Pack && declaration.Brokered.Source == broker.Source && sameReadableBrokerMetadata(*broker.Readable, declaration) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return readableScopeFailure(workspace, brokers, fmt.Errorf("starting broker %q has no matching canonical declaration in the resolved selected set", broker.Source)), true
+			}
 		}
-		declarations = append(declarations, declaration)
+	} else {
+		for _, broker := range brokers {
+			declaration := *broker.Readable
+			if !selectedSeen[declaration.Pack] {
+				selectedSeen[declaration.Pack] = true
+				selectedPacks = append(selectedPacks, declaration.Pack)
+			}
+			declarations = append(declarations, declaration)
+		}
 	}
 	detachedSettings := make([]ReadablePackDeclaration, len(selectedSettings))
 	for i, pack := range selectedSettings {
@@ -100,12 +114,45 @@ func readableScopeCheckWithSettings(workspace string, brokers []ScopeBroker, rea
 		return readableScopeFailure(workspace, brokers, err), true
 	}
 	collectLegacyReadableRepositories(&plan, read, brokers)
+	filterReadablePlanToActiveBrokers(&plan, brokers)
 	gate, err := ProduceReadableGateInput(workspace, plan)
 	if err != nil {
 		return readableScopeFailure(workspace, brokers, err), true
 	}
 	applyLegacyReadableWorkspace(read, user, brokers, &gate)
 	return scopeCheckFromReadable(workspace, brokers, gate), true
+}
+
+func sameReadableBrokerMetadata(a, b ReadableBrokerDeclaration) bool {
+	return a.Pack == b.Pack && a.Label == b.Label && a.ReadCapability == b.ReadCapability &&
+		reflect.DeepEqual(a.Brokered, b.Brokered) && reflect.DeepEqual(a.KindCapabilities, b.KindCapabilities) &&
+		reflect.DeepEqual(a.PendingCapabilities, b.PendingCapabilities)
+}
+
+func filterReadablePlanToActiveBrokers(plan *ReadableAllowancePlan, brokers []ScopeBroker) {
+	if plan == nil {
+		return
+	}
+	active := make(map[string]bool, len(brokers))
+	for _, broker := range brokers {
+		active[broker.Source] = true
+	}
+	sources := plan.Sources[:0]
+	for _, source := range plan.Sources {
+		if active[source.Source] {
+			sources = append(sources, source)
+		}
+	}
+	plan.Sources = sources
+	requests := plan.Requests[:0]
+	for _, request := range plan.Requests {
+		path := strings.TrimPrefix(request.Path, "requests.")
+		source, _, found := strings.Cut(path, ".")
+		if found && active[source] {
+			requests = append(requests, request)
+		}
+	}
+	plan.Requests = requests
 }
 
 func readableScopeFailure(workspace string, brokers []ScopeBroker, cause error) *ScopeCheck {

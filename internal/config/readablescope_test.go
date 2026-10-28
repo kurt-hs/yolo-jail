@@ -69,7 +69,7 @@ func TestSelectedScopeFailsClosedForMissingAndConflictingPackProvenance(t *testi
 				t.Fatal(err)
 			}
 			selected := []ReadablePackDeclaration{{Pack: "git-owner"}}
-			check := NewSelectedScopeCheck(workspace, []ScopeBroker{tc.broker}, read, selected)
+			check := NewSelectedScopeCheck(workspace, []ScopeBroker{tc.broker}, read, selected, nil)
 			if check == nil || check.Fatal == nil {
 				t.Fatalf("selected scope accepted missing/conflicting pack provenance: %+v", check)
 			}
@@ -93,7 +93,7 @@ func TestSelectedScopeRejectsMixedCanonicalAndMetadataFreeBrokers(t *testing.T) 
 	git := ScopeBroker{Source: "git", Label: "git-broker", RemoteHost: "github.com", Pack: "git-owner",
 		Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "github.com", ReadCapability: "fetch"}}
 	legacy := ScopeBroker{Source: "github", Label: "github-broker", RemoteHost: "github.com"}
-	check := NewSelectedScopeCheck(workspace, []ScopeBroker{git, legacy}, read, []ReadablePackDeclaration{{Pack: "git-owner"}})
+	check := NewSelectedScopeCheck(workspace, []ScopeBroker{git, legacy}, read, []ReadablePackDeclaration{{Pack: "git-owner"}}, []ReadableSelectedBroker{{Pack: "git-owner", Label: "git-broker", Brokered: git.Brokered}})
 	if check == nil || check.Fatal == nil {
 		t.Fatalf("mixed provenance fell through to legacy scope: %+v", check)
 	}
@@ -119,7 +119,7 @@ func TestSelectedScopeDoesNotDropUnknownAllowanceAuthority(t *testing.T) {
 	}
 	brokered := loopholedecl.Brokered{Source: "git", RemoteHost: "github.com", ReadCapability: "fetch"}
 	broker := ScopeBroker{Source: "git", Label: "git-broker", RemoteHost: "github.com", Pack: "git-owner", Brokered: brokered}
-	check := NewSelectedScopeCheck(workspace, []ScopeBroker{broker}, read, []ReadablePackDeclaration{{Pack: "git-owner"}})
+	check := NewSelectedScopeCheck(workspace, []ScopeBroker{broker}, read, []ReadablePackDeclaration{{Pack: "git-owner"}}, []ReadableSelectedBroker{{Pack: "git-owner", Label: "git-broker", Brokered: brokered}})
 	if check == nil || check.Fatal == nil || !strings.Contains(check.Fatal.Error(), "unselected-auth") {
 		t.Fatalf("unselected allowance was silently discarded or granted: %+v", check)
 	}

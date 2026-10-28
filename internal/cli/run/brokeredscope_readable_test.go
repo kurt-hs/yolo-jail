@@ -62,7 +62,14 @@ func checkLaunchReadableBrokerScope(t *testing.T, source, brokerName, owner, rem
 	if err := os.MkdirAll(inactiveModule, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(inactiveModule, "manifest.jsonc"), []byte(`{"name":"inactive-broker","transport":"loopback-tls","lifecycle":"spawned","host_daemon":{"cmd":["/bin/true","{socket}","{repository_scope}"],"publishes":"socket"},"brokered":{"source":"inactive","remote_host":"github.com"},"platforms":["windows"]}`), 0o600); err != nil {
+	inactiveSource, inactiveReadCapability, inactiveRemoteHost := "github", "read", "github.com"
+	inactiveRequest := `repos = ["acme/inactive"]`
+	if source == "github" {
+		inactiveSource, inactiveReadCapability, inactiveRemoteHost = "git", "fetch", "*"
+		inactiveRequest = `push = ["main"]`
+	}
+	inactiveManifest := fmt.Sprintf(`{"name":"inactive-broker","transport":"loopback-tls","lifecycle":"spawned","host_daemon":{"cmd":["/bin/true","{socket}","{repository_scope}"],"publishes":"socket"},"brokered":{"source":%q,"remote_host":%q,"grants":["branch"],"read_capability":%q,"kind_capabilities":{"branch":"push"}},"platforms":["windows"]}`, inactiveSource, inactiveRemoteHost, inactiveReadCapability)
+	if err := os.WriteFile(filepath.Join(inactiveModule, "manifest.jsonc"), []byte(inactiveManifest), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	restore := loopholes.SnapshotPackModules()
@@ -79,7 +86,7 @@ func checkLaunchReadableBrokerScope(t *testing.T, source, brokerName, owner, rem
 	if err := os.MkdirAll(userConfig, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	userBody := fmt.Sprintf("[allow.%s]\nalways = [%q]\non_request = [%q]\n\n[allow.aws-auth]\nprofile = \"prod\"\n", source, readCapability, capability)
+	userBody := fmt.Sprintf("[allow.%s]\nalways = [%q]\non_request = [%q]\n\n[allow.%s]\nalways = [%q]\non_request = [\"push\"]\n\n[allow.aws-auth]\nprofile = \"prod\"\n", source, readCapability, capability, inactiveSource, inactiveReadCapability)
 	if err := os.WriteFile(filepath.Join(userConfig, paths.UserConfigTOMLName), []byte(userBody), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +107,8 @@ func checkLaunchReadableBrokerScope(t *testing.T, source, brokerName, owner, rem
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(workspace, config.WorkspaceTOMLConfigName), []byte(fmt.Sprintf("[requests.%s]\n%s\n", source, request)), 0o600); err != nil {
+	workspaceConfig := fmt.Sprintf("[requests.%s]\n%s\n\n[requests.%s]\n%s\n", source, request, inactiveSource, inactiveRequest)
+	if err := os.WriteFile(filepath.Join(workspace, config.WorkspaceTOMLConfigName), []byte(workspaceConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	wantRemoteCount := 0
@@ -143,6 +151,21 @@ func checkLaunchReadableBrokerScope(t *testing.T, source, brokerName, owner, rem
 	}
 	if len(got.ReadableInput.Sources) != 1 || got.ReadableInput.Sources[0].Source != source {
 		t.Fatalf("readable sources = %+v, want only active %s broker", got.ReadableInput.Sources, source)
+	}
+	for _, source := range got.ReadableInput.ReadCapabilities {
+		if source.Source == inactiveSource {
+			t.Fatalf("inactive selected broker reached a readable capability decision: %+v", source)
+		}
+	}
+	for _, request := range got.ReadableInput.Requests {
+		if request.Path == "requests."+inactiveSource+".repos" || request.Path == "requests."+inactiveSource+".push" {
+			t.Fatalf("inactive selected broker request reached the gate: %+v", request)
+		}
+	}
+	for _, repository := range got.ReadableInput.AdditionalRepositories {
+		if repository.Source == inactiveSource {
+			t.Fatalf("inactive selected broker repository reached the gate: %+v", repository)
+		}
 	}
 	if capability == "create_pr" {
 		foundPending := false

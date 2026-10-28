@@ -264,10 +264,17 @@ type ScopeBroker struct {
 	Readable *ReadableBrokerDeclaration
 }
 
+// ReadableSelectedBroker is a canonical broker declaration discovered on a selected pack. It
+// can belong to an inactive module and therefore does not imply a scope source will be gated.
+type ReadableSelectedBroker struct {
+	Pack, Label string
+	Brokered    loopholedecl.Brokered
+}
+
 // NewSelectedScopeCheck adapts broker metadata and selected-pack settings from one already-resolved
 // module set. NewScopeCheck remains the compatibility entry point: explicit Readable metadata opts
 // into that producer, while metadata-free callers keep the legacy read path.
-func NewSelectedScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead, selected []ReadablePackDeclaration) *ScopeCheck {
+func NewSelectedScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead, selected []ReadablePackDeclaration, selectedBrokers []ReadableSelectedBroker) *ScopeCheck {
 	if len(brokers) == 0 {
 		return nil
 	}
@@ -279,11 +286,21 @@ func NewSelectedScopeCheck(workspace string, brokers []ScopeBroker, read *Worksp
 		}
 		b.Readable = nil
 		if b.Pack != "" && b.Brokered.Source == b.Source {
-			declaration := readableBrokerDeclaration(b.Pack, b.Label, b.Brokered, b.Settings)
+			declaration := readableBrokerDeclaration(b.Pack, b.Label, b.Brokered, nil)
 			b.Readable = &declaration
 		}
 	}
-	if check, ok := readableScopeCheckWithSettings(workspace, resolved, read, selected, true); ok {
+	declarations := make([]ReadableBrokerDeclaration, 0, len(selectedBrokers))
+	for _, broker := range selectedBrokers {
+		if broker.Brokered.ReadCapability == "" {
+			continue
+		}
+		if broker.Pack == "" || broker.Label == "" || broker.Brokered.Source == "" {
+			return readableScopeFailure(workspace, resolved, fmt.Errorf("selected broker declaration lacks pack, label, or source provenance"))
+		}
+		declarations = append(declarations, readableBrokerDeclaration(broker.Pack, broker.Label, broker.Brokered, nil))
+	}
+	if check, ok := readableScopeCheckWithSettings(workspace, resolved, read, selected, declarations, true); ok {
 		return check
 	}
 	return NewScopeCheck(workspace, brokers, read)

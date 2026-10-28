@@ -248,6 +248,7 @@ func applyWorkspaceOverrides(existing map[string]*Loophole, loopholesConfig *jso
 func loadModuleDirs(modules []PackModule, source string) (map[string]*Loophole, []string) {
 	out := map[string]*Loophole{}
 	var order []string
+	ambiguous := map[string]bool{}
 	load := loaderFor(source)
 	for _, module := range modules {
 		dir := module.Dir
@@ -271,6 +272,21 @@ func loadModuleDirs(modules []PackModule, source string) (map[string]*Loophole, 
 		loophole.Source = source
 		if source == SourcePack {
 			loophole.Pack = module.Pack
+		}
+		if ambiguous[loophole.Name] {
+			continue
+		}
+		if previous, seen := out[loophole.Name]; seen && source == SourcePack && previous.Pack != loophole.Pack {
+			warnf("loophole %s has conflicting selected pack owners %q and %q, so it is NOT active; give the modules distinct loophole names or select only one owner", loophole.Name, previous.Pack, loophole.Pack)
+			delete(out, loophole.Name)
+			ambiguous[loophole.Name] = true
+			for i, name := range order {
+				if name == loophole.Name {
+					order = append(order[:i], order[i+1:]...)
+					break
+				}
+			}
+			continue
 		}
 		if _, seen := out[loophole.Name]; !seen {
 			order = append(order, loophole.Name)
