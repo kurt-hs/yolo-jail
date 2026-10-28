@@ -15,6 +15,36 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+func TestApplyTargetedCreationRejectsTamperedProspectiveBindingCoordinates(t *testing.T) {
+	home, workspace := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	project := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
+	local := filepath.Join(workspace, paths.WorkspaceLocalConfigTOMLName)
+	mutation := Mutation{Action: Add, Path: creationPath("machine", "resources", "cpus"), Value: 4}
+	target, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetAutomatic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !target.IsProspective() || target.PhysicalPath != project || target.Role != config.ExplicitEditProject {
+		t.Fatalf("initial binding = %#v; want prospective Project %s", target, project)
+	}
+
+	// The opaque receipt remains bound to Project while these public result coordinates are mutable.
+	target.LogicalPath = local
+	target.PhysicalPath = local
+	target.Role = config.ExplicitEditLocal
+	if _, err := ApplyTargeted(workspace, target, mutation, ApplyOptions{}); err == nil {
+		t.Fatal("tampered public Local coordinates authorized creation with the private Project absence receipt")
+	}
+	if _, err := os.Lstat(local); !os.IsNotExist(err) {
+		t.Fatalf("tampered Local target was created despite a Project receipt: %v", err)
+	}
+	if _, err := os.Lstat(project); !os.IsNotExist(err) {
+		t.Fatalf("rejected binding unexpectedly created Project target: %v", err)
+	}
+}
+
 func TestApplyTargetedCreationDoesNotFollowLockSidecarSymlink(t *testing.T) {
 	home, workspace, ownerDir := t.TempDir(), t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)

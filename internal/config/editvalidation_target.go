@@ -63,27 +63,43 @@ type ResolvedEditTarget struct {
 // IsProspective reports that this binding records selected absence rather than an existing preimage.
 func (r ResolvedEditTarget) IsProspective() bool { return r.prospective != nil }
 
-// VerifyProspectiveAbsence rechecks the bound parent identity and absent destination leaf.
+// VerifyProspectiveAbsence rechecks the public coordinates against the private receipt, then
+// rechecks the bound parent identity and absent destination leaf.
 func (r ResolvedEditTarget) VerifyProspectiveAbsence() error {
-	if r.prospective == nil {
-		return fmt.Errorf("config target is not a prospective creation binding")
+	if err := r.verifyProspectiveBinding(); err != nil {
+		return err
 	}
 	return verifyProspectiveSelection(r.prospective)
 }
 
-// VerifyProspectiveParent rechecks the bound directory identity after publication.
+// VerifyProspectiveParent rechecks the target binding and bound directory identity after publication.
 func (r ResolvedEditTarget) VerifyProspectiveParent() error {
-	if r.prospective == nil {
-		return fmt.Errorf("config target is not a prospective creation binding")
+	if err := r.verifyProspectiveBinding(); err != nil {
+		return err
 	}
 	return verifyProspectiveParent(r.prospective)
+}
+
+func (r ResolvedEditTarget) verifyProspectiveBinding() error {
+	receipt := r.prospective
+	if receipt == nil {
+		return fmt.Errorf("config target is not a prospective creation binding")
+	}
+	scope := prospectiveScope(receipt.role)
+	if scope == 0 || r.LogicalPath != receipt.logical || r.PhysicalPath != receipt.logical ||
+		r.Role != scope || r.Format != receipt.format || r.Target.workspace != receipt.workspace ||
+		r.Target.physical != receipt.logical || r.Target.scope != scope || r.Target.format != receipt.format ||
+		!sameProspectiveSelection(receipt, r.Target.prospective) {
+		return fmt.Errorf("prospective config target coordinates no longer match the private selected-absence receipt; resolve the target again and retry")
+	}
+	return nil
 }
 
 // ValidateProspective parses and validates candidate bytes through the standard selected layer.
 // Its private selection receipt is distinct from an actual-file read witness.
 func (r ResolvedEditTarget) ValidateProspective(workspace string, candidate []byte) (ValidatedExplicitEditResult, error) {
-	if r.prospective == nil || !r.Target.IsProspective() {
-		return ValidatedExplicitEditResult{}, fmt.Errorf("config target is not a prospective creation binding")
+	if err := r.verifyProspectiveBinding(); err != nil {
+		return ValidatedExplicitEditResult{}, err
 	}
 	input := newProspectiveCandidateInput(r.prospective, candidate)
 	return validateProspectiveEdit(workspace, r.Target, input)
