@@ -22,6 +22,13 @@ func ApplyTargeted(workspace string, target config.ResolvedEditTarget, mutation 
 	options.Target = target.Target
 	options.ExpectedBytes = target.ExpectedBytes()
 	mutation.Path = target.AuthoredPath()
+	if target.IsProspective() {
+		plan, err := applyProspectiveTargeted(workspace, target, mutation, options)
+		if err != nil {
+			return TargetedResult{}, err
+		}
+		return TargetedResult{Path: target.LogicalPath, Plan: plan}, nil
+	}
 	plan, err := ApplyEffective(workspace, target.PhysicalPath, target.Format, mutation, options)
 	if err != nil {
 		return TargetedResult{}, err
@@ -46,5 +53,5 @@ func editMutationIntent(mutation Mutation) config.EditMutationIntent {
 	case Remove:
 		kind = config.EditMutationRemove
 	}
-	return config.EditMutationIntent{Key: append([]configdoc.Step(nil), mutation.Path...), Kind: kind}
+	return config.EditMutationIntent{Key: append([]configdoc.Step(nil), mutation.Path...), Kind: kind, AllowProspectiveCreation: true}
 }

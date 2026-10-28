@@ -22,10 +22,11 @@ const readableConfigFormat = 2
 // its normal scope checks to these bytes. Construct with NewConfigReadInput; the target must be an
 // absolute physical path, not a provenance label or an inferred source.
 type ConfigReadInput struct {
-	target    string
-	bytes     []byte
-	witness   *editReadWitness
-	roleAudit *[]editTargetReadObservation
+	target      string
+	bytes       []byte
+	witness     *editReadWitness
+	roleAudit   *[]editTargetReadObservation
+	prospective *prospectiveRead
 }
 
 // NewConfigReadInput makes an immutable invocation input. Both the physical path and bytes are copied
@@ -38,7 +39,10 @@ func NewConfigReadInput(physicalTarget string, data []byte) (ConfigReadInput, er
 }
 
 func (input ConfigReadInput) clone() *ConfigReadInput {
-	return &ConfigReadInput{target: input.target, bytes: append([]byte(nil), input.bytes...), witness: input.witness, roleAudit: input.roleAudit}
+	return &ConfigReadInput{
+		target: input.target, bytes: append([]byte(nil), input.bytes...), witness: input.witness,
+		roleAudit: input.roleAudit, prospective: cloneProspectiveRead(input.prospective),
+	}
 }
 
 // loadConfigFile dispatches by the selected filename. Legacy JSONC/JSON reads stay on their
@@ -75,6 +79,47 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 	}
 	if err := validateReadableTOML(doc.Values, scope, label, doc.Index); err != nil {
 		return nil, nil, nil, err
+	}
+	file := &srcFile{path: path, data: data, format: configdoc.TOML, document: doc,
+		contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq(), role: at.role}
+	if !record {
+		return doc.Values, file, readableResetTree(doc.Values, nil), nil
+	}
+	node := fileTree(file, doc.Values)
+	markReadableRemovalValues(node, doc.Values, nil)
+	return doc.Values, file, node, nil
+}
+
+func loadProspectiveTOMLConfigFile(path, label string, strict bool, warn Warn, record bool, scope SchemaScope, at readAt) (*jsonx.OrderedMap, *srcFile, *srcNode, error) {
+	input := at.input
+	if input == nil || input.prospective == nil || !input.prospective.decodeCandidate || input.prospective.selected == nil ||
+		!sameProspectiveSelection(input.prospective.bound, input.prospective.selected) {
+		return nil, nil, nil, fmt.Errorf("prospective TOML config read lacks a selected absence receipt")
+	}
+	if err := verifyProspectiveSelection(input.prospective.selected); err != nil {
+		return nil, nil, nil, err
+	}
+	if filepath.Clean(path) != input.prospective.selected.logical || at.role != input.prospective.selected.role || at.via != "" {
+		return nil, nil, nil, fmt.Errorf("prospective TOML config candidate does not match the selected top-level role")
+	}
+	data := append([]byte(nil), input.prospective.candidate...)
+	doc, err := configdoc.Parse(data, configdoc.TOML)
+	if err != nil {
+		m, parseErr := handleParseFailure(label, err, strict, warn)
+		return m, nil, nil, parseErr
+	}
+	if err := normalizeTOMLNumbers(doc.Values); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := consumeReadableFormat(doc.Values, label, path); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := validateReadableTOML(doc.Values, scope, label, doc.Index); err != nil {
+		return nil, nil, nil, err
+	}
+	rel := ""
+	if at.ws != nil {
+		rel, _ = at.ws.rel(path)
 	}
 	file := &srcFile{path: path, data: data, format: configdoc.TOML, document: doc,
 		contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq(), role: at.role}

@@ -27,6 +27,11 @@ type ApplyOptions struct {
 
 	validateTarget func(physical string, before, planned []byte) error
 	verifyTarget   func(physical string, before, after []byte) error
+
+	// onProspective* fields are package-local creation race-test seams.
+	onProspectivePublished     func()
+	onProspectiveBeforePublish func()
+	onProspectiveLocked        func()
 }
 
 // Apply serializes edits on a lock beside the symlink-resolved target, re-reads under that lock,

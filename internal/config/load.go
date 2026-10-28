@@ -259,7 +259,17 @@ func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[s
 	var node *srcNode
 	var err error
 	if readable {
-		raw, file, node, err = loadConfigFile(path, label, strict, warn, record, scope, at)
+		request := (*prospectiveRead)(nil)
+		if at.input != nil {
+			request = at.input.prospective
+		}
+		if request != nil && request.decodeCandidate && at.via == "" && request.selected != nil && request.bound != nil &&
+			sameProspectiveSelection(request.bound, request.selected) && request.selected.logical == filepath.Clean(path) &&
+			request.selected.role == at.role && request.selected.format == configdoc.TOML {
+			raw, file, node, err = loadProspectiveTOMLConfigFile(path, label, strict, warn, record, scope, at)
+		} else {
+			raw, file, node, err = loadConfigFile(path, label, strict, warn, record, scope, at)
+		}
 		if err == nil && file != nil && file.format != configdoc.TOML {
 			raw, node = projectLegacyB2Config(raw, node)
 		}
@@ -456,6 +466,13 @@ func loadReadableWorkspaceConfigOverWithInputUse(workspace string, strict bool, 
 		path, label, err := resolveWorkspaceConfigPath(workspace, name)
 		if err != nil {
 			return nil, nil, err
+		}
+		// Only the standard top-level Project/Local selector may issue a prospective
+		// declaration receipt. Includes, fragments, and ordinary reads remain unchanged.
+		if layerAt.via == "" {
+			if err := recordProspectiveSelection(workspace, path, layerAt.role, input); err != nil {
+				return nil, nil, err
+			}
 		}
 		layer, layerNode, err := loadWithIncludesScope(path, label, strict, warn, seen, record, SchemaScopeWorkspaceOnly, layerAt)
 		if err != nil {

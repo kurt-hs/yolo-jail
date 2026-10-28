@@ -38,10 +38,12 @@ const (
 )
 
 // EditMutationIntent keeps the structured key and operation together; key members are literal,
-// including dots, and are never split as a display string.
+// including dots, and are never split as a display string. Public configedit callers set
+// AllowProspectiveCreation only when the selected standard Project/Local TOML basefile is absent.
 type EditMutationIntent struct {
-	Key  []configdoc.Step
-	Kind EditMutationKind
+	Key                      []configdoc.Step
+	Kind                     EditMutationKind
+	AllowProspectiveCreation bool
 }
 
 // ResolvedEditTarget is a detached target binding. ExpectedBytes returns a copy of the
@@ -55,10 +57,40 @@ type ResolvedEditTarget struct {
 	expected     []byte
 	intent       EditMutationIntent
 	authored     []configdoc.Step
+	prospective  *prospectiveSelectionReceipt
 }
 
-// ExpectedBytes returns a detached copy of the selected preimage. A resolved empty file keeps
-// its non-nil empty sentinel; nil means no expectation was bound.
+// IsProspective reports that this binding records selected absence rather than an existing preimage.
+func (r ResolvedEditTarget) IsProspective() bool { return r.prospective != nil }
+
+// VerifyProspectiveAbsence rechecks the bound parent identity and absent destination leaf.
+func (r ResolvedEditTarget) VerifyProspectiveAbsence() error {
+	if r.prospective == nil {
+		return fmt.Errorf("config target is not a prospective creation binding")
+	}
+	return verifyProspectiveSelection(r.prospective)
+}
+
+// VerifyProspectiveParent rechecks the bound directory identity after publication.
+func (r ResolvedEditTarget) VerifyProspectiveParent() error {
+	if r.prospective == nil {
+		return fmt.Errorf("config target is not a prospective creation binding")
+	}
+	return verifyProspectiveParent(r.prospective)
+}
+
+// ValidateProspective parses and validates candidate bytes through the standard selected layer.
+// Its private selection receipt is distinct from an actual-file read witness.
+func (r ResolvedEditTarget) ValidateProspective(workspace string, candidate []byte) (ValidatedExplicitEditResult, error) {
+	if r.prospective == nil || !r.Target.IsProspective() {
+		return ValidatedExplicitEditResult{}, fmt.Errorf("config target is not a prospective creation binding")
+	}
+	input := newProspectiveCandidateInput(r.prospective, candidate)
+	return validateProspectiveEdit(workspace, r.Target, input)
+}
+
+// ExpectedBytes returns a detached copy of the selected preimage. Existing empty files remain
+// non-nil empty; prospective absence also returns nil, distinguished by IsProspective.
 func (r ResolvedEditTarget) ExpectedBytes() []byte { return cloneEditTargetBytes(r.expected) }
 
 // AuthoredPath returns a detached path bound from the consumed source selected for this target.
@@ -124,16 +156,6 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 	if err != nil {
 		return ResolvedEditTarget{}, fmt.Errorf("resolve config edit workspace: %w", err)
 	}
-	var roleAudit []editTargetReadObservation
-	_, node, err := composeReadableAuthoredConfigWithInputUseAudit(resolvedWorkspace, true, nil, true, true, nil, nil, &roleAudit)
-	if err != nil {
-		return ResolvedEditTarget{}, fmt.Errorf("read config graph for edit target: %w", err)
-	}
-	files, err := editTargetFiles(sourcesOf(node), roleAudit)
-	if err != nil {
-		return ResolvedEditTarget{}, err
-	}
-
 	role := ExplicitEditProject
 	switch choice.Kind {
 	case EditTargetAutomatic:
@@ -165,7 +187,37 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		return ResolvedEditTarget{}, fmt.Errorf("config.%s is workspace-only; move requests to the workspace config", strings.Join(parts, "."))
 	}
 
+	var roleAudit []editTargetReadObservation
+	discoveryInput := &ConfigReadInput{roleAudit: &roleAudit}
+	if intent.AllowProspectiveCreation && choice.Kind != EditTargetFile && (role == ExplicitEditProject || role == ExplicitEditLocal) {
+		name := WorkspaceConfigName
+		if role == ExplicitEditLocal {
+			name = WorkspaceLocalConfigName
+		}
+		path, _, pathErr := resolveWorkspaceConfigPath(resolvedWorkspace, name)
+		if pathErr != nil {
+			return ResolvedEditTarget{}, pathErr
+		}
+		if strings.EqualFold(filepath.Ext(path), ".toml") && !pathExists(path) {
+			discoveryInput.prospective = newProspectiveSelectionInput(resolvedWorkspace, path, prospectiveRole(role)).prospective
+		}
+	}
+	var node *srcNode
+	if discoveryInput.prospective == nil {
+		_, node, err = composeReadableAuthoredConfigWithInputUseAudit(resolvedWorkspace, true, nil, true, true, nil, nil, &roleAudit)
+	} else {
+		_, node, err = composeReadableAuthoredConfigWithInputUseAudit(resolvedWorkspace, true, nil, true, true, discoveryInput, nil, nil)
+	}
+	if err != nil {
+		return ResolvedEditTarget{}, fmt.Errorf("read config graph for edit target: %w", err)
+	}
+	files, err := editTargetFiles(sourcesOf(node), roleAudit)
+	if err != nil {
+		return ResolvedEditTarget{}, err
+	}
+
 	var selected editTargetFile
+	var prospective *prospectiveSelectionReceipt
 	authored := append([]configdoc.Step(nil), key...)
 	if choice.Kind == EditTargetFile {
 		physical, resolveErr := filepath.EvalSymlinks(choice.File)
@@ -236,25 +288,49 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		}
 		selected, err = consumedDefaultTarget(path, role, files)
 		if err != nil {
-			return ResolvedEditTarget{}, err
+			receipt := discoveryInput.prospective
+			if receipt == nil || receipt.selected == nil || receipt.selected.logical != filepath.Clean(path) || receipt.selected.role != prospectiveRole(role) {
+				return ResolvedEditTarget{}, err
+			}
+			prospective = copyProspectiveSelection(receipt.selected)
+			if verifyErr := verifyProspectiveSelection(prospective); verifyErr != nil {
+				return ResolvedEditTarget{}, verifyErr
+			}
+			selected = editTargetFile{
+				logical: prospective.logical, physical: prospective.logical,
+				logicalPaths: map[string]bool{prospective.logical: true},
+				roles:        map[editReadRole]bool{prospective.role: true},
+				formats:      map[configdoc.Format]bool{prospective.format: true},
+			}
 		}
 	}
 	if len(selected.roles) != 1 || len(selected.formats) != 1 || selected.role() != readRoleForScope(role) {
 		return ResolvedEditTarget{}, fmt.Errorf("config target %s was not uniquely read as %s config", selected.logical, roleName(role))
 	}
-	if _, err := os.Stat(selected.physical); err != nil {
-		return ResolvedEditTarget{}, fmt.Errorf("config target %s does not exist; create that config file first, then retry (no file was written): %w", selected.logical, err)
-	}
 	format := selected.format()
-	preimage, err := os.ReadFile(selected.physical)
-	if err != nil {
-		return ResolvedEditTarget{}, fmt.Errorf("read config target %s: %w", selected.logical, err)
+	var target ExplicitEditTarget
+	var preimage []byte
+	if prospective != nil {
+		if format != configdoc.TOML || selected.physical != prospective.logical {
+			return ResolvedEditTarget{}, fmt.Errorf("prospective config target has a conflicting reader format or identity")
+		}
+		target = newProspectiveEditTarget(resolvedWorkspace, prospective)
+	} else {
+		if _, err := os.Stat(selected.physical); err != nil {
+			return ResolvedEditTarget{}, fmt.Errorf("config target %s does not exist; create that config file first, then retry (no file was written): %w", selected.logical, err)
+		}
+		preimage, err = os.ReadFile(selected.physical)
+		if err != nil {
+			return ResolvedEditTarget{}, fmt.Errorf("read config target %s: %w", selected.logical, err)
+		}
+		target, err = NewExplicitEditTarget(resolvedWorkspace, selected.physical, role, format)
+		if err != nil {
+			return ResolvedEditTarget{}, err
+		}
 	}
-	target, err := NewExplicitEditTarget(resolvedWorkspace, selected.physical, role, format)
-	if err != nil {
-		return ResolvedEditTarget{}, err
-	}
-	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target, expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent), authored: append([]configdoc.Step(nil), authored...)}, nil
+	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target,
+		expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent), authored: append([]configdoc.Step(nil), authored...),
+		prospective: copyProspectiveSelection(prospective)}, nil
 }
 
 func readableEditTargetRule(path []string) (SchemaKey, bool) {

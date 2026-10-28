@@ -99,11 +99,15 @@ func currentEditWitness(input *ConfigReadInput) *editReadWitness {
 // ExplicitEditTarget binds caller-declared scope, workspace, physical file and decoder format.
 // Fields are private so a zero or partially filled target cannot acquire authority.
 type ExplicitEditTarget struct {
-	workspace string
-	physical  string
-	scope     ExplicitEditScope
-	format    configdoc.Format
+	workspace   string
+	physical    string
+	scope       ExplicitEditScope
+	format      configdoc.Format
+	prospective *prospectiveSelectionReceipt
 }
+
+// IsProspective reports a private selected-absence receipt for a workspace TOML basefile.
+func (t ExplicitEditTarget) IsProspective() bool { return t.prospective != nil }
 
 // NewExplicitEditTarget constructs a complete explicit edit binding. physicalTarget must name
 // the physical file used by the edit transaction, not a source label or inferred origin.
@@ -151,6 +155,7 @@ type editValidationContext struct {
 	semantic         *ReadableSemanticInputs
 	viaSelectionErr  error
 	viaProfiles      map[string]packload.UserProfile
+	prospective      bool
 }
 
 type ValidatedReadableRequest struct {
@@ -220,6 +225,21 @@ func ValidateExplicitEdit(workspace string, target ExplicitEditTarget, input Con
 	if err != nil {
 		return ValidatedExplicitEditResult{}, err
 	}
+	return validateEditContext(ctx)
+}
+
+// ValidateProspectiveEdit validates candidate bytes through the standard Project/Local reader
+// using a selected-absence receipt; it does not issue an actual-file read witness.
+func validateProspectiveEdit(workspace string, target ExplicitEditTarget, input ConfigReadInput) (ValidatedExplicitEditResult, error) {
+	ctx, err := readProspectiveEditContext(workspace, target, input)
+	if err != nil {
+		return ValidatedExplicitEditResult{}, err
+	}
+	return validateEditContext(ctx)
+}
+
+func validateEditContext(ctx *editValidationContext) (ValidatedExplicitEditResult, error) {
+	var err error
 	if err := ctx.readRawScopes(); err != nil {
 		return ValidatedExplicitEditResult{}, err
 	}
@@ -241,7 +261,7 @@ func ValidateExplicitEdit(workspace string, target ExplicitEditTarget, input Con
 	if ctx.semantic == nil {
 		return ValidatedExplicitEditResult{}, fmt.Errorf("validate planned readable F/G semantics: typed consumer did not run")
 	}
-	if err := ctx.validateInputWitness(); err != nil {
+	if err := ctx.validateSelectedInput(); err != nil {
 		return ValidatedExplicitEditResult{}, err
 	}
 	snapshot, err := SnapshotJSON(ctx.effective)
@@ -275,6 +295,20 @@ func ReadExplicitEditConfig(workspace string, target ExplicitEditTarget, input C
 }
 
 func readExplicitEditContext(workspace string, target ExplicitEditTarget, input ConfigReadInput) (*editValidationContext, error) {
+	if target.prospective != nil {
+		return nil, fmt.Errorf("prospective selection cannot be consumed as an actual explicit-file witness")
+	}
+	return readEditContext(workspace, target, input, false)
+}
+
+func readProspectiveEditContext(workspace string, target ExplicitEditTarget, input ConfigReadInput) (*editValidationContext, error) {
+	if target.prospective == nil || input.prospective == nil || !input.prospective.decodeCandidate {
+		return nil, fmt.Errorf("prospective config validation requires a selected-absence target and candidate")
+	}
+	return readEditContext(workspace, target, input, true)
+}
+
+func readEditContext(workspace string, target ExplicitEditTarget, input ConfigReadInput, prospective bool) (*editValidationContext, error) {
 	if target.scope == 0 || target.physical == "" || target.workspace == "" || target.format == 0 {
 		return nil, fmt.Errorf("explicit edit target is incomplete")
 	}
@@ -292,6 +326,14 @@ func readExplicitEditContext(workspace string, target ExplicitEditTarget, input 
 	if inJail() && target.scope == ExplicitEditUser {
 		return nil, fmt.Errorf("user-scope config edits are only allowed on the host; run the edit command for %s on the host", target.physical)
 	}
+	if prospective {
+		if target.scope != ExplicitEditProject && target.scope != ExplicitEditLocal || target.format != configdoc.TOML ||
+			!sameProspectiveSelection(target.prospective, input.prospective.bound) {
+			return nil, fmt.Errorf("prospective config input does not match the bound Project/Local TOML selection")
+		}
+	} else if input.prospective != nil {
+		return nil, fmt.Errorf("actual explicit edit cannot accept a prospective selection receipt")
+	}
 	witness := &editReadWitness{}
 	invocation.witness = witness
 	cfg, _, err := composeReadableConfigWithInputUse(actualWorkspace, true, nil, true, true, invocation, nil)
@@ -303,9 +345,9 @@ func readExplicitEditContext(workspace string, target ExplicitEditTarget, input 
 	ctx := &editValidationContext{
 		workspace: actualWorkspace, target: target, input: *invocation, witness: witness,
 		embeddedFS: embeddedFS, embeddedNames: embeddedNames, embeddedNamesErr: embeddedNamesErr,
-		effective: cfg, reads: append([]editReadObservation(nil), witness.reads...),
+		effective: cfg, reads: append([]editReadObservation(nil), witness.reads...), prospective: prospective,
 	}
-	if err := ctx.validateInputWitness(); err != nil {
+	if err := ctx.validateSelectedInput(); err != nil {
 		return nil, err
 	}
 	return ctx, nil
@@ -348,6 +390,24 @@ func loadValidationWorkspaceConfig(workspace string, edit ...*editValidationCont
 	return LoadWorkspaceConfig(workspace, false, func(string) {})
 }
 
+func (ctx *editValidationContext) validateSelectedInput() error {
+	if ctx == nil {
+		return fmt.Errorf("explicit edit context is missing")
+	}
+	if !ctx.prospective {
+		return ctx.validateInputWitness()
+	}
+	request := ctx.input.prospective
+	if request == nil || !request.decodeCandidate || !sameProspectiveSelection(ctx.target.prospective, request.selected) ||
+		!sameProspectiveSelection(request.bound, request.selected) {
+		return fmt.Errorf("prospective target %s was not selected by the standard Project/Local reader", ctx.target.physical)
+	}
+	if err := verifyProspectiveSelection(request.selected); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (ctx *editValidationContext) validateInputWitness() error {
 	if ctx == nil || ctx.witness == nil || len(ctx.witness.reads) == 0 {
 		return fmt.Errorf("explicit target %s was not consumed by the standard config graph", ctx.target.physical)
@@ -383,7 +443,7 @@ func (ctx *editValidationContext) readRawScopes() error {
 	}
 	ctx.rawUser, ctx.userOrigins = user, sourcesOf(userNode)
 	ctx.rawWorkspace, ctx.workspaceOrigins = workspace, sourcesOf(workspaceNode)
-	if err := ctx.validateInputWitness(); err != nil {
+	if err := ctx.validateSelectedInput(); err != nil {
 		return err
 	}
 	return nil
