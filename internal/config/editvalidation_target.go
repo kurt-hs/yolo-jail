@@ -56,8 +56,18 @@ type ResolvedEditTarget struct {
 	intent       EditMutationIntent
 }
 
-// ExpectedBytes returns the copied physical preimage selected by the config reader graph.
-func (r ResolvedEditTarget) ExpectedBytes() []byte { return append([]byte(nil), r.expected...) }
+// ExpectedBytes returns a detached copy of the selected preimage. A resolved empty file keeps
+// its non-nil empty sentinel; nil means no expectation was bound.
+func (r ResolvedEditTarget) ExpectedBytes() []byte { return cloneEditTargetBytes(r.expected) }
+
+func cloneEditTargetBytes(source []byte) []byte {
+	if source == nil {
+		return nil
+	}
+	cloned := make([]byte, len(source))
+	copy(cloned, source)
+	return cloned
+}
 
 // MatchesMutation reports whether a public consumer is applying the exact resolved key/operation.
 func (r ResolvedEditTarget) MatchesMutation(intent EditMutationIntent) bool {
@@ -84,12 +94,19 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 	}
 	parts := make([]string, len(key))
 	for i, step := range key {
-		if step.IsIndex || step.Key == "" {
-			return ResolvedEditTarget{}, fmt.Errorf("config edit target key must contain object members only")
+		if step.IsIndex {
+			if step.Key != "" || step.Index < 0 {
+				return ResolvedEditTarget{}, fmt.Errorf("config edit target contains a malformed array index")
+			}
+			parts[i] = "*"
+			continue
+		}
+		if step.Key == "" || step.Key == "*" || step.Index != 0 {
+			return ResolvedEditTarget{}, fmt.Errorf("config edit target contains a malformed object member")
 		}
 		parts[i] = step.Key
 	}
-	rule, ok := readableSchemaRule(parts)
+	rule, ok := readableEditTargetRule(parts)
 	if !ok {
 		return ResolvedEditTarget{}, fmt.Errorf("config key %s has no readable schema target", strings.Join(parts, "."))
 	}
@@ -180,7 +197,7 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 			return ResolvedEditTarget{}, fmt.Errorf("config.%s is workspace-only; move requests to the workspace config", strings.Join(parts, "."))
 		}
 	} else if role == ExplicitEditUser {
-		selected, err = userSectionTarget(sourcesOf(node), parts, files)
+		selected, err = userSectionTarget(sourcesOf(node), key, files)
 		if err != nil {
 			return ResolvedEditTarget{}, err
 		}
@@ -223,7 +240,20 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 	if err != nil {
 		return ResolvedEditTarget{}, err
 	}
-	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target, expected: append([]byte(nil), preimage...), intent: cloneEditMutationIntent(intent)}, nil
+	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target, expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent)}, nil
+}
+
+func readableEditTargetRule(path []string) (SchemaKey, bool) {
+	if rule, ok := readableSchemaRule(path); ok {
+		return rule, true
+	}
+	for length := len(path) - 1; length > 0; length-- {
+		ancestor, ok := readableSchemaRule(path[:length])
+		if ok && ancestor.Type == SchemaTypeAny {
+			return ancestor, true
+		}
+	}
+	return SchemaKey{}, false
 }
 
 func cloneEditMutationIntent(intent EditMutationIntent) EditMutationIntent {
@@ -354,11 +384,15 @@ func editTargetFiles(sources *Sources, audit []editTargetReadObservation) (map[s
 	return files, nil
 }
 
-func userSectionTarget(sources *Sources, key []string, files map[string]editTargetFile) (editTargetFile, error) {
+func userSectionTarget(sources *Sources, key []configdoc.Step, files map[string]editTargetFile) (editTargetFile, error) {
 	node := sources.node()
 	var ancestors []*srcNode
-	for _, part := range key {
-		node = node.key(part)
+	for _, step := range key {
+		if step.IsIndex {
+			node = node.elem(step.Index)
+		} else {
+			node = node.key(step.Key)
+		}
 		if node == nil {
 			break
 		}
