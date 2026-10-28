@@ -72,6 +72,9 @@ func TestApplyEffectiveLegacyJSONCRejectsCanonicalRootsInWrongRawScope(t *testin
 				if err == nil || (!strings.Contains(err.Error(), "user-scope only") && !strings.Contains(err.Error(), "workspace-only key")) {
 					t.Fatalf("canonical scope violation was not refused: err=%v writes=%d", err, *writes)
 				}
+				if tc.name == "user requests" && !strings.Contains(err.Error(), "move requests to the workspace config") {
+					t.Fatalf("User requests refusal omits the workspace-config next step: %v", err)
+				}
 				if *writes != 0 {
 					t.Fatalf("scope refusal performed %d config writes", *writes)
 				}

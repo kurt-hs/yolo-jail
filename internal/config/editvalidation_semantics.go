@@ -62,6 +62,9 @@ func validateRawReadableScopePath(value any, path []string, source explicitRawSc
 			return fmt.Errorf("config.%s: user-scope only; move this key to the user config", strings.Join(path, "."))
 		}
 		if source.scope == SchemaScopeUserOnly && rule.Scope == SchemaScopeWorkspaceOnly {
+			if len(path) > 0 && path[0] == "requests" {
+				return fmt.Errorf("config.%s: workspace-only key; this file is user scope; move requests to the workspace config", strings.Join(path, "."))
+			}
 			return fmt.Errorf("config.%s: workspace-only key; this file is user scope", strings.Join(path, "."))
 		}
 	}

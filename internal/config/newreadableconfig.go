@@ -22,9 +22,10 @@ const readableConfigFormat = 2
 // its normal scope checks to these bytes. Construct with NewConfigReadInput; the target must be an
 // absolute physical path, not a provenance label or an inferred source.
 type ConfigReadInput struct {
-	target  string
-	bytes   []byte
-	witness *editReadWitness
+	target    string
+	bytes     []byte
+	witness   *editReadWitness
+	roleAudit *[]editTargetReadObservation
 }
 
 // NewConfigReadInput makes an immutable invocation input. Both the physical path and bytes are copied
@@ -37,7 +38,7 @@ func NewConfigReadInput(physicalTarget string, data []byte) (ConfigReadInput, er
 }
 
 func (input ConfigReadInput) clone() *ConfigReadInput {
-	return &ConfigReadInput{target: input.target, bytes: append([]byte(nil), input.bytes...), witness: input.witness}
+	return &ConfigReadInput{target: input.target, bytes: append([]byte(nil), input.bytes...), witness: input.witness, roleAudit: input.roleAudit}
 }
 
 // loadConfigFile dispatches by the selected filename. Legacy JSONC/JSON reads stay on their
@@ -76,7 +77,7 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 		return nil, nil, nil, err
 	}
 	file := &srcFile{path: path, data: data, format: configdoc.TOML, document: doc,
-		contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
+		contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq(), role: at.role}
 	if !record {
 		return doc.Values, file, readableResetTree(doc.Values, nil), nil
 	}

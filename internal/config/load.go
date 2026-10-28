@@ -76,7 +76,7 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 		warn(msg)
 		return jsonx.NewOrderedMap(), nil, nil, nil
 	}
-	f := &srcFile{path: path, data: data, format: configdoc.JSONC, contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq()}
+	f := &srcFile{path: path, data: data, format: configdoc.JSONC, contained: rel != "", rel: rel, via: at.via, seq: at.ws.nextSeq(), role: at.role}
 	if !record {
 		return m, f, nil, nil
 	}
@@ -246,6 +246,9 @@ func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[s
 	}
 	resolved := resolvePathForSeen(path)
 	if _, ok := seen[resolved]; ok {
+		if at.input != nil && at.input.roleAudit != nil && at.role != editRoleUnspecified {
+			*at.input.roleAudit = append(*at.input.roleAudit, editTargetReadObservation{path: path, role: at.role})
+		}
 		at.witness.observeSeenPath(path, at.input, at.role)
 		return jsonx.NewOrderedMap(), nil, nil
 	}
@@ -533,6 +536,10 @@ func composeReadableConfigWithReadInput(workspace string, strict bool, warn Warn
 }
 
 func composeReadableConfigWithInputUse(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
+	return composeReadableConfigWithInputUseAudit(workspace, strict, warn, record, withWorkspaceFile, input, inputUsed, nil)
+}
+
+func composeReadableConfigWithInputUseAudit(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool, input *ConfigReadInput, inputUsed *bool, roleAudit *[]editTargetReadObservation) (*jsonx.OrderedMap, *srcNode, error) {
 	if input == nil && inJail() && jailOwnWorkspace(workspace) && UserLayerPath() == "" {
 		if snapshot, ok := loadAssembledSnapshot(workspace); ok {
 			if !record {
@@ -542,6 +549,9 @@ func composeReadableConfigWithInputUse(workspace string, strict bool, warn Warn,
 			snapshot, origins := projectLegacyB2Config(snapshot, assembledOriginsTree(workspace, snapshot))
 			return snapshot, origins, nil
 		}
+	}
+	if input == nil && roleAudit != nil {
+		input = &ConfigReadInput{roleAudit: roleAudit}
 	}
 	userCfg, userNode, err := loadReadableUserScopeWithInputUse(paths.UserConfigPath(), strict, warn, record, input, inputUsed)
 	if err != nil {

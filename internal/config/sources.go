@@ -67,7 +67,8 @@ type srcFile struct {
 	rel       string
 	// seq is the file's place in its workspace load's read order, which is merge order: the
 	// config file, its includes, the local file, its includes.
-	seq int
+	seq  int
+	role editReadRole
 	// via is the include that reached the file ("include_if_found[0] in yolo-jail.jsonc"), ""
 	// for a top-level file.
 	via string
