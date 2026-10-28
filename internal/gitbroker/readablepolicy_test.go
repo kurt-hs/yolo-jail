@@ -367,8 +367,45 @@ func assertCanonicalEmptyWithLegacyKind(t *testing.T, legacyKind string) {
 		t.Fatalf("legacy JSONC include did not supply the broader %s grant", legacyKind)
 	}
 	kinds, canonical, err := config.BrokeredGrantKindsUsingReadablePolicy(Source)
-	if err != nil || !canonical || slices.Contains(kinds, legacyKind) {
+	if err != nil || !canonical || len(kinds) != 0 {
 		t.Fatalf("empty canonical authority = %v, canonical %t, err %v; want valid canonical denial despite legacy %s", kinds, canonical, err, legacyKind)
+	}
+}
+
+func TestEmptyLegacyProfileSelectionWithdrawsApprovedGitPush(t *testing.T) {
+	f := readableGitRequestFixture(t, "push", "push = ['main']")
+	f.commit("before empty profile selection")
+	f.mustPush("origin", "HEAD:main")
+	before := f.upstreamRef("refs/heads/main")
+
+	writeReadableGitJSONCPackSelection(t, `{"source":"git"}`, "always = ['fetch']\non_request = ['push']\n")
+	selectionPath := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "selection.jsonc")
+	selection := `{"packs":[{"source":"git"}],"profile":""}`
+	if err := os.WriteFile(selectionPath, []byte(selection), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.commit("after empty profile selection")
+	out, err := f.git("push", "origin", "HEAD:main")
+	if err == nil || !strings.Contains(out, reasonNeedsApproval) {
+		t.Fatalf("push after invalid empty legacy profile selection: err=%v\n%s", err, out)
+	}
+	if f.upstreamRef("refs/heads/main") != before {
+		t.Fatal("push after invalid empty legacy profile selection reached upstream")
+	}
+}
+
+func TestNullLegacyProfileSelectionKeepsApprovedGitPush(t *testing.T) {
+	f := readableGitRequestFixture(t, "push", "push = ['main']")
+	writeReadableGitJSONCPackSelection(t, `{"source":"git"}`, "always = ['fetch']\non_request = ['push']\n")
+	selectionPath := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "selection.jsonc")
+	selection := `{"packs":[{"source":"git"}],"profile":null}`
+	if err := os.WriteFile(selectionPath, []byte(selection), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.commit("supported null profile selection")
+	f.mustPush("origin", "HEAD:main")
+	if got, want := f.upstreamRef("refs/heads/main"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("push with null profile deselection left upstream at %q, want %q", got, want)
 	}
 }
 

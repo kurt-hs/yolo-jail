@@ -9,6 +9,28 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
+func validateReadableProfileSelection(value any) error {
+	if value == nil {
+		return nil
+	}
+	if selections, ok := asMap(value); ok {
+		for _, receiver := range selections.Keys() {
+			selected, _ := selections.Get(receiver)
+			if selected == nil {
+				continue
+			}
+			if _, problem := profileSetOf(selected); problem != "" {
+				return fmt.Errorf("config.%s.%s: %s", ProfileKey, receiver, problem)
+			}
+		}
+		return nil
+	}
+	if _, problem := profileSetOf(value); problem != "" {
+		return fmt.Errorf("config.%s: %s", ProfileKey, problem)
+	}
+	return nil
+}
+
 // readableBrokerSelection resolves one strict user snapshot to selected broker declarations.
 // Filtered roots stay leased through the closure and declaration reads; the returned metadata is detached.
 func readableBrokerSelection(user *jsonx.OrderedMap, sources *Sources) ([]string, []ReadableBrokerDeclaration, []ReadablePackDeclaration, error) {
@@ -67,6 +89,10 @@ func readableBrokerSelection(user *jsonx.OrderedMap, sources *Sources) ([]string
 				return profiles
 			}
 			if raw, present := user.Get(ProfileKey); present {
+				if err := validateReadableProfileSelection(raw); err != nil {
+					profileErr = err
+					return nil
+				}
 				if _, ok := ProfileSelectionOf(raw); !ok {
 					profileErr = fmt.Errorf("config.%s: invalid profile selection", ProfileKey)
 					return nil
