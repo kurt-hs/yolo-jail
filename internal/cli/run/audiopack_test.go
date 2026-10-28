@@ -94,6 +94,9 @@ func TestShippedAudioPackIsTheOnlyAudioLoophole(t *testing.T) {
 	// HostExecApproved comes from the pack's own MayAccessHost, which is true for an
 	// embedded pack: selecting a pack that shipped in the binary you ran IS the approval,
 	// so there is no lockfile entry to miss.
+	if mods[0].Pack != "audio" {
+		t.Errorf("selected module owner = %q, want audio", mods[0].Pack)
+	}
 	if !mods[0].HostExecApproved {
 		t.Error("an embedded pack's loophole module must be host-exec approved — the origin " +
 			"gate for an embedded pack is the user's own authority, and a false here would " +
@@ -348,6 +351,9 @@ func TestLazyResolverSeesAnEmbeddedPackLoophole(t *testing.T) {
 	var dirs []string
 	for _, m := range mods {
 		dirs = append(dirs, m.Dir)
+		if m.Pack != "audio" {
+			t.Errorf("lazy module owner = %q, want audio", m.Pack)
+		}
 		if !m.HostExecApproved {
 			t.Error("an embedded pack's loophole must be host-exec approved: its content " +
 				"shipped in the binary the user ran, and there is no lockfile entry that " +

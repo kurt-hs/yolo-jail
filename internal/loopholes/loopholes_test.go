@@ -158,6 +158,18 @@ func TestDiscoverEmptyAndNonexistent(t *testing.T) {
 	}
 }
 
+func TestDiscoverCarriesOwningPackFromSelectedModule(t *testing.T) {
+	module := mkdir(t, filepath.Join(t.TempDir(), "git-broker"))
+	writeManifest(t, module, map[string]any{"name": "git-broker", "description": "selected broker"})
+	loaded := Discover(DiscoverOptions{IncludeDisabled: true, PackModules: []PackModule{{Dir: module, Pack: "git-owner", HostExecApproved: true}}})
+	if len(loaded) != 1 {
+		t.Fatalf("loaded %v, want one pack module", names(loaded))
+	}
+	if loaded[0].Pack != "git-owner" || loaded[0].Name == loaded[0].Pack {
+		t.Fatalf("resolved loophole owner = %q for module %q, want distinct actual pack git-owner", loaded[0].Pack, loaded[0].Name)
+	}
+}
+
 func TestLoadsMinimalManifest(t *testing.T) {
 	md := modsDir(t)
 	mod := mkdir(t, filepath.Join(md, "my-mod"))

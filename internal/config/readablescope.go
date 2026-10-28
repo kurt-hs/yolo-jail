@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
@@ -22,13 +23,12 @@ func (e *ReadableAuthorityError) Unwrap() error { return e.Cause }
 // scope producer. Callers opt in by passing the selected source declaration; legacy callers keep
 // their current read path until their runtime handoff supplies that declaration.
 func readableScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead) (*ScopeCheck, bool) {
+	return readableScopeCheckWithSettings(workspace, brokers, read, nil, false)
+}
+
+func readableScopeCheckWithSettings(workspace string, brokers []ScopeBroker, read *WorkspaceRead, selectedSettings []ReadablePackDeclaration, requireIdentity bool) (*ScopeCheck, bool) {
 	if read == nil || read.Config == nil {
 		return nil, false
-	}
-	for _, broker := range brokers {
-		if broker.Readable == nil || broker.Readable.Brokered.Source != broker.Source {
-			return nil, false
-		}
 	}
 	user, userSources, err := LoadReadableUserScopeConfigWithSources(true, func(string) {})
 	if err != nil {
@@ -36,15 +36,52 @@ func readableScopeCheck(workspace string, brokers []ScopeBroker, read *Workspace
 	}
 	_, userHasAllow := user.Get("allow")
 	_, workspaceHasRequests := read.Config.Get("requests")
-	if !userHasAllow && !workspaceHasRequests {
+	identityRequired := userHasAllow || workspaceHasRequests
+	if !identityRequired {
 		return nil, false
 	}
+	for _, broker := range brokers {
+		if broker.Readable == nil || broker.Readable.Pack == "" || broker.Readable.Brokered.Source != broker.Source {
+			if requireIdentity {
+				return readableScopeFailure(workspace, brokers, fmt.Errorf("broker %q lacks matching selected-pack provenance for readable authority", broker.Source)), true
+			}
+			return nil, false
+		}
+	}
+	selectedPacks := make([]string, 0, len(selectedSettings)+len(brokers))
+	selectedSeen := map[string]bool{}
+	for _, pack := range selectedSettings {
+		if pack.Pack == "" {
+			if requireIdentity && len(pack.Settings) > 0 {
+				return readableScopeFailure(workspace, brokers, fmt.Errorf("selected readable settings lack owning pack provenance")), true
+			}
+			continue
+		}
+		if !selectedSeen[pack.Pack] {
+			selectedSeen[pack.Pack] = true
+			selectedPacks = append(selectedPacks, pack.Pack)
+		}
+	}
+	for _, broker := range brokers {
+		if !selectedSeen[broker.Readable.Pack] {
+			if requireIdentity {
+				return readableScopeFailure(workspace, brokers, fmt.Errorf("broker %q owning pack %q is absent from the resolved selected set", broker.Source, broker.Readable.Pack)), true
+			}
+			selectedSeen[broker.Readable.Pack] = true
+			selectedPacks = append(selectedPacks, broker.Readable.Pack)
+		}
+	}
 	declarations := make([]ReadableBrokerDeclaration, 0, len(brokers))
-	selected := make([]string, 0, len(brokers))
 	for _, broker := range brokers {
 		declaration := *broker.Readable
+		if !selectedSeen[declaration.Pack] {
+			return readableScopeFailure(workspace, brokers, fmt.Errorf("broker %q owning pack %q is absent from the resolved selected set", broker.Source, declaration.Pack)), true
+		}
 		declarations = append(declarations, declaration)
-		selected = append(selected, declaration.Pack)
+	}
+	detachedSettings := make([]ReadablePackDeclaration, len(selectedSettings))
+	for i, pack := range selectedSettings {
+		detachedSettings[i] = ReadablePackDeclaration{Pack: pack.Pack, Settings: cloneReadableSettingDecls(pack.Settings)}
 	}
 	userOrigins := readableUserOrigins(user, userSources)
 	if !userHasAllow {
@@ -55,8 +92,9 @@ func readableScopeCheck(workspace string, brokers []ScopeBroker, read *Workspace
 	}
 	workspaceOrigins := readableWorkspaceOrigins(read.Config, read.sources)
 	plan, err := ResolveReadableAllowance(ReadableAllowanceInput{
-		User: user, Workspace: read.Config, SelectedPacks: selected, Declarations: declarations,
-		UserOrigins: userOrigins, WorkspaceOrigins: workspaceOrigins,
+		User: user, Workspace: read.Config, SelectedPacks: selectedPacks, Declarations: declarations,
+		PackSettings: detachedSettings,
+		UserOrigins:  userOrigins, WorkspaceOrigins: workspaceOrigins,
 	})
 	if err != nil {
 		return readableScopeFailure(workspace, brokers, err), true

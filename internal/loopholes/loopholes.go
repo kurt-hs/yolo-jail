@@ -143,7 +143,10 @@ type Loophole struct {
 	// one pack selection and not under another, so it is a fact about the resolved set.
 	// See supersede.go.
 	SupersededBy []PackSupersession
-	Source       string
+	// Pack is the actual selected pack that contributed this loophole. It is empty for config or
+	// other non-pack sources and is never derived from Name.
+	Pack   string
+	Source string
 	// SkewNotes are the version-skew reports from the TOLERANT manifest read: one
 	// line per manifest key this build does not know, so the declaration is not
 	// honored. NOT errors — a manifest key only a newer yolo knows must not make

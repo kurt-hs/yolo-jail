@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 )
 
 // gateread.go is the config-change gate's ONE read of the workspace config
@@ -250,12 +252,41 @@ func inList(list []string, s string) bool {
 // whose remotes make up its scope (loopholedecl.Brokered).
 type ScopeBroker struct {
 	Source, Label, RemoteHost string
+	// Pack is the selected pack that actually owns this broker declaration.
+	Pack     string
+	Brokered loopholedecl.Brokered
+	Settings []loopholedecl.Setting
 	// GrantKinds are the kinds this source declares; a workspace request of any other kind
 	// reaches no scope.
 	GrantKinds []string
 	// Readable is the explicit capability projection for the selected source. Runtime callers
 	// may supply it as they adopt the readable allowance contract; absence preserves legacy reads.
 	Readable *ReadableBrokerDeclaration
+}
+
+// NewSelectedScopeCheck adapts broker metadata and selected-pack settings from one already-resolved
+// module set. NewScopeCheck remains the compatibility entry point: explicit Readable metadata opts
+// into that producer, while metadata-free callers keep the legacy read path.
+func NewSelectedScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead, selected []ReadablePackDeclaration) *ScopeCheck {
+	if len(brokers) == 0 {
+		return nil
+	}
+	resolved := append([]ScopeBroker(nil), brokers...)
+	for i := range resolved {
+		b := &resolved[i]
+		if b.Readable != nil && (b.Pack == "" || b.Readable.Pack != b.Pack || b.Readable.Brokered.Source != b.Source) {
+			return readableScopeFailure(workspace, resolved, fmt.Errorf("broker %q has conflicting selected-pack provenance", b.Source))
+		}
+		b.Readable = nil
+		if b.Pack != "" && b.Brokered.Source == b.Source {
+			declaration := readableBrokerDeclaration(b.Pack, b.Label, b.Brokered, b.Settings)
+			b.Readable = &declaration
+		}
+	}
+	if check, ok := readableScopeCheckWithSettings(workspace, resolved, read, selected, true); ok {
+		return check
+	}
+	return NewScopeCheck(workspace, brokers, read)
 }
 
 // NewScopeCheck is the scope part in play for brokers: each one's remotes, read from the
