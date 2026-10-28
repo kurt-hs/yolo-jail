@@ -5488,6 +5488,7 @@
 "internal/cli/check/workspacefile_test.go",
 "internal/cli/checkdepsnext_test.go",
 "internal/cli/claudeauth_test.go",
+"internal/cli/claudesecuritylaunch_test.go",
 "internal/cli/config_test.go",
 "internal/cli/configaddednull_test.go",
 "internal/cli/configcapture_test.go",

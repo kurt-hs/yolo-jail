@@ -40,6 +40,14 @@ The new [`internal/cli/claudesecuritylaunch_test.go`](../../internal/cli/claudes
 
 **Limit:** `TestBothMacosUserProductionLaunchArmsCarryTheAccountSecurityAdapter` observes both production arm source paths, while the existing keeper test executes the keeper arm. The new generated-launcher test exercises resolved carrier-to-bootstrap generation independently; it is not a new runtime exercise of the keeperless native `Run` arm.
 
+### Host fixture decoder lifetime
+
+The account-launcher fixture in [`internal/cli/claudesecuritylaunch_test.go`](../../internal/cli/claudesecuritylaunch_test.go) generates shims and launchers from the shipped pack tree. That reaches the in-jail loader, which enables the process-wide tolerant manifest decoder; this is appropriate for booting a possibly version-skewed jail, but the caller fixture runs in the host CLI test process. Before repair, [`TestJailTreeFixturesRestoreTheStrictDecoder`](../../internal/cli/packupdate_test.go) invoked that real account caller as a subtest and then accepted an unknown manifest field, demonstrating that the caller left later host reads tolerant.
+
+The fixture now forces the strict decoder before generation and resets it in its test cleanup. The parent regression checks malformed-manifest rejection only after the caller subtest and its cleanup finish. This is a fixture-lifetime correction; production decoder behavior is unchanged. The caller-plus-restoration selection failed before this correction and passed after it; the complete short `internal/cli` package, the scoped race selection, and `go vet -mod=vendor ./internal/cli` also passed afterward.
+
+This is Linux source/test evidence only. The account caller skips Darwin before any fixed `/usr/bin/security` operation, and this repair does not establish native Keychain or macOS behavior. The earlier HIGH review covers the original caller-test change, not this narrow test-only correction; the correction still needs its own review and does not decide item acceptance.
+
 ### Host adapter, exact service, fallback, and broker adoption
 
 `internal/cli.hostClaudeView` gates the host view on the explicit switch, the launched program's own shared-credentials contribution, and the active broker pack. It registers the managed view, and on the Darwin predicate `writeHostClaudeSecurityAdapter` composes the scoped security adapter ahead of the launch PATH while retaining existing blocker precedence. The service is computed by `claudesecurity.ViewService` from the managed view directory. The generated script calls the same hidden CLI verb in view mode with that exact service. It blocks only matching service operations; unrelated/global/ambiguous operations remain passthrough behavior covered by `internal/claudesecurity` fake-runner tests.

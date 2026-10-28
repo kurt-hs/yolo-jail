@@ -153,6 +153,9 @@ func TestAccountClaudeGeneratedLauncherDispatchesFixtureFallback(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("the production dispatcher forwards to fixed /usr/bin/security; this fixture must never touch a real Keychain")
 	}
+	// Generating the launchers reads jail packs through the tolerant decoder; restore strict host reads for later tests.
+	packload.OverrideSkewTolerance(false)
+	t.Cleanup(func() { packload.OverrideSkewTolerance(false) })
 	t.Setenv("YOLO_TEST_CLAUDE_SECURITY_DISPATCH", "1")
 	packs := packload.Embedded()
 	root, _ := packload.EmbeddedLocation()

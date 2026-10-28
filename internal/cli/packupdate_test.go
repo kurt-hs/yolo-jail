@@ -87,6 +87,8 @@ func TestJailTreeFixturesRestoreTheStrictDecoder(t *testing.T) {
 		}
 	}
 	strict(t, "nothing (the control)")
+	t.Run("accountClaudeGeneratedLauncher", TestAccountClaudeGeneratedLauncherDispatchesFixtureFallback)
+	strict(t, "TestAccountClaudeGeneratedLauncherDispatchesFixtureFallback")
 	t.Run("stageNpmPackRoot", func(t *testing.T) {
 		e := stageNpmPackRoot(t, `{"name":"acme","contributes":[`+
 			`{"kind":"program","bin":"npmtool","via":"npm","package":"npmtool"}]}`, "npmtool")
