@@ -11,9 +11,9 @@ import (
 
 func TestGenerateGraphicsDriversUsesProfileMetadataAndSplitArchitectures(t *testing.T) {
 	tmp := t.TempDir()
-	lib64, share64 := graphicsTestDirs(t, tmp, "mesa64")
-	lib64 = filepath.Join(tmp, "separate-lib-output", "lib")
-	share64 = filepath.Join(tmp, "separate-share-output", "share")
+	graphicsTestDirs(t, tmp, "mesa64")
+	lib64 := filepath.Join(tmp, "separate-lib-output", "lib")
+	share64 := filepath.Join(tmp, "separate-share-output", "share")
 	for _, path := range []string{lib64, share64} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			t.Fatal(err)
