@@ -564,13 +564,18 @@ func (o *Options) foldApplied(run *applyRun, res []applyChange) []foldedAppliedK
 		if !ok[k] {
 			continue
 		}
+		value, present, err := config.ConfigValueAtPath(run.current, k)
+		if err != nil {
+			o.pr(o.Stderr).printf("[dim]Warning: could not read applied config path %s before folding it into %s: %s; `yolo config apply` can retry it.[/dim]",
+				k, config.WorkspaceConfigBootPath(o.Workspace), richtext.Escape(err.Error()))
+			continue
+		}
 		if err := config.FoldBootBaselineKey(o.Workspace, k, run.current); err != nil {
 			o.pr(o.Stderr).printf("[dim]Warning: could not record %s as applied in %s: %s; `yolo config "+
 				"drift` will still list it.[/dim]", k, config.WorkspaceConfigBootPath(o.Workspace),
 				richtext.Escape(err.Error()))
 			continue
 		}
-		value, present := run.current.Get(k)
 		if present {
 			value = jsonx.DeepCopy(value)
 		}

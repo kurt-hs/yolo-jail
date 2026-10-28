@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
@@ -144,8 +145,8 @@ func WorkspaceConfigDrift(workspace string) (diffLines []string, hasDrift, ok bo
 // map. ok is false when there is none (a jail launched before baselines, or the file removed).
 //
 // THE RECORD IS THE CONFIG A RUNNING JAIL HAS, not only the one it booted with
-// (docs/design/live-config-apply.md LA-D8): `yolo config apply` folds each change it applied
-// live into it, one top-level key at a time (FoldBootBaselineKey), so drift against it is
+// (docs/design/live-config-apply.md LA-D8): `yolo config apply` folds each changed canonical path
+// it applied live into it, one dotted path at a time (FoldBootBaselineKey), so drift against it is
 // exactly what is still pending. It stays a convenience in the agent-writable workspace; the
 // approval record is the trust, and nothing reads this one to decide what to admit.
 func ReadWorkspaceBootBaseline(workspace string) (*jsonx.OrderedMap, bool, error) {
@@ -167,15 +168,98 @@ func ReadWorkspaceBootBaseline(workspace string) (*jsonx.OrderedMap, bool, error
 	return m, true, nil
 }
 
-// FoldBootBaselineKey makes one top-level key of the effective-config record equal the
-// workspace config's current value of it, or removes the key when current has none. Every
-// other key keeps the value it had. Called by `yolo config apply` once EVERY element of that
-// key's change reached the running jail (LA-D8), so a key with a failed element keeps its boot
-// value and `drift` keeps reporting it.
+// ConfigValueAtPath looks up one canonical dotted config path, such as install.nix or
+// machine.ports. A missing key (including a missing/non-table intermediate) is absent.
+func ConfigValueAtPath(current *jsonx.OrderedMap, path string) (any, bool, error) {
+	parts, err := canonicalConfigPathParts(path)
+	if err != nil {
+		return nil, false, err
+	}
+	var value any = current
+	for _, part := range parts {
+		m, ok := value.(*jsonx.OrderedMap)
+		if !ok || m == nil {
+			return nil, false, nil
+		}
+		var present bool
+		value, present = m.Get(part)
+		if !present {
+			return nil, false, nil
+		}
+	}
+	return value, true, nil
+}
+
+func canonicalConfigPathParts(path string) ([]string, error) {
+	parts := strings.Split(path, ".")
+	for _, part := range parts {
+		if part == "" {
+			return nil, fmt.Errorf("%q is not a canonical config path", path)
+		}
+	}
+	return parts, nil
+}
+
+// setCanonicalConfigPath updates one value without replacing sibling fields. It creates missing
+// intermediate tables, but refuses to overwrite a non-table value on the way to the leaf.
+func setCanonicalConfigPath(root *jsonx.OrderedMap, parts []string, value any) error {
+	current := root
+	for _, part := range parts[:len(parts)-1] {
+		next, present := current.Get(part)
+		if !present {
+			child := jsonx.NewOrderedMap()
+			current.Set(part, child)
+			current = child
+			continue
+		}
+		child, ok := next.(*jsonx.OrderedMap)
+		if !ok || child == nil {
+			return fmt.Errorf("cannot fold a nested config path through non-table %q", part)
+		}
+		current = child
+	}
+	current.Set(parts[len(parts)-1], value)
+	return nil
+}
+
+// deleteCanonicalConfigPath removes one value and prunes only empty tables left by that removal.
+func deleteCanonicalConfigPath(root *jsonx.OrderedMap, parts []string) {
+	maps := []*jsonx.OrderedMap{root}
+	current := root
+	for _, part := range parts[:len(parts)-1] {
+		next, present := current.Get(part)
+		if !present {
+			return
+		}
+		child, ok := next.(*jsonx.OrderedMap)
+		if !ok || child == nil {
+			return
+		}
+		maps = append(maps, child)
+		current = child
+	}
+	current.Delete(parts[len(parts)-1])
+	for i := len(parts) - 2; i >= 0; i-- {
+		if maps[i+1].Len() != 0 {
+			break
+		}
+		maps[i].Delete(parts[i])
+	}
+}
+
+// FoldBootBaselineKey makes one canonical config path of the effective-config record equal the
+// workspace config's current value of it, or removes that path when current has none. Every sibling
+// path keeps the value it had. Called by `yolo config apply` once EVERY element of that path's
+// change reached the running jail (LA-D8), so a failed element keeps its boot value and `drift`
+// keeps reporting it.
 //
-// It refuses when there is no record: a fold would otherwise create a baseline holding one key,
-// and drift would then report every other key as a change the jail never had.
+// It refuses when there is no record: a fold would otherwise create a baseline holding one path,
+// and drift would then report every other path as a change the jail never had.
 func FoldBootBaselineKey(workspace, key string, current *jsonx.OrderedMap) error {
+	parts, err := canonicalConfigPathParts(key)
+	if err != nil {
+		return err
+	}
 	boot, ok, err := ReadWorkspaceBootBaseline(workspace)
 	if err != nil {
 		return err
@@ -184,10 +268,16 @@ func FoldBootBaselineKey(workspace, key string, current *jsonx.OrderedMap) error
 		return fmt.Errorf("%s does not exist, so there is no record to fold %s into",
 			WorkspaceConfigBootPath(workspace), key)
 	}
-	if v, has := current.Get(key); has {
-		boot.Set(key, jsonx.DeepCopy(v))
+	value, present, err := ConfigValueAtPath(current, key)
+	if err != nil {
+		return err
+	}
+	if present {
+		if err := setCanonicalConfigPath(boot, parts, jsonx.DeepCopy(value)); err != nil {
+			return err
+		}
 	} else {
-		boot.Delete(key)
+		deleteCanonicalConfigPath(boot, parts)
 	}
 	j, err := SnapshotJSON(boot)
 	if err != nil {
