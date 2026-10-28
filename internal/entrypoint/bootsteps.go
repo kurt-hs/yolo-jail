@@ -229,6 +229,15 @@ func bootSteps() []bootStep {
 				"macos-user takes `packages:` from its own native nix build",
 		},
 		{
+			// The selected Mesa outputs carry lib/ and share/ trees but do not install
+			// them at the NixOS paths graphics loaders expect. Materialize that view only
+			// after store profiles exist, and only for a GPU-enabled container boot.
+			name:           "configure_graphics_drivers",
+			gen:            GenerateGraphicsDrivers,
+			notDarwin:      "macos-user runs no container GPU exposure boot step",
+			notSessionPass: "the launch boot owns /run graphics trees and provenance; attached sessions reuse them",
+		},
+		{
 			// Put the image's glibc-free LD_LIBRARY_PATH farm (ImageLDLib: the C++ runtime,
 			// zlib and the `packages:` libs) on LD_LIBRARY_PATH, so a nix-built process such as
 			// the image's python3 finds them by bare soname without /lib (and its glibc) on the

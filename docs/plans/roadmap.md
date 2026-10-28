@@ -179,7 +179,8 @@ and a pi-subagents registry several extensions can share stays in item 28.
     [a project's file](../design/config-project.md), [editing commands and format](../design/config-commands.md),
     [migration](../design/config-migration.md) and [pack manifests](../design/pack-manifests.md).
 
-12. [Rule the computed-briefings design](../design/computed-briefings.md) — the maintainer, 2026-10-24:
+12. [Complete the computed-briefings plan](../design/computed-briefings-plan.md), from the
+    [computed-briefings design](../design/computed-briefings.md) — the maintainer, 2026-10-24:
     a pack's briefing should tell each workspace's agent exactly how to finish a change (commit
     only, push a named branch, or push a new branch) according to the grants that workspace was
     approved, now that push grants exist. It reads the grants by what the broker does, not by
@@ -388,6 +389,9 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     the last task of [its plan](../design/pack-buildable-programs-plan.md): macos-user's run-as-you mode fails a
     pack-tree build at the capture bootstrap, and Apple Container and a Mac's `yolo host` have not run it yet.
 
+53. [Make store cleanup automatic even after the last launch](../design/automatic-store-gc.md) — the owner wants no routine manual pruning; settle safe idle coverage before automating the current capture sweep.
+    Its [companion seed](../design/automatic-store-gc-plan.md) parks surfaced implementation material; the [independent advice and audit](../research/automatic-store-gc-advisory-20261028.md) preserve the evidence behind the choice.
+
 ## External waits
 
 38. One session at a Mac, with `sudo`'s password and the runner stopped, completes [the benchmark](../research/macos-backend-performance.md#8-results)
@@ -497,6 +501,7 @@ classes, its sub-parts are named and the cross-cutting ones repeat in the two li
 |---|---|---|
 | IC1 — profile-served daemons on attach | D | [OQ-AD1](../design/attach-daemon-activation.md#OQ-AD1): activate late-selected profile daemons additively, or refuse conflicting late bridge plans in this slice? **Maintainer** (synthesis leaning: refuse). Today's restart prompt is the ruled [OQ-SK1](../reference/attach-skew.md#why-its-this-way) disposition, not a defect. |
 | IC2 — ongoing launch preparation and update-and-wait | A | Review the connected combined candidate and complete final runtime acceptance; reuse the admitted-build pipeline before optimizing isolated waits. |
+| [IC3 — selected GPU graphics-driver tree](../design/gpu-graphics.md) | A / X | Build from the [completed plan](../design/gpu-graphics-plan.md); a real Linux GPU host still owes tree and Mesa-version verification, and the separate card-node ioctl remains unproven. |
 | IC5 — the macos-user suite on a developer Mac | A | The four rulings are compacted into the [Decision Ledger](../design/macos-user-suite-on-a-developer-mac.md#decision-ledger). The original test changes and the doorway, housekeeping and floor-test repairs remain in main ancestry; portable root-sudo scanner fixes are in `cab34b522` and `201c4009e`. The earlier `4e7b9b92b` commit was documentation-only. Native-Mac reruns remain unverified. |
 
 The section's other pointers are not items of their own: Pi's profile-set extension call is item 28, native readiness
