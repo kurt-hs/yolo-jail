@@ -15,6 +15,14 @@ A **surface** is a file yolo renders into a program's config directory from a pa
 
 This review is reasoning from the measured facts in the review brief, including the 2026-10-27/28 `pi-web-access` lockout. Nothing below adds new measurements; unknowns are marked UNMEASURED.
 
+**Status 2026-10-28.** Built for the host notch, in two commits: `5f215ed10` (a stray is captured,
+kept whole, named and never a launch refusal; one rule on the reap and resident paths; `yolo prune`
+reports a kept home) and `6be8f6439` (the launch manifest, SHR-D3; repatriation, SHR-D4; kept-home
+reporting, SHR-D9). Not built: the jail boot's retire path still keeps a stray home and warns
+rather than repatriating it — it loses nothing today, so parity (SHR-D5) is a follow-up. Open:
+SHR-Q2's audit, which decides whether link replacement is the common case or a one-extension
+accident.
+
 ## 2. Q1: the reaper's requirement
 
 The requirement is a property about destruction, not about directory contents:
