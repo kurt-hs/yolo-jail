@@ -41,8 +41,8 @@ than delivering incomplete briefing text.
 
 **Needs your ruling:** None.
 
-**Reads with:** [`computed-briefings-plan.md`](computed-briefings-plan.md) (the implementation
-plan's seed; not a hand-off until completed against the current tree),
+**Reads with:** [`computed-briefings-plan.md`](computed-briefings-plan.md) (the current-tree
+implementation plan; access-projection clarification and operation controls remain unfinished),
 [`readable-config.md`](readable-config.md) (renames the grant config this design reads; the
 dependency is in [§3.2](#32-what-a-producer-reads)), [`git-broker.md`](git-broker.md) (what each
 git grant lets a push do).

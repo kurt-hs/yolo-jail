@@ -42,6 +42,8 @@ func TestThePreflightRunsEveryBootGenerator(t *testing.T) {
 	deliberatelyNotPreflighted := map[string]string{
 		"GenerateStorePackages": "opt-in per launch (YOLO_STORE_PACKAGES) and writes a symlink " +
 			"farm under /run, which a temp-home dry run has nowhere to put",
+		"GenerateGraphicsDrivers": "materializes selected graphics outputs and provenance under " +
+			"/run inside the jail; a temp-home preflight has no authority to create or verify that jail-owned tree",
 		"ConfigureHostFiles": "renders HOST files, which a preflight must never touch — the " +
 			"whole point of the temp home is that the dry run cannot reach them",
 		"RemoveStaleGeneratedClients": "a REMOVER, not a generator: it deletes retired clients " +
