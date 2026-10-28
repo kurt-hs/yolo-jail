@@ -12,6 +12,14 @@ reaches a jail. `yolo config-ref` is the complete reference for every key.
 | `yolo-jail.jsonc` | **Workspace**: one project's settings, committed with it | `yolo init` |
 | `yolo-jail.local.jsonc` | Workspace, this machine only; keep it out of git | by hand |
 
+Readable TOML files are an opt-in alternative: `~/.config/yolo-jail/config.toml`,
+`yolo-jail.toml`, and `yolo-jail.local.toml`. Existing JSONC/JSON files remain supported; do
+not keep a TOML file beside its legacy sibling for the same config role, because the reader
+refuses the pair rather than merging them. `yolo init` and `yolo init-user-config` still create
+JSONC, and there is no automatic conversion command: do not rename JSONC bytes to a `.toml`
+filename. After writing a TOML file in the accepted TOML schema, run `yolo check` as for any
+config edit.
+
 The **workspace** is the folder you run `yolo` in, exactly: there is no search upward for a config
 file, and launching from a subfolder makes that subfolder its own workspace with its own jail.
 Inside the jail it appears at `/workspace`, as the same live files, not a copy.
