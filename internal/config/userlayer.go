@@ -196,23 +196,27 @@ func loadUserScope(path, label string, strict bool, warn Warn, record bool) (*js
 }
 
 func loadReadableUserScope(path string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadReadableUserScopeWithReadInput(path, strict, warn, record, nil)
+}
+
+func loadReadableUserScopeWithReadInput(path string, strict bool, warn Warn, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
 	selectedPath, selectedLabel, readable, err := resolveUserConfigPath(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	seen := map[string]struct{}{}
-	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{})
+	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input})
 	if err != nil {
 		return nil, nil, err
 	}
 	if readable {
-		cfg, node, err = mergeUserConfigFragments(cfg, node, filepath.Dir(selectedPath), strict, warn, seen, record)
+		cfg, node, err = mergeUserConfigFragmentsWithReadInput(cfg, node, filepath.Dir(selectedPath), strict, warn, seen, record, input)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
-	cfg, node = applyInheritedLaunch(cfg, node, record, true, strings.EqualFold(filepath.Ext(selectedPath), ".toml"))
-	cfg, node, err = applyReadableUserLayer(cfg, node, record)
+	cfg, node = applyInheritedLaunchWithReadInput(cfg, node, record, true, strings.EqualFold(filepath.Ext(selectedPath), ".toml"), input)
+	cfg, node, err = applyReadableUserLayerWithReadInput(cfg, node, record, input)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -220,11 +224,15 @@ func loadReadableUserScope(path string, strict bool, warn Warn, record bool) (*j
 }
 
 func applyReadableUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	return applyReadableUserLayerWithReadInput(base, baseNode, record, nil)
+}
+
+func applyReadableUserLayerWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
 	path := UserLayerPath()
 	if path == "" {
 		return base, baseNode, nil
 	}
-	layer, layerNode, err := loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{})
+	layer, layerNode, err := loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{input: input})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -267,11 +275,15 @@ func InheritedLaunchPath() string {
 // statement and must win — the same direction as user-under-workspace one level up. The
 // provenance (sources.go) is folded the same way, so a refused key the file carries names it.
 func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool) (*jsonx.OrderedMap, *srcNode) {
+	return applyInheritedLaunchWithReadInput(base, baseNode, record, readable, clearEmptyLists, nil)
+}
+
+func applyInheritedLaunchWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode) {
 	path := InheritedLaunchPath()
 	if path == "" {
 		return base, baseNode
 	}
-	inherited, _, inheritedNode, err := loadJSONCFile(path, "inherited launch config", false, func(string) {}, record, readAt{})
+	inherited, _, inheritedNode, err := loadJSONCFile(path, "inherited launch config", false, func(string) {}, record, readAt{input: input})
 	if err != nil || inherited == nil || inherited.Len() == 0 {
 		return base, baseNode
 	}

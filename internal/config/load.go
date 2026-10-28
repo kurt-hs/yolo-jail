@@ -53,7 +53,7 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 	if warn == nil {
 		warn = defaultWarn
 	}
-	data, rel, err := at.ws.read(path)
+	data, rel, err := at.ws.readWithInput(path, at.input)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonx.NewOrderedMap(), nil, nil, nil
@@ -331,10 +331,10 @@ func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[s
 		var incNode *srcNode
 		if readable {
 			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, true, scope,
-				readAt{ws: at.ws, via: entryLabel + " in " + label})
+				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input})
 		} else {
 			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, false, scope,
-				readAt{ws: at.ws, via: entryLabel + " in " + label})
+				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input})
 		}
 		if err != nil {
 			return nil, nil, err
@@ -420,10 +420,14 @@ func LoadWorkspaceConfigWithSources(workspace string, strict bool, warn Warn) (*
 // loadReadableWorkspaceConfigOver applies workspace layers in file precedence order to an
 // existing readable config, so an empty-list reset survives into the next layer.
 func loadReadableWorkspaceConfigOver(workspace string, strict bool, warn Warn, record bool, base *jsonx.OrderedMap, baseNode *srcNode) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadReadableWorkspaceConfigOverWithReadInput(workspace, strict, warn, record, base, baseNode, nil)
+}
+
+func loadReadableWorkspaceConfigOverWithReadInput(workspace string, strict bool, warn Warn, record bool, base *jsonx.OrderedMap, baseNode *srcNode, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
 	if workspace == "" {
 		workspace = cwd()
 	}
-	var at readAt
+	at := readAt{input: input}
 	if record {
 		at.ws = openWorkspaceRoot(workspace)
 		defer at.ws.close()
@@ -510,7 +514,11 @@ func LoadReadableConfigWithoutWorkspaceFile(workspace string, strict bool, warn 
 }
 
 func composeReadableConfig(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool) (*jsonx.OrderedMap, *srcNode, error) {
-	if inJail() && jailOwnWorkspace(workspace) && UserLayerPath() == "" {
+	return composeReadableConfigWithReadInput(workspace, strict, warn, record, withWorkspaceFile, nil)
+}
+
+func composeReadableConfigWithReadInput(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	if input == nil && inJail() && jailOwnWorkspace(workspace) && UserLayerPath() == "" {
 		if snapshot, ok := loadAssembledSnapshot(workspace); ok {
 			if !record {
 				snapshot, _ = projectLegacyB2Config(snapshot, nil)
@@ -520,7 +528,7 @@ func composeReadableConfig(workspace string, strict bool, warn Warn, record, wit
 			return snapshot, origins, nil
 		}
 	}
-	userCfg, userNode, err := loadReadableUserScope(paths.UserConfigPath(), strict, warn, record)
+	userCfg, userNode, err := loadReadableUserScopeWithReadInput(paths.UserConfigPath(), strict, warn, record, input)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -528,7 +536,7 @@ func composeReadableConfig(workspace string, strict bool, warn Warn, record, wit
 	if ws == "" {
 		ws = cwd()
 	}
-	merged, mergedNode, err := loadReadableWorkspaceConfigOver(ws, strict, warn, record, userCfg, userNode)
+	merged, mergedNode, err := loadReadableWorkspaceConfigOverWithReadInput(ws, strict, warn, record, userCfg, userNode, input)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -536,6 +544,26 @@ func composeReadableConfig(workspace string, strict bool, warn Warn, record, wit
 		merged, mergedNode = applyWorkspaceFile(merged, mergedNode, workspace, record)
 	}
 	return merged, mergedNode, nil
+}
+
+// LoadConfigWithReadInput recomposes the standard reader graph with one immutable planned-byte
+// input. It preserves normal scope, containment, file identity, and include handling; the target
+// is never treated as authorized merely because it appears in ConfigReadInput.
+func LoadConfigWithReadInput(workspace string, strict bool, warn Warn, input ConfigReadInput) (*jsonx.OrderedMap, error) {
+	if input.target == "" || !filepath.IsAbs(input.target) {
+		return nil, fmt.Errorf("config read input requires an absolute physical target")
+	}
+	cfg, _, err := composeReadableConfigWithReadInput(workspace, strict, warn, false, true, input.clone())
+	return cfg, err
+}
+
+// LoadConfigWithReadInputAndSources is LoadConfigWithReadInput with the standard reader provenance.
+func LoadConfigWithReadInputAndSources(workspace string, strict bool, warn Warn, input ConfigReadInput) (*jsonx.OrderedMap, *Sources, error) {
+	if input.target == "" || !filepath.IsAbs(input.target) {
+		return nil, nil, fmt.Errorf("config read input requires an absolute physical target")
+	}
+	cfg, node, err := composeReadableConfigWithReadInput(workspace, strict, warn, true, true, input.clone())
+	return cfg, sourcesOf(node), err
 }
 
 // LoadConfig composes the standard format-aware user/workspace graph and per-workspace file.

@@ -17,6 +17,28 @@ import (
 
 const readableConfigFormat = 2
 
+// ConfigReadInput substitutes planned bytes for one explicitly named physical file during a single
+// standard config read. The standard reader must still open the path successfully and applies
+// its normal scope checks to these bytes. Construct with NewConfigReadInput; the target must be an
+// absolute physical path, not a provenance label or an inferred source.
+type ConfigReadInput struct {
+	target string
+	bytes  []byte
+}
+
+// NewConfigReadInput makes an immutable invocation input. Both the physical path and bytes are copied
+// into private storage so later caller mutation cannot affect a read.
+func NewConfigReadInput(physicalTarget string, data []byte) (ConfigReadInput, error) {
+	if !filepath.IsAbs(physicalTarget) {
+		return ConfigReadInput{}, fmt.Errorf("read input target must be an absolute physical path: %q", physicalTarget)
+	}
+	return ConfigReadInput{target: filepath.Clean(physicalTarget), bytes: append([]byte(nil), data...)}, nil
+}
+
+func (input ConfigReadInput) clone() *ConfigReadInput {
+	return &ConfigReadInput{target: input.target, bytes: append([]byte(nil), input.bytes...)}
+}
+
 // loadConfigFile dispatches by the selected filename. Legacy JSONC/JSON reads stay on their
 // existing decoder and error path; TOML goes through the shared positioned document contract.
 func loadConfigFile(path, label string, strict bool, warn Warn, record bool, scope SchemaScope, at readAt) (*jsonx.OrderedMap, *srcFile, *srcNode, error) {
@@ -30,7 +52,7 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 	if warn == nil {
 		warn = defaultWarn
 	}
-	data, rel, err := at.ws.read(path)
+	data, rel, err := at.ws.readWithInput(path, at.input)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonx.NewOrderedMap(), nil, nil, nil
@@ -180,6 +202,10 @@ func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, er
 }
 
 func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadUserConfigFragmentsWithReadInput(base, baseNode, dir, strict, warn, seen, record, nil)
+}
+
+func loadUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
 	fragmentDir := filepath.Join(dir, "config.d")
 	entries, err := os.ReadDir(fragmentDir)
 	if err != nil {
@@ -223,7 +249,7 @@ func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir stri
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{})
+		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input})
 		if loadErr != nil {
 			return nil, nil, loadErr
 		}
@@ -233,7 +259,11 @@ func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir stri
 }
 
 func mergeUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	fragments, fragmentNode, err := loadUserConfigFragments(base, baseNode, dir, strict, warn, seen, record)
+	return mergeUserConfigFragmentsWithReadInput(base, baseNode, dir, strict, warn, seen, record, nil)
+}
+
+func mergeUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	fragments, fragmentNode, err := loadUserConfigFragmentsWithReadInput(base, baseNode, dir, strict, warn, seen, record, input)
 	if err != nil {
 		return nil, nil, err
 	}
