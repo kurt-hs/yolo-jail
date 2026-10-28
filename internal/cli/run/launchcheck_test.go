@@ -123,14 +123,53 @@ func serveFrontedFixture(t *testing.T, handler hostservice.Handler, sock string)
 // answers.
 func leaveAnOlderCopyRunning(t *testing.T, handler hostservice.Handler) {
 	t.Helper()
-	leaveAnOlderCopyRunningUnder(t, handler, os.Getenv("HOME"))
+	home := os.Getenv("HOME")
+	fixturePID := leaveAnOlderCopyRunningUnder(t, handler, home)
 	if !olderHostWideAlive(launchCheckFixtureName) {
-		t.Fatal("the fixture does not read as an older yolo's machine-wide copy")
+		t.Fatalf("the fixture does not read as an older yolo's machine-wide copy; %s",
+			olderCopyFixtureDiagnostic(launchCheckFixtureName, home, fixturePID))
 	}
 }
 
+func olderCopyFixtureDiagnostic(name, expectedHome string, fixturePID int) string {
+	deps := broker.LegacyDeps(name)
+	status := broker.BrokerStatus(deps)
+	observedHome := "<pid-unavailable>"
+	if status.PIDPresent && status.PID == fixturePID {
+		observedHome = fixtureProcessHome(fixturePID)
+	} else if status.PIDPresent {
+		observedHome = fmt.Sprintf("<fixture-pid-mismatch: expected %d, observed %d>", fixturePID, status.PID)
+	}
+	return fmt.Sprintf("fixture predicate: pid_present=%t pid_live=%t socket_present=%t socket_accepting=%t expected_fixture_HOME=%q observed_fixture_HOME=%q socket_path=%q socket_metadata={%s} pid_file_path=%q pid_file_metadata={%s}",
+		status.PIDPresent, status.PIDLive, status.SocketExists, status.Reachable,
+		expectedHome, observedHome, deps.SocketPath, fixturePathMetadata(deps.SocketPath),
+		deps.PIDFilePath, fixturePathMetadata(deps.PIDFilePath))
+}
+
+// fixtureProcessHome extracts only HOME from the test-owned process; no other environment value is reported.
+func fixtureProcessHome(pid int) string {
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		return "<unreadable>"
+	}
+	for _, entry := range strings.Split(string(raw), "\x00") {
+		if home, ok := strings.CutPrefix(entry, "HOME="); ok {
+			return home
+		}
+	}
+	return "<missing>"
+}
+
+func fixturePathMetadata(path string) string {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Sprintf("unavailable: %v", err)
+	}
+	return fmt.Sprintf("mode=%s size=%d", info.Mode(), info.Size())
+}
+
 // leaveAnOlderCopyRunningUnder is leaveAnOlderCopyRunning with the copy's process under home.
-func leaveAnOlderCopyRunningUnder(t *testing.T, handler hostservice.Handler, home string) {
+func leaveAnOlderCopyRunningUnder(t *testing.T, handler hostservice.Handler, home string) int {
 	t.Helper()
 	serveFrontedFixture(t, handler, paths.HostSingletonSocket(launchCheckFixtureName))
 	proc := exec.Command("sleep", "120")
@@ -155,6 +194,7 @@ func leaveAnOlderCopyRunningUnder(t *testing.T, handler hostservice.Handler, hom
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Remove(pidFile) })
+	return proc.Process.Pid
 }
 
 // olderThanTheCheck answers as a daemon a yolo older than the launch check does: its handler's
