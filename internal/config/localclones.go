@@ -201,9 +201,14 @@ func validateLocalClones(config *jsonx.OrderedMap, workspace string, errs *[]str
 				", or remove it from the workspace config.")
 		}
 	}
-	userConfig := UserScopeConfigOrEmpty()
-	if len(edit) != 0 && edit[0] != nil && edit[0].rawUser != nil {
+	var userConfig *jsonx.OrderedMap
+	if len(edit) != 0 && edit[0] != nil {
 		userConfig = edit[0].rawUser
+	} else {
+		userConfig = UserScopeConfigOrEmpty()
+	}
+	if userConfig == nil {
+		userConfig = jsonx.NewOrderedMap()
 	}
 	for _, p := range localClonesProblems(userConfig) {
 		add(errs, p)

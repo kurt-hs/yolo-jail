@@ -68,7 +68,7 @@ func validateUseProfilesRetired(config *jsonx.OrderedMap, errs, warns *[]string)
 // refused (OQ-AP2). The string form, the top-level list and "*" name no agent, so a list there
 // is a BARE list, narrowed to its first entry at such an agent and said at launch (OQ-AP3,
 // config.ProfileTableFor), never refused for it.
-func validateProfile(config *jsonx.OrderedMap, errs *[]string) {
+func validateProfile(config *jsonx.OrderedMap, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(ProfileKey)
 	if !present || v == nil {
 		return
@@ -108,21 +108,32 @@ func validateProfile(config *jsonx.OrderedMap, errs *[]string) {
 	installed, namespaceKnown := []string(nil), false
 	var capable map[string]bool
 	if wantsNamespace {
-		// An unresolvable configured pack makes the namespace unknowable, and that pack
-		// is refused on its own terms — louder, and first — by `yolo check`'s Packs
-		// section and by the launch's staging. Reporting it here too would misdiagnose a
-		// broken install as a typo'd profile key, so the NAMESPACE half steps aside; the
-		// shape half below still runs, because a value that is not a string is a fact
-		// about this config alone.
-		if names, known := UseProfileCLINames(); known {
-			installed, namespaceKnown = names, true
-			// The set-capable half is asked only when an agent is NAMED with a list of more
-			// than one, since it walks the same universe again.
-			for _, k := range keys {
-				if val, _ := profiles.Get(k); k != ProfileEveryAgent {
-					if list, isList := val.([]any); isList && len(list) > 1 {
-						capable, _ = SetCapableCLINames()
-						break
+		if len(edit) != 0 && edit[0] != nil {
+			namespace, sets, err := explicitEditProfileNamespaces(edit[0])
+			if err != nil {
+				add(errs, "config."+ProfileKey+": cannot validate the planned CLI namespace: "+err.Error())
+			} else {
+				installed = explicitEditProfileNames(namespace)
+				capable = sets
+				namespaceKnown = true
+			}
+		} else {
+			// An unresolvable configured pack makes the namespace unknowable, and that pack
+			// is refused on its own terms — louder, and first — by `yolo check`'s Packs
+			// section and by the launch's staging. Reporting it here too would misdiagnose a
+			// broken install as a typo'd profile key, so the NAMESPACE half steps aside; the
+			// shape half below still runs, because a value that is not a string is a fact
+			// about this config alone.
+			if names, known := UseProfileCLINames(); known {
+				installed, namespaceKnown = names, true
+				// The set-capable half is asked only when an agent is NAMED with a list of more
+				// than one, since it walks the same universe again.
+				for _, k := range keys {
+					if val, _ := profiles.Get(k); k != ProfileEveryAgent {
+						if list, isList := val.([]any); isList && len(list) > 1 {
+							capable, _ = SetCapableCLINames()
+							break
+						}
 					}
 				}
 			}

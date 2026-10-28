@@ -6,18 +6,25 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packsrc"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func (ctx *editValidationContext) selectedPacks() ([]*packload.Pack, error) {
-	entries, problems := lowerReadablePackEntries(ctx.rawUser, ctx.userOrigins)
+	if ctx.rawUser == nil {
+		return nil, fmt.Errorf("planned user config source is missing from explicit edit context")
+	}
+	if ctx.embeddedNamesErr != nil {
+		return nil, fmt.Errorf("enumerate the captured embedded pack source: %w; rerun with a complete yolo build", ctx.embeddedNamesErr)
+	}
+	entries, problems := lowerReadablePackEntriesFromEmbeddedNames(ctx.rawUser, ctx.userOrigins, ctx.embeddedNames)
 	if len(problems) != 0 {
 		return nil, fmt.Errorf("read planned pack entries: %v", problems)
 	}
 	entries = appendImplicitLocalPack(entries)
-	fsys := packload.EmbeddedFS()
+	fsys := ctx.embeddedFS
 	embedded := map[string]*packload.Pack{}
 	var embeddedErr error
 	lookup := func(name string) (*packload.Pack, bool) {
@@ -88,9 +95,23 @@ func (ctx *editValidationContext) selectedPacks() ([]*packload.Pack, error) {
 	}
 	selection := packload.Selection{
 		UseProfiles: func(set []*packload.Pack) map[string]string {
-			return ConfigProfileTable(ctx.rawUser, set)
+			if _, active := ctx.rawUser.Get("active_provider"); !active {
+				return ConfigProfileTable(ctx.rawUser, set)
+			}
+			var closureProfiles map[string]packload.UserProfile
+			var closureErr error
+			active, closureProfiles, closureErr := explicitEditViaSelection(ctx.rawUser, set)
+			ctx.viaSelectionErr = closureErr
+			ctx.viaProfiles = closureProfiles
+			return active
 		},
 		UserProfiles: func() (map[string]packload.UserProfile, error) {
+			if ctx.viaSelectionErr != nil {
+				return nil, ctx.viaSelectionErr
+			}
+			if _, active := ctx.rawUser.Get("active_provider"); active {
+				return clonePackUserProfiles(ctx.viaProfiles), nil
+			}
 			value, present := ctx.rawUser.Get("profiles")
 			if !present || value == nil {
 				return map[string]packload.UserProfile{}, nil
@@ -109,6 +130,9 @@ func (ctx *editValidationContext) selectedPacks() ([]*packload.Pack, error) {
 		}
 		return nil, fmt.Errorf("resolve planned pack selection: %w", err)
 	}
+	if ctx.viaSelectionErr != nil {
+		return nil, fmt.Errorf("resolve planned active provider selection for pack closure: %w", ctx.viaSelectionErr)
+	}
 	if embeddedErr != nil {
 		return nil, fmt.Errorf("planned pack closure source: %w", embeddedErr)
 	}
@@ -116,6 +140,55 @@ func (ctx *editValidationContext) selectedPacks() ([]*packload.Pack, error) {
 		return nil, fmt.Errorf("planned pack selection is incomplete: %v %v", selected.Unresolved, selected.ClosureErr)
 	}
 	return selected.Packs(), nil
+}
+
+func explicitEditViaSelection(config *jsonx.OrderedMap, packs []*packload.Pack) (map[string]string, map[string]packload.UserProfile, error) {
+	var authored *jsonx.OrderedMap
+	if raw, present := config.Get(providersKey); present {
+		var ok bool
+		authored, ok = raw.(*jsonx.OrderedMap)
+		if !ok {
+			return nil, nil, fmt.Errorf("config.providers: expected a table")
+		}
+	}
+	declarations, err := packload.ComposeProviderDeclarations(authored, packs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("compose selected provider declarations: %w", err)
+	}
+	selection, err := ConfigActiveProviderSelection(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolved, err := ResolveActiveProviders(declarations, selection, ProviderReceivers(packs))
+	if err != nil {
+		return nil, nil, err
+	}
+	active := make(map[string]string)
+	profiles := make(map[string]packload.UserProfile)
+	for receiver, targets := range resolved.ByReceiver {
+		if len(targets) == 0 || targets[0].Target.Native {
+			continue
+		}
+		// ResolveVias consumes the existing singular profile table. The F selector result
+		// is already in precedence order; use its primary provider just as the legacy table
+		// exposes its primary profile, without guessing from authored aliases.
+		target := targets[0]
+		profile := "\x00readable-provider:" + target.Provider
+		if target.Target.Variant != "" {
+			profile += "/" + target.Target.Variant
+		}
+		active[receiver] = profile
+		profiles[profile] = packload.UserProfile{Provider: target.Provider, Via: target.Via}
+	}
+	return active, profiles, nil
+}
+
+func clonePackUserProfiles(source map[string]packload.UserProfile) map[string]packload.UserProfile {
+	cloned := make(map[string]packload.UserProfile, len(source))
+	for name, profile := range source {
+		cloned[name] = profile
+	}
+	return cloned
 }
 
 func selectedPackRoot(entry PackEntry) (string, error) {

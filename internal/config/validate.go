@@ -118,7 +118,7 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	}
 	validateAgentProfilesRetired(config, errs, warns)
 	validateUseProfilesRetired(config, errs, warns)
-	validateProfile(config, errs)
+	validateProfile(config, errs, edit)
 	if edit == nil {
 		validateProfiles(workspace, errs)
 		validateAdapters(workspace, errs)

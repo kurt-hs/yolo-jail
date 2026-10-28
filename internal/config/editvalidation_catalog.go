@@ -69,7 +69,7 @@ func explicitProviderCatalog(ctx *editValidationContext, config *jsonx.OrderedMa
 				sources = append(sources, source)
 				continue
 			}
-			source.dir = status.Record.NpmPackageDir(install.Package)
+			source.dir = status.Record.NpmPackageDir(program.Install.Package)
 			sources = append(sources, source)
 		}
 	}

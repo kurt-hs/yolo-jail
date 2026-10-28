@@ -903,10 +903,15 @@ func reposSpelling(source string, repos []string) string {
 // Other shapes are refused as they are at workspace scope; `workspaces` is the retired check's.
 // In a jail the user scope is the host-generated one, and each refusal is a warning.
 func validateBrokeredUserScope(errs, warns *[]string, edit ...*editValidationContext) {
-	userCfg := UserScopeConfigOrEmpty()
-	userSources := UserScopeSources()
-	if len(edit) != 0 && edit[0] != nil && edit[0].rawUser != nil {
+	var userCfg *jsonx.OrderedMap
+	var userSources *Sources
+	if len(edit) != 0 && edit[0] != nil {
 		userCfg, userSources = edit[0].rawUser, edit[0].userOrigins
+	} else {
+		userCfg, userSources = UserScopeConfigOrEmpty(), UserScopeSources()
+	}
+	if userCfg == nil {
+		userCfg = jsonx.NewOrderedMap()
 	}
 	v, present := userCfg.Get(brokeredKey)
 	if !present || v == nil {
@@ -1007,9 +1012,14 @@ func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs
 	for _, p := range remoteURLSourceReposProblems(v, resolver) {
 		add(errs, src.AnnotateOne(p))
 	}
-	userConfig := UserScopeConfigOrEmpty()
-	if len(edit) != 0 && edit[0] != nil && edit[0].rawUser != nil {
+	var userConfig *jsonx.OrderedMap
+	if len(edit) != 0 && edit[0] != nil {
 		userConfig = edit[0].rawUser
+	} else {
+		userConfig = UserScopeConfigOrEmpty()
+	}
+	if userConfig == nil {
+		userConfig = jsonx.NewOrderedMap()
 	}
 	gErrs, gWarns, gHostOnly := brokeredGrantProblemsWithUser(v, resolver, userConfig)
 	for _, p := range gErrs {

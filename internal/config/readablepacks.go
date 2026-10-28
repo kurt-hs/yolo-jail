@@ -15,12 +15,19 @@ import (
 // checkReadablePacks lowers format-2 authored handles without accepting legacy path
 // sugar. A legacy-origin layer entry keeps its original grammar through checkPackEntry.
 func checkReadablePacks(raw any, definitions map[string]packsrc.SourceDefinition, sources *Sources) ([]PackEntry, []string) {
+	if _, ok := asList(raw); !ok {
+		return nil, []string{"config.packs: expected a list of pack handles"}
+	}
+	return checkReadablePacksFromEmbeddedNames(raw, definitions, sources, packload.EmbeddedNames())
+}
+
+func checkReadablePacksFromEmbeddedNames(raw any, definitions map[string]packsrc.SourceDefinition, sources *Sources, embeddedNames []string) ([]PackEntry, []string) {
 	list, ok := asList(raw)
 	if !ok {
 		return nil, []string{"config.packs: expected a list of pack handles"}
 	}
 	shipped := make(map[string]bool)
-	for _, name := range packload.EmbeddedNames() {
+	for _, name := range embeddedNames {
 		shipped[name] = true
 	}
 	type previousEntry struct {
@@ -39,7 +46,7 @@ func checkReadablePacks(raw any, definitions map[string]packsrc.SourceDefinition
 		localPath := ""
 		if legacy {
 			var problem string
-			entry, problem = checkPackEntry(rawEntry, item)
+			entry, problem = checkPackEntryWithEmbeddedNames(rawEntry, item, embeddedNames)
 			if problem != "" {
 				problems = append(problems, problem)
 				continue

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,6 +137,9 @@ type editValidationContext struct {
 	target           ExplicitEditTarget
 	input            ConfigReadInput
 	witness          *editReadWitness
+	embeddedFS       fs.FS
+	embeddedNames    []string
+	embeddedNamesErr error
 	effective        *jsonx.OrderedMap
 	rawUser          *jsonx.OrderedMap
 	rawWorkspace     *jsonx.OrderedMap
@@ -145,6 +149,8 @@ type editValidationContext struct {
 	packs            []*packload.Pack
 	catalog          map[string]map[string]packdecl.ProviderModel
 	semantic         *ReadableSemanticInputs
+	viaSelectionErr  error
+	viaProfiles      map[string]packload.UserProfile
 }
 
 type ValidatedReadableRequest struct {
@@ -289,8 +295,11 @@ func readExplicitEditContext(workspace string, target ExplicitEditTarget, input 
 	if err != nil {
 		return nil, err
 	}
+	embeddedFS := packload.EmbeddedFS()
+	embeddedNames, embeddedNamesErr := packload.EmbeddedNamesFromFS(embeddedFS)
 	ctx := &editValidationContext{
 		workspace: actualWorkspace, target: target, input: *invocation, witness: witness,
+		embeddedFS: embeddedFS, embeddedNames: embeddedNames, embeddedNamesErr: embeddedNamesErr,
 		effective: cfg, reads: append([]editReadObservation(nil), witness.reads...),
 	}
 	if err := ctx.validateInputWitness(); err != nil {
@@ -300,29 +309,37 @@ func readExplicitEditContext(workspace string, target ExplicitEditTarget, input 
 }
 
 func validationUserSources(edit ...*editValidationContext) *Sources {
-	if len(edit) != 0 && edit[0] != nil && edit[0].userOrigins != nil {
+	if len(edit) != 0 && edit[0] != nil {
 		return edit[0].userOrigins
 	}
 	return UserScopeSources()
 }
 
 func loadValidationWorkspaceConfigWithNode(workspace string, edit ...*editValidationContext) (*jsonx.OrderedMap, *srcNode, error) {
-	cfg, sources, err := loadValidationWorkspaceConfigWithSources(workspace, edit...)
-	if err != nil || cfg == nil || sources == nil {
-		return cfg, nil, err
+	if len(edit) != 0 && edit[0] != nil {
+		if edit[0].rawWorkspace == nil {
+			return nil, nil, fmt.Errorf("planned workspace config source is missing from explicit edit context")
+		}
+		return edit[0].rawWorkspace, edit[0].workspaceOrigins.node(), nil
 	}
-	return cfg, sources.node(), nil
+	return loadWorkspaceConfig(workspace, false, func(string) {}, true)
 }
 
 func loadValidationWorkspaceConfigWithSources(workspace string, edit ...*editValidationContext) (*jsonx.OrderedMap, *Sources, error) {
-	if len(edit) != 0 && edit[0] != nil && edit[0].rawWorkspace != nil {
+	if len(edit) != 0 && edit[0] != nil {
+		if edit[0].rawWorkspace == nil {
+			return nil, nil, fmt.Errorf("planned workspace config source is missing from explicit edit context")
+		}
 		return edit[0].rawWorkspace, edit[0].workspaceOrigins, nil
 	}
 	return LoadWorkspaceConfigWithSources(workspace, false, func(string) {})
 }
 
 func loadValidationWorkspaceConfig(workspace string, edit ...*editValidationContext) (*jsonx.OrderedMap, error) {
-	if len(edit) != 0 && edit[0] != nil && edit[0].rawWorkspace != nil {
+	if len(edit) != 0 && edit[0] != nil {
+		if edit[0].rawWorkspace == nil {
+			return nil, fmt.Errorf("planned workspace config source is missing from explicit edit context")
+		}
 		return edit[0].rawWorkspace, nil
 	}
 	return LoadWorkspaceConfig(workspace, false, func(string) {})

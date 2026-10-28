@@ -297,6 +297,14 @@ func appendImplicitLocalPack(entries []PackEntry) []PackEntry {
 }
 
 func lowerReadablePackEntries(userCfg *jsonx.OrderedMap, sources *Sources) ([]PackEntry, []string) {
+	return lowerReadablePackEntriesWithNames(userCfg, sources, packload.EmbeddedNames)
+}
+
+func lowerReadablePackEntriesFromEmbeddedNames(userCfg *jsonx.OrderedMap, sources *Sources, embeddedNames []string) ([]PackEntry, []string) {
+	return lowerReadablePackEntriesWithNames(userCfg, sources, func() []string { return embeddedNames })
+}
+
+func lowerReadablePackEntriesWithNames(userCfg *jsonx.OrderedMap, sources *Sources, embeddedNames func() []string) ([]PackEntry, []string) {
 	var entries []PackEntry
 	var problems []string
 	var rawSources any
@@ -315,7 +323,7 @@ func lowerReadablePackEntries(userCfg *jsonx.OrderedMap, sources *Sources) ([]Pa
 	}
 	if v, present := userCfg.Get(packsKey); present && v != nil && sourceErr == nil {
 		var entryProblems []string
-		entries, entryProblems = checkReadablePacks(v, sourceDefs, sources)
+		entries, entryProblems = checkReadablePacksFromEmbeddedNames(v, sourceDefs, sources, embeddedNames())
 		problems = append(problems, entryProblems...)
 	}
 	return entries, problems
@@ -441,8 +449,18 @@ func checkPacks(v any) ([]PackEntry, []string) {
 
 // checkPackEntry lowers and validates ONE entry in either form.
 func checkPackEntry(raw any, itemPath string) (PackEntry, string) {
+	return checkPackEntryWithLowerer(raw, itemPath, lowerPackSource)
+}
+
+func checkPackEntryWithEmbeddedNames(raw any, itemPath string, embeddedNames []string) (PackEntry, string) {
+	return checkPackEntryWithLowerer(raw, itemPath, func(source, name, path string) (PackEntry, string) {
+		return lowerPackSourceWithEmbeddedNames(source, name, path, embeddedNames)
+	})
+}
+
+func checkPackEntryWithLowerer(raw any, itemPath string, lower func(string, string, string) (PackEntry, string)) (PackEntry, string) {
 	if s, isStr := asStr(raw); isStr {
-		return lowerPackSource(s, "", itemPath)
+		return lower(s, "", itemPath)
 	}
 	m, isMap := raw.(*jsonx.OrderedMap)
 	if !isMap {
@@ -467,7 +485,7 @@ func checkPackEntry(raw any, itemPath string) (PackEntry, string) {
 			return PackEntry{}, itemPath + ".name: expected a string"
 		}
 	}
-	entry, problem := lowerPackSource(sourceStr, name, itemPath)
+	entry, problem := lower(sourceStr, name, itemPath)
 	if problem != "" {
 		return PackEntry{}, problem
 	}
@@ -562,6 +580,14 @@ func localPackAddress(source string) (normalized, refuse string) {
 
 // lowerPackSource validates an address and derives the default name.
 func lowerPackSource(source, name, itemPath string) (PackEntry, string) {
+	return lowerPackSourceWithNames(source, name, itemPath, packload.EmbeddedNames)
+}
+
+func lowerPackSourceWithEmbeddedNames(source, name, itemPath string, embeddedNames []string) (PackEntry, string) {
+	return lowerPackSourceWithNames(source, name, itemPath, func() []string { return embeddedNames })
+}
+
+func lowerPackSourceWithNames(source, name, itemPath string, embeddedNames func() []string) (PackEntry, string) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return PackEntry{}, itemPath + ".source: must not be empty"
@@ -584,10 +610,11 @@ func lowerPackSource(source, name, itemPath string) (PackEntry, string) {
 		// so; activating six of them unconditionally while printing "no packs are
 		// configured" was a contradiction the user would only discover by looking in
 		// ~/.yolo/bin/block.
-		if name, ok := embeddedPackName(source); ok {
+		available := embeddedNames()
+		if name, ok := embeddedPackNameFromNames(source, available); ok {
 			return EmbeddedPackEntry(name), ""
 		}
-		return PackEntry{}, itemPath + ".source: " + unknownEmbeddedMessage(source)
+		return PackEntry{}, itemPath + ".source: " + unknownEmbeddedMessageFromNames(source, available)
 	}
 	switch {
 	case scheme == "file":
@@ -649,10 +676,16 @@ func checkPackName(name, itemPath string) string {
 // not merely ignored, because a silently-inert key looks exactly like a broken
 // feature.
 func validatePacks(workspace string, errs *[]string, edit ...*editValidationContext) {
-	if len(edit) != 0 && edit[0] != nil && edit[0].rawUser != nil {
-		_, problems := lowerReadablePackEntries(edit[0].rawUser, edit[0].userOrigins)
-		for _, problem := range problems {
-			add(errs, problem)
+	if len(edit) != 0 && edit[0] != nil {
+		if edit[0].rawUser != nil {
+			if edit[0].embeddedNamesErr != nil {
+				add(errs, "config.packs: cannot enumerate the captured embedded pack source: "+edit[0].embeddedNamesErr.Error()+" — rerun with a complete yolo build")
+			} else {
+				_, problems := lowerReadablePackEntriesFromEmbeddedNames(edit[0].rawUser, edit[0].userOrigins, edit[0].embeddedNames)
+				for _, problem := range problems {
+					add(errs, problem)
+				}
+			}
 		}
 	} else {
 		_, problems, err := LoadPackEntries()
@@ -796,7 +829,11 @@ func UnmarshalPacks(wire string) ([]PackEntry, error) {
 
 // embeddedPackName resolves a bare entry to an embedded pack name.
 func embeddedPackName(s string) (string, bool) {
-	for _, n := range packload.EmbeddedNames() {
+	return embeddedPackNameFromNames(s, packload.EmbeddedNames())
+}
+
+func embeddedPackNameFromNames(s string, names []string) (string, bool) {
+	for _, n := range names {
 		if n == s {
 			return n, true
 		}
@@ -818,7 +855,10 @@ func embeddedSourceFor(name string) string { return "embedded:" + name }
 // malformed URL — and the most likely cause is a typo in a tool name, where showing the
 // real list is the whole fix.
 func unknownEmbeddedMessage(s string) string {
-	names := packload.EmbeddedNames()
+	return unknownEmbeddedMessageFromNames(s, packload.EmbeddedNames())
+}
+
+func unknownEmbeddedMessageFromNames(s string, names []string) string {
 	// A PATH-SHAPED entry is a forgotten scheme, not a misspelled pack name. Offering a
 	// list of tool names to someone who wrote "/no/scheme" or "./my-pack" answers a
 	// question they did not ask; the plausible names are what a bare word is.

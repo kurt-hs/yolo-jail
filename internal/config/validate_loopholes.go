@@ -163,8 +163,10 @@ func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver Loop
 		// is ignored with a note naming the grant that replaces it.
 		if brokered {
 			if !userBlockRead {
-				if len(edit) != 0 && edit[0] != nil && edit[0].rawUser != nil {
-					userBlock, _ = asMap(getOr(edit[0].rawUser, "loopholes", nil))
+				if len(edit) != 0 && edit[0] != nil {
+					if edit[0].rawUser != nil {
+						userBlock, _ = asMap(getOr(edit[0].rawUser, "loopholes", nil))
+					}
 				} else {
 					userBlock = userScopeLoopholes()
 				}
