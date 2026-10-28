@@ -25,6 +25,10 @@ func TestApplyEffectiveRejectsInvalidResourcesAcrossTransactionModes(t *testing.
 		{name: "TOML invalid pids", file: config.WorkspaceTOMLConfigName, before: "[machine.resources]\npids_limit = 0\n", noopBefore: "[machine.resources]\npids_limit = -1\n", editValue: -1, noopValue: -1, want: "pids_limit", format: configdoc.TOML, path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "pids_limit"}}},
 		{name: "TOML invalid io", file: config.WorkspaceTOMLConfigName, before: "[machine.resources]\nio = 'bad'\n", noopBefore: "[machine.resources]\nio = 'invalid'\n", editValue: "invalid", noopValue: "invalid", want: "resources.io", format: configdoc.TOML, path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "io"}}},
 		{name: "JSONC negative cpus", file: config.WorkspaceConfigName, before: `{"resources":{"cpus":-2}}`, noopBefore: `{"resources":{"cpus":-1}}`, editValue: -1, noopValue: -1, want: "cpus", format: configdoc.JSONC, path: []configdoc.Step{{Key: "resources"}, {Key: "cpus"}}},
+		{name: "JSONC zero cpus", file: config.WorkspaceConfigName, before: `{"resources":{"cpus":-1}}`, noopBefore: `{"resources":{"cpus":0}}`, editValue: 0, noopValue: 0, want: "cpus", format: configdoc.JSONC, path: []configdoc.Step{{Key: "resources"}, {Key: "cpus"}}},
+		{name: "JSONC invalid memory", file: config.WorkspaceConfigName, before: `{"resources":{"memory":"bad"}}`, noopBefore: `{"resources":{"memory":"invalid"}}`, editValue: "invalid", noopValue: "invalid", want: "memory", format: configdoc.JSONC, path: []configdoc.Step{{Key: "resources"}, {Key: "memory"}}},
+		{name: "JSONC invalid pids", file: config.WorkspaceConfigName, before: `{"resources":{"pids_limit":0}}`, noopBefore: `{"resources":{"pids_limit":-1}}`, editValue: -1, noopValue: -1, want: "pids_limit", format: configdoc.JSONC, path: []configdoc.Step{{Key: "resources"}, {Key: "pids_limit"}}},
+		{name: "JSONC invalid io", file: config.WorkspaceConfigName, before: `{"resources":{"io":"bad"}}`, noopBefore: `{"resources":{"io":"invalid"}}`, editValue: "invalid", noopValue: "invalid", want: "resources.io", format: configdoc.JSONC, path: []configdoc.Step{{Key: "resources"}, {Key: "io"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -451,6 +455,175 @@ func TestApplyEffectiveRejectsTargetFormatMismatchBeforeWrite(t *testing.T) {
 	}
 }
 
+func TestApplyEffectiveValidatesInactiveProviderTwinAndPlannedUserProfiles(t *testing.T) {
+	t.Run("inactive provider twin", func(t *testing.T) {
+		home, workspace := t.TempDir(), t.TempDir()
+		t.Setenv("HOME", home)
+		path := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+		writeEditFixture(t, path, `{"packs":["pi"]}`)
+		invalid := map[string]any{"broken": map[string]any{"models": map[string]any{"child": map[string]any{"twin_of": "missing"}}}}
+		options := effectiveTestOptions(t, workspace, path, configdoc.JSONC, config.ExplicitEditUser, ApplyOptions{})
+		writes := spySystemWrites(t)
+		_, err := ApplyEffective(workspace, path, configdoc.JSONC, Mutation{Action: Add, Path: []configdoc.Step{{Key: "providers"}}, Value: invalid}, options)
+		if err == nil || !strings.Contains(err.Error(), "twin_of names a missing model row") || *writes != 0 {
+			t.Fatalf("inactive provider twin was not rejected before write: err=%v writes=%d", err, *writes)
+		}
+	})
+	t.Run("planned raw user profile shape", func(t *testing.T) {
+		home, workspace := t.TempDir(), t.TempDir()
+		t.Setenv("HOME", home)
+		path := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+		before := `{"packs":["git"]}`
+		writeEditFixture(t, path, before)
+		options := effectiveTestOptions(t, workspace, path, configdoc.JSONC, config.ExplicitEditUser, ApplyOptions{})
+		writes := spySystemWrites(t)
+		_, err := ApplyEffective(workspace, path, configdoc.JSONC, Mutation{Action: Add, Path: []configdoc.Step{{Key: "profiles"}}, Value: []any{}}, options)
+		if err == nil || !strings.Contains(err.Error(), "profiles: expected an object") || *writes != 0 {
+			t.Fatalf("planned raw-user profile error was not rejected before write: err=%v writes=%d", err, *writes)
+		}
+		got, readErr := os.ReadFile(path)
+		if readErr != nil || string(got) != before {
+			t.Fatalf("profile refusal changed user file: %q err=%v", got, readErr)
+		}
+	})
+}
+
+func TestApplyEffectiveUsesPlannedLegacyBrokeredUserCeiling(t *testing.T) {
+	home, workspace := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+	before := `{"brokered":{"git":{"grant_kinds":["branch"]}}}`
+	writeEditFixture(t, userPath, before)
+	projectPath := filepath.Join(workspace, config.WorkspaceConfigName)
+	writeEditFixture(t, projectPath, `{"brokered":{"git":{"grants":[{"kind":"branch","repo":"github.com/example/repo","branch":"main"}]}}}`)
+	options := effectiveTestOptions(t, workspace, userPath, configdoc.JSONC, config.ExplicitEditUser, ApplyOptions{})
+	writes := spySystemWrites(t)
+	_, err := ApplyEffective(workspace, userPath, configdoc.JSONC, Mutation{Action: Set, Path: []configdoc.Step{{Key: "brokered"}, {Key: "git"}, {Key: "grant_kinds"}}, Value: []any{}}, options)
+	if err == nil || *writes != 0 {
+		t.Fatalf("planned removal of legacy user grant ceiling accepted: err=%v writes=%d", err, *writes)
+	}
+	got, readErr := os.ReadFile(userPath)
+	if readErr != nil || string(got) != before {
+		t.Fatalf("legacy grant ceiling refusal changed original user bytes: %q err=%v", got, readErr)
+	}
+}
+
+func TestApplyEffectiveRequiresExactProjectLocalAndUnambiguousPhysicalRole(t *testing.T) {
+	t.Setenv("YOLO_VERSION", "")
+	t.Run("project target mislabeled local", func(t *testing.T) {
+		home, workspace := t.TempDir(), t.TempDir()
+		t.Setenv("HOME", home)
+		path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+		writeEditFixture(t, path, "[machine.resources]\ncpus = 2\n")
+		options := ApplyOptions{Target: mustEditTarget(t, workspace, path, configdoc.TOML, config.ExplicitEditLocal)}
+		writes := spySystemWrites(t)
+		_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
+		if err == nil || !strings.Contains(err.Error(), "unauthorized config role project") || *writes != 0 {
+			t.Fatalf("project/local mismatch accepted: err=%v writes=%d", err, *writes)
+		}
+	})
+	t.Run("one physical target read as user and project", func(t *testing.T) {
+		home, workspace := t.TempDir(), t.TempDir()
+		t.Setenv("HOME", home)
+		physical := filepath.Join(t.TempDir(), "shared.toml")
+		writeEditFixture(t, physical, "[machine.resources]\ncpus = 2\n")
+		userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
+		projectPath := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+		for _, alias := range []string{userPath, projectPath} {
+			if err := os.MkdirAll(filepath.Dir(alias), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(physical, alias); err != nil {
+				t.Fatal(err)
+			}
+		}
+		options := ApplyOptions{Target: mustEditTarget(t, workspace, physical, configdoc.TOML, config.ExplicitEditProject)}
+		writes := spySystemWrites(t)
+		_, err := ApplyEffective(workspace, physical, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
+		if err == nil || !strings.Contains(err.Error(), "conflicting or unauthorized config role") || *writes != 0 {
+			t.Fatalf("cross-role physical target was not refused: err=%v writes=%d", err, *writes)
+		}
+	})
+}
+
+func TestApplyEffectiveRefusesJailedUserOnlyIncludeAndConfigDSymlink(t *testing.T) {
+	cases := []struct {
+		name, base, body, targetRel, aliasRel string
+		format                                configdoc.Format
+		baseName                              string
+	}{
+		{name: "JSONC include", base: `{"include_if_found":["allow.jsonc"]}`, body: `{"allow":{"git":{"always":["fetch"]}}}`, targetRel: "allow.jsonc", aliasRel: "allow.jsonc", format: configdoc.JSONC, baseName: paths.UserConfigLegacyJSONCName},
+		{name: "TOML config.d symlink", base: "[install]\nnix = ['base']\n", body: "[allow.git]\nalways = ['fetch']\n", targetRel: "parts/allow.toml", aliasRel: "config.d/10-allow.toml", format: configdoc.TOML, baseName: paths.UserConfigTOMLName},
+	}
+	for _, tc := range cases {
+		for _, mode := range []string{"edit", "dry-run", "noop"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				home, workspace := t.TempDir(), t.TempDir()
+				t.Setenv("HOME", home)
+				t.Setenv("YOLO_VERSION", "test-jail")
+				userDir := filepath.Join(home, ".config", "yolo-jail")
+				basePath := filepath.Join(userDir, tc.baseName)
+				writeEditFixture(t, basePath, tc.base)
+				physical := filepath.Join(userDir, tc.targetRel)
+				writeEditFixture(t, physical, tc.body)
+				alias := filepath.Join(userDir, tc.aliasRel)
+				if alias != physical {
+					if err := os.MkdirAll(filepath.Dir(alias), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(physical, alias); err != nil {
+						t.Fatal(err)
+					}
+				}
+				mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "allow"}, {Key: "git"}, {Key: "always"}}, Value: []any{"fetch", "push"}}
+				if mode == "noop" {
+					mutation.Value = []any{"fetch"}
+				}
+				options := ApplyOptions{DryRun: mode == "dry-run", Target: mustEditTarget(t, workspace, physical, tc.format, config.ExplicitEditUser)}
+				writes := spySystemWrites(t)
+				_, err := ApplyEffective(workspace, alias, tc.format, mutation, options)
+				assertJailedUserRefusal(t, err, physical, *writes)
+				got, readErr := os.ReadFile(physical)
+				if readErr != nil || string(got) != tc.body {
+					t.Fatalf("user-only refusal changed target bytes: %q err=%v", got, readErr)
+				}
+				if alias != physical {
+					info, lstatErr := os.Lstat(alias)
+					link, linkErr := os.Readlink(alias)
+					if lstatErr != nil || info.Mode()&os.ModeSymlink == 0 || linkErr != nil || link != physical {
+						t.Fatalf("refusal changed symlink mode/target: info=%v link=%q errors=%v/%v", info, link, lstatErr, linkErr)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestApplyEffectiveRefusesJailedJSONCUserOnlyBaseInAllModes(t *testing.T) {
+	for _, mode := range []string{"edit", "dry-run", "noop"} {
+		t.Run(mode, func(t *testing.T) {
+			home, workspace := t.TempDir(), t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "test-jail")
+			path := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+			before := `{"allow":{"git":{"always":["fetch"]}}}`
+			writeEditFixture(t, path, before)
+			value := any([]any{"fetch", "push"})
+			if mode == "noop" {
+				value = []any{"fetch"}
+			}
+			options := ApplyOptions{DryRun: mode == "dry-run", Target: mustEditTarget(t, workspace, path, configdoc.JSONC, config.ExplicitEditUser)}
+			writes := spySystemWrites(t)
+			_, err := ApplyEffective(workspace, path, configdoc.JSONC, Mutation{Action: Set, Path: []configdoc.Step{{Key: "allow"}, {Key: "git"}, {Key: "always"}}, Value: value}, options)
+			assertJailedUserRefusal(t, err, path, *writes)
+			got, readErr := os.ReadFile(path)
+			if readErr != nil || string(got) != before {
+				t.Fatalf("JSONC user-only refusal changed bytes: %q err=%v", got, readErr)
+			}
+		})
+	}
+}
+
 func mustEditTarget(t *testing.T, workspace, path string, format configdoc.Format, scope config.ExplicitEditScope) config.ExplicitEditTarget {
 	t.Helper()
 	physicalWorkspace, err := filepath.EvalSymlinks(workspace)
@@ -487,5 +660,10 @@ func assertJailedUserRefusal(t *testing.T, err error, path string, writes int) {
 	}
 	if writes != 0 {
 		t.Fatalf("jailed user edit wrote config %d times", writes)
+	}
+	for _, pattern := range []string{filepath.Join(filepath.Dir(path), "*.backup*"), filepath.Join(filepath.Dir(path), "*.pre-migrate*")} {
+		if backups, _ := filepath.Glob(pattern); len(backups) != 0 {
+			t.Fatalf("jailed user refusal left backups: %v", backups)
+		}
 	}
 }
