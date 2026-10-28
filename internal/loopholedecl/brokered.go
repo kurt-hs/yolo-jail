@@ -60,6 +60,11 @@ type Brokered struct {
 	// config holds each grant, which joins only at the config-change gate. `read` is implied by
 	// the loophole being on and needs no declaration.
 	Grants []string
+	// ReadCapability and KindCapabilities explicitly name canonical capabilities for readable
+	// config validation. These metadata fields grant no runtime capability.
+	ReadCapability      string
+	KindCapabilities    map[string]string
+	PendingCapabilities []string
 }
 
 // AnyRemoteHost is the `remote_host` that declares a source on any host. It is the token alone,
@@ -68,22 +73,26 @@ type Brokered struct {
 const AnyRemoteHost = "*"
 
 const (
-	keyBrokered        = "brokered"
-	keySource          = "source"
-	keyRemoteHost      = "remote_host"
-	keyCredentialPaths = "credential_paths"
-	keyGrants          = "grants"
+	keyBrokered            = "brokered"
+	keySource              = "source"
+	keyRemoteHost          = "remote_host"
+	keyCredentialPaths     = "credential_paths"
+	keyGrants              = "grants"
+	keyReadCapability      = "read_capability"
+	keyKindCapabilities    = "kind_capabilities"
+	keyPendingCapabilities = "pending_capabilities"
 )
 
 // brokeredKeys is the block's census. Like a settings declaration it has one voice,
 // refusal, in both decoders: an unknown key in a fence is a fence that silently does not
 // exist, which is the direction the version-boundary tolerance must not fail in.
-var brokeredKeys = []string{keySource, keyRemoteHost, keyCredentialPaths, keyGrants}
+var brokeredKeys = []string{keySource, keyRemoteHost, keyCredentialPaths, keyGrants, keyReadCapability, keyKindCapabilities, keyPendingCapabilities}
 
 var (
 	sourceRE     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	remoteHostRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 	credPathRE   = regexp.MustCompile(`^(~(/.*)?|/.*|\$[A-Z_][A-Z0-9_]*(/.*)?)$`)
+	capabilityRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 )
 
 // ValidGrantKind reports whether s spells a grant kind, as the manifest, the user's `grant_kinds`
@@ -153,7 +162,94 @@ func parseBrokered(manifestPath string, raw any) (*Brokered, error) {
 			b.Grants = append(b.Grants, k)
 		}
 	}
+	if err := parseBrokeredCapabilityMetadata(manifestPath, m, b); err != nil {
+		return nil, err
+	}
 	return b, nil
+}
+
+func parseBrokeredCapabilityMetadata(manifestPath string, m *jsonx.OrderedMap, b *Brokered) error {
+	readValue, hasRead := m.Get(keyReadCapability)
+	kindsValue, hasKinds := m.Get(keyKindCapabilities)
+	pendingValue, hasPending := m.Get(keyPendingCapabilities)
+	if !hasRead && !hasKinds && !hasPending {
+		return nil
+	}
+	readCapability, ok := readValue.(string)
+	if !hasRead || !ok || !capabilityRE.MatchString(readCapability) || reservedReadableCapability(readCapability) {
+		return Errorf("%s: 'brokered.read_capability' must be a non-reserved canonical capability name", manifestPath)
+	}
+	b.ReadCapability = readCapability
+	var pending []string
+	if hasPending {
+		values, ok := pendingValue.([]any)
+		if !ok || !AllStrings(values) {
+			return Errorf("%s: 'brokered.pending_capabilities' must be a list of mapped canonical capability names", manifestPath)
+		}
+		for _, capability := range StringSlice(values) {
+			if !capabilityRE.MatchString(capability) || capability == readCapability || inList(capability, pending) {
+				return Errorf("%s: 'brokered.pending_capabilities' entry %q must uniquely name a non-read canonical capability", manifestPath, capability)
+			}
+			pending = append(pending, capability)
+		}
+	}
+	if hasKinds {
+		kindMap, ok := kindsValue.(*jsonx.OrderedMap)
+		if !ok {
+			return Errorf("%s: 'brokered.kind_capabilities' must be a mapping of declared grant kinds to canonical capability names", manifestPath)
+		}
+		b.KindCapabilities = make(map[string]string, kindMap.Len())
+		seen := map[string]string{}
+		for _, kind := range kindMap.Keys() {
+			capValue, _ := kindMap.Get(kind)
+			capability, ok := capValue.(string)
+			if !ValidGrantKind(kind) || kind == "read" {
+				return Errorf("%s: 'brokered.kind_capabilities' maps undeclared or reserved grant kind %q", manifestPath, kind)
+			}
+			if !ok || !capabilityRE.MatchString(capability) || reservedReadableCapability(capability) {
+				return Errorf("%s: 'brokered.kind_capabilities.%s' must be a non-reserved canonical capability name", manifestPath, kind)
+			}
+			if capability == readCapability {
+				return Errorf("%s: 'brokered.kind_capabilities.%s' collides with read_capability %q", manifestPath, kind, readCapability)
+			}
+			if previous, exists := seen[capability]; exists {
+				return Errorf("%s: 'brokered.kind_capabilities' maps capability %q more than once (%s and %s)", manifestPath, capability, previous, kind)
+			}
+			if !inList(kind, b.Grants) && !inList(capability, pending) {
+				return Errorf("%s: 'brokered.kind_capabilities.%s' names a grant kind not declared in grants or pending_capabilities", manifestPath, kind)
+			}
+			seen[capability] = kind
+			b.KindCapabilities[kind] = capability
+		}
+	}
+	for _, kind := range b.Grants {
+		if kind == "read" {
+			return Errorf("%s: 'brokered.grants' must not map the implied read grant kind", manifestPath)
+		}
+		if b.KindCapabilities[kind] == "" {
+			return Errorf("%s: 'brokered.kind_capabilities' must map declared grant kind %q", manifestPath, kind)
+		}
+	}
+	for _, capability := range pending {
+		if !containsCapabilityValue(b.KindCapabilities, capability) {
+			return Errorf("%s: 'brokered.pending_capabilities' entry %q has no grant-kind mapping", manifestPath, capability)
+		}
+		b.PendingCapabilities = append(b.PendingCapabilities, capability)
+	}
+	return nil
+}
+
+func reservedReadableCapability(capability string) bool {
+	return capability == "repos" || capability == "always" || capability == "on_request"
+}
+
+func containsCapabilityValue(mapping map[string]string, capability string) bool {
+	for _, value := range mapping {
+		if value == capability {
+			return true
+		}
+	}
+	return false
 }
 
 // refuseRepositoryScopeTokenMismatch holds the block and its token together, in both

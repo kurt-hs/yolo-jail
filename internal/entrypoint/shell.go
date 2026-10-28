@@ -158,8 +158,16 @@ func discloseShellAliases(e *Env, rewrites []*packload.LaunchInjection) {
 		// shquote.Join on the AFTER side for the reason the host's block quotes both of
 		// its argvs: the line is meant to be copy-pasteable, and an argument containing a
 		// space must not be able to masquerade as two.
+		attributions := make([]string, 0, len(inj.Sources))
+		for _, source := range inj.Sources {
+			attributions = append(attributions, source.Attribution()+": "+strings.Join(source.Flags, " "))
+		}
+		by := "pack " + inj.Pack
+		if len(attributions) > 0 {
+			by = strings.Join(attributions, "; ")
+		}
 		e.warn("  you type: " + inj.Before[0] + "  →  bash runs: " + shquote.Join(inj.After) +
-			"  (added by pack " + inj.Pack + ")")
+			"  (added by " + by + ")")
 	}
 }
 

@@ -191,8 +191,7 @@ func TestMacosLaunchDepsHonorNoColor(t *testing.T) {
 	}
 }
 
-// colorVerbs is every `yolo config` verb that prints in color. `dump` prints
-// JSON, which never colors.
+// colorVerbs is every composition verb that prints in color, plus config's retained drift/apply.
 var colorVerbs = []string{"render", "ls", "diff", "reset", "capture", "promote", "drift", "apply"}
 
 func TestConfigApplyDispatchPassesUngatedColorIntent(t *testing.T) {
@@ -223,25 +222,24 @@ func TestConfigApplyDispatchPassesUngatedColorIntent(t *testing.T) {
 	}
 }
 
-// TestEveryConfigVerbTakesTheOneColorDecision pins the `yolo config` dispatch:
-// every verb that colors is handed THE decision configRunW makes once, through
-// colorForWriter. TestEveryCommandHonorsNoColor drives `config drift` for real, and
-// before this test the other six verbs each made their own call at their own case,
-// so any one of them could stop consulting the gate and the suite stayed green.
-//
-// Each verb's body is swapped for a recorder, so the test measures what the
-// dispatch passes and nothing a verb's fixture would need. It fails when the one
-// decision stops going through the gate, and when a verb is dispatched outside
-// configColorVerbs (its recorder is never called).
-func TestEveryConfigVerbTakesTheOneColorDecision(t *testing.T) {
+// TestConfigAndSurfaceVerbTakesTheOneColorDecision pins composition routing to the surface
+// namespace, while retained drift/apply commands stay in config.
+func TestConfigAndSurfaceVerbTakesTheOneColorDecision(t *testing.T) {
 	for _, verb := range colorVerbs {
 		t.Run(verb, func(t *testing.T) {
-			saved := configColorVerbs[verb]
-			if saved == nil {
-				t.Fatalf("configColorVerbs has no %q: the verb is dispatched outside the one "+
-					"color decision", verb)
+			namespace := "surface"
+			handlers := surfaceColorVerbs
+			command := runSurface
+			if verb == "drift" || verb == "apply" {
+				namespace = "config"
+				handlers = configColorVerbs
+				command = runConfig
 			}
-			t.Cleanup(func() { configColorVerbs[verb] = saved })
+			saved := handlers[verb]
+			if saved == nil {
+				t.Fatalf("%sColorVerbs has no %q color handler: the verb is dispatched outside the one color decision", namespace, verb)
+			}
+			t.Cleanup(func() { handlers[verb] = saved })
 			for _, tc := range []struct {
 				noColor   string
 				wantColor bool
@@ -251,17 +249,17 @@ func TestEveryConfigVerbTakesTheOneColorDecision(t *testing.T) {
 				t.Setenv("NO_COLOR", tc.noColor)
 				standInTerminal(t)
 				called, got := false, false
-				configColorVerbs[verb] = func(_ configTarget, _ []string, _, _ io.Writer, color bool) int {
+				handlers[verb] = func(_ configTarget, _ []string, _, _ io.Writer, color bool) int {
 					called, got = true, color
 					return 0
 				}
-				captureStdout(t, func() { runConfig([]string{"config", verb}) })
+				captureBoth(t, func() { command([]string{namespace, verb}) })
 				if !called {
-					t.Fatalf("`yolo config %s` never reached its configColorVerbs entry", verb)
+					t.Fatalf("`yolo %s %s` never reached its registered color handler", namespace, verb)
 				}
 				if got != (tc.wantColor || verb == "apply") {
-					t.Errorf("NO_COLOR=%q: `yolo config %s` was handed color = %v, want %v",
-						tc.noColor, verb, got, tc.wantColor || verb == "apply")
+					t.Errorf("NO_COLOR=%q: `yolo %s %s` was handed color = %v, want %v",
+						tc.noColor, namespace, verb, got, tc.wantColor || verb == "apply")
 				}
 			}
 		})

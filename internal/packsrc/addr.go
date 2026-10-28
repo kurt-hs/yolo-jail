@@ -204,9 +204,9 @@ func parseGit(raw, transport, rest string, allowDefaultRef bool) (Addr, error) {
 	// spellings of one repo would otherwise fetch and store twice.
 	repoURL := transport + "://" + strings.TrimSuffix(repoPart, ".git")
 	if transport == "file" {
-		// git wants an absolute path for a local clone; the parse above stripped the
-		// scheme, so restore the leading slash the URL form implies.
-		repoURL = "file://" + "/" + strings.TrimLeft(strings.TrimSuffix(repoPart, ".git"), "/")
+		// A file transport is a literal local path: `.git` commonly names the bare
+		// repository itself and must not be stripped into a different path.
+		repoURL = "file://" + "/" + strings.TrimLeft(repoPart, "/")
 	}
 	if _, err := url.Parse(repoURL); err != nil {
 		return Addr{}, fmt.Errorf("pack address %q: not a valid URL: %w", raw, err)

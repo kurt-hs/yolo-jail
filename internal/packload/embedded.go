@@ -69,6 +69,13 @@ func SetEmbeddedFS(f fs.FS) {
 	embeddedHashMemo = nil
 }
 
+// EmbeddedFS returns the registered immutable source filesystem without loading or materializing packs.
+func EmbeddedFS() fs.FS {
+	embeddedMu.Lock()
+	defer embeddedMu.Unlock()
+	return embeddedFS
+}
+
 // Embedded returns the embedded packs, materialized on the FIRST CALL and shared by every
 // later one.
 //
@@ -232,12 +239,19 @@ func EmbeddedRetireMiseTools() []string { return RetireMiseTools(nil) }
 // to disk: config validation calls this to check a bare `packs: ["claude"]` entry, and a
 // name list does not justify hashing and adopting a tree on every config read.
 func EmbeddedNames() []string {
-	if embeddedFS == nil {
-		return nil
+	names, _ := EmbeddedNamesFromFS(EmbeddedFS())
+	return names
+}
+
+// EmbeddedNamesFromFS lists the embedded pack directory names in one captured registered source.
+// Explicit planned-config validation uses this with the same filesystem it resolves against.
+func EmbeddedNamesFromFS(fsys fs.FS) ([]string, error) {
+	if fsys == nil {
+		return nil, nil
 	}
-	entries, err := fs.ReadDir(embeddedFS, ".")
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var names []string
 	for _, e := range entries {
@@ -246,5 +260,5 @@ func EmbeddedNames() []string {
 		}
 	}
 	sort.Strings(names)
-	return names
+	return names, nil
 }

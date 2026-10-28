@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
-	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
 // TestAMDCDISpecCheckUsesTheLaunchProbe: `yolo check`'s AMD CDI verdict comes from
@@ -17,11 +16,7 @@ import (
 // registry would load, an NVIDIA spec is not mistaken for one, and a missing one fails with
 // where it looked, the command that writes it and what a launch does meanwhile.
 func TestAMDCDISpecCheckUsesTheLaunchProbe(t *testing.T) {
-	m, err := jsonx.Decode([]byte(`{"gpu": {"enabled": true, "vendor": "amd", "mode": "cdi"}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	merged := m.(*jsonx.OrderedMap)
+	merged := loadLegacyCheckConfig(t, `{"gpu": {"enabled": true, "vendor": "amd", "mode": "cdi"}}`)
 	const amd = "kind: amd.com/gpu\ncdiVersion: 0.6.0\n"
 
 	for _, tc := range []struct {

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 )
 
 // The models file is an include of the user config: host-only, never mounted into a jail.
@@ -26,6 +28,46 @@ func hostWithWireIDInclude(t *testing.T) {
 	_, dir := sourcesHome(t)
 	write(t, filepath.Join(dir, "config.jsonc"), `{"include_if_found": ["models.jsonc"]}`)
 	write(t, filepath.Join(dir, "models.jsonc"), wireIDModels)
+}
+
+func TestGeneratedTOMLUserScopeKeepsHostOriginsOnlyInJail(t *testing.T) {
+	_, hostDir := sourcesHome(t)
+	write(t, filepath.Join(hostDir, "config.jsonc"), `{"packs": ["claude"]}`)
+	effective, hostSources, err := LoadConfigWithoutWorkspaceFileWithSources(t.TempDir(), false, discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered, _ := FilterInherit(effective, InheritPreflight)
+	body, format, fallback, err := RenderFilteredForDelivery(filtered, hostSources, InheritPreflight, "")
+	if err != nil || format != configdoc.TOML || fallback != "" {
+		t.Fatalf("rendered format=%v fallback=%q err=%v", format, fallback, err)
+	}
+
+	jailHome := t.TempDir()
+	t.Setenv("HOME", jailHome)
+	jailDir := filepath.Join(jailHome, ".config", "yolo-jail")
+	write(t, filepath.Join(jailDir, "config.toml"), body)
+	t.Setenv("YOLO_VERSION", "9.9.9")
+	_, jailSources, err := UserScopeConfigWithSources(true, discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations := jailSources.Locations("config.packs[0]")
+	if len(locations) == 0 || !strings.Contains(strings.Join(locations, " "), "~/.config/yolo-jail/config.jsonc") {
+		t.Errorf("in-jail TOML generated scope did not recover its host origin: %v", locations)
+	}
+
+	// The same bytes read outside a jail are ordinary TOML, not trusted launch metadata.
+	t.Setenv("YOLO_VERSION", "")
+	_, hostReadSources, err := UserScopeConfigWithSources(true, discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locations = hostReadSources.Locations("config.packs[0]")
+	if len(locations) == 0 || !strings.Contains(strings.Join(locations, " "), "config.toml") ||
+		strings.Contains(strings.Join(locations, " "), "config.jsonc") {
+		t.Errorf("host TOML read trusted generated origins: %v", locations)
+	}
 }
 
 func TestARefusalInAJailNamesTheHostFileThatSetTheKey(t *testing.T) {

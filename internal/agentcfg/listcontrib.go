@@ -47,11 +47,11 @@ package agentcfg
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"sort"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/codec"
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
+	"github.com/mschulkind-oss/yolo-jail/internal/arraymerge"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonptr"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
@@ -375,43 +375,7 @@ func replacesPathDepth(layer any, tokens []string) int {
 
 // entryKey is an entry's identity: canonical JSON (sorted keys) of its normalized value.
 func entryKey(v any) string {
-	b, err := json.Marshal(normalizeEntry(v))
-	if err != nil {
-		return fmt.Sprintf("%#v", v)
-	}
-	return string(b)
-}
-
-// normalizeEntry lands every decoder's value model in one: jsonx ordered maps and integer
-// literals through jsonx.Plain, every Go integer kind to float64 (what a pack.json decode
-// produces), recursively.
-func normalizeEntry(v any) any {
-	switch t := v.(type) {
-	case *jsonx.OrderedMap:
-		return normalizeEntry(jsonx.PlainMap(t))
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, e := range t {
-			out[k] = normalizeEntry(e)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, e := range t {
-			out[i] = normalizeEntry(e)
-		}
-		return out
-	}
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(rv.Int())
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(rv.Uint())
-	case reflect.Float32:
-		return rv.Float()
-	}
-	return jsonx.Plain(v)
+	return arraymerge.EntryKey(v)
 }
 
 // EntriesEqual reports whether two list entries are the same entry under the element rule.

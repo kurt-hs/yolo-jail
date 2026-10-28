@@ -199,7 +199,7 @@ func TestCaptureRefusesHostSideWithoutForce(t *testing.T) {
 
 	var out, errw bytes.Buffer
 	// Without --force: refused, and the sidecar is left intact.
-	rc := configRunW([]string{"capture", "claude/settings"}, &out, &errw)
+	rc := surfaceRunW([]string{"capture", "claude/settings"}, &out, &errw)
 	if rc == 0 {
 		t.Errorf("capture host-side without --force should refuse, got rc=0")
 	}
@@ -213,7 +213,7 @@ func TestCaptureRefusesHostSideWithoutForce(t *testing.T) {
 	// With --force it proceeds — the escape hatch works.
 	out.Reset()
 	errw.Reset()
-	if rc := configRunW([]string{"capture", "claude/settings", "--force"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"capture", "claude/settings", "--force"}, &out, &errw); rc != 0 {
 		t.Fatalf("capture --force host-side should proceed, got rc=%d: %s", rc, errw.String())
 	}
 }

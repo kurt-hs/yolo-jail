@@ -9,16 +9,12 @@ package cli
 // A test that resolves a target and asserts its fields PASSES WITH THE RESOLUTION DELETED
 // FROM EVERY VERB. That is the callee-pinned-while-the-call-site-is-unpinned shape AGENTS.md
 // names five shipped instances of. So the contract these tests are written to is the
-// CALL-SITE one: deleting the resolution call site has to fail something, rather than a
-// helper being asserted to return the right string. So the resolution
-// and the disclosure landed together — the disclosure being the observable — and the tests
-// below run `yolo config <verb>` from two different directories and read what it printed.
+// CALL-SITE one: deleting a target resolution/disclosure call has to fail something, rather than
+// a helper being asserted to return the right string. The six surface verbs and the retained
+// config drift/dump verbs below run from two different directories and their printed lines are read.
 //
-// MUTATION-CHECKED: deleting the `fmt.Fprintln(errw, t.disclosure())` from configRunW fails
-// TestEveryConfigVerbDisclosesItsTarget for all eight verbs; deleting the
-// `resolveConfigTarget()` call cannot compile, because the verbs take the target as a
-// parameter — which is what makes [P2](docs/reference/config-target-resolution.md#principles)
-// structural rather than a convention.
+// MUTATION-CHECKED: the surface dispatch test exercises all six verbs through the registry; these
+// cases pin resolution at both namespaces' writers rather than asserting only a helper result.
 
 import (
 	"bytes"
@@ -34,10 +30,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// configVerbs is every `yolo config` subcommand that resolves a target, i.e. every one. The
-// disclosure is UNCONDITIONAL ([OQ-CR5](docs/reference/config-target-resolution.md#oq-cr5)), so
-// the list is the whole verb surface rather than the ones where it seemed interesting.
-var configVerbs = [][]string{
+// configAndSurfaceVerbs are the commands whose output discloses a resolved config target.
+// Six are surface composition verbs; drift and dump remain under config.
+var configAndSurfaceVerbs = [][]string{
 	{"ls"},
 	{"render", "claude"},
 	{"diff", "claude"},
@@ -66,8 +61,8 @@ func scratchHostHome(t *testing.T) string {
 //
 // Delete the disclosure from configRunW and all sixteen subtests fail. Nothing here asserts
 // that a helper returns a string.
-func TestEveryConfigVerbDisclosesItsTarget(t *testing.T) {
-	for _, argv := range configVerbs {
+func TestConfigAndSurfaceVerbsDiscloseTheirTarget(t *testing.T) {
+	for _, argv := range configAndSurfaceVerbs {
 		verb := argv[0]
 		t.Run(verb+"/in a workspace", func(t *testing.T) {
 			scratchHostHome(t)
@@ -78,7 +73,7 @@ func TestEveryConfigVerbDisclosesItsTarget(t *testing.T) {
 			withJailLiveness(t, "", true)
 
 			var out, errw bytes.Buffer
-			configRunW(argv, &out, &errw)
+			runTargetVerbForTest(argv, &out, &errw)
 
 			line := disclosureLine(t, verb, errw.String())
 			if !strings.Contains(line, ws) {
@@ -104,7 +99,7 @@ func TestEveryConfigVerbDisclosesItsTarget(t *testing.T) {
 			t.Chdir(elsewhere)
 
 			var out, errw bytes.Buffer
-			configRunW(argv, &out, &errw)
+			runTargetVerbForTest(argv, &out, &errw)
 
 			line := disclosureLine(t, verb, errw.String())
 			if !strings.Contains(line, home) {
@@ -278,7 +273,7 @@ func TestNoWorkspaceIsAnAnswerAndNotARefusal(t *testing.T) {
 	t.Chdir(elsewhere)
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"ls"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"ls"}, &out, &errw); rc != 0 {
 		t.Fatalf("`config ls` outside a workspace = rc %d, want an ANSWER: %s", rc, errw.String())
 	}
 	if out.Len() == 0 {
@@ -298,7 +293,7 @@ func TestInnermostWorkspaceWinsAndIsDisclosedByPath(t *testing.T) {
 	t.Chdir(inner)
 
 	var out, errw bytes.Buffer
-	configRunW([]string{"ls"}, &out, &errw)
+	surfaceRunW([]string{"ls"}, &out, &errw)
 	line := disclosureLine(t, "ls", errw.String())
 	if !strings.Contains(line, inner) {
 		t.Errorf("the innermost workspace must win and be named: disclosed %q, want %q",
@@ -320,7 +315,7 @@ func TestDiffDistinguishesNeverRenderedFromNoEdits(t *testing.T) {
 	}
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"diff", "claude"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"diff", "claude"}, &out, &errw); rc != 0 {
 		t.Fatalf("diff with no store = rc %d: %s", rc, errw.String())
 	}
 	got := out.String()
@@ -352,7 +347,7 @@ func TestDiffRefusesOnAnUnreadableStore(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(store, 0o755) })
 
 	var out, errw bytes.Buffer
-	rc := configRunW([]string{"diff", "claude"}, &out, &errw)
+	rc := surfaceRunW([]string{"diff", "claude"}, &out, &errw)
 	if rc == 0 {
 		t.Fatalf("an unreadable store exited 0, so the answer reads as measured:\n%s%s",
 			out.String(), errw.String())
@@ -514,7 +509,7 @@ func TestAtOverridesTheCwdAndIsDisclosedAsTheChooser(t *testing.T) {
 	ws, _ := withWorkspaceCwd(t)
 
 	var out, errw bytes.Buffer
-	configRunW([]string{"ls", "--at", "host"}, &out, &errw)
+	surfaceRunW([]string{"ls", "--at", "host"}, &out, &errw)
 	line := disclosureLine(t, "ls --at host", errw.String())
 	if !strings.Contains(line, home) || !strings.Contains(line, "host notch") {
 		t.Errorf("`--at host` from inside a workspace disclosed %q, want the real home at the "+
@@ -529,7 +524,7 @@ func TestAtOverridesTheCwdAndIsDisclosedAsTheChooser(t *testing.T) {
 	// what the cwd would have chosen — so the flag is an override, not a second resolution.
 	out.Reset()
 	errw.Reset()
-	configRunW([]string{"ls", "--at=jail"}, &out, &errw)
+	surfaceRunW([]string{"ls", "--at=jail"}, &out, &errw)
 	line = disclosureLine(t, "ls --at=jail", errw.String())
 	if !strings.Contains(line, ws) || !strings.Contains(line, "from --at") {
 		t.Errorf("`--at=jail` disclosed %q, want the cwd's workspace chosen by the flag", line)
@@ -549,7 +544,7 @@ func TestAtGuestIsRefusedWithApplysOwnSentence(t *testing.T) {
 	withWorkspaceCwd(t)
 
 	var configOut, configErr bytes.Buffer
-	if rc := configRunW([]string{"ls", "--at", "guest"}, &configOut, &configErr); rc == 0 {
+	if rc := surfaceRunW([]string{"ls", "--at", "guest"}, &configOut, &configErr); rc == 0 {
 		t.Fatalf("`config ls --at guest` succeeded; the notch is unbuilt:\n%s", configOut.String())
 	}
 	var applyOut, applyErr bytes.Buffer
@@ -593,7 +588,7 @@ func TestAtJailWithNoWorkspaceRefusesByName(t *testing.T) {
 	t.Chdir(elsewhere)
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"diff", "claude", "--at", "jail"}, &out, &errw); rc == 0 {
+	if rc := surfaceRunW([]string{"diff", "claude", "--at", "jail"}, &out, &errw); rc == 0 {
 		t.Fatalf("`--at jail` with no workspace succeeded, so it answered about some other "+
 			"home without saying so:\n%s", out.String())
 	}
@@ -644,13 +639,22 @@ func TestAtIsRefusedOnTheVerbsNoNotchSelects(t *testing.T) {
 
 	for verb := range notchlessVerbs {
 		var out, errw bytes.Buffer
-		if rc := configRunW([]string{verb, "--at", "host"}, &out, &errw); rc != 2 {
-			t.Errorf("`config %s --at host` = rc %d, want 2 (a flag a verb cannot honor is "+
-				"refused, never accepted and dropped)", verb, rc)
+		if _, surface := surfaceColorVerbs[verb]; surface {
+			if rc := surfaceRunW([]string{verb, "--at", "host"}, &out, &errw); rc != 2 {
+				t.Errorf("`surface %s --at host` = rc %d, want 2", verb, rc)
+			}
+		} else if rc := configRunW([]string{verb, "--at", "host"}, &out, &errw); rc != 2 {
+			t.Errorf("`config %s --at host` = rc %d, want 2", verb, rc)
 		}
 		if !strings.Contains(errw.String(), "--at does not apply here") {
-			t.Errorf("`config %s --at host` did not say why the flag does not apply:\n%s",
-				verb, errw.String())
+			t.Errorf("%s --at host did not say why the flag does not apply:\n%s", verb, errw.String())
 		}
 	}
+}
+
+func runTargetVerbForTest(argv []string, out, errw *bytes.Buffer) int {
+	if _, surface := surfaceColorVerbs[argv[0]]; surface {
+		return surfaceRunW(argv, out, errw)
+	}
+	return configRunW(argv, out, errw)
 }

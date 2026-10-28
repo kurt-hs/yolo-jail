@@ -163,7 +163,7 @@ func hostImportOwnershipRefusal(policy map[string][]string) string {
 		" cannot be used with host_management: own; host-owned values must use the pack contribution's existing host-versus-jail targeting, or remove the exclusions"
 }
 
-func validateHostImportExclusions(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostImportExclusions(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	policy, problems := checkHostImportExclusions(config)
 	for _, problem := range problems {
 		add(errs, problem)
@@ -173,7 +173,7 @@ func validateHostImportExclusions(config *jsonx.OrderedMap, workspace string, er
 			add(errs, hostImportOwnershipRefusal(policy))
 		}
 	}
-	workspaceConfig, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	workspaceConfig, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || workspaceConfig == nil {
 		return
 	}

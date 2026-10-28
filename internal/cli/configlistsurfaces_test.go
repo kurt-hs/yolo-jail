@@ -83,10 +83,10 @@ func appendOther(t *testing.T, home string) string {
 		`"path":"/packages","add":["`+listKilo+`","`+listOther+`"]}`)
 }
 
-func runConfigVerb(t *testing.T, args ...string) (rc int, stdout, stderr string) {
+func runSurfaceVerb(t *testing.T, args ...string) (rc int, stdout, stderr string) {
 	t.Helper()
 	var out, errw bytes.Buffer
-	rc = configRunW(args, &out, &errw)
+	rc = surfaceRunW(args, &out, &errw)
 	return rc, out.String(), errw.String()
 }
 
@@ -113,7 +113,7 @@ func TestConfigRenderFoldsOverlaysAndLists(t *testing.T) {
 	listWorld(t, func(home string) string {
 		return `"pi",` + overlayAB(t, home) + `,` + appendKilo(t, home) + `,` + appendOther(t, home)
 	})
-	rc, out, errw := runConfigVerb(t, "render", "pi/settings")
+	rc, out, errw := runSurfaceVerb(t, "render", "pi/settings")
 	if rc != 0 {
 		t.Fatalf("render rc=%d\n%s%s", rc, out, errw)
 	}
@@ -131,7 +131,7 @@ func TestConfigRenderExplainShowsAnAssembledList(t *testing.T) {
 	listWorld(t, func(home string) string {
 		return `"pi",` + overlayAB(t, home) + `,` + appendKilo(t, home) + `,` + appendOther(t, home)
 	})
-	rc, out, errw := runConfigVerb(t, "render", "pi/settings", "--explain")
+	rc, out, errw := runSurfaceVerb(t, "render", "pi/settings", "--explain")
 	if rc != 0 {
 		t.Fatalf("render --explain rc=%d\n%s%s", rc, out, errw)
 	}
@@ -163,7 +163,7 @@ func TestConfigRenderExplainShowsAnAssembledList(t *testing.T) {
 // prints its layer and nothing else — no list block and no mark.
 func TestConfigRenderExplainLeavesAReplacedArrayUnmarked(t *testing.T) {
 	listWorld(t, func(home string) string { return `"pi",` + overlayAB(t, home) })
-	rc, out, errw := runConfigVerb(t, "render", "pi/settings", "--explain")
+	rc, out, errw := runSurfaceVerb(t, "render", "pi/settings", "--explain")
 	if rc != 0 {
 		t.Fatalf("render --explain rc=%d\n%s%s", rc, out, errw)
 	}
@@ -182,7 +182,7 @@ func TestConfigRenderExplainSaysWhenManagedReplacesTheList(t *testing.T) {
 		return `"pi",` + listPack(t, home, "trusty", `{"kind":"config-list","surface":"pi/settings",`+
 			`"path":"/defaultProjectTrust","add":["npm:x"]}`)
 	})
-	rc, out, errw := runConfigVerb(t, "render", "pi/settings", "--explain")
+	rc, out, errw := runSurfaceVerb(t, "render", "pi/settings", "--explain")
 	if rc != 0 {
 		t.Fatalf("render --explain rc=%d\n%s%s", rc, out, errw)
 	}
@@ -190,7 +190,7 @@ func TestConfigRenderExplainSaysWhenManagedReplacesTheList(t *testing.T) {
 		"config-list:trusty") {
 		t.Errorf("the managed replacement of the assembled list is not said:\n%s", out)
 	}
-	rc, out, errw = runConfigVerb(t, "render", "pi/settings")
+	rc, out, errw = runSurfaceVerb(t, "render", "pi/settings")
 	if rc != 0 {
 		t.Fatalf("render rc=%d\n%s%s", rc, out, errw)
 	}
@@ -207,7 +207,7 @@ func TestConfigRenderRefusesAListTypeConflict(t *testing.T) {
 		return `"pi",` + listPack(t, home, "clash", `{"kind":"config-list","surface":"pi/settings",`+
 			`"path":"/theme","add":["dark"]}`)
 	})
-	rc, out, errw := runConfigVerb(t, "render", "pi/settings")
+	rc, out, errw := runSurfaceVerb(t, "render", "pi/settings")
 	if rc == 0 {
 		t.Fatalf("render composed over a type conflict:\n%s", out)
 	}
@@ -222,7 +222,7 @@ func TestConfigRenderReportsAMalformedList(t *testing.T) {
 		return `"pi",` + listPack(t, home, "bogus", `{"kind":"config-list","surface":"noslash",`+
 			`"path":"/packages","add":["x"]}`)
 	})
-	_, out, errw := runConfigVerb(t, "render", "pi/settings")
+	_, out, errw := runSurfaceVerb(t, "render", "pi/settings")
 	if !strings.Contains(errw, "not folded") || !strings.Contains(errw, "pack bogus: config-list") {
 		t.Errorf("the malformed list is not reported:\n%s%s", out, errw)
 	}
@@ -240,7 +240,7 @@ func TestConfigLsNamesListContributorsAndManagedReplacement(t *testing.T) {
 			`"path":"/pinned","add":["mine"]}`)
 		return `"pi",` + appendKilo(t, home) + `,` + appendOther(t, home) + `,` + owner + `,` + pinner
 	})
-	rc, out, errw := runConfigVerb(t, "ls")
+	rc, out, errw := runSurfaceVerb(t, "ls")
 	if rc != 0 {
 		t.Fatalf("ls rc=%d\n%s%s", rc, out, errw)
 	}
@@ -268,7 +268,7 @@ func TestConfigLsReportsCapturedListState(t *testing.T) {
 		[]byte(`{"/packages":{"add":["npm:mine","npm:two"],"remove":["npm:gone"]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rc, out, errw := runConfigVerb(t, "ls", "--all")
+	rc, out, errw := runSurfaceVerb(t, "ls", "--all")
 	if rc != 0 {
 		t.Fatalf("ls rc=%d\n%s%s", rc, out, errw)
 	}
@@ -292,7 +292,7 @@ func TestConfigLsCountsAListOnlyCapture(t *testing.T) {
 		[]byte(`{"/packages":{"add":["npm:mine"],"remove":[]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rc, out, errw := runConfigVerb(t, "ls", "--all")
+	rc, out, errw := runSurfaceVerb(t, "ls", "--all")
 	if rc != 0 {
 		t.Fatalf("ls rc=%d\n%s%s", rc, out, errw)
 	}

@@ -32,7 +32,7 @@ func hostUserConfigWithInclude(t *testing.T, home, extra string) {
 }
 
 // jailHomeWith makes a scratch jail home whose user config is body, and enters the jail.
-func jailHomeWith(t *testing.T, body string) {
+func jailHomeWith(t *testing.T, body, ext string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -41,7 +41,10 @@ func jailHomeWith(t *testing.T, body string) {
 		t.Fatal(err)
 	}
 	if body != "" {
-		if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(body), 0o644); err != nil {
+		if ext == "" {
+			ext = ".jsonc"
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config"+ext), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,13 +59,13 @@ func TestTheMountedUserScopeNamesTheHostFileOfARefusedKey(t *testing.T) {
 		`{"providers": {"kilo": {"models": {"default": {"id": "m", "wireId": "w"}}}}}`)
 	o := inheritOptions(t)
 
-	body, _, found := mountedBody(t, o.userConfigMountArgs("podman", wsState), "/home/agent/"+inheritPreflightRel)
+	body, source, found := mountedBody(t, o.userConfigMountArgs("podman", wsState), "/home/agent/"+inheritPreflightLegacyRel)
 	if !found {
 		t.Fatal("no preflight user config was mounted")
 	}
 
 	// What `yolo check` in the jail reads and reports (check.sectionConfigFiles).
-	jailHomeWith(t, body)
+	jailHomeWith(t, body, filepath.Ext(source))
 	cfg, src, err := config.UserScopeConfigWithSources(true, func(string) {})
 	if err != nil {
 		t.Fatal(err)
@@ -99,14 +102,14 @@ func TestTheAssembledCopyNamesTheHostFileOfAKey(t *testing.T) {
 	o.writeLaunchConfigArtifacts(cfg)
 
 	// The jail's own-workspace read, with no user config of its own.
-	jailHomeWith(t, "")
+	jailHomeWith(t, "", "")
 	t.Setenv("YOLO_WORKSPACE", ws)
 	_, src, err := config.LoadConfigWithSources(ws, false, func(string) {})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := src.AnnotateOne("config.packages: refused")
-	if want := "config.packages: refused (set in ~/.config/yolo-jail/extra.jsonc" + launchCopyRelaunch; got != want {
+	got := src.AnnotateOne("config.install.nix[0]: refused")
+	if want := "config.install.nix[0]: refused (set in ~/.config/yolo-jail/extra.jsonc" + launchCopyRelaunch; got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }

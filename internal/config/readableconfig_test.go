@@ -496,49 +496,752 @@ func TestLoadReadableConfigComposesNewUserAndWorkspaceLayers(t *testing.T) {
 	}
 }
 
-func TestLegacyJSONCConfigStillUsesLegacyVocabulary(t *testing.T) {
+func TestLoadJSONCFileStillUsesLegacyVocabulary(t *testing.T) {
 	dir := t.TempDir()
-	write(t, filepath.Join(dir, paths.WorkspaceConfigLegacyJSONCName), `{"packages": ["just"]}`)
-	got, err := LoadWorkspaceConfig(dir, true, nil)
+	path := filepath.Join(dir, paths.WorkspaceConfigLegacyJSONCName)
+	write(t, path, `{"packages": ["just"]}`)
+	got, err := LoadJSONCFile(path, path, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, present := got.Get("packages"); !present {
-		t.Fatal("legacy JSONC reader stopped returning the legacy package key")
+		t.Fatal("low-level legacy JSONC decoder stopped returning the legacy package key")
 	}
 	if _, present := got.Get("install"); present {
-		t.Fatal("legacy JSONC input was projected into readable vocabulary")
+		t.Fatal("low-level legacy JSONC decoder projected into readable vocabulary")
 	}
 }
 
-func TestRuntimeReadersDoNotActivateTOMLBeforeHandoff(t *testing.T) {
-	dir := t.TempDir()
-	write(t, filepath.Join(dir, paths.WorkspaceConfigTOMLName), "[install]\nnix = ['just']\n")
-	got, err := LoadWorkspaceConfig(dir, true, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, exists := got.Get("install"); exists {
-		t.Fatalf("runtime reader activated readable install config: %#v", got)
-	}
-
+func TestStandardConfigReadersActivateReadableConfigBeforeRuntimeHandoff(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName), "packs = ['claude']\n")
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, paths.WorkspaceConfigTOMLName), "[install]\nnix = ['just']\n")
+
+	workspace, err := LoadWorkspaceConfig(dir, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if install, ok := workspace.Get("install"); !ok || install == nil {
+		t.Fatalf("standard workspace reader did not load readable install: %#v", workspace)
+	}
 	user, err := UserScopeConfig(true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := user.Get("packs"); exists {
-		t.Fatalf("runtime user reader activated readable packs: %#v", user)
+	if packs, _ := user.Get("packs"); !reflect.DeepEqual(packs, []any{"claude"}) {
+		t.Fatalf("standard user reader packs = %#v", packs)
 	}
 	composed, err := LoadConfig(dir, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := composed.Get("install"); exists {
-		t.Fatalf("runtime composed reader activated readable config: %#v", composed)
+	if _, exists := composed.Get("install"); !exists {
+		t.Fatalf("standard composed reader did not load readable workspace config: %#v", composed)
 	}
+}
+
+func TestStandardReadersComposeIncludesFragmentsExplicitLayerAndProjectLocalOrder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "test")
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	write(t, filepath.Join(userDir, paths.UserConfigTOMLName), "include_if_found = ['includes/base.toml']\n[install]\nnix = ['main']\n[machine.resources]\ncpus = 1\n[env.set]\nPAGER = 'main'\n")
+	write(t, filepath.Join(userDir, "includes", "base.toml"), "[install]\nnix = ['included']\n")
+	write(t, filepath.Join(userDir, "config.d", "10-first.toml"), "[install]\nnix = ['first']\n[env.set]\nPAGER = 'first'\n")
+	write(t, filepath.Join(userDir, "config.d", "20-second.toml"), "[install]\nnix = ['second']\n[env.set]\nPAGER = 'second'\n")
+	write(t, filepath.Join(userDir, "inherited-launch.jsonc"), `{"install":{"nix":["inherited"]},"env":{"set":{"PAGER":"inherited"}}}`)
+	write(t, filepath.Join(userDir, "config.d", "ignored.jsonc"), `{"install":{"nix":["not-loaded"]}}`)
+	layer := filepath.Join(t.TempDir(), "explicit.toml")
+	write(t, layer, "include_if_found = ['nested/layer.toml']\n[install]\nnix = ['explicit']\n[env.set]\nPAGER = 'explicit'\n")
+	write(t, filepath.Join(filepath.Dir(layer), "nested", "layer.toml"), "[install]\nnix = ['explicit-include']\n")
+	if problem := ValidateUserLayer(layer); problem != "" {
+		t.Fatalf("explicit TOML --user-layer validation: %s", problem)
+	}
+	t.Setenv(UserLayerEnv, layer)
+
+	user, err := UserScopeConfig(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ := asMap(mustValue(t, user, "install"))
+	if nix, _ := install.Get("nix"); !reflect.DeepEqual(nix, []any{"inherited", "main", "included", "first", "second", "explicit", "explicit-include"}) {
+		t.Fatalf("user install.nix layer order = %#v", nix)
+	}
+	env, _ := asMap(mustValue(t, user, "env"))
+	set, _ := asMap(mustValue(t, env, "set"))
+	if pager, _ := set.Get("PAGER"); pager != "explicit" {
+		t.Fatalf("explicit --user-layer did not win: PAGER=%#v", pager)
+	}
+
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigTOMLName), "[install]\nnix = ['project']\n[machine.resources]\ncpus = 2\n")
+	write(t, filepath.Join(workspace, paths.WorkspaceLocalConfigTOMLName), "[install]\nnix = []\n[machine.resources]\ncpus = 3\n")
+	composed, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ = asMap(mustValue(t, composed, "install"))
+	if nix, _ := install.Get("nix"); !reflect.DeepEqual(nix, []any{}) {
+		t.Fatalf("local empty list did not clear composed install.nix: %#v", nix)
+	}
+	machine, _ := asMap(mustValue(t, composed, "machine"))
+	resources, _ := asMap(mustValue(t, machine, "resources"))
+	rawCPUs, _ := resources.Get("cpus")
+	if cpus, ok := jsonx.AsInt(rawCPUs); !ok || cpus != 3 {
+		t.Fatalf("project/local precedence resources.cpus=%#v", rawCPUs)
+	}
+}
+
+func TestStandardReaderPreservesLegacyEnvSourcesAndLiteralOff(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+	write(t, userPath, `{"env_sources":["secrets.env",{"AWS_PROFILE":"off","PAGER":null}]}`)
+
+	got, sources, err := UserScopeConfigWithSources(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, ok := asList(mustValue(t, got, "env_sources"))
+	if !ok || len(entries) != 2 || entries[0] != filepath.Join(filepath.Dir(userPath), "secrets.env") {
+		t.Fatalf("legacy ordered env_sources = %#v", entries)
+	}
+	assignments, _ := asMap(entries[1])
+	if value, _ := assignments.Get("AWS_PROFILE"); value != "off" {
+		t.Fatalf("literal environment value off changed: %#v", value)
+	}
+	if value, present := assignments.Get("PAGER"); !present || value != nil {
+		t.Fatalf("legacy environment unset changed: %#v present=%t", value, present)
+	}
+	resolved, removals := ResolveEnvSourcesFull(t.TempDir(), got, nil)
+	if value, _ := resolved.Get("AWS_PROFILE"); value != "off" || !reflect.DeepEqual(removals, []string{"PAGER"}) {
+		t.Fatalf("legacy environment operation changed: values=%#v removals=%#v", resolved, removals)
+	}
+	if sources == nil || len(sources.Locations("config.env_sources[1].AWS_PROFILE")) == 0 || len(sources.Locations("config.env_sources[1].PAGER")) == 0 {
+		t.Fatalf("legacy env source origins were lost: %#v", sources)
+	}
+}
+
+func TestStandardReaderPreservesOrderedLegacyEnvSourcesAcrossLayers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "test")
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	write(t, filepath.Join(userDir, "inherited-launch.jsonc"), `{"env_sources":["inherited.env",{"DROP":null}]}`)
+	write(t, filepath.Join(userDir, "inherited.env"), "DROP=inherited\nINHERITED=outer\n")
+	write(t, filepath.Join(userDir, paths.UserConfigLegacyJSONCName), `{"include_if_found":["includes/later.jsonc"],"env_sources":[{"VALUE":"inline-before-include"}]}`)
+	write(t, filepath.Join(userDir, "includes", "later.jsonc"), `{"env_sources":["later.env"]}`)
+	write(t, filepath.Join(userDir, "includes", "later.env"), "VALUE=included-file\n")
+	layer := filepath.Join(t.TempDir(), "explicit.jsonc")
+	write(t, layer, `{"env_sources":[{"VALUE":"explicit-inline","CLEAR":"restored"}]}`)
+	t.Setenv(UserLayerEnv, layer)
+
+	got, sources, err := UserScopeConfigWithSources(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, ok := asList(mustValue(t, got, "env_sources"))
+	if !ok || len(entries) != 5 {
+		t.Fatalf("legacy ordered env_sources compatibility projection = %#v, want five entries", entries)
+	}
+	for i, entry := range entries {
+		if path, ok := entry.(string); ok && !filepath.IsAbs(path) {
+			t.Errorf("env_sources[%d] was not anchored to its declaring file: %q", i, path)
+		}
+	}
+	resolved, removals := ResolveEnvSourcesFull(t.TempDir(), got, nil)
+	if value, _ := resolved.Get("VALUE"); value != "explicit-inline" {
+		t.Errorf("later explicit inline source did not win after layer dotenv: VALUE=%#v", value)
+	}
+	if value, _ := resolved.Get("INHERITED"); value != "outer" {
+		t.Errorf("inherited file value missing: %#v", value)
+	}
+	if value, _ := resolved.Get("CLEAR"); value != "restored" {
+		t.Errorf("later inline assignment did not restore cleared value: CLEAR=%#v", value)
+	}
+	if !reflect.DeepEqual(removals, []string{"DROP"}) {
+		t.Errorf("legacy null unset was not preserved: %#v", removals)
+	}
+	for _, sourcePath := range []string{"config.env_sources[0]", "config.env_sources[2]", "config.env_sources[4].VALUE"} {
+		if locations := sources.Locations(sourcePath); len(locations) == 0 {
+			t.Errorf("ordered source provenance missing %s: %#v", sourcePath, sources)
+		}
+	}
+}
+
+func TestStandardReaderAnchorsLegacyInheritedEnvSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "test")
+	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
+	write(t, userPath, "[env.set]\nPAGER = 'local'\n")
+	inheritedPath := filepath.Join(filepath.Dir(userPath), "inherited-launch.jsonc")
+	write(t, inheritedPath, `{"env_sources":["secrets.env"],"env":{"set":{"VISUAL":"host"}}}`)
+
+	got, err := UserScopeConfig(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, _ := asMap(mustValue(t, got, "env"))
+	set, _ := asMap(mustValue(t, env, "set"))
+	if pager, _ := set.Get("PAGER"); pager != "local" {
+		t.Fatalf("jail's own config did not win over inherited layer: PAGER=%#v", pager)
+	}
+	sources, _ := asList(mustValue(t, got, "env_sources"))
+	if len(sources) != 1 || sources[0] != filepath.Join(filepath.Dir(userPath), "secrets.env") {
+		t.Fatalf("inherited legacy env_sources were not anchored beside their file: %#v", sources)
+	}
+}
+
+func TestStandardReaderCommonValidatorAcceptsB2EffectiveFields(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, WorkspaceTOMLConfigName)
+	write(t, path, `[install]
+nix = ['jq']
+[machine]
+gpu = false
+[[machine.ports]]
+host = 8080
+jail = 80
+[[machine.forward]]
+jail = 3000
+host = 3001
+[machine.resources]
+cpus = 2
+[env.set]
+PAGER = 'off'
+`)
+
+	config, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs, warns := ValidateConfig(config, workspace, nil); len(errs) > 0 || len(warns) > 0 {
+		t.Fatalf("common validator rejected valid B2 config: errors=%v warnings=%v", errs, warns)
+	}
+}
+
+func TestStandardReaderCommonValidatorUsesLegacyPackageSourcePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userDir := filepath.Join(home, ".config", "yolo-jail")
+	if err := os.MkdirAll(userDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(userDir, "extra.jsonc")
+	write(t, filepath.Join(userDir, paths.UserConfigLegacyJSONCName), `{"packages": ["strace"], "include_if_found": ["extra.jsonc"]}`)
+	write(t, path, `{
+  "packages": [
+    "bad name!"
+  ]
+}
+`)
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName), `{}`)
+	config, sources, err := LoadConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs, _ := ValidateConfig(config, workspace, nil)
+	located := sources.Annotate(errs)
+	if len(located) != 1 || !strings.HasPrefix(located[0], "~/.config/yolo-jail/extra.jsonc:3:5:") || !strings.Contains(located[0], "config.packages[1]: invalid package name 'bad name!'") {
+		t.Fatalf("legacy diagnostic did not preserve the included file's authored package path: %v", located)
+	}
+}
+
+func TestStandardReaderCommonValidatorPreservesCanonicalSourcePaths(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, WorkspaceTOMLConfigName)
+	write(t, path, "[install]\nnix = ['config.packages bad']\n")
+	config, sources, err := LoadConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs, _ := ValidateConfig(config, workspace, nil)
+	located := sources.Annotate(errs)
+	if len(located) != 1 || !strings.HasPrefix(located[0], path+":2:") || !strings.Contains(located[0], "config.install.nix[0]") || !strings.Contains(located[0], "invalid package name 'config.packages bad'") {
+		t.Fatalf("B2 validator error lost canonical path/provenance: %v", located)
+	}
+}
+
+func TestStandardReaderCommonValidatorRejectsMalformedReadableValuesWithoutMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "install type", body: `{"install":{"nix":"not-a-list"}}`, want: "config.install.nix: expected a list"},
+		{name: "machine nested unknown", body: `{"machine":{"resources":{"unknown":true}}}`, want: "config.machine.resources.unknown: unknown key"},
+		{name: "env files wrong type", body: `{"env":{"files":"not-a-list"}}`, want: "config.env: removed"},
+		{name: "env set wrong type", body: `{"env":{"set":"not-a-table"}}`, want: "config.env: removed"},
+		{name: "env unset wrong type", body: `{"env":{"unset":"not-a-list"}}`, want: "config.env: removed"},
+		{name: "env files nonstring", body: `{"env":{"files":[1]}}`, want: "config.env: removed"},
+		{name: "env set nonstring", body: `{"env":{"set":{"PAGER":1}}}`, want: "config.env: removed"},
+		{name: "env unset nonstring", body: `{"env":{"unset":[1]}}`, want: "config.env: removed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			t.Setenv(UserLayerEnv, "")
+			write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName), tc.body)
+			workspace := t.TempDir()
+			config, err := LoadConfig(workspace, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := cloneValidationMap(config)
+			errs, _ := ValidateConfig(config, workspace, nil)
+			if !strings.Contains(strings.Join(errs, "\n"), tc.want) {
+				t.Fatalf("common validator missed malformed readable input %s: %v", tc.name, errs)
+			}
+			if !reflect.DeepEqual(config, before) {
+				t.Fatalf("validation projection mutated the effective map: before=%#v after=%#v", before, config)
+			}
+		})
+	}
+}
+
+func TestStandardReaderFormatRefusalLabelEscapesIncludedFilenameControls(t *testing.T) {
+	workspace := t.TempDir()
+	filename := "bad\n\x1b.toml"
+	write(t, filepath.Join(workspace, WorkspaceConfigName), `{"include_if_found": ["bad\n\u001b.toml"]}`)
+	write(t, filepath.Join(workspace, filename), "format = 'bad'\n")
+
+	_, err := LoadConfig(workspace, true, nil)
+	if err == nil {
+		t.Fatal("LoadConfig accepted a non-integer TOML format")
+	}
+	message := err.Error()
+	if strings.ContainsAny(message, "\n\r\x1b") {
+		t.Fatalf("format refusal includes literal filename controls: %q", message)
+	}
+	if !strings.Contains(message, `bad\n\x1b.toml`) {
+		t.Fatalf("format refusal does not visibly identify the included filename: %q", message)
+	}
+}
+
+func TestStandardReaderMCPCommonValidatorKeepsReadableValuesUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		body        string
+		wantOff     bool
+		wantCommand []any
+	}{
+		{name: "server off removal", body: "mcp_servers.local = 'off'\n", wantOff: true},
+		{name: "literal off argv element", body: "[mcp_servers.local]\ncommand = ['node', 'off']\n", wantCommand: []any{"node", "off"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			t.Setenv(UserLayerEnv, "")
+			workspace := t.TempDir()
+			write(t, filepath.Join(workspace, WorkspaceTOMLConfigName), tc.body)
+
+			config, err := LoadConfig(workspace, true, nil)
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			servers, ok := asMap(mustValue(t, config, "mcp_servers"))
+			if !ok {
+				t.Fatalf("mcp_servers is not a table: %#v", config)
+			}
+			server := mustValue(t, servers, "local")
+			if tc.wantOff {
+				if server != "off" {
+					t.Fatalf("LoadConfig mcp_servers.local = %#v, want literal removal marker %q", server, "off")
+				}
+			} else {
+				entry, ok := asMap(server)
+				if !ok || !reflect.DeepEqual(mustValue(t, entry, "command"), tc.wantCommand) || len(entry.Keys()) != 1 {
+					t.Fatalf("LoadConfig mcp_servers.local = %#v, want canonical argv command %#v", server, tc.wantCommand)
+				}
+			}
+
+			before := cloneValidationMap(config)
+			errs, _ := ValidateConfig(config, workspace, nil)
+			if len(errs) != 0 {
+				t.Fatalf("ValidateConfig rejected readable MCP %s: %v", tc.name, errs)
+			}
+			if !reflect.DeepEqual(config, before) {
+				t.Fatalf("validation projection changed the effective config: before=%#v after=%#v", before, config)
+			}
+		})
+	}
+}
+
+func TestStandardReaderMCPCommonValidatorRejectsMalformedLegacyArgs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv(UserLayerEnv, "")
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, WorkspaceConfigName), `{"mcp_servers":{"local":{"command":"node","args":["server.js",7]}}}`)
+
+	config, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	before := cloneValidationMap(config)
+	errs, _ := ValidateConfig(config, workspace, nil)
+	if !strings.Contains(strings.Join(errs, "\n"), "config.mcp_servers.local.args") {
+		t.Fatalf("ValidateConfig accepted malformed MCP args: %v", errs)
+	}
+	if !reflect.DeepEqual(config, before) {
+		t.Fatalf("validation projection changed the effective config: before=%#v after=%#v", before, config)
+	}
+}
+
+func TestStandardReaderRejectsMalformedTypedMCPArgs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv(UserLayerEnv, "")
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, WorkspaceTOMLConfigName), "[mcp_servers.local]\ncommand = ['node']\nargs = [7]\n")
+
+	if _, err := LoadConfig(workspace, true, nil); err == nil || !strings.Contains(err.Error(), "mcp_servers.local.args") {
+		t.Fatalf("LoadConfig accepted malformed typed MCP args: %v", err)
+	}
+}
+
+func TestStandardReaderMCPCommonValidatorKeepsLegacyProgramArgvOpaque(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv(UserLayerEnv, "")
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, WorkspaceConfigName), `{"mcp_servers":{"local":{"command":"off","args":["server.js","literal off"]}}}`)
+
+	config, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	before := cloneValidationMap(config)
+	errs, _ := ValidateConfig(config, workspace, nil)
+	if len(errs) != 0 {
+		t.Fatalf("ValidateConfig rejected legacy MCP program argv: %v", errs)
+	}
+	servers, _ := asMap(mustValue(t, config, "mcp_servers"))
+	server, _ := asMap(mustValue(t, servers, "local"))
+	if command := mustValue(t, server, "command"); command != "off" {
+		t.Fatalf("legacy MCP command = %#v, want opaque literal command %q", command, "off")
+	}
+	if args := mustValue(t, server, "args"); !reflect.DeepEqual(args, []any{"server.js", "literal off"}) {
+		t.Fatalf("legacy MCP args = %#v, want original argv", args)
+	}
+	if !reflect.DeepEqual(config, before) {
+		t.Fatalf("validation projection changed the effective config: before=%#v after=%#v", before, config)
+	}
+}
+
+func TestStandardReaderMCPTableOffResetSurvivesIncludeComposition(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName), `[mcp_servers.local]
+command = ['old']
+args = ['--old']
+[mcp_servers.local.env]
+TOKEN = 'old'
+`)
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, WorkspaceTOMLConfigName), `include_if_found = ['replacement.toml']
+[mcp_servers]
+local = 'off'
+`)
+	write(t, filepath.Join(workspace, "replacement.toml"), `[mcp_servers.local]
+command = ['new']
+`)
+
+	withoutSources, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSources, _, err := LoadConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(withoutSources, withSources) {
+		t.Fatalf("source recording changed effective map: without=%#v with=%#v", withoutSources, withSources)
+	}
+	withServers, _ := asMap(mustValue(t, withSources, "mcp_servers"))
+	server, _ := asMap(mustValue(t, withServers, "local"))
+	if command, _ := server.Get("command"); !reflect.DeepEqual(command, []any{"new"}) {
+		t.Fatalf("replacement command = %#v, want only ['new']", command)
+	}
+	for _, key := range []string{"args", "env"} {
+		if _, present := server.Get(key); present {
+			t.Errorf("table-off reset resurrected inherited %s: %#v", key, server)
+		}
+	}
+	if errs, _ := ValidateConfig(withSources, workspace, nil); len(errs) != 0 {
+		t.Fatalf("common validator rejected readable MCP command: %v", errs)
+	}
+}
+
+func TestStandardReaderCommonValidatorRejectsMalformedMachinePortShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "ports scalar", body: `{"machine":{"ports":"8080:80"}}`, want: "config.machine.ports: expected a list"},
+		{name: "ports legacy string entry", body: `{"machine":{"ports":["8080:80"]}}`, want: "config.machine.ports[0]: expected a table"},
+		{name: "forward scalar", body: `{"machine":{"forward":"8080:80"}}`, want: "config.machine.forward: expected a list"},
+		{name: "forward legacy string entry", body: `{"machine":{"forward":["8080:80"]}}`, want: "config.machine.forward[0]: expected a table"},
+		{name: "port unknown member", body: `{"machine":{"ports":[{"host":8080,"jail":80,"unexpected":true}]}}`, want: "config.machine.ports[0].unexpected: unknown key"},
+		{name: "forward unknown member", body: `{"machine":{"forward":[{"jail":8080,"host":80,"unexpected":true}]}}`, want: "config.machine.forward[0].unexpected: unknown key"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName), tc.body)
+			workspace := t.TempDir()
+			config, err := LoadConfig(workspace, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := cloneValidationMap(config)
+			errs, _ := ValidateConfig(config, workspace, nil)
+			if !strings.Contains(strings.Join(errs, "\n"), tc.want) {
+				t.Fatalf("common validator missed malformed port shape %s: %v", tc.name, errs)
+			}
+			if !reflect.DeepEqual(config, before) {
+				t.Fatalf("validation projection mutated the effective map: before=%#v after=%#v", before, config)
+			}
+		})
+	}
+}
+
+func TestStandardReaderCommonValidatorPreservesReadableDiagnosticPaths(t *testing.T) {
+	t.Run("environment key", func(t *testing.T) {
+		workspace := t.TempDir()
+		path := filepath.Join(workspace, WorkspaceTOMLConfigName)
+		write(t, path, "[env.set]\n'BAD-NAME' = 'off'\n")
+		config, sources, err := LoadConfigWithSources(workspace, true, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		errs, _ := ValidateConfig(config, workspace, nil)
+		located := sources.Annotate(errs)
+		if len(located) != 1 || !strings.HasPrefix(located[0], path+":2:") || !strings.Contains(located[0], "config.env.set.BAD-NAME") {
+			t.Fatalf("readable env diagnostic lost authored source path: %v", located)
+		}
+	})
+
+	t.Run("unprojected legacy address-bound port", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("YOLO_VERSION", "")
+		workspace := t.TempDir()
+		path := filepath.Join(workspace, WorkspaceConfigName)
+		write(t, path, `{"packages":["not a package"],"network":{"ports":["127.0.0.1:8000:bad"]}}`)
+		config, sources, err := LoadConfigWithSources(workspace, true, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		errs, _ := ValidateConfig(config, workspace, nil)
+		located := sources.Annotate(errs)
+		joined := strings.Join(located, "\n")
+		if !strings.Contains(joined, "config.packages[0]") || !strings.Contains(joined, "config.network.ports[0].container") {
+			t.Fatalf("diagnostics did not preserve the projected and unprojected source paths: %v", located)
+		}
+		for _, message := range located {
+			if strings.Contains(message, "config.network.ports[0].container") && !strings.HasPrefix(message, path+":") {
+				t.Errorf("legacy address-bound port lost its authored location: %s", message)
+			}
+		}
+	})
+}
+
+func TestStandardReaderEscapesControlCharactersInTOMLIncludeLabels(t *testing.T) {
+	workspace := t.TempDir()
+	name := "bad\n\x1b.toml"
+	write(t, filepath.Join(workspace, WorkspaceTOMLConfigName), `include_if_found = ["bad\n\u001b.toml"]`)
+	write(t, filepath.Join(workspace, name), "unrecognized = true\n")
+
+	_, err := LoadWorkspaceConfig(workspace, true, nil)
+	if err == nil {
+		t.Fatal("invalid included TOML unexpectedly loaded")
+	}
+	if strings.ContainsAny(err.Error(), "\r\n\x1b") {
+		t.Fatalf("TOML include label exposed terminal control characters: %q", err)
+	}
+
+	write(t, filepath.Join(workspace, name), "format = 3\n")
+	_, err = LoadWorkspaceConfig(workspace, true, nil)
+	if err == nil || !strings.Contains(err.Error(), "format 3") {
+		t.Fatalf("included future format was not refused: %v", err)
+	}
+	if strings.ContainsAny(err.Error(), "\r\n\x1b") {
+		t.Fatalf("future-format refusal exposed terminal control characters: %q", err)
+	}
+}
+
+func TestStandardReaderKeepsTOMLEmptyResetAcrossNonemptyInclude(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName), "[install]\nnix = ['user']\n")
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, WorkspaceTOMLConfigName), "include_if_found = ['add.toml']\n[install]\nnix = []\n")
+	write(t, filepath.Join(workspace, "add.toml"), "[install]\nnix = ['new']\n")
+
+	withoutSources, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSources, sources, err := LoadConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(withoutSources, withSources) {
+		t.Fatalf("source recording changed effective map: without=%#v with=%#v", withoutSources, withSources)
+	}
+	install, _ := asMap(mustValue(t, withSources, "install"))
+	if nix, _ := install.Get("nix"); !reflect.DeepEqual(nix, []any{"new"}) {
+		t.Fatalf("TOML empty reset was lost across a nonempty include: %#v", nix)
+	}
+	if sources == nil || len(sources.Locations("config.install.nix[0]")) == 0 {
+		t.Fatalf("included value lost provenance: %#v", sources)
+	}
+}
+
+func TestStandardReadersKeepLegacyEmptyListsAdditiveAcrossIncludesAndLayers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	write(t, filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName), `{"packages":["user"]}`)
+	layer := filepath.Join(t.TempDir(), "layer.jsonc")
+	write(t, layer, `{"packages":[]}`)
+	t.Setenv(UserLayerEnv, layer)
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName), `{"packages":["base"],"include_if_found":["empty.jsonc"]}`)
+	write(t, filepath.Join(workspace, "empty.jsonc"), `{"packages":[]}`)
+	write(t, filepath.Join(workspace, WorkspaceLocalConfigName), `{"packages":[]}`)
+
+	got, err := LoadConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	install, _ := asMap(mustValue(t, got, "install"))
+	if nix, _ := install.Get("nix"); !reflect.DeepEqual(nix, []any{"user", "base"}) {
+		t.Fatalf("legacy empty list changed list-union behavior across reader layers: %#v", nix)
+	}
+}
+
+func TestStandardWorkspaceReaderProjectsRepresentableLegacyPorts(t *testing.T) {
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName), `{"network":{"mode":"bridge","ports":["8000:80"],"forward_host_ports":["5432:15432"]}}`)
+	got, sources, err := LoadWorkspaceConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, _ := asMap(mustValue(t, got, "machine"))
+	ports, _ := asList(mustValue(t, machine, "ports"))
+	port, _ := asMap(ports[0])
+	if host, ok := jsonx.AsInt(mustValue(t, port, "host")); !ok || host != 8000 {
+		t.Fatalf("machine.ports host = %#v", mustValue(t, port, "host"))
+	}
+	if jail, ok := jsonx.AsInt(mustValue(t, port, "jail")); !ok || jail != 80 {
+		t.Fatalf("machine.ports jail = %#v", mustValue(t, port, "jail"))
+	}
+	forward, _ := asList(mustValue(t, machine, "forward"))
+	mapping, _ := asMap(forward[0])
+	if jail, ok := jsonx.AsInt(mustValue(t, mapping, "jail")); !ok || jail != 5432 {
+		t.Fatalf("machine.forward jail = %#v", mustValue(t, mapping, "jail"))
+	}
+	if host, ok := jsonx.AsInt(mustValue(t, mapping, "host")); !ok || host != 15432 {
+		t.Fatalf("machine.forward host = %#v", mustValue(t, mapping, "host"))
+	}
+	network, _ := asMap(mustValue(t, got, "network"))
+	if mode, _ := network.Get("mode"); mode != "bridge" {
+		t.Fatalf("network.mode = %#v", mode)
+	}
+	if _, exists := network.Get("ports"); exists {
+		t.Fatal("representable legacy network.ports remained in the effective vocabulary")
+	}
+	if len(sources.Locations("config.machine.ports[0].host")) == 0 || len(sources.Locations("config.machine.forward[0].jail")) == 0 {
+		t.Fatalf("normalized legacy port source locations missing: %#v", sources)
+	}
+
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName), `{"network":{"ports":["127.0.0.1:8000:80"]}}`)
+	legacyAddressBound, err := LoadWorkspaceConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyNetwork, _ := asMap(mustValue(t, legacyAddressBound, "network"))
+	if ports, _ := legacyNetwork.Get("ports"); !reflect.DeepEqual(ports, []any{"127.0.0.1:8000:80"}) {
+		t.Fatalf("unrepresentable address-bound port was rewritten: %#v", ports)
+	}
+}
+
+func TestStandardConfigReadersNormalizeB2LegacyKeysAndPreserveOtherSemantics(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+	write(t, userPath, `{"packages":["base"],"profiles":{"claude":{"provider":"bedrock","options":{"temperature":0.2}}},"brokered":{"git":{"grants":[{"kind":"branch","repo":"example.com/acme","branch":"main"}]}},"packs":["local/tools"]}`)
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigTOMLName), "[install]\nnix = ['project']\n[machine]\ngpu = true\n")
+
+	got, sources, err := LoadConfigWithSources(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installValue, ok := got.Get("install")
+	if !ok {
+		t.Fatalf("effective install missing: %#v", got)
+	}
+	install, ok := asMap(installValue)
+	if !ok {
+		t.Fatalf("effective install has type %T", installValue)
+	}
+	if nix, _ := install.Get("nix"); !reflect.DeepEqual(nix, []any{"base", "project"}) {
+		t.Fatalf("merged install.nix = %#v", nix)
+	}
+	if _, ok := got.Get("gpu"); ok {
+		t.Fatal("legacy B2 key gpu leaked into the effective map")
+	}
+	machine, _ := asMap(mustValue(t, got, "machine"))
+	if gpu, _ := machine.Get("gpu"); gpu != true {
+		t.Fatalf("machine.gpu = %#v", gpu)
+	}
+	profiles, _ := asMap(mustValue(t, got, "profiles"))
+	wantProfiles := decode(t, `{"claude":{"provider":"bedrock","options":{"temperature":0.2}}}`)
+	wantProfile := mustValue(t, wantProfiles, "claude")
+	if !reflect.DeepEqual(mustValue(t, profiles, "claude"), wantProfile) {
+		t.Fatalf("legacy profile/options semantics changed: got %#v want %#v", mustValue(t, profiles, "claude"), wantProfile)
+	}
+	brokered, _ := asMap(mustValue(t, got, "brokered"))
+	wantBrokered := decode(t, `{"git":{"grants":[{"kind":"branch","repo":"example.com/acme","branch":"main"}]}}`)
+	wantGit := mustValue(t, wantBrokered, "git")
+	if !reflect.DeepEqual(mustValue(t, brokered, "git"), wantGit) {
+		t.Fatalf("legacy scoped broker grant changed: got %#v want %#v", mustValue(t, brokered, "git"), wantGit)
+	}
+	if packs, _ := got.Get("packs"); !reflect.DeepEqual(packs, []any{"local/tools"}) {
+		t.Fatalf("pack identity = %#v", packs)
+	}
+	if sources == nil {
+		t.Fatal("legacy source provenance is missing")
+	}
+	profileLocations := sources.Locations("config.profiles.claude.options.temperature")
+	grantLocations := sources.Locations("config.brokered.git.grants[0].branch")
+	if len(sources.Locations("config.install.nix")) == 0 || len(profileLocations) == 0 || len(grantLocations) == 0 ||
+		!strings.Contains(strings.Join(profileLocations, "\n"), paths.UserConfigLegacyJSONCName) ||
+		!strings.Contains(strings.Join(grantLocations, "\n"), paths.UserConfigLegacyJSONCName) {
+		t.Fatalf("legacy source provenance or source format did not follow effective paths: profiles=%q grants=%q sources=%#v", profileLocations, grantLocations, sources)
+	}
+}
+
+func mustValue(t *testing.T, values *jsonx.OrderedMap, key string) any {
+	t.Helper()
+	value, ok := values.Get(key)
+	if !ok {
+		t.Fatalf("missing %q in %#v", key, values)
+	}
+	return value
 }
 
 func TestReadableWorkspaceConfigCollisionOffersSafeManualResolution(t *testing.T) {
@@ -573,8 +1276,9 @@ func TestReadableWorkspaceConfigCollisionOffersSafeManualResolution(t *testing.T
 	if err != nil {
 		t.Fatalf("legacy workspace reader stopped working after moving TOML aside: %v", err)
 	}
-	if packages, ok := legacyConfig.Get("packages"); !ok || !reflect.DeepEqual(packages, []any{"legacy"}) {
-		t.Fatalf("legacy workspace config = %#v, want original packages", legacyConfig)
+	install, ok := asMap(mustValue(t, legacyConfig, "install"))
+	if nix, exists := install.Get("nix"); !ok || !exists || !reflect.DeepEqual(nix, []any{"legacy"}) {
+		t.Fatalf("standard legacy workspace config = %#v, want normalized install.nix", legacyConfig)
 	}
 	if got, err := os.ReadFile(backup); err != nil || string(got) != "[install]\nnix = ['new']\n" {
 		t.Fatalf("preserved TOML backup = %q, %v", got, err)

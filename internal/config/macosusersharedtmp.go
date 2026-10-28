@@ -32,7 +32,7 @@ func macosUserSharedTmpValue(cfg *jsonx.OrderedMap) bool {
 
 // validateMacosUserSharedTmp type-checks the key and refuses the workspace spelling,
 // which the reader would never consult.
-func validateMacosUserSharedTmp(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateMacosUserSharedTmp(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(macosUserSharedTmpKey)
 	if !present {
 		return
@@ -40,7 +40,7 @@ func validateMacosUserSharedTmp(config *jsonx.OrderedMap, workspace string, errs
 	if _, ok := v.(bool); !ok && v != nil {
 		add(errs, fmt.Sprintf("config.%s: expected true or false (got %s)", macosUserSharedTmpKey, pyReprValue(v)))
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}

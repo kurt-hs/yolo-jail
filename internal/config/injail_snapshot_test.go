@@ -73,11 +73,7 @@ func TestLoadConfigHostStillAssembles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkgs, _ := cfg.Get("packages")
-	list, _ := pkgs.([]any)
-	if len(list) != 1 || list[0] != "ripgrep" {
-		t.Errorf("host LoadConfig must assemble from files, not the snapshot; got packages=%v", pkgs)
-	}
+	assertSnapshotInstallNix(t, cfg)
 }
 
 // TestLoadConfigInJailFallsBackWhenNoSnapshot confirms that inside a jail with
@@ -98,9 +94,7 @@ func TestLoadConfigInJailFallsBackWhenNoSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fallback assemble should not error: %v", err)
 	}
-	if _, ok := cfg.Get("packages"); !ok {
-		t.Errorf("fallback assemble should produce the workspace config; got %v", cfg.Keys())
-	}
+	assertSnapshotInstallNix(t, cfg)
 }
 
 // TestLoadConfigInJailOtherWorkspaceAssembles is the regression for "a workspace
@@ -150,6 +144,21 @@ func TestLoadConfigInJailOtherWorkspaceAssembles(t *testing.T) {
 	}
 }
 
+func assertSnapshotInstallNix(t *testing.T, cfg *jsonx.OrderedMap) {
+	t.Helper()
+	installValue, present := cfg.Get("install")
+	install, ok := asMap(installValue)
+	if !present || !ok {
+		t.Errorf("assembled config is missing install: %#v", cfg)
+		return
+	}
+	nixValue, present := install.Get("nix")
+	nix, ok := asList(nixValue)
+	if !present || !ok || len(nix) != 1 || nix[0] != "ripgrep" {
+		t.Errorf("assembled install.nix = %#v, want [ripgrep]", nixValue)
+	}
+}
+
 // TestLoadConfigInJailIgnoresNonObjectSnapshot confirms a corrupt/non-object
 // snapshot is ignored (fall back to assemble), never returned as config.
 func TestLoadConfigInJailIgnoresNonObjectSnapshot(t *testing.T) {
@@ -167,9 +176,7 @@ func TestLoadConfigInJailIgnoresNonObjectSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := cfg.Get("packages"); !ok {
-		t.Errorf("non-object snapshot must be ignored; expected assembled config, got %v", cfg.Keys())
-	}
+	assertSnapshotInstallNix(t, cfg)
 	// Sanity: the snapshot decode path really did reject the array.
 	if _, ok := loadAssembledSnapshot(ws); ok {
 		t.Error("loadAssembledSnapshot must reject a JSON array")

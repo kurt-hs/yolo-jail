@@ -33,7 +33,7 @@ func TestPerKeyProvenanceMovedFromDiffToLs(t *testing.T) {
 	}
 
 	var lsOut, lsErr bytes.Buffer
-	if rc := configRunW([]string{"ls", "--all"}, &lsOut, &lsErr); rc != 0 {
+	if rc := surfaceRunW([]string{"ls", "--all"}, &lsOut, &lsErr); rc != 0 {
 		t.Fatalf("config ls rc=%d: %s", rc, lsErr.String())
 	}
 	if !strings.Contains(lsOut.String(), "config-overlay from local") {
@@ -42,7 +42,7 @@ func TestPerKeyProvenanceMovedFromDiffToLs(t *testing.T) {
 	}
 
 	var diffOut, diffErr bytes.Buffer
-	if rc := configRunW([]string{"diff", "claude"}, &diffOut, &diffErr); rc != 0 {
+	if rc := surfaceRunW([]string{"diff", "claude"}, &diffOut, &diffErr); rc != 0 {
 		t.Fatalf("config diff rc=%d: %s%s", rc, diffOut.String(), diffErr.String())
 	}
 	for _, leaked := range []string{"config-overlay from", "autoMemoryEnabled"} {

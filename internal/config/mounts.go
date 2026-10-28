@@ -430,7 +430,7 @@ func pathUnderOrEqual(child, base string) bool {
 // validateMounts checks the `mounts` key: each element's shape, the existence warning, and
 // for the read-write form the trust predicate, the refusal set and the duplicate-destination
 // rule (docs/reference/context-mounts.md#the-config-shape).
-func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]string) {
+func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]string, edit ...*editValidationContext) {
 	mountsV, present := config.Get(mountsKey)
 	if !present || mountsV == nil {
 		return
@@ -457,14 +457,18 @@ func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]s
 				where, resolvedHost))
 		}
 	}
-	validateMountScope(config, workspace, errs)
+	validateMountScope(config, workspace, errs, edit...)
 	validateRWMountSources(config, workspace, errs)
 	// A bare element's destination is the basename of its RESOLVED source, which only the
 	// host can compute: in the jail's own workspace the sources are host paths that are not
 	// here, so the comparison would be between names the host never uses. The host run has
 	// already made it.
 	if !(inJail() && jailOwnWorkspace(workspace)) {
-		validateMountDestinations(config, errs)
+		if len(edit) != 0 && edit[0] != nil {
+			validateMountDestinations(config, errs, edit[0].packs)
+		} else {
+			validateMountDestinations(config, errs)
+		}
 	}
 }
 
@@ -474,11 +478,11 @@ func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]s
 // which carries no provenance, so — as validateCacheRelocations does — the workspace config
 // is re-read to learn which elements came from it. Nothing is re-read when the merged map
 // declares no read-write element, which is every config today.
-func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	if rwMountTrusted(mountScopeWorkspace) || !hasRWMount(config) {
 		return
 	}
-	wsCfg, wsNode, err := loadWorkspaceConfig(workspace, false, func(string) {}, true)
+	wsCfg, wsNode, err := loadValidationWorkspaceConfigWithNode(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -535,7 +539,7 @@ func validateRWMountSources(config *jsonx.OrderedMap, workspace string, errs *[]
 // so it lands nowhere and collides with nothing. A config naming one path per machine —
 // "~/src/lib" here, "/opt/lib" there, both /ctx/lib — started a jail on every machine before
 // this check existed, and refusing it would refuse a launch podman would have made.
-func validateMountDestinations(config *jsonx.OrderedMap, errs *[]string) {
+func validateMountDestinations(config *jsonx.OrderedMap, errs *[]string, selectedPacks ...[]*packload.Pack) {
 	elements := ParseMounts(config)
 	if len(elements) == 0 {
 		return
@@ -577,7 +581,12 @@ func validateMountDestinations(config *jsonx.OrderedMap, errs *[]string) {
 			break
 		}
 	}
-	selected, _ := resolveSelectedPacks()
+	var selected []*packload.Pack
+	if len(selectedPacks) != 0 {
+		selected = selectedPacks[0]
+	} else {
+		selected, _ = resolveSelectedPacks()
+	}
 	for _, p := range selected {
 		granted, _ := p.HonoredMounts()
 		for _, mt := range granted {

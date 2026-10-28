@@ -526,6 +526,11 @@ func ApplyForks(packs []*Pack) ([]*Pack, error) {
 		sort.Strings(problems)
 		return nil, fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
+	for i, wasCopied := range copied {
+		if wasCopied {
+			refreshEmbeddedMetadataBinding(out[i])
+		}
+	}
 	return out, nil
 }
 
@@ -575,6 +580,7 @@ func copyPackDecl(p *Pack) *Pack {
 	decl := *p.Decl
 	decl.Contributes = append([]packdecl.Contribution(nil), p.Decl.Contributes...)
 	cp.Decl = &decl
+	preserveEmbeddedMetadataBinding(p, &cp)
 	return &cp
 }
 

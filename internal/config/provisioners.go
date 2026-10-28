@@ -107,7 +107,7 @@ func provisionerNames(v any) []string {
 // (PS-D3). User scope only. It warns where an order ranks nix above the pack's own recipe, which
 // does not reach a program the host floor holds yet, and only for a program a selected pack ships a
 // nix recipe for (nixAbovePack).
-func validateProvisioners(config *jsonx.OrderedMap, workspace string, errs, warns *[]string) {
+func validateProvisioners(config *jsonx.OrderedMap, workspace string, errs, warns *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(provisionersKey)
 	if !present {
 		return
@@ -116,7 +116,11 @@ func validateProvisioners(config *jsonx.OrderedMap, workspace string, errs, warn
 		var reqs, floorReqs map[string][]depcheck.Requirement
 		complete := true
 		if hasPerPackage(v) || namesNix(v) {
-			reqs, floorReqs, complete = selectedDepRequirements(config)
+			if len(edit) != 0 && edit[0] != nil {
+				reqs, floorReqs, complete = selectedDepRequirements(config, edit[0].packs)
+			} else {
+				reqs, floorReqs, complete = selectedDepRequirements(config)
+			}
 		}
 		for _, prob := range provisionersProblems(v, reqs, complete) {
 			add(errs, "config."+provisionersKey+prob)
@@ -126,7 +130,7 @@ func validateProvisioners(config *jsonx.OrderedMap, workspace string, errs, warn
 				strings.Join(w.bins, ", ")))
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -277,8 +281,14 @@ func hasPerPackage(v any) bool {
 // the requirements whose packs remain in the effective host floor for warnings,
 // and whether the whole selection resolved. Exclusion must not erase a binary's
 // declared recipes: those are still available when the floor does not own it.
-func selectedDepRequirements(cfg *jsonx.OrderedMap) (map[string][]depcheck.Requirement, map[string][]depcheck.Requirement, bool) {
-	packs, complete := resolveSelectedPacks()
+func selectedDepRequirements(cfg *jsonx.OrderedMap, selectedPacks ...[]*packload.Pack) (map[string][]depcheck.Requirement, map[string][]depcheck.Requirement, bool) {
+	var packs []*packload.Pack
+	complete := true
+	if len(selectedPacks) != 0 {
+		packs = selectedPacks[0]
+	} else {
+		packs, complete = resolveSelectedPacks()
+	}
 	var floorPacks []*packload.Pack
 	wire := hostFloorWire(cfg)
 	for _, p := range packs {

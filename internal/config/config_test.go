@@ -101,7 +101,7 @@ func TestWorkspaceLocalWinsAndMerges(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, WorkspaceConfigName), `{"packages": ["just"], "network": {"mode": "bridge"}}`)
 	write(t, filepath.Join(dir, WorkspaceLocalConfigName), `{"packages": ["htop"], "network": {"mode": "host"}}`)
-	m, err := LoadWorkspaceConfig(dir, false, discard)
+	m, _, err := loadWorkspaceConfig(dir, false, discard, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestWorkspaceExplicitIncludeOfLocalNotMergedTwice(t *testing.T) {
 	write(t, filepath.Join(dir, WorkspaceConfigName),
 		`{"packages": ["just"], "include_if_found": ["yolo-jail.local.jsonc"]}`)
 	write(t, filepath.Join(dir, WorkspaceLocalConfigName), `{"packages": ["htop"]}`)
-	m, err := LoadWorkspaceConfig(dir, false, discard)
+	m, _, err := loadWorkspaceConfig(dir, false, discard, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestLoadWorkspaceConfigSupportsJSONExtension(t *testing.T) {
 		// Local override in .json
 		"packages": ["htop"],
 	}`)
-	m, err := LoadWorkspaceConfig(dir, false, discard)
+	m, _, err := loadWorkspaceConfig(dir, false, discard, false)
 	if err != nil {
 		t.Fatal(err)
 	}

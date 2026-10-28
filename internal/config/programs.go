@@ -265,7 +265,7 @@ func ProgramsAutoprune(warn Warn) bool {
 // misspelled option that validated would be a knob the user believes they set, and a
 // workspace-scoped one that validated would be a destructive setting silently ignored — the
 // two failure modes are opposite and both are worse than a message.
-func validatePrograms(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validatePrograms(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(programsKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here proves
@@ -273,7 +273,7 @@ func validatePrograms(config *jsonx.OrderedMap, workspace string, errs *[]string
 		// (validateCacheRelocations' rule).
 		return
 	}
-	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
+	if wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...); err == nil && wsCfg != nil {
 		if _, atWorkspace := wsCfg.Get(programsKey); atWorkspace && WorkspaceUserScopeOnlyKey(programsKey) {
 			add(errs, "config."+programsKey+": user-scope only — move it to "+
 				"~/.config/yolo-jail/config.jsonc. A workspace config travels with the "+

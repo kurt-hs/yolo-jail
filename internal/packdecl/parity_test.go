@@ -361,6 +361,69 @@ package = "fixture-tool"
 // readers to one valid, ordered fixture covering every current kind. The fixture is built
 // from declarations (not decoder internals), and assertions compare accessor results rather
 // than the codecs' syntax.
+func assertAutonomyRowMetadata(t *testing.T, reader string, old, got *AutonomyContribution) {
+	t.Helper()
+	if old == nil || got == nil {
+		if old != got {
+			t.Errorf("%s autonomy presence differs: legacy=%#v grouped=%#v", reader, old, got)
+		}
+		return
+	}
+	for _, half := range []struct {
+		name string
+		old  *AutonomyPosture
+		got  *AutonomyPosture
+	}{{"autonomous", old.Autonomous, got.Autonomous}, {"guarded", old.Guarded, got.Guarded}} {
+		if half.old == nil || half.got == nil {
+			continue
+		}
+		if len(half.old.Launch) != len(half.got.Launch) {
+			t.Errorf("%s %s launch metadata row count legacy=%d grouped=%d", reader, half.name, len(half.old.Launch), len(half.got.Launch))
+			continue
+		}
+		for i := range half.old.Launch {
+			legacy, grouped := half.old.Launch[i], half.got.Launch[i]
+			if legacy.Origin.Format != ManifestFormatJSON || legacy.Origin.File != ManifestName || legacy.Location.File != ManifestName || legacy.Location.Key == "" || legacy.Location.Line != 0 || legacy.Replace {
+				t.Errorf("%s legacy %s launch[%d] metadata=%#v", reader, half.name, i, legacy)
+			}
+			if grouped.Origin.Format != ManifestFormatTOML || grouped.Origin.File != ManifestTOMLName || grouped.Location.File != ManifestTOMLName || grouped.Location.Line == 0 || grouped.Location.Column == 0 || grouped.Replace {
+				t.Errorf("%s grouped %s launch[%d] metadata=%#v", reader, half.name, i, grouped)
+			}
+		}
+	}
+}
+
+func assertPostureRowMetadata(t *testing.T, reader string, autonomy bool, old, got *AutonomyPosture) {
+	t.Helper()
+	if old == nil || got == nil || len(old.Launch) != len(got.Launch) {
+		return
+	}
+	for i := range old.Launch {
+		legacy, grouped := old.Launch[i], got.Launch[i]
+		if legacy.Origin.Format != ManifestFormatJSON || legacy.Location.File != ManifestName || legacy.Location.Key == "" || grouped.Origin.Format != ManifestFormatTOML || grouped.Location.File != ManifestTOMLName || grouped.Location.Line == 0 || grouped.Location.Column == 0 {
+			t.Errorf("%s posture=%t launch[%d] row metadata legacy=%#v grouped=%#v", reader, autonomy, i, legacy, grouped)
+		}
+	}
+}
+
+func clearAutonomyRowMetadata(a *AutonomyContribution) {
+	if a == nil {
+		return
+	}
+	clearPostureRowMetadata(a.Autonomous)
+	clearPostureRowMetadata(a.Guarded)
+}
+
+func clearPostureRowMetadata(p *AutonomyPosture) {
+	if p == nil {
+		return
+	}
+	for i := range p.Launch {
+		p.Launch[i].Origin, p.Launch[i].Location, p.Launch[i].Replace = ManifestOrigin{}, ManifestLocation{}, false
+	}
+	p.configLocations, p.configReplaces = nil, nil
+}
+
 func TestGroupedTOMLMatchesLegacyPublicContributionReaders(t *testing.T) {
 	legacy, grouped := contributionParityFixture(t)
 	old, problems := Decode(legacy)
@@ -420,13 +483,17 @@ func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 		t.Errorf("%s manifest header metadata differs: legacy name/description/skills_tier=%q/%q/%q grouped=%q/%q/%q", reader,
 			old.Name, old.Description, old.SkillsTier, got.Name, got.Description, got.SkillsTier)
 	}
-	want, have := old.Contributions(), got.Contributions()
+	want := append([]Contribution(nil), old.Contributions()...)
+	have := append([]Contribution(nil), got.Contributions()...)
 	if len(want) != len(have) {
 		t.Fatalf("%s Contributions count=%d, want %d", reader, len(have), len(want))
 	}
 	seen := map[Kind]bool{}
 	for i := range want {
 		seen[want[i].Kind] = true
+		if want[i].Origin.Format != ManifestFormatJSON || have[i].Origin.Format != ManifestFormatTOML || have[i].Origin.File != ManifestTOMLName || have[i].Location.File != ManifestTOMLName || have[i].Location.Key == "" || have[i].Location.Line == 0 || have[i].Location.Column == 0 {
+			t.Errorf("%s contribution[%d] format metadata legacy=%#v grouped=%#v", reader, i, want[i], have[i])
+		}
 		// Grouped provider model rows are a different accepted shape; their relation to
 		// legacy alias/model_options composer semantics remains an F-owned obligation.
 		if want[i].Kind == KindProvider {
@@ -437,10 +504,23 @@ func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 			}
 			continue
 		}
-		// Format provenance and explicit TOML replace metadata are format-specific. The
-		// declared facts themselves must otherwise lower to the same public contribution.
+		// Format provenance and explicit TOML replace metadata are format-specific. Compare
+		// those above, then scope semantic payload parity to independent row copies.
 		want[i].Origin, want[i].Location, want[i].Replace = ManifestOrigin{}, ManifestLocation{}, false
 		have[i].Origin, have[i].Location, have[i].Replace = ManifestOrigin{}, ManifestLocation{}, false
+		// Contributions returns rows with pointer-valued nested postures. Copy those rows
+		// before comparing normalized payloads so metadata checks and test edits cannot mask
+		// later public accessors or rewrite either decoded manifest.
+		if want[i].Kind == KindAutonomy {
+			want[i].Autonomous = cloneAutonomyPosture(old.Contributes[i].Autonomous)
+			want[i].Guarded = cloneAutonomyPosture(old.Contributes[i].Guarded)
+			have[i].Autonomous = cloneAutonomyPosture(got.Contributes[i].Autonomous)
+			have[i].Guarded = cloneAutonomyPosture(got.Contributes[i].Guarded)
+			clearPostureRowMetadata(want[i].Autonomous)
+			clearPostureRowMetadata(want[i].Guarded)
+			clearPostureRowMetadata(have[i].Autonomous)
+			clearPostureRowMetadata(have[i].Guarded)
+		}
 		if !reflect.DeepEqual(want[i], have[i]) {
 			t.Errorf("%s Contributions()[%d] (%s) differs:\n legacy=%#v\n grouped=%#v", reader, i, want[i].Kind, want[i], have[i])
 		}
@@ -457,12 +537,20 @@ func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 	if !reflect.DeepEqual(old.RequiredBins(), got.RequiredBins()) {
 		t.Errorf("%s RequiredBins differ:\n legacy=%#v\n grouped=%#v", reader, old.RequiredBins(), got.RequiredBins())
 	}
-	if !reflect.DeepEqual(old.AutonomyContributions(), got.AutonomyContributions()) {
-		t.Errorf("%s AutonomyContributions differ", reader)
+	wantAutonomy, haveAutonomy := old.AutonomyContributions(), got.AutonomyContributions()
+	assertAutonomyRowMetadata(t, reader, wantAutonomy, haveAutonomy)
+	clearAutonomyRowMetadata(wantAutonomy)
+	clearAutonomyRowMetadata(haveAutonomy)
+	if !reflect.DeepEqual(wantAutonomy, haveAutonomy) {
+		t.Errorf("%s AutonomyContributions semantic payload differs", reader)
 	}
 	for _, enabled := range []bool{false, true} {
-		if !reflect.DeepEqual(old.PostureFor(enabled), got.PostureFor(enabled)) {
-			t.Errorf("%s PostureFor(%t) differs", reader, enabled)
+		wantPosture, havePosture := old.PostureFor(enabled), got.PostureFor(enabled)
+		assertPostureRowMetadata(t, reader, enabled, wantPosture, havePosture)
+		clearPostureRowMetadata(wantPosture)
+		clearPostureRowMetadata(havePosture)
+		if !reflect.DeepEqual(wantPosture, havePosture) {
+			t.Errorf("%s PostureFor(%t) semantic payload differs", reader, enabled)
 		}
 	}
 	if !reflect.DeepEqual(old.Profiles(), got.Profiles()) {
@@ -474,8 +562,23 @@ func assertContributionParity(t *testing.T, reader string, old, got *Manifest) {
 	if !reflect.DeepEqual(old.HookContributions(), got.HookContributions()) || !reflect.DeepEqual(old.MCPContributions(), got.MCPContributions()) {
 		t.Errorf("%s hook/MCP public projections differ", reader)
 	}
-	if !reflect.DeepEqual(old.HostFileContributions(), got.HostFileContributions()) || !reflect.DeepEqual(old.MountContributions(), got.MountContributions()) || !reflect.DeepEqual(old.ConfigOverlayContributions(), got.ConfigOverlayContributions()) || !reflect.DeepEqual(old.ConfigListContributions(), got.ConfigListContributions()) {
-		t.Errorf("%s host/mount/config public projections differ", reader)
+	oldOverlays, groupedOverlays := old.ConfigOverlayContributions(), got.ConfigOverlayContributions()
+	if len(oldOverlays) != len(groupedOverlays) {
+		t.Errorf("%s config-overlay projection length legacy=%d grouped=%d", reader, len(oldOverlays), len(groupedOverlays))
+	} else {
+		for i := range oldOverlays {
+			if oldOverlays[i].Origin.Format != ManifestFormatJSON || groupedOverlays[i].Origin.Format != ManifestFormatTOML || groupedOverlays[i].Location.File != ManifestTOMLName || groupedOverlays[i].Location.Line == 0 || groupedOverlays[i].Location.Column == 0 || groupedOverlays[i].Replace {
+				t.Errorf("%s config-overlay[%d] format metadata legacy=%#v grouped=%#v", reader, i, oldOverlays[i], groupedOverlays[i])
+			}
+			oldOverlays[i].Origin, oldOverlays[i].Location, oldOverlays[i].Replace = ManifestOrigin{}, ManifestLocation{}, false
+			groupedOverlays[i].Origin, groupedOverlays[i].Location, groupedOverlays[i].Replace = ManifestOrigin{}, ManifestLocation{}, false
+		}
+		if !reflect.DeepEqual(oldOverlays, groupedOverlays) {
+			t.Errorf("%s config-overlay semantic payloads differ: legacy=%#v grouped=%#v", reader, oldOverlays, groupedOverlays)
+		}
+	}
+	if !reflect.DeepEqual(old.HostFileContributions(), got.HostFileContributions()) || !reflect.DeepEqual(old.MountContributions(), got.MountContributions()) || !reflect.DeepEqual(old.ConfigListContributions(), got.ConfigListContributions()) {
+		t.Errorf("%s host/mount/config-list public projections differ", reader)
 	}
 	if !reflect.DeepEqual(old.DeclaredNeeds(), got.DeclaredNeeds()) || !reflect.DeepEqual(old.Supersessions(), got.Supersessions()) || !reflect.DeepEqual(old.SessionHomes(), got.SessionHomes()) {
 		t.Errorf("%s pack-wide metadata accessors differ", reader)

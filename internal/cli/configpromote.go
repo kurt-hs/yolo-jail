@@ -146,7 +146,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 		}
 		switch {
 		case isHelpToken(a):
-			writeConfigUsage(out, colorForWriter(out))
+			writeSurfaceUsage(out, colorForWriter(out))
 			return o, 0
 		case a == "--surface" || strings.HasPrefix(a, "--surface="):
 			fmt.Fprintln(errw, "yolo config promote: --surface was removed; use the canonical positional identity <agent>/<surface> (for example, pi/settings)")
@@ -189,7 +189,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 		case a == promoteFlagAccept:
 			o.accept = true
 		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(errw, "yolo config promote: unknown flag %q\n\n%s\n", a, configUsage)
+			fmt.Fprintf(errw, "yolo config promote: unknown flag %q\n\n%s\n", a, surfaceUsage)
 			return o, 2
 		default:
 			if o.agent != "" {
@@ -202,7 +202,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 	}
 	if o.agent == "" {
 		fmt.Fprintf(errw, "yolo config promote: needs an agent (e.g. 'yolo config promote claude')\n\n%s\n",
-			configUsage)
+			surfaceUsage)
 		return o, 2
 	}
 	var identityRC int
@@ -297,13 +297,13 @@ func refuseInJailPromote(t configTarget, errw io.Writer) bool {
 	if !t.local && !config.InJail() {
 		return false
 	}
-	fmt.Fprintf(errw, "yolo config promote: refusing — promote is a HOST-side verb. Its "+
+	fmt.Fprintf(errw, "yolo surface promote: refusing — promote is a HOST-side verb. Its "+
 		"destinations live under the host's ~/.config/yolo-jail/, which no jail may write: a "+
 		"pack manifest is an input to composition, so a jail that could edit one could grant "+
 		"itself a host file on the next boot.\n"+
 		"  Run it on the host, against this workspace:\n"+
-		"    yolo config promote <agent> --plan\n"+
-		"  `yolo config diff <agent>` in here shows the same captured keys.\n")
+		"    yolo surface promote <agent> --plan\n"+
+		"  `yolo surface diff <agent>` in here shows the same captured keys.\n")
 	return true
 }
 

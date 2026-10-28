@@ -129,7 +129,7 @@ func TestConfigAtGuestNamesTheNotchesItCanRead(t *testing.T) {
 		withWorkspaceCwd(t)
 
 		var out, errw bytes.Buffer
-		if rc := configRunW([]string{"ls", "--at", "guest"}, &out, &errw); rc != 1 {
+		if rc := surfaceRunW([]string{"ls", "--at", "guest"}, &out, &errw); rc != 1 {
 			t.Fatalf("macOS=%v: `config ls --at guest` rc=%d, want 1:\n%s%s", macOS, rc, out.String(), errw.String())
 		}
 		got := errw.String()

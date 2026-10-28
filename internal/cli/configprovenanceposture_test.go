@@ -26,14 +26,14 @@ func TestConfigLsListReplacementFollowsTheNotchPosture(t *testing.T) {
 		wantReplaced bool
 	}{{"host", false}, {"jail", true}} {
 		// Fixture guard: the render this report describes agrees with the expectation.
-		rc, out, errw := runConfigVerb(t, "render", "claude/settings", "--at", c.notch)
+		rc, out, errw := runSurfaceVerb(t, "render", "claude/settings", "--at", c.notch)
 		if rc != 0 {
 			t.Fatalf("render --at %s rc=%d\n%s%s", c.notch, rc, out, errw)
 		}
 		if lands := strings.Contains(out, "Bash(ls:*)"); lands == c.wantReplaced {
 			t.Fatalf("fixture bug: render --at %s lands the entry=%v\n%s", c.notch, lands, out)
 		}
-		rc, out, errw = runConfigVerb(t, "ls", "--at", c.notch)
+		rc, out, errw = runSurfaceVerb(t, "ls", "--at", c.notch)
 		if rc != 0 {
 			t.Fatalf("ls --at %s rc=%d\n%s%s", c.notch, rc, out, errw)
 		}

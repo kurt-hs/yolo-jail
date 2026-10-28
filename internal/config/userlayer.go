@@ -55,6 +55,7 @@ package config
 // R8 property doing its job.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,9 +104,9 @@ func ValidateUserLayer(path string) string {
 			" (an explicitly-passed layer is never skipped silently)"
 	}
 	if fi.IsDir() {
-		return "--user-layer: " + path + " is a directory; pass a single JSONC config file"
+		return "--user-layer: " + path + " is a directory; pass a single JSONC or TOML config file"
 	}
-	if _, err := LoadJSONCFile(abs, "--user-layer "+path, true, nil); err != nil {
+	if _, _, err := loadWithIncludesScope(abs, "--user-layer "+path, true, nil, nil, false, SchemaScopeUserOnly, readAt{}); err != nil {
 		return err.Error()
 	}
 	return ""
@@ -137,20 +138,14 @@ func applyUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*js
 	return mergeConfig(base, layer, baseNode, layerNode)
 }
 
-// UserScopeConfig is the exported user-scope read for callers outside this package (the
-// `yolo loopholes` commands, `yolo check`'s Config Files section): paths.UserConfigPath()
-// plus its includes, plus any --user-layer.
-//
-// Exported so those callers cannot accidentally get a layer-less view by reaching for
-// LoadJSONCFile — which is what they did before, and would have made `--user-layer` a flag
-// that changed a launch but not the command you run to verify it.
+// UserScopeConfig is the standard format-aware user-scope read: the selected user file,
+// includes, config.d fragments, inherited launch layer and explicit --user-layer.
 func UserScopeConfig(strict bool, warn Warn) (*jsonx.OrderedMap, error) {
-	p := paths.UserConfigPath()
-	return loadUserScopeConfig(p, p, strict, warn)
+	return LoadReadableUserScopeConfig(strict, warn)
 }
 
-// LoadReadableUserScopeConfig reads the format-2 user graph and sorted config.d fragments. It is
-// a library seam only; existing runtime readers stay on UserScopeConfig until H activation.
+// LoadReadableUserScopeConfig reads the selected user format, relative includes, sorted TOML
+// config.d fragments, inherited launch layer and explicit --user-layer.
 func LoadReadableUserScopeConfig(strict bool, warn Warn) (*jsonx.OrderedMap, error) {
 	p := paths.UserConfigPath()
 	m, _, err := loadReadableUserScope(p, strict, warn, false)
@@ -167,9 +162,7 @@ func LoadReadableUserScopeConfigWithSources(strict bool, warn Warn) (*jsonx.Orde
 // UserScopeConfigWithSources is UserScopeConfig plus where each value was written
 // (sources.go), for a caller that reports validation problems over the user scope.
 func UserScopeConfigWithSources(strict bool, warn Warn) (*jsonx.OrderedMap, *Sources, error) {
-	p := paths.UserConfigPath()
-	m, n, err := loadUserScope(p, p, strict, warn, true)
-	return m, sourcesOf(n), err
+	return LoadReadableUserScopeConfigWithSources(strict, warn)
 }
 
 // UserScopeSources is the provenance of the user scope UserScopeConfigOrEmpty reads, nil
@@ -200,64 +193,74 @@ func loadUserScopeConfig(path, label string, strict bool, warn Warn) (*jsonx.Ord
 // loadUserScope is loadUserScopeConfig with the provenance (sources.go) beside the map when
 // record is set.
 func loadUserScope(path, label string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
-	cfg, node, err := loadWithIncludes(path, label, strict, warn, nil, record, readAt{})
-	if err != nil {
-		return nil, nil, err
-	}
-	cfg, node = applyInheritedLaunch(cfg, node, record, false)
-	cfg, node = applyUserLayer(cfg, node, record)
-	return cfg, node, nil
+	return loadReadableUserScope(path, strict, warn, record)
 }
 
 func loadReadableUserScope(path string, strict bool, warn Warn, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadReadableUserScopeWithReadInput(path, strict, warn, record, nil)
+}
+
+func loadReadableUserScopeWithReadInput(path string, strict bool, warn Warn, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadReadableUserScopeWithInputUse(path, strict, warn, record, input, nil)
+}
+
+func loadReadableUserScopeWithInputUse(path string, strict bool, warn Warn, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	selectedPath, selectedLabel, readable, err := resolveUserConfigPath(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	seen := map[string]struct{}{}
-	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{})
+	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleUser, witness: currentEditWitness(input)})
 	if err != nil {
 		return nil, nil, err
 	}
 	if readable {
-		cfg, node, err = mergeUserConfigFragments(cfg, node, filepath.Dir(selectedPath), strict, warn, seen, record)
+		cfg, node, err = mergeUserConfigFragmentsWithInputUse(cfg, node, filepath.Dir(selectedPath), strict, warn, seen, record, input, inputUsed)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
-	cfg, node = applyInheritedLaunch(cfg, node, record, true)
-	cfg, node = applyReadableUserLayer(cfg, node, record)
+	cfg, node, err = applyInheritedLaunchWithStrictInputUse(cfg, node, record, true, strings.EqualFold(filepath.Ext(selectedPath), ".toml"), input, inputUsed, strict)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, node, err = applyReadableUserLayerWithInputUse(cfg, node, record, input, inputUsed)
+	if err != nil {
+		return nil, nil, err
+	}
 	return cfg, node, nil
 }
 
-func applyReadableUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode) {
+func applyReadableUserLayer(base *jsonx.OrderedMap, baseNode *srcNode, record bool) (*jsonx.OrderedMap, *srcNode, error) {
+	return applyReadableUserLayerWithReadInput(base, baseNode, record, nil)
+}
+
+func applyReadableUserLayerWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	return applyReadableUserLayerWithInputUse(base, baseNode, record, input, nil)
+}
+
+func applyReadableUserLayerWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	path := UserLayerPath()
 	if path == "" {
-		return base, baseNode
+		return base, baseNode, nil
 	}
-	var layer *jsonx.OrderedMap
-	var layerNode *srcNode
-	var err error
-	if strings.EqualFold(filepath.Ext(path), ".toml") {
-		layer, layerNode, err = loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{})
-	} else {
-		layer, layerNode, err = loadWithIncludes(path, "--user-layer "+path, false, func(string) {}, nil, record, readAt{})
+	layer, layerNode, err := loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleUser, witness: currentEditWitness(input)})
+	if err != nil {
+		return nil, nil, err
 	}
-	if err != nil || layer == nil || layer.Len() == 0 {
-		return base, baseNode
+	if layer == nil || layer.Len() == 0 {
+		return base, baseNode, nil
 	}
 	if base == nil {
 		base = jsonx.NewOrderedMap()
 	}
-	if strings.EqualFold(filepath.Ext(path), ".toml") {
-		return mergeReadableConfig(base, layer, baseNode, layerNode, nil)
-	}
-	return mergeConfig(base, layer, baseNode, layerNode)
+	merged, mergedNode := mergeReadableConfigMode(base, layer, baseNode, layerNode, nil, strings.EqualFold(filepath.Ext(path), ".toml"))
+	return merged, mergedNode, nil
 }
 
 // InheritedLaunchPath is the nested-launch file a jail's host wrote beside its user config:
-// $HOME/.config/yolo-jail/inherited-launch.jsonc. Empty outside a jail — the file only ever
-// exists inside one, and looking for it on the host would invent a config location.
+// inherited-launch.toml when the current launch can write readable TOML, otherwise the retained
+// legacy JSONC file. Empty outside a jail — the file only ever exists inside one.
 //
 // Kept beside the layer logic because the two are the same shape of thing: an ADDITIONAL
 // user-level input that the ordinary user-scope read has to fold in, or the readers that
@@ -266,7 +269,12 @@ func InheritedLaunchPath() string {
 	if !inJail() {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(paths.UserConfigPath()), "inherited-launch.jsonc")
+	dir := filepath.Dir(paths.UserConfigPath())
+	toml := filepath.Join(dir, "inherited-launch.toml")
+	if pathExists(toml) {
+		return toml
+	}
+	return filepath.Join(dir, "inherited-launch.jsonc")
 }
 
 // applyInheritedLaunch merges the inherited nested-launch file UNDER config.jsonc.
@@ -283,25 +291,89 @@ func InheritedLaunchPath() string {
 // handed down; a jail's own config.jsonc (and any --user-layer on top) is the more local
 // statement and must win — the same direction as user-under-workspace one level up. The
 // provenance (sources.go) is folded the same way, so a refused key the file carries names it.
-func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record, readable bool) (*jsonx.OrderedMap, *srcNode) {
-	path := InheritedLaunchPath()
-	if path == "" {
+func applyInheritedLaunch(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool) (*jsonx.OrderedMap, *srcNode) {
+	return applyInheritedLaunchWithReadInput(base, baseNode, record, readable, clearEmptyLists, nil)
+}
+
+func applyInheritedLaunchWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode) {
+	return applyInheritedLaunchWithInputUse(base, baseNode, record, readable, clearEmptyLists, input, nil)
+}
+
+func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode) {
+	result, node, err := applyInheritedLaunchWithStrictInputUse(base, baseNode, record, readable, clearEmptyLists, input, inputUsed, false)
+	if err != nil {
 		return base, baseNode
 	}
-	inherited, _, inheritedNode, err := loadJSONCFile(path, "inherited launch config", false, func(string) {}, record, readAt{})
-	if err != nil || inherited == nil || inherited.Len() == 0 {
-		return base, baseNode
+	return result, node
+}
+
+func inheritedLaunchPathForRead(strict bool) (string, error) {
+	if !strict {
+		return InheritedLaunchPath(), nil
+	}
+	if !inJail() {
+		return "", nil
+	}
+	dir := filepath.Dir(paths.UserConfigPath())
+	var found []string
+	for _, name := range []string{"inherited-launch.toml", "inherited-launch.jsonc", "inherited-launch.json"} {
+		path := filepath.Join(dir, name)
+		if _, err := os.Lstat(path); err == nil {
+			found = append(found, path)
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("cannot inspect inherited user config %s: %w; preserve the file and restore a readable config directory before continuing", path, err)
+		}
+	}
+	if len(found) > 1 {
+		return "", fmt.Errorf("inherited-launch siblings %s exist; these formats are never merged. Preserve their contents, choose exactly one file to keep active, then rerun the command", strings.Join(found, ", "))
+	}
+	if len(found) == 1 {
+		return found[0], nil
+	}
+	return filepath.Join(dir, "inherited-launch.jsonc"), nil
+}
+
+func applyInheritedLaunchWithStrictInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput, inputUsed *bool, strict bool) (*jsonx.OrderedMap, *srcNode, error) {
+	path, err := inheritedLaunchPathForRead(strict)
+	if err != nil {
+		return nil, nil, err
+	}
+	if path == "" {
+		return base, baseNode, nil
+	}
+	nestedReadable := strings.EqualFold(filepath.Ext(path), ".toml")
+	inherited, _, inheritedNode, err := loadConfigFile(path, path, strict, func(string) {}, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleInherited, witness: currentEditWitness(input)})
+	if err != nil {
+		if strict {
+			return nil, nil, err
+		}
+		return base, baseNode, nil
+	}
+	if inherited == nil || inherited.Len() == 0 {
+		return base, baseNode, nil
 	}
 	// The inherited file is the one config read OUTSIDE LoadJSONCWithIncludes, so it
-	// anchors itself: its relative env_sources entries resolve beside it, which is the
-	// same directory the user config's would have. (Entries usually arrive absolute
-	// already — the parent launch's loader anchored them before writing the file.)
-	AnchorEnvSources(inherited, filepath.Dir(path))
+	// anchors itself: its relative env files resolve beside it. Legacy JSONC inherits the
+	// ordinary anchors; TOML has already crossed through the readable projection.
+	readableMerge := readable || nestedReadable
+	if readableMerge {
+		if !nestedReadable {
+			inherited, inheritedNode = projectLegacyB2Config(inherited, inheritedNode)
+		}
+		if nestedReadable && base != nil {
+			base, baseNode = projectLegacyB2Config(base, baseNode)
+		}
+		anchorReadableEnvSources(inherited, filepath.Dir(path))
+	} else {
+		AnchorEnvSources(inherited, filepath.Dir(path))
+	}
 	if base == nil {
-		return inherited, inheritedNode
+		return inherited, inheritedNode, nil
 	}
-	if readable {
-		return mergeReadableConfig(inherited, base, inheritedNode, baseNode, nil)
+	if readableMerge {
+		merged, mergedNode := mergeReadableConfigMode(inherited, base, inheritedNode, baseNode, nil, clearEmptyLists || nestedReadable)
+		return merged, mergedNode, nil
 	}
-	return mergeConfig(inherited, base, inheritedNode, baseNode)
+	merged, mergedNode := mergeConfig(inherited, base, inheritedNode, baseNode)
+	return merged, mergedNode, nil
 }

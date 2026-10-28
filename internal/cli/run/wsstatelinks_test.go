@@ -523,7 +523,7 @@ func TestUserEnvFileNeverWritesThroughALink(t *testing.T) {
 // inside it (Apple Container).
 func TestInheritedUserScopeNeverWritesThroughALink(t *testing.T) {
 	for _, tc := range []struct{ name, rt, linked, victimKind string }{
-		{"podman, a link at the staged file", "podman", "inherit-preflight.jsonc", "file"},
+		{"podman, a link at the staged file", "podman", "inherit-preflight.toml", "file"},
 		{"container, a link at the destination", "container", inheritPreflightRel, "file"},
 		{"container, a link above the destination", "container", ".config/yolo-jail", "dir"},
 	} {

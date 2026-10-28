@@ -66,7 +66,7 @@ func (w *promoteWorld) pack(name, manifest string) string {
 func (w *promoteWorld) run(args ...string) (string, string, int) {
 	w.t.Helper()
 	var out, errw bytes.Buffer
-	rc := configRunW(append([]string{"promote"}, args...), &out, &errw)
+	rc := surfaceRunW(append([]string{"promote"}, args...), &out, &errw)
 	return out.String(), errw.String(), rc
 }
 
@@ -118,8 +118,10 @@ func TestPromoteRefusesInsideAJail(t *testing.T) {
 		if rc == 0 {
 			t.Errorf("promote %v in-jail: rc=0, want a refusal", args)
 		}
-		if !strings.Contains(errw, "HOST-side") {
-			t.Errorf("promote %v: refusal does not say where it must run:\n%s", args, errw)
+		for _, want := range []string{"HOST-side", "yolo surface promote <agent> --plan", "yolo surface diff <agent>"} {
+			if !strings.Contains(errw, want) {
+				t.Errorf("promote %v: refusal lacks %q:\n%s", args, want, errw)
+			}
 		}
 	}
 	if after := w.overlayFor("claude", "settings"); after != before {

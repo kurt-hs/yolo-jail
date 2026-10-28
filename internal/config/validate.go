@@ -63,44 +63,69 @@ type LoopholeResolver interface {
 // existence checks (config.mounts). resolver supplies known loopholes
 // (nil => none).
 func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver) (errors []string, warnings []string) {
+	return validateConfigWithEditContext(config, workspace, resolver, nil)
+}
+
+func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver, edit *editValidationContext) (errors []string, warnings []string) {
+	readableInput := config
+	config, projection := projectReadableB2ForValidation(config)
 	if workspace == "" {
 		workspace = cwd()
+	}
+	if edit != nil && resolver == nil {
+		resolver = explicitPackLoopholeResolver{packs: edit.packs}
 	}
 	errs := &[]string{}
 	warns := &[]string{}
 
-	reportUnknownKeys(config, knownTopLevelConfigKeys, "config", errs)
+	if edit == nil {
+		reportUnknownKeys(config, knownTopLevelConfigKeys, "config", errs)
+	} else {
+		reportUnknownKeysWithReadableFG(config, errs)
+	}
 
 	validateRuntime(config, errs)
 	validateConfinement(config, errs)
 	validateRepoPath(config, errs, warns)
 	validateAgentsRetired(config, errs, warns)
 	validatePackages(config, errs)
-	validateMounts(config, workspace, errs, warns)
+	validateMounts(config, workspace, errs, warns, edit)
 	validateWorkspaceReadonly(config, errs)
 	validatePerSidePaths(config, errs)
-	validateLoopholes(config, workspace, resolver, errs, warns)
-	validateBrokerMountFence(config, workspace, resolver, errs, warns)
-	validateBrokered(config, workspace, resolver, errs, warns)
+	validateLoopholes(config, workspace, resolver, errs, warns, edit)
+	validateBrokerMountFence(config, workspace, resolver, errs, warns, edit)
+	validateBrokered(config, workspace, resolver, errs, warns, edit)
 	validateWorkspaceFile(workspace, errs, warns)
 	validateJournalRetired(config, errs, warns)
 	validateKVM(config, errs)
 	validateEphemeralStorage(config, errs)
 	validateMacosLogRetired(config, errs, warns)
 	validateNetwork(config, errs, warns)
+	for _, message := range projection.errors {
+		add(errs, message)
+	}
 	validateSecurity(config, errs)
 	validateHostProcessesRetired(config, errs, warns)
 	validateMiseTools(config, errs)
 	validateLSPServers(config, errs)
 	validateMCPPresetsRetired(config, errs, warns)
 	validateMCPServers(config, errs)
-	validatePackMCPServers(errs)
-	validateProviders(config, workspace, errs, warns)
+	validatePackMCPServers(errs, edit)
+	if edit == nil {
+		validateProviders(config, workspace, errs, warns)
+	} else {
+		validateProvidersForExplicit(config, readableInput, edit, errs, warns)
+	}
 	validateAgentProfilesRetired(config, errs, warns)
 	validateUseProfilesRetired(config, errs, warns)
-	validateProfile(config, errs)
-	validateProfiles(workspace, errs)
-	validateAdapters(workspace, errs)
+	validateProfile(config, errs, edit)
+	if edit == nil {
+		validateProfiles(workspace, errs)
+		validateAdapters(workspace, errs)
+	} else {
+		validateProfilesWithScopes(workspace, edit.rawUser, edit.rawWorkspace, errs)
+		validateAdaptersWithScopes(workspace, edit.rawUser, edit.rawWorkspace, errs)
+	}
 	validatePrune(config, errs)
 	validateRequiredCapabilities(config, errs)
 	validateDevices(config, errs, warns)
@@ -110,30 +135,41 @@ func ValidateConfig(config *jsonx.OrderedMap, workspace string, resolver Loophol
 	validateAgentsMdExtra(config, errs)
 	validateBriefingProvenance(config, errs)
 	validateEnvSources(config, errs)
-	validateCacheRelocations(config, workspace, errs, warns)
-	validateWritableHomeDirs(config, errs)
-	validateHostFiles(config, workspace, errs)
-	validateHostWrappers(config, workspace, errs)
-	validateShareHostFonts(config, workspace, errs)
-	validateLocalClones(config, workspace, errs)
-	validateHostApplyOnLaunch(config, workspace, errs)
-	validateHostManagement(config, workspace, errs)
-	validateHostImportExclusions(config, workspace, errs)
-	validateAgentUpdates(config, workspace, errs)
-	validateHostFloor(config, workspace, errs)
-	validateHostPath(config, workspace, errs)
-	validateProvisioners(config, workspace, errs, warns)
-	validatePerfLogging(config, workspace, errs)
-	validateMacosUserMode(config, workspace, errs)
-	validateMacosUserSharedTmp(config, workspace, errs)
-	validateOnRequest(config, workspace, errs)
-	validateUpdateCheck(config, workspace, errs)
-	validatePromotionTarget(config, workspace, errs)
-	validatePacks(workspace, errs)
-	validatePrograms(config, workspace, errs)
+	if projection.env {
+		validateReadableEnvironment(readableInput, errs)
+	}
+	validateCacheRelocations(config, workspace, errs, warns, edit)
+	if edit == nil {
+		validateWritableHomeDirs(config, errs)
+	} else {
+		validateWritableHomeDirs(config, errs, edit.packs)
+	}
+	validateHostFiles(config, workspace, errs, edit)
+	validateHostWrappers(config, workspace, errs, edit)
+	validateShareHostFonts(config, workspace, errs, edit)
+	validateLocalClones(config, workspace, errs, edit)
+	validateHostApplyOnLaunch(config, workspace, errs, edit)
+	validateHostManagement(config, workspace, errs, edit)
+	validateHostImportExclusions(config, workspace, errs, edit)
+	validateAgentUpdates(config, workspace, errs, edit)
+	validateHostFloor(config, workspace, errs, edit)
+	validateHostPath(config, workspace, errs, edit)
+	validateProvisioners(config, workspace, errs, warns, edit)
+	validatePerfLogging(config, workspace, errs, edit)
+	validateMacosUserMode(config, workspace, errs, edit)
+	validateMacosUserSharedTmp(config, workspace, errs, edit)
+	validateOnRequest(config, workspace, errs, edit)
+	validateUpdateCheck(config, workspace, errs, edit)
+	validatePromotionTarget(config, workspace, errs, edit)
+	validatePacks(workspace, errs, edit)
+	validatePrograms(config, workspace, errs, edit)
 
 	errors = *errs
 	warnings = *warns
+	if projection.changed {
+		errors = projectReadableValidationMessages(errors, projection)
+		warnings = projectReadableValidationMessages(warnings, projection)
+	}
 	if errors == nil {
 		errors = []string{}
 	}
@@ -490,7 +526,7 @@ func validateKVM(config *jsonx.OrderedMap, errs *[]string) {
 // programs get a wrapper is not a user choice, it is every program a selected pack
 // installs (host-agent-environment.md OQ-5). The one decision a user makes is whether the
 // wrap directory exists and goes on their PATH at all, and that is what this key is.
-func validateHostWrappers(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostWrappers(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(hostWrappersKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here proves
@@ -507,7 +543,7 @@ func validateHostWrappers(config *jsonx.OrderedMap, workspace string, errs *[]st
 	// construction exists to avoid. Warnings from the re-read are discarded: this file was
 	// already loaded, and any parse problem already reported, by whoever produced the
 	// merged config we were handed.
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -529,7 +565,7 @@ func validateHostWrappers(config *jsonx.OrderedMap, workspace string, errs *[]st
 // larger: the key licenses a WRITE into the real $HOME as a side effect of launching an agent,
 // so a workspace value that merely looked accepted would be a silent no-op on the one class of
 // key where a silent no-op is indistinguishable from a working exploit.
-func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(hostApplyOnLaunchKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here proves the
@@ -539,7 +575,7 @@ func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs 
 	if v != nil && !isBool(v) {
 		add(errs, "config."+hostApplyOnLaunchKey+": expected a boolean (got "+pyReprValue(v)+")")
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -564,7 +600,7 @@ func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs 
 // all, and at `own` whether the user's hand-written keys become derived output. A workspace
 // value that merely LOOKED accepted would be indistinguishable from a cloned repository
 // successfully declaring itself the owner of its user's home.
-func validateHostManagement(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostManagement(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(hostManagementKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here proves the
@@ -576,7 +612,7 @@ func validateHostManagement(config *jsonx.OrderedMap, workspace string, errs *[]
 			add(errs, "config."+hostManagementKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -603,7 +639,7 @@ func validateHostManagement(config *jsonx.OrderedMap, workspace string, errs *[]
 // /workspace is bind-mounted rw and a workspace-scoped spelling would let whatever is
 // running IN the jail freeze its own updates. A value that merely looked accepted would be
 // indistinguishable from a working one.
-func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(agentUpdatesKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here proves the
@@ -615,7 +651,7 @@ func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]st
 			add(errs, "config."+agentUpdatesKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -632,7 +668,7 @@ func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]st
 // timing), and user scope only — the floor installs programs the host runs with the user's
 // authority, so a workspace spelling (which an agent can edit) is refused rather than left looking
 // as if it worked.
-func validateHostFloor(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostFloor(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(hostFloorKey)
 	if !present {
 		return
@@ -642,7 +678,7 @@ func validateHostFloor(config *jsonx.OrderedMap, workspace string, errs *[]strin
 			add(errs, "config."+hostFloorKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -658,7 +694,7 @@ func validateHostFloor(config *jsonx.OrderedMap, workspace string, errs *[]strin
 // or `:`. User scope only: a folder here decides which binary `yolo host` runs, and a workspace
 // config is agent-editable, so a workspace spelling is refused rather than left looking as if it
 // worked (HostPathFolders never reads it).
-func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(hostPathKey)
 	if !present {
 		return
@@ -668,7 +704,7 @@ func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string
 			add(errs, "config."+hostPathKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -681,7 +717,7 @@ func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string
 
 // validateUpdateCheck type-checks `update_check` and refuses the workspace
 // spelling, which UpdateCheckEnabled never reads (see its doc for why).
-func validateUpdateCheck(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateUpdateCheck(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(updateCheckKey)
 	if !present {
 		return
@@ -691,7 +727,7 @@ func validateUpdateCheck(config *jsonx.OrderedMap, workspace string, errs *[]str
 			add(errs, "config."+updateCheckKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -709,7 +745,7 @@ func validateUpdateCheck(config *jsonx.OrderedMap, workspace string, errs *[]str
 // the key is read from user scope directly (PerfLoggingEnabled), at the top of
 // run.Run before any merged config exists, so a workspace value would not be
 // consulted no matter how well-formed it is. Saying so beats a silent no-op.
-func validatePerfLogging(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validatePerfLogging(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(perfLoggingKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here
@@ -721,7 +757,7 @@ func validatePerfLogging(config *jsonx.OrderedMap, workspace string, errs *[]str
 			add(errs, "config."+perfLoggingKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -736,7 +772,7 @@ func validatePerfLogging(config *jsonx.OrderedMap, workspace string, errs *[]str
 // validatePromotionTarget checks the host-side default for `yolo config promote`.
 // A workspace is jail-writable, so it may not redirect a user's captured choices into a
 // pack chosen by that workspace; the reader independently reads user scope only.
-func validatePromotionTarget(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validatePromotionTarget(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(promotionTargetKey)
 	if !present {
 		return
@@ -746,7 +782,7 @@ func validatePromotionTarget(config *jsonx.OrderedMap, workspace string, errs *[
 			add(errs, "config."+promotionTargetKey+": "+problem)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -1220,8 +1256,13 @@ func validateMCPServers(config *jsonx.OrderedMap, errs *[]string) {
 // claims, with nothing said. The selection is the user scope's (resolveSelectedPacks, the one
 // validation reserves names for), so the launch and `yolo check` refuse alike; a selection that
 // cannot be read refuses nothing here, its own failure being louder elsewhere.
-func validatePackMCPServers(errs *[]string) {
-	packs, _ := resolveSelectedPacks()
+func validatePackMCPServers(errs *[]string, edit ...*editValidationContext) {
+	var packs []*packload.Pack
+	if len(edit) != 0 && edit[0] != nil {
+		packs = edit[0].packs
+	} else {
+		packs, _ = resolveSelectedPacks()
+	}
 	for _, msg := range packload.MCPNameCollisions(packs) {
 		add(errs, "config.packs: "+msg)
 	}
@@ -1598,7 +1639,7 @@ func validateEnvSources(config *jsonx.OrderedMap, errs *[]string) {
 // Downgrading any of these to a warning would let the run proceed with the
 // cache silently un-relocated, which is the exact failure mode the feature
 // exists to prevent.
-func validateCacheRelocations(config *jsonx.OrderedMap, workspace string, errs, warns *[]string) {
+func validateCacheRelocations(config *jsonx.OrderedMap, workspace string, errs, warns *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(cacheRelocationsKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key
@@ -1608,7 +1649,7 @@ func validateCacheRelocations(config *jsonx.OrderedMap, workspace string, errs, 
 	// Warnings from the re-read are discarded: this same file was already
 	// loaded (and any parse problem already reported) by whoever produced the
 	// merged config we were handed.
-	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
+	if wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...); err == nil && wsCfg != nil {
 		if _, atWorkspace := wsCfg.Get(cacheRelocationsKey); atWorkspace {
 			add(errs, "config."+cacheRelocationsKey+": user-scope only — move it to "+
 				"~/.config/yolo-jail/config.jsonc (a workspace config is "+

@@ -1765,7 +1765,7 @@ func applyRMWLayers(e *Env, surface manifest.Surface, obj *jsonx.OrderedMap,
 	// the file's existing content (see renderSurfaceRMWSurface's doc comment).
 	for _, ov := range contribs.overlayLayers() {
 		if layer, isMap := ov.Data.(map[string]any); isMap {
-			applyRMWLayer(obj, layer, true, deleteNulls)
+			applyRMWLayer(obj, layer, true, deleteNulls, ov.AppendArrays)
 		}
 	}
 	// Dynamic managed tables (MCP servers) FIRST, so a managed key nested under the
@@ -1776,18 +1776,18 @@ func applyRMWLayers(e *Env, surface manifest.Surface, obj *jsonx.OrderedMap,
 	// object the derive only asserts a leaf of stays as the file holds it; then the selection
 	// keys a deselect cleared go (OQ-PSW2). Nothing here in a jail, which sets neither.
 	if leaves, clears := contribs.leafLayer(); len(leaves) > 0 || len(clears) > 0 {
-		applyRMWLayer(obj, leaves, true, deleteNulls)
+		applyRMWLayer(obj, leaves, true, deleteNulls, false)
 		for _, k := range clears {
 			obj.Delete(k)
 		}
 	}
 	// Managed: yolo owns these outright, so re-assert every boot.
 	if managed, isMap := surface.Managed.(map[string]any); isMap {
-		applyRMWLayer(obj, managed, true, deleteNulls)
+		applyRMWLayer(obj, managed, true, deleteNulls, false)
 	}
 	// Defaults: user-overridable, so fill only where the key is absent.
 	if defaults, isMap := surface.Defaults.(map[string]any); isMap {
-		applyRMWLayer(obj, defaults, false, deleteNulls)
+		applyRMWLayer(obj, defaults, false, deleteNulls, false)
 	}
 	// config-list entries LAST — after the defaults fill, or a default array whose key the
 	// file lacked would be filled over the appended entries' array and lost (Compose folds
@@ -1800,11 +1800,12 @@ func applyRMWLayers(e *Env, surface manifest.Surface, obj *jsonx.OrderedMap,
 }
 
 // applyRMWLayer writes layer into obj. force=true overwrites (managed semantics);
-// force=false only fills absent keys (default semantics). Nested objects recurse so
+// force=false only fills absent keys (default semantics). appendArrays preserves the base
+// array's order, then appends only canonically new overlay entries. Nested objects recurse so
 // a sibling key the agent owns under the same parent survives — the deep-merge
 // behavior composition's Enforce already provides. deleteNulls is true for TOML,
 // whose value model has no literal null; there a declarative nil is a removal.
-func applyRMWLayer(obj *jsonx.OrderedMap, layer map[string]any, force, deleteNulls bool) {
+func applyRMWLayer(obj *jsonx.OrderedMap, layer map[string]any, force, deleteNulls, appendArrays bool) {
 	for _, k := range sortedKeys(layer) {
 		v := layer[k]
 		if deleteNulls && v == nil {
@@ -1812,7 +1813,19 @@ func applyRMWLayer(obj *jsonx.OrderedMap, layer map[string]any, force, deleteNul
 			continue
 		}
 		if sub, isMap := v.(map[string]any); isMap {
-			applyRMWLayer(setDefaultMap(obj, k), sub, force, deleteNulls)
+			applyRMWLayer(setDefaultMap(obj, k), sub, force, deleteNulls, appendArrays)
+			continue
+		}
+		if patch, isArray := v.([]any); isArray && appendArrays {
+			base, _ := obj.Get(k)
+			current, _ := base.([]any)
+			merged := append([]any(nil), current...)
+			for _, entry := range patch {
+				if !containsRMWOverlayEntry(merged, entry) {
+					merged = append(merged, entry)
+				}
+			}
+			obj.Set(k, merged)
 			continue
 		}
 		if force {
@@ -1821,6 +1834,15 @@ func applyRMWLayer(obj *jsonx.OrderedMap, layer map[string]any, force, deleteNul
 			setDefault(obj, k, v)
 		}
 	}
+}
+
+func containsRMWOverlayEntry(values []any, candidate any) bool {
+	for _, value := range values {
+		if agentcfg.EntriesEqual(value, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 // ── config-list at an rmw surface ──────────────────────────────────────────────────────

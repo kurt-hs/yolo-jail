@@ -154,14 +154,13 @@ func (o *Options) macosUserRelaysWithheld(cfg *jsonx.OrderedMap) string {
 // told, what runs and what the agent is told cannot disagree.
 func planMacosUserPortRelays(cfg *jsonx.OrderedMap, withheld string) macosUserPortPlan {
 	var plan macosUserPortPlan
-	netSec := cfgMap(cfg, "network")
-	if netSec == nil {
+	if cfg == nil {
 		return plan
 	}
 	skip := func(key, entry, why string) {
 		plan.unrelayed = append(plan.unrelayed, macosUserUnrelayed{key: key, entry: entry, why: why})
 	}
-	for _, p := range parsePublishPorts(asAnyList(mapGet(netSec, "ports"))) {
+	for _, p := range parsePublishPorts(readablePublishPorts(cfg)) {
 		if p.host == p.jail {
 			continue
 		}
@@ -180,7 +179,7 @@ func planMacosUserPortRelays(cfg *jsonx.OrderedMap, withheld string) macosUserPo
 				dial:   net.JoinHostPort("127.0.0.1", strconv.Itoa(p.jail))})
 		}
 	}
-	for _, e := range asAnyList(mapGet(netSec, "forward_host_ports")) {
+	for _, e := range readableForwardPorts(cfg) {
 		// One entry at a time, so a label stays paired with its parse; ParsePortForwards is the
 		// container path's own reader of this key, so the two backends read one grammar.
 		parsed, err := ParsePortForwards([]any{e}, nil)

@@ -139,7 +139,7 @@ func TestEveryHostRenderRefusesTheRetiredUseProfilesKey(t *testing.T) {
 			return rc, out.String() + errw.String()
 		},
 		"yolo config render --at host": func() (int, string) {
-			rc, out, errs := runConfigVerb(t, "render", "pi/settings", "--at", "host")
+			rc, out, errs := runSurfaceVerb(t, "render", "pi/settings", "--at", "host")
 			return rc, out + errs
 		},
 	} {

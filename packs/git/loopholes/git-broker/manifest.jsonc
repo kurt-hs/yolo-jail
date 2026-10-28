@@ -46,6 +46,9 @@
     // (`create-branch`, ID-9), or puts the one branch it names in the workspace's working set,
     // declared in config (`branch`, git-broker.md GB-D12, GB-D13).
     "grants": ["create-branch", "branch"],
+    "read_capability": "fetch",
+    "kind_capabilities": {"create-branch": "new_branches", "branch": "push"},
+    "pending_capabilities": [],
     "credential_paths": ["~/.ssh", "$SSH_AUTH_SOCK", "~/.git-credentials", "~/.config/git/credentials"]
   },
 

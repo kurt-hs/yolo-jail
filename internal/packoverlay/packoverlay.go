@@ -293,6 +293,24 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 		}
 	}
 
+	knownSurfaces := map[manifest.SurfaceKey]manifest.Surface{}
+	for key, surface := range ownerSurface {
+		knownSurfaces[key] = surface
+	}
+	for _, surface := range agentcfg.BuiltinManifest().Surfaces() {
+		if _, selected := knownSurfaces[surface.Key()]; !selected {
+			knownSurfaces[surface.Key()] = surface
+		}
+	}
+	for _, embedded := range packload.Embedded() {
+		surfaces, _ := embedded.SurfacesFor(autonomy)
+		for _, surface := range surfaces {
+			if _, selected := knownSurfaces[surface.Key()]; !selected {
+				knownSurfaces[surface.Key()] = surface
+			}
+		}
+	}
+
 	// Pass 2: place each overlay, in pack order then declaration order, so the fold
 	// order is the config's `packs` order — the same precedence a reader already expects
 	// from every other multi-pack kind. Two declarations take this pass: a `config-overlay`
@@ -400,7 +418,12 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 				}
 				set.posturePlaced[p.Name] = true
 			}
-			set.byTarget[key] = append(set.byTarget[key], agentcfg.Overlay{Pack: p.Name, Data: data})
+			set.byTarget[key] = append(set.byTarget[key], agentcfg.Overlay{
+				Pack: p.Name, Data: data, AppendArrays: overlayAppendsArrays(ov),
+			})
+		}
+		for _, file := range p.OverlayFiles {
+			placeConventionalOverlay(set, p, file, owners, knownSurfaces, autonomy, activeProfiles)
 		}
 	}
 
@@ -486,6 +509,12 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 		return set.Orphans[i].kindName() < set.Orphans[j].kindName()
 	})
 	return set
+}
+
+// overlayAppendsArrays applies the grouped-manifest default using the metadata attached to
+// this exact declaration row. Legacy manifests and explicit replace retain array replacement.
+func overlayAppendsArrays(overlay packdecl.ConfigOverlay) bool {
+	return overlay.Origin.Format == packdecl.ManifestFormatTOML && !overlay.Replace
 }
 
 // profileActive reports membership without changing the ordered set used by other profile

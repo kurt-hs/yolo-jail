@@ -76,7 +76,7 @@ func configRenderAtHostIsWhatHostApplyWrites(t *testing.T, surface, rel string) 
 	path := filepath.Join(home, rel)
 	writeFile(t, path, `{"theme": "the users own"}`)
 
-	rc, out, errs := runConfigVerb(t, "render", surface, "--at", "host")
+	rc, out, errs := runSurfaceVerb(t, "render", surface, "--at", "host")
 	if rc != 0 {
 		t.Fatalf("config render --at host rc=%d\n%s%s", rc, out, errs)
 	}
@@ -108,7 +108,7 @@ func configRenderAtHostIsWhatHostApplyWrites(t *testing.T, surface, rel string) 
 // is the one the write then stores.
 func TestConfigRenderAtHostExplainIsTheRecordHostApplyKeeps(t *testing.T) {
 	hostRenderHome(t, `"claude"`)
-	rc, out, errs := runConfigVerb(t, "render", "claude/settings", "--at", "host", "--explain")
+	rc, out, errs := runSurfaceVerb(t, "render", "claude/settings", "--at", "host", "--explain")
 	if rc != 0 {
 		t.Fatalf("rc=%d\n%s%s", rc, out, errs)
 	}
@@ -124,7 +124,7 @@ func TestConfigRenderAtHostExplainIsTheRecordHostApplyKeeps(t *testing.T) {
 // sentence rather than printing a file nothing writes.
 func TestConfigRenderAtHostNamesAnAgentNoConfiguredPackRenders(t *testing.T) {
 	hostRenderHome(t, `"claude"`)
-	rc, out, errs := runConfigVerb(t, "render", "codex", "--at", "host")
+	rc, out, errs := runSurfaceVerb(t, "render", "codex", "--at", "host")
 	if rc == 0 || out != "" {
 		t.Fatalf("an agent no configured pack renders at the host must refuse: rc=%d\n%s", rc, out)
 	}
@@ -154,7 +154,7 @@ func TestConfigRenderAtJailStillPreviewsTheJailsPosture(t *testing.T) {
 // incomplete set — which it used to, for a pack the apply would simply fetch and render.
 func TestConfigRenderAtHostSaysHostApplyFetchesAPackTheStoreLacks(t *testing.T) {
 	neverInstalledGitPackHome(t, `,"host_management":"own"`)
-	rc, out, errs := runConfigVerb(t, "render", "claude/settings", "--at", "host")
+	rc, out, errs := runSurfaceVerb(t, "render", "claude/settings", "--at", "host")
 	if rc != 0 {
 		t.Fatalf("the resolvable packs still render: rc=%d\n%s%s", rc, out, errs)
 	}

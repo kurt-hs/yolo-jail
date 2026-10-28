@@ -198,7 +198,10 @@ func userGrantsValue(source, path string, v any) ([]brokerscope.Grant, []string)
 // `grant_kinds`, and `read` too where the user config holds a read grant itself, so a workspace
 // naming one is redundant rather than refused.
 func allowedGrantKinds(source string) []string {
-	user := UserScopeConfigOrEmpty()
+	return allowedGrantKindsFromUser(source, UserScopeConfigOrEmpty())
+}
+
+func allowedGrantKindsFromUser(source string, user *jsonx.OrderedMap) []string {
 	allowed := grantKindsOf(user, source)
 	if len(userGrantsOf(user, source)) > 0 && !inList(allowed, readGrantKind) {
 		allowed = append(allowed, readGrantKind)
@@ -676,15 +679,15 @@ func approvalConfigPart(wsCfg *jsonx.OrderedMap) *jsonx.OrderedMap {
 // A source no selected pack brokers is not reported here, because a launch runs this too, and
 // a committed entry would print it at every launch of every contributor who selects no such
 // pack (WW-D22). Host `yolo check` reports it instead (UnbrokeredSourceWarnings).
-func validateBrokered(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver, errs, warns *[]string) {
+func validateBrokered(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver, errs, warns *[]string, edit ...*editValidationContext) {
 	if _, present := config.Get(brokeredKey); !present {
 		// Every scope's keys survive into the merged map, so an absent key proves no scope
 		// wrote one.
 		return
 	}
 	validateBrokeredRetired(config, workspace, errs, warns)
-	validateBrokeredUserScope(errs, warns)
-	validateBrokeredWorkspace(workspace, resolver, errs, warns)
+	validateBrokeredUserScope(errs, warns, edit...)
+	validateBrokeredWorkspace(workspace, resolver, errs, warns, edit...)
 }
 
 // inJailSuffix is the retired-key convention's in-jail ending (validateAgentsRetired).
@@ -899,13 +902,25 @@ func reposSpelling(source string, repos []string) string {
 // workspace; a `sets` list there is validated, since user scope is where the sets live (BB-D23).
 // Other shapes are refused as they are at workspace scope; `workspaces` is the retired check's.
 // In a jail the user scope is the host-generated one, and each refusal is a warning.
-func validateBrokeredUserScope(errs, warns *[]string) {
-	v, present := UserScopeConfigOrEmpty().Get(brokeredKey)
+func validateBrokeredUserScope(errs, warns *[]string, edit ...*editValidationContext) {
+	var userCfg *jsonx.OrderedMap
+	var userSources *Sources
+	if len(edit) != 0 && edit[0] != nil {
+		userCfg, userSources = edit[0].rawUser, edit[0].userOrigins
+	} else {
+		userCfg, userSources = UserScopeConfigOrEmpty(), UserScopeSources()
+	}
+	if userCfg == nil {
+		userCfg = jsonx.NewOrderedMap()
+	}
+	v, present := userCfg.Get(brokeredKey)
 	if !present || v == nil {
 		return
 	}
 	refuse := func(msg string) {
-		msg = UserScopeSources().AnnotateOne(msg)
+		if userSources != nil {
+			msg = userSources.AnnotateOne(msg)
+		}
 		if inJail() {
 			add(warns, msg+inJailSuffix)
 			return
@@ -975,8 +990,8 @@ func validateBrokeredUserScope(errs, warns *[]string) {
 //
 // Each `brokered.<source>.grants` entry is checked too (brokeredGrantProblems): its shape, a
 // kind the source defines (through the resolver) and the user's own config allows.
-func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs, warns *[]string) {
-	wsCfg, src, err := LoadWorkspaceConfigWithSources(workspace, false, func(string) {})
+func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs, warns *[]string, edit ...*editValidationContext) {
+	wsCfg, src, err := loadValidationWorkspaceConfigWithSources(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -997,7 +1012,16 @@ func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs
 	for _, p := range remoteURLSourceReposProblems(v, resolver) {
 		add(errs, src.AnnotateOne(p))
 	}
-	gErrs, gWarns, gHostOnly := brokeredGrantProblems(v, resolver)
+	var userConfig *jsonx.OrderedMap
+	if len(edit) != 0 && edit[0] != nil {
+		userConfig = edit[0].rawUser
+	} else {
+		userConfig = UserScopeConfigOrEmpty()
+	}
+	if userConfig == nil {
+		userConfig = jsonx.NewOrderedMap()
+	}
+	gErrs, gWarns, gHostOnly := brokeredGrantProblemsWithUser(v, resolver, userConfig)
 	for _, p := range gErrs {
 		add(errs, src.AnnotateOne(p))
 	}
@@ -1022,6 +1046,10 @@ func validateBrokeredWorkspace(workspace string, resolver LoopholeResolver, errs
 // does not define is known only through the resolver: with none, or for a source no known
 // loophole brokers, that check is skipped (UnbrokeredSourceWarnings names such a source).
 func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userKind []string) {
+	return brokeredGrantProblemsWithUser(v, resolver, UserScopeConfigOrEmpty())
+}
+
+func brokeredGrantProblemsWithUser(v any, resolver LoopholeResolver, user *jsonx.OrderedMap) (errs, warns, userKind []string) {
 	sources, ok := asMap(v)
 	if !ok {
 		return nil, nil, nil
@@ -1053,7 +1081,7 @@ func brokeredGrantProblems(v any, resolver LoopholeResolver) (errs, warns, userK
 			continue
 		}
 		kinds, sourceKnown := defined[name]
-		allowed := allowedGrantKinds(name)
+		allowed := allowedGrantKindsFromUser(name, user)
 		var seen []string
 		for i, e := range list {
 			entryPath := path + "[" + itoa(i) + "]"

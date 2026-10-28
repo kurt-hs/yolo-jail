@@ -33,16 +33,28 @@ func (o *Options) brokeredToStart(rt string, cfg *jsonx.OrderedMap) []*loopholes
 // of the workspace config. nil when no broker starts, which leaves the gate exactly what it was
 // before the scope part existed.
 func (o *Options) brokeredScopeCheck(rt string, cfg *jsonx.OrderedMap, read *config.WorkspaceRead) *config.ScopeCheck {
-	lps := o.brokeredToStart(rt, cfg)
+	set := loopholes.NewHostSet(cfgMap(cfg, "loopholes"))
+	lps := set.BrokeredToStart(o.loopholeAllow(rt, cfg))
 	if len(lps) == 0 {
 		return nil
 	}
 	brokers := make([]config.ScopeBroker, 0, len(lps))
 	for _, lp := range lps {
 		brokers = append(brokers, config.ScopeBroker{Source: lp.Brokered.Source, Label: lp.Name,
-			RemoteHost: lp.Brokered.RemoteHost, GrantKinds: lp.Brokered.Grants})
+			RemoteHost: lp.Brokered.RemoteHost, GrantKinds: lp.Brokered.Grants, Pack: lp.Pack,
+			Brokered: *lp.Brokered, Settings: lp.Settings})
 	}
-	check := config.NewScopeCheck(o.Workspace, brokers, read)
+	selected := make([]config.ReadablePackDeclaration, 0)
+	selectedBrokers := make([]config.ReadableSelectedBroker, 0)
+	for _, lp := range set.All() {
+		if lp.Source == loopholes.SourcePack {
+			selected = append(selected, config.ReadablePackDeclaration{Pack: lp.Pack, Settings: lp.Settings})
+			if lp.Brokered != nil && lp.Brokered.ReadCapability != "" {
+				selectedBrokers = append(selectedBrokers, config.ReadableSelectedBroker{Pack: lp.Pack, Label: lp.Name, Brokered: *lp.Brokered})
+			}
+		}
+	}
+	check := config.NewSelectedScopeCheck(o.Workspace, brokers, read, selected, selectedBrokers)
 	for _, s := range check.Sources {
 		if s.Read.Problem != "" {
 			// Said at the gate, whether or not the approved scope differs: a scope that reads

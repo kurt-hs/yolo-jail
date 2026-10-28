@@ -401,7 +401,7 @@ func TestPromotedKeyIsReadBackAsAPackContribution(t *testing.T) {
 	}
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"ls", "--all"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"ls", "--all"}, &out, &errw); rc != 0 {
 		t.Fatalf("config ls rc=%d: %s%s", rc, out.String(), errw.String())
 	}
 	report := out.String()

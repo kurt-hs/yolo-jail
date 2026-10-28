@@ -114,7 +114,7 @@ func loopholeNotInstalledRemedy(name string) string {
 // provenance — so, exactly like validateCacheRelocations, the scope pass
 // re-reads the workspace config files. One extra file read on a cold path,
 // much cheaper than threading provenance through every caller of the merge.
-func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver, errs, warns *[]string) {
+func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver, errs, warns *[]string, edit ...*editValidationContext) {
 	v, present := config.Get("loopholes")
 	if !present || v == nil {
 		return
@@ -136,7 +136,7 @@ func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver Loop
 	// block proves the workspace contributed none either — no re-read needed.
 	var wsEntries map[string][]wsLoopholeEntry
 	if hostServices.Len() > 0 {
-		wsEntries = workspaceLoopholeEntries(workspace)
+		wsEntries = workspaceLoopholeEntries(workspace, edit...)
 	}
 	jail := inJail()
 	// The per-workspace file (workspacefile.go) merges last, so a loophole it switches runs as
@@ -163,9 +163,16 @@ func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver Loop
 		// is ignored with a note naming the grant that replaces it.
 		if brokered {
 			if !userBlockRead {
-				userBlock, userBlockRead = userScopeLoopholes(), true
+				if len(edit) != 0 && edit[0] != nil {
+					if edit[0].rawUser != nil {
+						userBlock, _ = asMap(getOr(edit[0].rawUser, "loopholes", nil))
+					}
+				} else {
+					userBlock = userScopeLoopholes()
+				}
+				userBlockRead = true
 			}
-			if msg := brokeredUserSwitchRefusal(name, infoPtr.Brokered.Source, userBlock); msg != "" {
+			if msg := brokeredUserSwitchRefusalWithSources(name, infoPtr.Brokered.Source, userBlock, validationUserSources(edit...)); msg != "" {
 				add(errs, msg)
 			}
 			if note := staleBrokerSwitchNote(name, infoPtr.Brokered.Source, wsFile); note != "" {
@@ -446,6 +453,10 @@ func userScopeLoopholes() *jsonx.OrderedMap {
 // selected and grants nothing until a grant does, so a switch here would decide nothing, and
 // leaving it would teach that this is where access is given. It names the grant that is.
 func brokeredUserSwitchRefusal(name, source string, userBlock *jsonx.OrderedMap) string {
+	return brokeredUserSwitchRefusalWithSources(name, source, userBlock, UserScopeSources())
+}
+
+func brokeredUserSwitchRefusalWithSources(name, source string, userBlock *jsonx.OrderedMap, sources *Sources) string {
 	if userBlock == nil {
 		return ""
 	}
@@ -459,7 +470,10 @@ func brokeredUserSwitchRefusal(name, source string, userBlock *jsonx.OrderedMap)
 	msg := "config.loopholes." + name + ".enabled: " + pytext.Repr(name) + " has no switch: it runs " +
 		"whenever the pack that ships it is selected, and grants nothing until a grant in config does. " +
 		"Remove this key. " + BrokerGrantAdvice(source) + " To stop it running, take its pack out of `packs`."
-	return UserScopeSources().AnnotateOne(msg)
+	if sources != nil {
+		msg = sources.AnnotateOne(msg)
+	}
+	return msg
 }
 
 // brokeredWorkspaceSwitchRefusal is the refusal of a brokered loophole's switch in a workspace
@@ -538,7 +552,7 @@ func (e wsLoopholeEntry) locate(msg string) string {
 // local file does not double-report its entries. Load problems are ignored
 // here: the same files were already loaded (and any parse error already
 // reported) by whoever produced the merged config.
-func workspaceLoopholeEntries(workspace string) map[string][]wsLoopholeEntry {
+func workspaceLoopholeEntries(workspace string, edit ...*editValidationContext) map[string][]wsLoopholeEntry {
 	if workspace == "" {
 		workspace = cwd()
 	}
@@ -549,7 +563,16 @@ func workspaceLoopholeEntries(workspace string) map[string][]wsLoopholeEntry {
 		// yolo-jail.local.json is read here exactly when the merge read it: reading only the
 		// `.jsonc` names let a `.json` file install, or switch a brokered loophole, unrefused.
 		path, fname := ResolveWorkspaceConfigPath(workspace, base)
-		cfg, node, err := loadWithIncludes(path, fname, false, func(string) {}, seen, true, readAt{})
+		read := readAt{}
+		if len(edit) != 0 && edit[0] != nil {
+			role := editRoleProject
+			if base == WorkspaceLocalConfigName {
+				role = editRoleLocal
+			}
+			inputUsed := false
+			read = readAt{input: &edit[0].input, inputUsed: &inputUsed, role: role, witness: edit[0].witness}
+		}
+		cfg, node, err := loadWithIncludes(path, fname, false, func(string) {}, seen, true, read)
 		if err != nil || cfg == nil {
 			continue
 		}

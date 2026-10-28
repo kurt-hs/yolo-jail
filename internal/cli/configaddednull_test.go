@@ -84,7 +84,7 @@ func TestDiffAfterTeardownDoesNotReportAnAddedNullAsDeleted(t *testing.T) {
 		`{"model":"base","env":{"BAR":"0"}}`,
 		`{"model":"base","statusLine":null,"env":{"BAR":"1","FOO":null}}`)
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"diff", "claude/settings"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"diff", "claude/settings"}, &out, &errw); rc != 0 {
 		t.Fatalf("config diff rc=%d: %s%s", rc, out.String(), errw.String())
 	}
 	got := out.String()

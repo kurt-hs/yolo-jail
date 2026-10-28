@@ -442,11 +442,13 @@ func containsSubstr(args []string, sub string) bool {
 //
 // Reflection over the field NAMES rather than a hand-listed set, because a hand-listed set
 // is the thing that drifted. A record field with no manifest counterpart (Path, Source,
-// SkewNotes) is excluded by name, with the reason: those are facts about WHERE the record
-// came from, which no manifest declares.
+// SkewNotes, Pack) is excluded by name, with the reason: those are facts about WHERE the record
+// came from, which no manifest declares. Pack is the actual owning pack, stamped by discovery,
+// not a manifest declaration.
 func TestSubsetManifestProjectsEveryField(t *testing.T) {
 	notInTheManifest := map[string]string{
 		"Path": "the module dir — a fact about where the record was found",
+		"Pack": "the actual owning pack, stamped from selected-module provenance at discovery",
 		"doctorCmdDecl": "the original command tokens retained only to re-resolve settings " +
 			"without rewriting literals",
 		"Source":    "bundled/pack/user/config — the caller's label, never a manifest key",
@@ -475,7 +477,7 @@ func TestSubsetManifestProjectsEveryField(t *testing.T) {
 		Settings: []Setting{{
 			Key: "opt", Type: SettingTypeString, Scope: SettingScopeUser, Default: "",
 		}},
-		Source: SourcePack, SkewNotes: []string{"note"},
+		Source: SourcePack, Pack: "acme-owner", SkewNotes: []string{"note"},
 		SupersededBy: []PackSupersession{{Pack: "p", Capability: "acme-capability", Because: "b"}},
 		Binaries: []Binary{{Name: "acmed", Builds: []BinaryBuild{{
 			Platform: "linux/amd64", URL: "https://acme.test/acmed",

@@ -91,14 +91,22 @@ const (
 )
 
 type groupedContribution struct {
-	kind     Kind
-	group    string
-	index    int
-	start    int
-	value    map[string]any
-	replace  bool
-	location ManifestLocation
-	provider *providerShape
+	kind            Kind
+	group           string
+	index           int
+	start           int
+	value           map[string]any
+	replace         bool
+	location        ManifestLocation
+	provider        *providerShape
+	launchMetadata  map[Posture][]AutonomyLaunch
+	configLocations map[Posture][]ManifestLocation
+	configReplaces  map[Posture][]bool
+}
+
+type groupedLaunch struct {
+	row   AutonomyLaunch
+	value any
 }
 
 type providerShape struct {
@@ -182,6 +190,25 @@ func decodeTOML(data []byte, mode manifestReadMode) (*Manifest, []string, []stri
 			m.Contributes[i].ProviderModels = entry.provider.models
 			m.Contributes[i].ProviderModelOrder = append([]string(nil), entry.provider.modelOrder...)
 		}
+		if m.Contributes[i].Kind == KindAutonomy {
+			for _, half := range []struct {
+				posture Posture
+				decl    *AutonomyPosture
+			}{{PostureAutonomous, m.Contributes[i].Autonomous}, {PostureGuarded, m.Contributes[i].Guarded}} {
+				if half.decl == nil {
+					continue
+				}
+				half.decl.configLocations = append([]ManifestLocation(nil), entry.configLocations[half.posture]...)
+				half.decl.configReplaces = append([]bool(nil), entry.configReplaces[half.posture]...)
+				for rowIndex, row := range entry.launchMetadata[half.posture] {
+					if rowIndex < len(half.decl.Launch) {
+						half.decl.Launch[rowIndex].Origin = m.Origin
+						half.decl.Launch[rowIndex].Location = row.Location
+						half.decl.Launch[rowIndex].Replace = row.Replace
+					}
+				}
+			}
+		}
 	}
 	return m, locateTOMLProblems(problems, groups, root, doc), append(preSkipped, locateTOMLProblems(skipped, groups, root, doc)...)
 }
@@ -189,11 +216,16 @@ func decodeTOML(data []byte, mode manifestReadMode) (*Manifest, []string, []stri
 func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifestReadMode) (map[string]any, []groupedContribution, []string, []string) {
 	out := make(map[string]any, len(root)+1)
 	var groups []groupedContribution
+	var launchRows []groupedLaunch
 	var problems []string
 	var skipped []string
 	for _, key := range sortedKeys(root) {
 		value := root[key]
 		switch {
+		case key == "launch":
+			rows, rowProblems := normalizeGroupedLaunches(value, doc)
+			launchRows = append(launchRows, rows...)
+			problems = append(problems, rowProblems...)
 		case key == "contributes":
 			loc := locationFor(doc, []configdoc.Step{{Key: key}}, key)
 			problems = append(problems, formatManifestLocation(loc, "\"contributes\" is the legacy pack.json shape; group entries by kind as [[program]], [[overlay]], and similar tables"))
@@ -284,17 +316,50 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 						copyFields["scope"] = "workspace"
 					}
 				}
+				var nestedLocations map[Posture][]ManifestLocation
+				var nestedLaunches map[Posture][]AutonomyLaunch
+				if kind == KindConfig {
+					if err := defaultSurfaceCodecs(copyFields["config"], doc, []configdoc.Step{{Key: key}, {Index: i, IsIndex: true}, {Key: "config"}}, fmt.Sprintf("%s[%d].config", key, i)); err != nil {
+						problems = append(problems, err.Error())
+						continue
+					}
+				} else if kind == KindAutonomy {
+					var err error
+					nestedLocations, err = normalizeAutonomySurfaceCodecs(copyFields, doc, key, i)
+					if err != nil {
+						problems = append(problems, err.Error())
+						continue
+					}
+					nestedLaunches = autonomyLaunchMetadata(copyFields, doc, key, i)
+				}
 				replace, err := takeReplace(copyFields)
 				if err != nil {
 					problems = append(problems, formatManifestLocation(loc, "replace: "+err.Error()))
 					continue
 				}
 				copyFields["kind"] = string(kind)
-				groups = append(groups, groupedContribution{kind: kind, group: key, index: i, start: locOffset(doc, loc), value: copyFields, replace: replace, location: loc})
+				for posture, rows := range nestedLaunches {
+					for j := range rows {
+						rows[j].Replace = replace
+					}
+					nestedLaunches[posture] = rows
+				}
+				entry := groupedContribution{kind: kind, group: key, index: i, start: locOffset(doc, loc), value: copyFields, replace: replace, location: loc,
+					launchMetadata: nestedLaunches, configLocations: nestedLocations, configReplaces: make(map[Posture][]bool)}
+				for posture, locations := range nestedLocations {
+					entry.configReplaces[posture] = make([]bool, len(locations))
+					for j := range entry.configReplaces[posture] {
+						entry.configReplaces[posture][j] = replace
+					}
+				}
+				groups = append(groups, entry)
 			}
 		default:
 			out[key] = value
 		}
+	}
+	if len(launchRows) > 0 {
+		groups = lowerGroupedLaunches(groups, launchRows, doc, &problems)
 	}
 	sort.SliceStable(groups, func(i, j int) bool { return groups[i].start < groups[j].start })
 	contributes := make([]any, 0, len(groups))
@@ -305,6 +370,230 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 		out["contributes"] = contributes
 	}
 	return out, groups, problems, skipped
+}
+
+func autonomyLaunchMetadata(fields map[string]any, doc *configdoc.Document, group string, index int) map[Posture][]AutonomyLaunch {
+	out := make(map[Posture][]AutonomyLaunch)
+	for _, posture := range []Posture{PostureAutonomous, PostureGuarded} {
+		decl, ok := fields[string(posture)].(map[string]any)
+		if !ok {
+			continue
+		}
+		rows, ok := decl["launch"].([]any)
+		if !ok {
+			continue
+		}
+		for i := range rows {
+			key := fmt.Sprintf("%s[%d].%s.launch[%d]", group, index, posture, i)
+			path := []configdoc.Step{{Key: group}, {Index: index, IsIndex: true}, {Key: string(posture)}, {Key: "launch"}, {Index: i, IsIndex: true}}
+			out[posture] = append(out[posture], AutonomyLaunch{Location: locationFor(doc, path, key)})
+		}
+	}
+	return out
+}
+
+func normalizeGroupedLaunches(value any, doc *configdoc.Document) ([]groupedLaunch, []string) {
+	items, ok := value.([]any)
+	if !ok {
+		loc := locationFor(doc, []configdoc.Step{{Key: "launch"}}, "launch")
+		return nil, []string{formatManifestLocation(loc, "[[launch]] must be an array of tables")}
+	}
+	var rows []groupedLaunch
+	var problems []string
+	for i, item := range items {
+		key := fmt.Sprintf("launch[%d]", i)
+		path := []configdoc.Step{{Key: "launch"}, {Index: i, IsIndex: true}}
+		loc := locationFor(doc, path, key)
+		fields, ok := item.(map[string]any)
+		if !ok {
+			problems = append(problems, formatManifestLocation(loc, "launch entry must be a table"))
+			continue
+		}
+		copyFields := cloneMap(fields)
+		replace, err := takeReplace(copyFields)
+		if err != nil {
+			problems = append(problems, formatManifestLocation(loc, "replace: "+err.Error()))
+			continue
+		}
+		fieldsJSON, err := json.Marshal(copyFields)
+		if err != nil {
+			problems = append(problems, formatManifestLocation(loc, err.Error()))
+			continue
+		}
+		var row AutonomyLaunch
+		if err := json.Unmarshal(fieldsJSON, &row); err != nil {
+			problems = append(problems, formatManifestLocation(loc, err.Error()))
+			continue
+		}
+		row.Location = loc
+		row.Replace = replace
+		rows = append(rows, groupedLaunch{row: row, value: copyFields})
+	}
+	return rows, problems
+}
+
+func lowerGroupedLaunches(groups []groupedContribution, rows []groupedLaunch, doc *configdoc.Document, problems *[]string) []groupedContribution {
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].start < groups[j].start })
+	index := -1
+	for i := range groups {
+		if groups[i].kind == KindAutonomy {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		first := rows[0].row
+		value := map[string]any{"kind": string(KindAutonomy)}
+		groups = append(groups, groupedContribution{kind: KindAutonomy, group: "launch", start: locOffset(doc, first.Location), value: value,
+			location: first.Location, configLocations: make(map[Posture][]ManifestLocation), configReplaces: make(map[Posture][]bool)})
+		sort.SliceStable(groups, func(i, j int) bool { return groups[i].start < groups[j].start })
+		for i := range groups {
+			if groups[i].group == "launch" && groups[i].kind == KindAutonomy {
+				index = i
+				break
+			}
+		}
+	}
+	entry := &groups[index]
+	if entry.launchMetadata == nil {
+		entry.launchMetadata = make(map[Posture][]AutonomyLaunch)
+	}
+	for _, posture := range []Posture{PostureAutonomous, PostureGuarded} {
+		key := string(posture)
+		decl, ok := entry.value[key].(map[string]any)
+		if !ok {
+			if _, exists := entry.value[key]; exists {
+				*problems = append(*problems, formatManifestLocation(entry.location, fmt.Sprintf("%s posture must be a table", key)))
+				continue
+			}
+			decl = make(map[string]any)
+			entry.value[key] = decl
+		}
+		existing, exists := decl["launch"]
+		var launch []any
+		if exists {
+			var valid bool
+			launch, valid = existing.([]any)
+			if !valid {
+				*problems = append(*problems, formatManifestLocation(entry.location, fmt.Sprintf("%s.launch must be an array of tables", key)))
+				continue
+			}
+		}
+		metadata := entry.launchMetadata[posture]
+		combined := make([]groupedLaunch, 0, len(launch)+len(rows))
+		for i, item := range launch {
+			row := AutonomyLaunch{}
+			if i < len(metadata) {
+				row = metadata[i]
+			}
+			combined = append(combined, groupedLaunch{row: row, value: item})
+		}
+		for _, row := range rows {
+			combined = append(combined, groupedLaunch{row: row.row, value: row.value})
+		}
+		sort.SliceStable(combined, func(i, j int) bool {
+			return locOffset(doc, combined[i].row.Location) < locOffset(doc, combined[j].row.Location)
+		})
+		launch = make([]any, 0, len(combined))
+		entry.launchMetadata[posture] = make([]AutonomyLaunch, 0, len(combined))
+		for _, row := range combined {
+			if fields, ok := row.value.(map[string]any); ok {
+				launch = append(launch, cloneMap(fields))
+			} else {
+				launch = append(launch, row.value)
+			}
+			entry.launchMetadata[posture] = append(entry.launchMetadata[posture], row.row)
+		}
+		decl["launch"] = launch
+	}
+	return groups
+}
+
+func defaultSurfaceCodecs(value any, doc *configdoc.Document, basePath []configdoc.Step, key string) error {
+	rows, single := value.([]any)
+	if !single {
+		if row, ok := value.(map[string]any); ok {
+			rows = []any{row}
+		} else {
+			return nil
+		}
+	}
+	for i, raw := range rows {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, explicit := row["codec"]; explicit {
+			continue
+		}
+		path, ok := row["path"].(string)
+		if !ok || path == "" {
+			continue
+		}
+		codec, ok := inferredSurfaceCodec(path)
+		rowPath := append(append([]configdoc.Step(nil), basePath...), configdoc.Step{Index: i, IsIndex: true})
+		if !single {
+			rowPath = basePath
+		}
+		loc := locationFor(doc, rowPath, fmt.Sprintf("%s[%d]", key, i))
+		if !ok {
+			return fmt.Errorf("%s", formatManifestLocation(loc, fmt.Sprintf("cannot infer config codec from path %q; set codec explicitly (supported surface formats include json/jsonc, toml, yaml/yml)", path)))
+		}
+		row["codec"] = codec
+	}
+	return nil
+}
+
+func inferredSurfaceCodec(path string) (string, bool) {
+	switch strings.ToLower(strings.TrimPrefix(surfacePathExtension(path), ".")) {
+	case "json", "jsonc":
+		return "json", true
+	case "toml":
+		return "toml", true
+	case "yaml", "yml":
+		return "yaml", true
+	default:
+		return "", false
+	}
+}
+
+func surfacePathExtension(path string) string {
+	base := path
+	if i := strings.LastIndexAny(base, "/\\"); i >= 0 {
+		base = base[i+1:]
+	}
+	if i := strings.LastIndexByte(base, '.'); i >= 0 {
+		return base[i:]
+	}
+	return ""
+}
+
+func normalizeAutonomySurfaceCodecs(fields map[string]any, doc *configdoc.Document, group string, index int) (map[Posture][]ManifestLocation, error) {
+	locations := make(map[Posture][]ManifestLocation)
+	for _, posture := range []Posture{PostureAutonomous, PostureGuarded} {
+		decl, ok := fields[string(posture)].(map[string]any)
+		if !ok {
+			continue
+		}
+		config, exists := decl["config"]
+		if !exists {
+			continue
+		}
+		base := []configdoc.Step{{Key: group}, {Index: index, IsIndex: true}, {Key: string(posture)}, {Key: "config"}}
+		key := fmt.Sprintf("%s[%d].%s.config", group, index, posture)
+		if err := defaultSurfaceCodecs(config, doc, base, key); err != nil {
+			return nil, err
+		}
+		rows, ok := config.([]any)
+		if !ok {
+			continue
+		}
+		for row := range rows {
+			path := append(append([]configdoc.Step(nil), base...), configdoc.Step{Index: row, IsIndex: true})
+			locations[posture] = append(locations[posture], locationFor(doc, path, fmt.Sprintf("%s[%d]", key, row)))
+		}
+	}
+	return locations, nil
 }
 
 func normalizeBuiltInProviderPlanOff(fields map[string]any) error {
@@ -602,6 +891,182 @@ func firstUnknownKey(fields map[string]any, allowed ...string) string {
 	return ""
 }
 
+// ProviderTable is the typed canonical projection of config's providers table. Disabled names
+// retain table tombstones so a caller can remove a lower pack declaration without treating the
+// tombstone as a selectable provider.
+type ProviderTable struct {
+	Declarations     []ProviderContribution
+	Disabled         []string
+	DisabledVariants map[string][]string
+}
+
+// DecodeProviderTable decodes canonical authored provider tables through the same pure provider
+// field decoder used by grouped pack TOML. root is the complete ordered config map so provider,
+// model, and variant declaration order survives lowering.
+func DecodeProviderTable(root *jsonx.OrderedMap) (ProviderTable, error) {
+	var result ProviderTable
+	if root == nil {
+		return result, nil
+	}
+	raw, present := root.Get("providers")
+	if !present {
+		return result, nil
+	}
+	providers, ok := raw.(*jsonx.OrderedMap)
+	if !ok {
+		return result, fmt.Errorf("providers must be a table keyed by provider name")
+	}
+	orderedRoot, _ := jsonx.DeepCopy(root).(*jsonx.OrderedMap)
+	orderedProvidersRaw, _ := orderedRoot.Get("providers")
+	orderedProviders := orderedProvidersRaw.(*jsonx.OrderedMap)
+	providers = orderedProviders
+	doc := &configdoc.Document{Values: orderedRoot}
+	for _, name := range providers.Keys() {
+		value, _ := orderedProviders.Get(name)
+		if off, isString := value.(string); isString {
+			if off != "off" {
+				return ProviderTable{}, fmt.Errorf("providers.%s: expected a provider table or \"off\"", name)
+			}
+			result.Disabled = append(result.Disabled, name)
+			orderedProviders.Delete(name)
+			continue
+		}
+		fields, ok := orderedProviderMap(value)
+		if !ok {
+			return ProviderTable{}, fmt.Errorf("providers.%s: provider declaration must be a table", name)
+		}
+		var legacyModels map[string]string
+		providerValue, ok := value.(*jsonx.OrderedMap)
+		if !ok {
+			return ProviderTable{}, fmt.Errorf("providers.%s: provider declaration must be a table", name)
+		}
+		if rawModels, present := providerValue.Get("models"); present {
+			modelMap, ok := rawModels.(*jsonx.OrderedMap)
+			if !ok {
+				return ProviderTable{}, fmt.Errorf("providers.%s.models must be a table keyed by model id", name)
+			}
+			for _, id := range append([]string(nil), modelMap.Keys()...) {
+				if wireID, ok := func() (string, bool) { value, _ := modelMap.Get(id); text, ok := value.(string); return text, ok }(); ok {
+					if legacyModels == nil {
+						legacyModels = make(map[string]string)
+					}
+					legacyModels[id] = wireID
+					modelMap.Delete(id)
+				}
+			}
+		}
+		variantsOff := []string(nil)
+		if rawVariants, present := providerValue.Get("variants"); present {
+			variantMap, ok := rawVariants.(*jsonx.OrderedMap)
+			if !ok {
+				return ProviderTable{}, fmt.Errorf("providers.%s.variants must be a table keyed by variant name", name)
+			}
+			for _, variant := range append([]string(nil), variantMap.Keys()...) {
+				variantValue, _ := variantMap.Get(variant)
+				if off, isString := variantValue.(string); isString {
+					if off != "off" {
+						return ProviderTable{}, fmt.Errorf("providers.%s.variants.%s: expected a variant table or \"off\"", name, variant)
+					}
+					variantsOff = append(variantsOff, variant)
+					variantMap.Delete(variant)
+				}
+			}
+			if len(variantsOff) != 0 {
+				result.DisabledVariants = ensureProviderDisabledVariantMap(result.DisabledVariants)
+				result.DisabledVariants[name] = variantsOff
+			}
+		}
+		fields, _ = orderedProviderMap(value)
+		if unknown := providerShapeUnknownField(fields); unknown != "" {
+			return ProviderTable{}, fmt.Errorf("unknown provider model field %q", "providers."+name+"."+unknown)
+		}
+		if renamed := providerRenamedField(fields); renamed != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %s", name, renameMessage(*renamed.Rename))
+		}
+		normalized, shape, err := normalizeProvider(name, fields, doc)
+		if err != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %w", name, err)
+		}
+		encoded, err := json.Marshal(normalized)
+		if err != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %w", name, err)
+		}
+		var contribution Contribution
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&contribution); err != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %w", name, err)
+		}
+		contribution.ProviderAlias = shape.alias
+		contribution.ProviderModel = shape.model
+		contribution.ProviderVariants = shape.variants
+		contribution.ProviderVariantOrder = append([]string(nil), shape.variantOrder...)
+		contribution.EveryProviderModel = shape.everyModel
+		contribution.ProviderModels = shape.models
+		contribution.ProviderModelOrder = append([]string(nil), shape.modelOrder...)
+		if legacyModels != nil {
+			contribution.Models = legacyModels
+		}
+		projected := (&Manifest{Contributes: []Contribution{contribution}}).Providers()
+		if len(projected) != 1 {
+			return ProviderTable{}, fmt.Errorf("providers.%s: decoder produced no provider declaration", name)
+		}
+		result.Declarations = append(result.Declarations, projected[0])
+	}
+	return result, nil
+}
+
+func ensureProviderDisabledVariantMap(value map[string][]string) map[string][]string {
+	if value == nil {
+		return make(map[string][]string)
+	}
+	return value
+}
+
+func orderedProviderMap(value any) (map[string]any, bool) {
+	ordered, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]any, ordered.Len())
+	for _, key := range ordered.Keys() {
+		item, _ := ordered.Get(key)
+		if nested, isTable := item.(*jsonx.OrderedMap); isTable {
+			converted, ok := orderedProviderMap(nested)
+			if !ok {
+				return nil, false
+			}
+			out[key] = converted
+		} else if entries, isArray := item.([]any); isArray {
+			copy := make([]any, len(entries))
+			for i := range entries {
+				if nested, isTable := entries[i].(*jsonx.OrderedMap); isTable {
+					converted, ok := orderedProviderMap(nested)
+					if !ok {
+						return nil, false
+					}
+					copy[i] = converted
+				} else {
+					copy[i] = orderedProviderScalar(entries[i])
+				}
+			}
+			out[key] = copy
+		} else {
+			out[key] = orderedProviderScalar(item)
+		}
+	}
+	return out, true
+}
+
+func orderedProviderScalar(value any) any {
+	if jsonx.IsInt(value) {
+		if number, ok := jsonx.AsInt(value); ok {
+			return number
+		}
+	}
+	return value
+}
+
 func normalizeProvider(name string, fields map[string]any, doc *configdoc.Document) (map[string]any, *providerShape, error) {
 	providerName := name
 	shape := &providerShape{}
@@ -872,8 +1337,22 @@ func positiveInteger(value any) bool {
 func (m *Manifest) setLegacyOrigin() {
 	m.Origin = ManifestOrigin{Format: ManifestFormatJSON, File: ManifestName}
 	for i := range m.Contributes {
-		m.Contributes[i].Origin = m.Origin
-		m.Contributes[i].Location = ManifestLocation{File: ManifestName}
+		c := &m.Contributes[i]
+		c.Origin = m.Origin
+		c.Location = ManifestLocation{File: ManifestName, Key: fmt.Sprintf("contributes[%d]", i)}
+		for _, half := range []struct {
+			posture Posture
+			decl    *AutonomyPosture
+		}{{PostureAutonomous, c.Autonomous}, {PostureGuarded, c.Guarded}} {
+			if half.decl == nil {
+				continue
+			}
+			for j := range half.decl.Launch {
+				row := &half.decl.Launch[j]
+				row.Origin = m.Origin
+				row.Location = ManifestLocation{File: ManifestName, Key: fmt.Sprintf("contributes[%d].%s.launch[%d]", i, half.posture, j)}
+			}
+		}
 	}
 }
 
@@ -983,6 +1462,12 @@ func locOffset(doc *configdoc.Document, loc ManifestLocation) int {
 		}
 		offset++
 	}
+	if loc.Column > 1 {
+		offset += loc.Column - 1
+		if offset > len(doc.Bytes) {
+			return len(doc.Bytes)
+		}
+	}
 	return offset
 }
 
@@ -1005,20 +1490,31 @@ func locateTOMLProblems(messages []string, groups []groupedContribution, root ma
 	out := append([]string(nil), messages...)
 	for i, message := range out {
 		message = strings.ReplaceAll(message, ManifestName+":", ManifestTOMLName+":")
-		if index := parseIndex(message); index >= 0 && index < len(groups) {
+		if location, ok := launchDiagnosticLocation(message, groups); ok {
+			if separator := strings.Index(message, ": "); separator >= 0 {
+				message = formatManifestLocation(location, message[separator+2:])
+			}
+		} else if index := parseIndex(message); index >= 0 && index < len(groups) {
 			group := groups[index]
 			if group.location.Line > 0 {
 				message = fmt.Sprintf("%s:%d:%d (%s): %s", ManifestTOMLName, group.location.Line, group.location.Column, group.location.Key, strings.TrimSpace(strings.TrimPrefix(message, "contributes["+strconv.Itoa(index)+"]:")))
 			}
 		}
 		if strings.HasPrefix(message, ManifestTOMLName+":") && strings.Contains(message, "unknown field ") {
-			if group, ok := groupForUnknownField(message, groups); ok {
-				message = fmt.Sprintf("%s:%d:%d (%s): %s", ManifestTOMLName, group.location.Line, group.location.Column, group.location.Key, strings.TrimSpace(strings.TrimPrefix(message, ManifestTOMLName+":")))
+			field := fieldNamedByUnknownField(message)
+			detail := strings.TrimSpace(strings.TrimPrefix(message, ManifestTOMLName+":"))
+			if separator := strings.Index(detail, "): "); separator >= 0 {
+				detail = detail[separator+3:]
+			}
+			if location, ok := launchLocationForUnknownField(field, groups); ok {
+				message = formatManifestLocation(location, detail)
+			} else if group, ok := groupForUnknownField(message, groups); ok {
+				message = formatManifestLocation(group.location, detail)
 			} else {
 				for key := range root {
 					if strings.Contains(message, fmt.Sprintf("unknown field %q", key)) {
 						loc := locationFor(doc, []configdoc.Step{{Key: key}}, key)
-						message = fmt.Sprintf("%s:%d:%d (%s): %s", ManifestTOMLName, loc.Line, loc.Column, key, strings.TrimSpace(strings.TrimPrefix(message, ManifestTOMLName+":")))
+						message = formatManifestLocation(loc, detail)
 						break
 					}
 				}
@@ -1032,17 +1528,85 @@ func locateTOMLProblems(messages []string, groups []groupedContribution, root ma
 	return out
 }
 
-func groupForUnknownField(message string, groups []groupedContribution) (groupedContribution, bool) {
-	start := strings.Index(message, `unknown field "`)
-	if start < 0 {
-		return groupedContribution{}, false
+func launchDiagnosticLocation(message string, groups []groupedContribution) (ManifestLocation, bool) {
+	contribution := parseIndex(message)
+	if contribution < 0 || contribution >= len(groups) {
+		return ManifestLocation{}, false
 	}
-	start += len(`unknown field "`)
+	for _, posture := range []Posture{PostureAutonomous, PostureGuarded} {
+		marker := "." + string(posture) + ".launch["
+		start := strings.Index(message, marker)
+		if start < 0 {
+			continue
+		}
+		start += len(marker)
+		end := strings.IndexByte(message[start:], ']')
+		if end < 0 {
+			continue
+		}
+		rowIndex, err := strconv.Atoi(message[start : start+end])
+		if err != nil {
+			continue
+		}
+		rows := groups[contribution].launchMetadata[posture]
+		if rowIndex >= 0 && rowIndex < len(rows) && rows[rowIndex].Location.Line > 0 {
+			return rows[rowIndex].Location, true
+		}
+	}
+	return ManifestLocation{}, false
+}
+
+func launchLocationForUnknownField(field string, groups []groupedContribution) (ManifestLocation, bool) {
+	if field == "" {
+		return ManifestLocation{}, false
+	}
+	for _, group := range groups {
+		if group.kind != KindAutonomy {
+			continue
+		}
+		for _, posture := range []Posture{PostureAutonomous, PostureGuarded} {
+			decl, ok := group.value[string(posture)].(map[string]any)
+			if !ok {
+				continue
+			}
+			launch, ok := decl["launch"].([]any)
+			if !ok {
+				continue
+			}
+			metadata := group.launchMetadata[posture]
+			for i, raw := range launch {
+				row, ok := raw.(map[string]any)
+				if !ok || i >= len(metadata) {
+					continue
+				}
+				if _, exists := row[field]; exists && metadata[i].Location.Line > 0 {
+					return metadata[i].Location, true
+				}
+			}
+		}
+	}
+	return ManifestLocation{}, false
+}
+
+func fieldNamedByUnknownField(message string) string {
+	const marker = `unknown field "`
+	start := strings.Index(message, marker)
+	if start < 0 {
+		return ""
+	}
+	start += len(marker)
 	end := strings.IndexByte(message[start:], '"')
 	if end < 0 {
+		return ""
+	}
+	return message[start : start+end]
+}
+
+func groupForUnknownField(message string, groups []groupedContribution) (groupedContribution, bool) {
+	field := fieldNamedByUnknownField(message)
+	if field == "" {
 		return groupedContribution{}, false
 	}
-	field := message[start : start+end]
 	for _, group := range groups {
 		if _, ok := group.value[field]; ok {
 			return group, true

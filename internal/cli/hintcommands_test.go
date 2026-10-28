@@ -50,12 +50,12 @@ package cli
 //
 // What it does not read: a command at the start of an unindented line or literal (a field holding
 // "yolo prune --apply"), which has the shape of a sentence or an error beginning with yolo ("yolo
-// could not create it", "yolo config render: unknown flag"); one after a colon and one space ("in
+// could not create it", "yolo surface render: unknown flag"); one after a colon and one space ("in
 // a new terminal: yolo check"), the shape of prose about yolo ("it is empty: yolo was started with
 // no PATH"); an indented one that ends anywhere but at a two-space gap or its line's end, such as
 // at a period, a comma or a pipe ("  yolo audit --json | jq .argv"); a usage line's synopsis
 // ("Usage: yolo audit [flags]"); one after any other word, a quote or a parenthesis ("use yolo
-// host", "'yolo config-ref'", "(yolo config diff claude)"); a word after the verb (`yolo pack lint
+// host", "'yolo config-ref'", "(yolo surface diff claude)"); a word after the verb (`yolo pack lint
 // <dir>`, `yolo broker restart <name>`), which a command takes as an argument; the word a
 // placeholder stands in for; and short flags. A flag the command parses before picking its verb
 // and then refuses for one verb (`yolo loopholes enable --format json`), or a removed flag a
@@ -83,9 +83,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
-// verbDispatcher names the function whose switch picks a command's verb: its package (a
-// directory under the module root), the function, the expression the switch reads the verb from,
-// and, for config, the map of further verbs.
+// verbDispatcher names the function that picks a command's verb: its package (a directory under
+// the module root), the function, the expression it dispatches, and, for config and surface, the
+// map whose function values add the rest of the verbs.
 type verbDispatcher struct {
 	pkg, fn, on, verbMap string
 }
@@ -97,6 +97,7 @@ var verbDispatchers = map[string]verbDispatcher{
 	"host":        {"internal/cli", "hostMain", "args[0]", ""},
 	"programs":    {"internal/cli", "programsMain", "args[0]", ""},
 	"config":      {"internal/cli", "configRunW", "verb", "configColorVerbs"},
+	"surface":     {"internal/cli", "surfaceRunW", "verb", "surfaceColorVerbs"},
 	"loopholes":   {"internal/cli", "runLoopholes", "sub", ""},
 	"broker":      {"internal/cli", "hostDaemonDispatch", "sub", ""},
 	"host-daemon": {"internal/cli", "hostDaemonDispatch", "sub", ""},
@@ -202,7 +203,7 @@ func TestTheHintCheckRefusesWhatIsNotACommand(t *testing.T) {
 		"yolo internal bogus",
 		"yolo openai-auth bogus",
 		"yolo config bogus",
-		"yolo config ls --bogus",
+		"yolo surface ls --bogus",
 		// A flag with no verb before it is read against what the command parses outside its
 		// verbs' branches, not against every verb's flags at once.
 		"yolo host --assert -- codex",
@@ -247,11 +248,11 @@ func TestTheHintCheckRefusesWhatIsNotACommand(t *testing.T) {
 		"yolo pack ls/status",
 		"yolo loopholes list --format json",
 		"yolo config dump",
-		"yolo config reset claude/settings",
-		// config picks these verbs from a map of functions, so a verb's flags are read from the
+		"yolo surface reset claude/settings",
+		"yolo surface ls --all",
+		"yolo surface promote <agent> --plan",
+		// surface picks these verbs from a map of functions, so a verb's flags are read from the
 		// function the map names.
-		"yolo config ls --all",
-		"yolo config promote <agent> --plan",
 		"yolo loopholes --format json",
 		"yolo openai-auth import --from <auth.json>",
 		"yolo broker restart",
@@ -330,7 +331,7 @@ func TestTheHintScanReadsACommandWrittenWithoutBackticks(t *testing.T) {
 		// place nothing in the text marks as one.
 		{"yolo could not create it", nil},
 		{"yolo prune --apply", nil},
-		{"yolo config render: unknown flag %q", nil},
+		{"yolo surface render: unknown flag %q", nil},
 		{"yolo pack — author and inspect agent config packs", nil},
 		{"  yolo could not get this host's network stack to forward it", nil},
 		// An indented line that carries on the paragraph above it at the same indent, with no

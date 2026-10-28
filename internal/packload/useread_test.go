@@ -37,6 +37,10 @@ func TestLoadDirForUseSkipsWhatLoadDirRefuses(t *testing.T) {
 	if env := p.Decl.EnvContributions(); env["ACME"] != "1" || len(p.Decl.Contributions()) != 1 {
 		t.Errorf("only the readable contribution may remain: %+v", p.Decl.Contributions())
 	}
+	localPack, localProblems := LoadDirForLocalUse(dir, "acme")
+	if len(localProblems) != 0 || len(localPack.SkewNotes) != 1 || len(localPack.Decl.Contributions()) != 1 {
+		t.Errorf("the local content reader must retain host use-read decoding: pack=%+v problems=%v", localPack, localProblems)
+	}
 
 	if _, problems := LoadDir(dir, "acme"); len(problems) == 0 {
 		t.Error("the authoring read must still refuse the field")

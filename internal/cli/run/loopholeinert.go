@@ -435,7 +435,7 @@ func (o *Options) noteMacosUserPlatformGaps(cfg *jsonx.OrderedMap) {
 		}
 	}
 
-	if gpuSec := cfgMap(cfg, "gpu"); gpuSec != nil && mapBoolOr(gpuSec, "enabled", false) {
+	if readableGPU(cfg).enabled {
 		out.print(setupcensus.Warning(setupcensus.MacosUser, "gpu").Line(""))
 	}
 
@@ -519,15 +519,16 @@ func deviceLabels(entries []any) []string {
 // that names no mode, which is why `mode` is APPLIED as host rather than refused), so this cannot
 // fire on a launch that never mentioned networking.
 func (o *Options) noteMacosUserPortKeys(cfg *jsonx.OrderedMap, plan macosUserPortPlan) {
-	netSec := cfgMap(cfg, "network")
-	if netSec == nil {
+	ports := readablePublishPorts(cfg)
+	forwards := readableForwardPorts(cfg)
+	if len(ports) == 0 && len(forwards) == 0 {
 		return
 	}
 	out := o.pr(o.Stderr)
 
 	// The headline and body are the setup census's notices (noteMacosUserPlatformGaps says why);
 	// the remap sentence after each is this function's, since it reads the entries themselves.
-	if ports := asAnyList(mapGet(netSec, "ports")); len(ports) > 0 {
+	if len(ports) > 0 {
 		// THE NEXT STEP, after whatever the plan relays: what keeps a service private here, and
 		// the backend where listing a port is the whole exposure. Binding loopback is not enough
 		// for a port a relay publishes on a real interface, so then the step says so.
@@ -544,8 +545,8 @@ func (o *Options) noteMacosUserPortKeys(cfg *jsonx.OrderedMap, plan macosUserPor
 			plan.remapSentences(keyNetworkPorts) + step)
 	}
 
-	if fwd := asAnyList(mapGet(netSec, "forward_host_ports")); len(fwd) > 0 {
-		body := strings.Join(portLabels(fwd), ", ") + ". A same-port entry needs no hop: the " +
+	if len(forwards) > 0 {
+		body := strings.Join(portLabels(forwards), ", ") + ". A same-port entry needs no hop: the " +
 			"sandbox is already on this machine's stack, so `localhost:<port>` inside it is this " +
 			"machine's port." + plan.remapSentences(keyForwardHostPorts)
 		if plan.hasUnrelayed(keyForwardHostPorts) {

@@ -55,6 +55,9 @@ type ScopeSource struct {
 	// Entry is what the workspace's `brokered.<Source>.repos` lists, from the gate's one read
 	// of the workspace config (WorkspaceRead.Entry).
 	Entry []EntryRepo
+	// EntryKey is the authored key naming this source's changed repository entries. Readable
+	// requests keep their requests.* vocabulary instead of remediating through brokered.*.
+	EntryKey string
 	// Grants are the user grants the workspace's `brokered.<Source>.grants` names, of a kind
 	// the source defines and the user's own config allows (WorkspaceRead.Grants), and GrantFiles
 	// the workspace-relative files that name them. A grant is a line of the source's block of its
@@ -65,6 +68,9 @@ type ScopeSource struct {
 	// UserGrants is those alone, for the line that says where each came from.
 	Grants     []brokerscope.Grant
 	GrantFiles []string
+	// GrantPaths are the readable request keys whose grants changed, with their workspace files.
+	// They keep remediation in requests.* rather than projecting it back to brokered grants.
+	GrantPaths map[string][]string
 	UserGrants []brokerscope.Grant
 	// Dormant is a source that holds no read grant now and held none at its last approval
 	// (BB-D110): its broker grants nothing, so it stays out of the gate: no block, no change, no
@@ -93,6 +99,11 @@ func grantStrings(grants []brokerscope.Grant) []string {
 // ScopeCheck is the scope part in play for one gate.
 type ScopeCheck struct {
 	Sources []ScopeSource
+	// Fatal is an authority read/normalization error that must stop before dormant handling.
+	Fatal error
+	// ReadableInput retains the lossless readable projection for the H scope-file adapter; the
+	// legacy ScopeSource view only carries entries representable by its existing scope form.
+	ReadableInput *ReadableGateInput
 }
 
 func (s *ScopeCheck) inPlay() bool { return s != nil && len(s.Sources) > 0 }
@@ -437,6 +448,11 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 	for _, s := range check.Sources {
 		if s.Dormant {
 			out.approved[s.Label] = []ScopeRepo{}
+			// A source with no read authority has no usable approved scope. Do not carry stale
+			// source, repository, or grant records forward as though they were current authority.
+			delete(out.next, s.Source)
+			delete(out.next, grantsRecordKey(s.Source))
+			delete(out.nextSources, s.Source)
 			continue
 		}
 		cur := s.current()
@@ -474,7 +490,16 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		block = append(block, gBlock...)
 		if gChanged {
 			count += "; grants: " + gCount
-			if len(s.GrantFiles) > 0 {
+			if len(s.GrantPaths) > 0 {
+				keys := make([]string, 0, len(s.GrantPaths))
+				for key := range s.GrantPaths {
+					keys = append(keys, key)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					out.entryEdits = append(out.entryEdits, EntryEdit{Key: key, Files: append([]string(nil), s.GrantPaths[key]...)})
+				}
+			} else if len(s.GrantFiles) > 0 {
 				out.entryEdits = append(out.entryEdits, EntryEdit{Key: brokeredGrantsPath(s.Source),
 					Files: append([]string(nil), s.GrantFiles...)})
 			}
@@ -539,6 +564,9 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 		inPrev[s.key(r)] = true
 	}
 	edit.Key = brokeredReposPath(s.Source)
+	if s.EntryKey != "" {
+		edit.Key = s.EntryKey
+	}
 	addFiles := func(files []string) {
 		for _, f := range files {
 			if !inList(edit.Files, f) {
@@ -674,6 +702,9 @@ func readScopeRecords(workspace string) (scopeRecord, bool, sourcesRecord, error
 // that records without asking and must show the change first: host `yolo check
 // --accept-config-changes` (WW-D20). Only the scope half of the report is set.
 func ScopeChanges(workspace string, scope *ScopeCheck) (ChangeReport, error) {
+	if scope != nil && scope.Fatal != nil {
+		return ChangeReport{}, scope.Fatal
+	}
 	if !scope.inPlay() {
 		return ChangeReport{}, nil
 	}
@@ -691,6 +722,9 @@ func ScopeChanges(workspace string, scope *ScopeCheck) (ChangeReport, error) {
 // by --accept-config-changes, and by a host `yolo check --accept-config-changes`, so the parts
 // land together.
 func RecordApproval(workspace string, wsConfig *jsonx.OrderedMap, scope *ScopeCheck) error {
+	if scope != nil && scope.Fatal != nil {
+		return scope.Fatal
+	}
 	currentJSON, err := SnapshotJSON(approvalConfigPart(wsConfig))
 	if err != nil {
 		return err

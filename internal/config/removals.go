@@ -57,6 +57,7 @@ func ReadableRemovalPolicies() []RemovalRule {
 		{Path: "writable_home_dirs", Policy: RemovalEmptyList},
 		{Path: "required_capabilities", Policy: RemovalEmptyList},
 		{Path: "providers.*.capabilities", Policy: RemovalEmptyList},
+		{Path: "providers.*.variants.*.capabilities", Policy: RemovalEmptyList},
 		{Path: "providers.*.every_model.thinking", Policy: RemovalEmptyList},
 		{Path: "providers.*.every_model.accepts", Policy: RemovalEmptyList},
 		{Path: "providers.*.models.*.thinking", Policy: RemovalEmptyList},

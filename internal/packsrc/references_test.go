@@ -79,7 +79,7 @@ func TestParseNamedGitSourceAcceptsHostlessFileURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr, err := ParsePackAddress(ref.Source)
-	if err != nil || addr.Repo != "file:///tmp/yolo-packs" || addr.Path != "tools" || !ref.AllowDefaultRef {
+	if err != nil || addr.Repo != "file:///tmp/yolo-packs.git" || addr.Path != "tools" || !ref.AllowDefaultRef {
 		t.Fatalf("hostless file source = %+v, parsed %+v, %v", ref, addr, err)
 	}
 }
@@ -119,7 +119,7 @@ func TestParseNamedGitSourceRefFlowsThroughRefreshAndLock(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantSource := "git+file://" + strings.TrimSuffix(filepath.ToSlash(remote), ".git") + "//tools?ref=" + url.QueryEscape(tc.ref)
+			wantSource := "git+file://" + filepath.ToSlash(remote) + "//tools?ref=" + url.QueryEscape(tc.ref)
 			if ref.Source != wantSource || ref.AllowDefaultRef {
 				t.Fatalf("named git reference = %+v, want source %q with default-ref disabled", ref, wantSource)
 			}

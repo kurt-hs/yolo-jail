@@ -89,8 +89,10 @@ type ReadableBrokerPolicy struct {
 	Always              []string
 	OnRequest           []string
 	Repos               []ReadableRepoRequest
-	AlwaysOrigins       []string
-	OnRequestOrigins    []string
+	// RepoPath survives an empty repository list so removals retain their authored remediation key.
+	RepoPath         string
+	AlwaysOrigins    []string
+	OnRequestOrigins []string
 }
 
 // ReadableRepoRequest is a requested concrete OWNER/REPO in the declared source's namespace.
@@ -115,6 +117,7 @@ type ReadableGateSource struct {
 	Label      string
 	RemoteHost string
 	Read       brokerscope.Read
+	EntryKey   string
 	Entry      []EntryRepo
 	Targets    []ReadableRepository
 	Grants     []brokerscope.Grant
@@ -127,6 +130,7 @@ type ReadableObservedSource struct {
 	Source     string
 	Label      string
 	RemoteHost string
+	EntryKey   string
 	Read       brokerscope.Read
 	Targets    []ReadableRepository
 }
@@ -379,6 +383,7 @@ func ResolveReadableAllowance(input ReadableAllowanceInput) (ReadableAllowancePl
 			path := "requests." + name + "." + key
 			value := readableValue(table, key)
 			if key == "repos" {
+				policy.RepoPath = path
 				if policy.RemoteHost == brokerscope.AnyRemoteHost {
 					return plan, fmt.Errorf("%s: declared remote_host %q cannot accept OWNER/REPO additions; request repositories through a selected named-host source", path, brokerscope.AnyRemoteHost)
 				}
@@ -511,7 +516,8 @@ func ProduceReadableGateInput(workspace string, plan ReadableAllowancePlan) (Rea
 			}
 		}
 		input.ReadCapabilities = append(input.ReadCapabilities, readCapability)
-		observed := ReadableObservedSource{Source: policy.Source, Label: policy.Label, RemoteHost: policy.RemoteHost, Read: cloneBrokerScopeRead(remotes), Targets: cloneReadableRepositories(targets)}
+		observed := ReadableObservedSource{Source: policy.Source, Label: policy.Label, RemoteHost: policy.RemoteHost,
+			EntryKey: policy.RepoPath, Read: cloneBrokerScopeRead(remotes), Targets: cloneReadableRepositories(targets)}
 		input.ObservedSources = append(input.ObservedSources, observed)
 		readAlways := slices.Contains(policy.Always, policy.ReadCapability)
 		readRequested := slices.Contains(policy.OnRequest, policy.ReadCapability) && readableReadRequestedFromResults(input.Requests, policy.Source, policy.ReadCapability)
@@ -624,7 +630,7 @@ func ProduceReadableGateInput(workspace string, plan ReadableAllowancePlan) (Rea
 			grants[i] = decisions[i].Grant
 		}
 		input.Sources = append(input.Sources, ReadableGateSource{Source: policy.Source, Label: policy.Label, RemoteHost: policy.RemoteHost,
-			Read: cloneBrokerScopeRead(remotes), Entry: entries, Targets: targets, Grants: grants, Decisions: decisions})
+			EntryKey: policy.RepoPath, Read: cloneBrokerScopeRead(remotes), Entry: entries, Targets: targets, Grants: grants, Decisions: decisions})
 	}
 	return input, nil
 }
@@ -844,6 +850,66 @@ func ProjectReadableLegacyPack(mapping ReadableLegacyPackMapping, values []Reada
 // ReadableConcreteTarget associates each granted repository identity with its origin and source.
 type ReadableConcreteTarget struct{ Repository ReadableRepository }
 
+// BrokeredGrantKindsUsingReadablePolicy reads the current user scope and returns the grant kinds
+// authorized by its selected broker declaration. A canonical `allow.<source>` table is authority
+// even when empty; it suppresses the legacy grant_kinds fallback. The shared readable resolver
+// validates the declaration and capability mapping before this adapter projects capabilities back
+// to the broker's grant kinds. Callers use the returned canonical flag to distinguish a valid
+// empty authority from legacy mode, and treat every error as no write authority.
+func BrokeredGrantKindsUsingReadablePolicy(source string) (kinds []string, canonical bool, err error) {
+	user, sources, err := UserScopeConfigWithSources(true, func(string) {})
+	if err != nil {
+		return nil, true, err
+	}
+	allowValue, hasAllow := user.Get("allow")
+	if hasAllow {
+		allow, ok := asMap(allowValue)
+		if !ok {
+			return nil, true, fmt.Errorf("allow: expected a table")
+		}
+		if _, canonical = allow.Get(source); canonical {
+			selected, declarations, settings, err := readableBrokerSelection(user, sources)
+			if err != nil {
+				return nil, true, err
+			}
+			plan, err := ResolveReadableAllowance(ReadableAllowanceInput{
+				User: user, SelectedPacks: selected, Declarations: declarations, PackSettings: settings,
+			})
+			if err != nil {
+				return nil, true, err
+			}
+			var policy *ReadableBrokerPolicy
+			for i := range plan.Sources {
+				if plan.Sources[i].Source == source {
+					policy = &plan.Sources[i]
+					break
+				}
+			}
+			if policy == nil {
+				// A valid `off` tombstone carries canonical authority but no allowance.
+				return nil, true, nil
+			}
+			for _, declaration := range declarations {
+				if declaration.Pack != policy.Pack || declaration.Brokered.Source != source {
+					continue
+				}
+				for _, kind := range declaration.Brokered.Grants {
+					capability := policy.KindCapabilities[kind]
+					if capability != "" && !slices.Contains(policy.PendingCapabilities, capability) &&
+						(slices.Contains(policy.Always, capability) || slices.Contains(policy.OnRequest, capability)) {
+						kinds = append(kinds, kind)
+					}
+				}
+				return kinds, true, nil
+			}
+			return nil, true, fmt.Errorf("selected broker declaration for %q is missing", source)
+		}
+	}
+	return grantKindsOf(user, source), false, nil
+}
+
+// readableDeclarations validates the selected broker and pack declarations and resolves their
+// ownership before any canonical authority can reach a broker.
 func readableDeclarations(input ReadableAllowanceInput) (map[string][]loopholedecl.Setting, map[string]ReadableBrokerPolicy, error) {
 	settings := map[string][]loopholedecl.Setting{}
 	brokers := map[string]ReadableBrokerPolicy{}

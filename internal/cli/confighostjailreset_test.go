@@ -122,7 +122,7 @@ func TestHostSideResetDiscardsAStoppedJailsCaptures(t *testing.T) {
 			writeFile(t, surface, `{"theme":"the agents edit"}`)
 
 			var out, errw bytes.Buffer
-			if rc := configRunW([]string{"reset", "claude/settings"}, &out, &errw); rc != 0 {
+			if rc := surfaceRunW([]string{"reset", "claude/settings"}, &out, &errw); rc != 0 {
 				t.Fatalf("host-side reset of a stopped jail: rc=%d\n%s%s",
 					rc, out.String(), errw.String())
 			}
@@ -164,7 +164,7 @@ func TestHostSideResetRefusesWhileThatWorkspacesJailIsRunning(t *testing.T) {
 			writeSidecar(t, store, "claude", "settings", `{"theme":"dark"}`, `{"theme":"light"}`)
 
 			var out, errw bytes.Buffer
-			if rc := configRunW([]string{"reset", "claude/settings"}, &out, &errw); rc == 0 {
+			if rc := surfaceRunW([]string{"reset", "claude/settings"}, &out, &errw); rc == 0 {
 				t.Fatalf("reset wrote a RUNNING jail's surfaces:\n%s%s",
 					out.String(), errw.String())
 			}
@@ -191,7 +191,7 @@ func TestHostSideResetRefusesWhenTheRuntimeCannotBeAsked(t *testing.T) {
 	writeSidecar(t, store, "claude", "settings", `{"theme":"dark"}`, `{"theme":"light"}`)
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"reset", "claude/settings"}, &out, &errw); rc == 0 {
+	if rc := surfaceRunW([]string{"reset", "claude/settings"}, &out, &errw); rc == 0 {
 		t.Fatalf("an unqueryable runtime was read as an idle machine:\n%s%s",
 			out.String(), errw.String())
 	}
@@ -246,7 +246,7 @@ func TestForceReachesTheRunningJailRefusal(t *testing.T) {
 				}
 
 				var out, errw bytes.Buffer
-				if rc := configRunW([]string{"reset", "claude/settings", "--force"}, &out, &errw); rc != 0 {
+				if rc := surfaceRunW([]string{"reset", "claude/settings", "--force"}, &out, &errw); rc != 0 {
 					t.Fatalf("--force did not reach the refusal: rc=%d\n%s%s", rc,
 						out.String(), errw.String())
 				}
@@ -277,7 +277,7 @@ func TestTheRefusalIsKeyedOnThisWorkspacesJail(t *testing.T) {
 			writeSidecar(t, store, "claude", "settings", `{"theme":"dark"}`, `{"theme":"light"}`)
 
 			var out, errw bytes.Buffer
-			if rc := configRunW([]string{"reset", "claude/settings"}, &out, &errw); rc != 0 {
+			if rc := surfaceRunW([]string{"reset", "claude/settings"}, &out, &errw); rc != 0 {
 				t.Fatalf("a DIFFERENT workspace's running jail blocked this one's reset: "+
 					"rc=%d\n%s%s", rc, out.String(), errw.String())
 			}
@@ -315,7 +315,7 @@ func TestHostSideResetTruncatesAUserSurfaceFromItsDeclaredEntry(t *testing.T) {
 			writeFile(t, surface, `{"level":"debug"}`)
 
 			var out, errw bytes.Buffer
-			if rc := configRunW([]string{"reset", "user"}, &out, &errw); rc != 0 {
+			if rc := surfaceRunW([]string{"reset", "user"}, &out, &errw); rc != 0 {
 				t.Fatalf("reset user: rc=%d\n%s%s", rc, out.String(), errw.String())
 			}
 			data, err := os.ReadFile(surface)

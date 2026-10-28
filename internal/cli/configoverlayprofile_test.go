@@ -167,7 +167,7 @@ func TestHostRendersFoldAGatedOverlayThroughTheProfileKeysDefault(t *testing.T) 
 		t.Run(name+"/yolo config render --at host", func(t *testing.T) {
 			gatedFixture(t, sel, packs)
 			t.Chdir(t.TempDir())
-			rc, out, errs := runConfigVerb(t, "render", "acme/settings", "--at", "host")
+			rc, out, errs := runSurfaceVerb(t, "render", "acme/settings", "--at", "host")
 			if rc != 0 {
 				t.Fatalf("config render --at host rc=%d\n%s%s", rc, out, errs)
 			}

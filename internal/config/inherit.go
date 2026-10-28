@@ -45,9 +45,11 @@ package config
 // render.JailFields()/HostFields() gives contribution kinds.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
 
@@ -510,6 +512,17 @@ func filterInheritMap(effective *jsonx.OrderedMap, scope InheritScope, policy ma
 		if k == hostImportExclusionsKey {
 			continue
 		}
+		v, _ := effective.Get(k)
+		if projected, recognized := filterReadableInheritRoot(k, v, scope); recognized {
+			if projected != nil {
+				out.Set(k, projected)
+			}
+			continue
+		}
+		if k == "install" || k == "machine" || k == "env" {
+			unknown = append(unknown, k)
+			continue
+		}
 		d, ok := inheritCensus[k]
 		if !ok {
 			unknown = append(unknown, k)
@@ -518,13 +531,52 @@ func filterInheritMap(effective *jsonx.OrderedMap, scope InheritScope, policy ma
 		if (scope == InheritPreflight && !d.preflight) || (scope == InheritNested && !d.nested) {
 			continue
 		}
-		v, _ := effective.Get(k)
 		out.Set(k, v)
 	}
 	if policy != nil {
 		out.Set(hostImportExclusionsKey, hostImportExclusionsOrderedMap(policy))
 	}
 	return out, unknown
+}
+
+// filterReadableInheritRoot is the bounded canonical-vocabulary projection for B2 keys
+// already represented by the legacy census. Every other readable root remains unclassified
+// until its owning consumer has an inheritance rule.
+func filterReadableInheritRoot(key string, value any, scope InheritScope) (any, bool) {
+	m, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		return nil, false
+	}
+	out := jsonx.NewOrderedMap()
+	copyKeys := func(source *jsonx.OrderedMap, target *jsonx.OrderedMap, keys ...string) {
+		for _, key := range keys {
+			if v, present := source.Get(key); present {
+				target.Set(key, v)
+			}
+		}
+	}
+	switch key {
+	case "install":
+		if scope == InheritPreflight {
+			copyKeys(m, out, "mise")
+		} else {
+			copyKeys(m, out, "nix", "mise")
+		}
+	case "machine":
+		if scope == InheritNested {
+			copyKeys(m, out, "resources", "ports", "forward")
+		}
+	case "env":
+		if scope == InheritNested {
+			copyKeys(m, out, "files", "set", "unset")
+		}
+	default:
+		return nil, false
+	}
+	if out.Len() == 0 {
+		return nil, true
+	}
+	return out, true
 }
 
 // RenderFiltered renders an ALREADY-FILTERED map as a generated inner-scope file: the
@@ -554,6 +606,102 @@ func RenderFilteredWithOrigins(filtered *jsonx.OrderedMap, src *Sources, scope I
 			"// names that file.\n" + originsLinePrefix + record + "\n"
 	}
 	return header + body + "\n", nil
+}
+
+// InheritTOMLHeader is InheritHeader using TOML's comment prefix.
+func InheritTOMLHeader(scope InheritScope, launchedAt string) string {
+	lines := strings.Split(InheritHeader(scope, launchedAt), "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "//") {
+			lines[i] = "#" + strings.TrimPrefix(line, "//")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// RenderFilteredForDelivery selects TOML only when the filtered legacy projection is
+// representable by the live readable schema. An unrepresentable legacy user payload remains
+// on the dual-reader JSONC path unchanged; it is never erased or made more authoritative.
+func RenderFilteredForDelivery(filtered *jsonx.OrderedMap, src *Sources, scope InheritScope, launchedAt string) (string, configdoc.Format, string, error) {
+	values := jsonx.DeepCopyMap(filtered)
+	var node *srcNode
+	if src != nil {
+		node = src.node()
+	}
+	values, node = projectLegacyB2Config(values, node)
+	tomlValues := jsonx.DeepCopyMap(values)
+	err := normalizeInheritedTOMLIntegers(tomlValues)
+	var encoded []byte
+	if err == nil {
+		encoded, err = configdoc.Encode(tomlValues, configdoc.TOML)
+	}
+	if err == nil {
+		var doc *configdoc.Document
+		doc, err = configdoc.Parse(encoded, configdoc.TOML)
+		if err == nil {
+			err = normalizeTOMLNumbers(doc.Values)
+		}
+		if err == nil {
+			err = validateReadableTOML(doc.Values, SchemaScopeUserOnly, "inherited user scope", doc.Index)
+		}
+		if err == nil {
+			header := InheritTOMLHeader(scope, launchedAt)
+			if record := LaunchOriginsJSON(values, sourcesOf(node)); record != "" {
+				header += "#\n# The line below records which host file set each key, so a refusal in this jail\n" +
+					"# names that file.\n" + originsTOMLLinePrefix + record + "\n"
+			}
+			return header + string(encoded) + "\n", configdoc.TOML, "", nil
+		}
+	}
+	legacy, legacyErr := RenderFilteredWithOrigins(filtered, src, scope, launchedAt)
+	if legacyErr != nil {
+		return "", configdoc.JSONC, "", legacyErr
+	}
+	reason := "legacy user-scope values are not representable by the current TOML reader"
+	if err != nil {
+		reason += ": " + err.Error()
+	}
+	return legacy, configdoc.JSONC, reason, nil
+}
+
+func normalizeInheritedTOMLIntegers(value any) error {
+	switch current := value.(type) {
+	case *jsonx.OrderedMap:
+		for _, key := range current.Keys() {
+			item, _ := current.Get(key)
+			normalized, err := inheritedTOMLInteger(item)
+			if err != nil {
+				return fmt.Errorf("%s: %w", key, err)
+			}
+			current.Set(key, normalized)
+		}
+	case []any:
+		for i, item := range current {
+			normalized, err := inheritedTOMLInteger(item)
+			if err != nil {
+				return fmt.Errorf("[%d]: %w", i, err)
+			}
+			current[i] = normalized
+		}
+	}
+	return nil
+}
+
+func inheritedTOMLInteger(value any) (any, error) {
+	if jsonx.IsInt(value) {
+		integer, ok := jsonx.AsInt(value)
+		if !ok {
+			return nil, fmt.Errorf("integer is outside TOML's signed 64-bit range")
+		}
+		return integer, nil
+	}
+	switch value.(type) {
+	case *jsonx.OrderedMap, []any:
+		if err := normalizeInheritedTOMLIntegers(value); err != nil {
+			return nil, err
+		}
+	}
+	return value, nil
 }
 
 // RenderInherit filters and renders in one step — the whole-file form, for callers with no

@@ -162,7 +162,6 @@ var parityBacklog = map[string]int{
 	"hostfiles.go":           1,
 	"hostloopback.go":        1,
 	"hostprobes.go":          6,
-	"inheritscope.go":        2,
 	"lifecycle.go":           6,
 	"loopholesruntime.go":    3,
 	"packfiles.go":           1,

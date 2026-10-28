@@ -68,33 +68,9 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	out := jsonx.NewOrderedMap()
-	shipper := map[string]string{}
-	providerSupplied := map[string]bool{}
-	type shipped struct {
-		pack string
-		prov packdecl.ProviderContribution
-	}
-	var all []shipped
-	for _, p := range packs {
-		for _, prov := range p.Decl.Providers() {
-			all = append(all, shipped{pack: p.Name, prov: prov})
-		}
-	}
-	holds := laterWins(len(all), func(i int) string { return all[i].prov.Name })
-	for i, s := range all {
-		if !holds[i] {
-			continue
-		}
-		out.Set(s.prov.Name, shippedProviderEntry(s.prov))
-		shipper[s.prov.Name] = s.pack
-		providerSupplied[s.prov.Name] = s.prov.Models != nil
-	}
-	// THE `models` CONTRIBUTIONS, between the packs' own providers and the user's entries, so
-	// the engineer's own `providers.<name>.models` writes last (OQ-BR12; modellists.go).
-	contributed := applyModelContributions(out, user, packs, cfg.modelNote)
-	for name := range contributed {
-		providerSupplied[name] = true
+	out, _, providerSupplied, err := composeProviderTable(user, packs, cfg, shippedProviderEntry)
+	if err != nil {
+		return nil, err
 	}
 	reportPresence := func() {
 		if cfg.modelListPresence == nil {
@@ -136,53 +112,6 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 		reportPresence()
 		return orderedOrNil(out), nil
 	}
-	for _, name := range user.Keys() {
-		v, _ := user.Get(name)
-		if v == nil {
-			// A null entry disables — including a pack-shipped one. The user's config is
-			// the override layer, and "override" has always included "no".
-			out.Delete(name)
-			continue
-		}
-		// THE COMPOSED TABLE HOLDS NOTHING THE CALLER OWNS. Every call site hands this
-		// function a sub-map of a config map it goes on reading — run.composedProviders
-		// and cli.composedHostProviders pass `cfg`'s own `providers` entry, and
-		// check.protocolPairingGap passes the merged map's — so a composed value stored
-		// by reference makes this a WRITER of its caller's config. adaptEndpoints runs
-		// LAST over the finished table and writes endpoints.<protocol>.base_url through
-		// any such alias, which is how a user's provider entry acquired the wire bridge's
-		// own 127.0.0.1:8214 and run.localProviderForwards then read it back as a
-		// host-loopback forward the user had asked for — a port bound in the jail four
-		// lines before the bridge tried to bind it (docs/reference/wire-bridge.md#oq-pc1:
-		// the ruling is to fix the mutation, not the read).
-		//
-		// The copy is DEEP because the value is a tree: a one-level clone would leave
-		// `endpoints` shared and addEndpoint would write through it unchanged. One copy
-		// here covers all four sinks below — the malformed passthrough, both
-		// out.Set(name, u) paths, and mergeUnder, which sets sub-values of u into the
-		// pack-shipped entry.
-		v = jsonx.DeepCopy(v)
-		u, ok := v.(*jsonx.OrderedMap)
-		if !ok {
-			out.Set(name, v) // malformed; the config validator already reported the shape
-			continue
-		}
-		cur, seen := out.Get(name)
-		if !seen {
-			out.Set(name, u)
-			continue
-		}
-		cm, ok := cur.(*jsonx.OrderedMap)
-		if !ok {
-			out.Set(name, u)
-			continue
-		}
-		dropRepointedVendors(cm, u)
-		mergeUnder(cm, u)
-		if err := addressConflict(name, cm, shipper[name]); err != nil {
-			return nil, err
-		}
-	}
 	// LAST, over the finished table (protocol-resolution.md, outcome 2). An adapter
 	// contributes an address for a protocol a provider does not offer, and it is applied
 	// here rather than at delivery because the composed table is what every consumer of an
@@ -193,6 +122,335 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 	adaptEndpoints(out, packs, cfg)
 	reportPresence()
 	return orderedOrNil(out), nil
+}
+
+// ComposeProviderDeclarations returns the lossless typed provider table before the legacy
+// model-fact lowering used by runtime provider consumers. It shares pack selection, model
+// contribution placement, and the exact per-entry override fold with ComposeProviders.
+func ComposeProviderDeclarations(user *jsonx.OrderedMap, packs []*Pack) ([]packdecl.ProviderContribution, error) {
+	composition, _, _, err := composeProviderTable(user, packs, composeOpts{}, canonicalProviderEntry)
+	if err != nil {
+		return nil, err
+	}
+	// `models_only` is a composer-only marker, not an authored provider field; its
+	// narrowed result is already represented by the composed models table.
+	for _, name := range composition.Keys() {
+		if raw, ok := composition.Get(name); ok {
+			if entry, ok := raw.(*jsonx.OrderedMap); ok {
+				entry.Delete(ModelsOnlyKey)
+			}
+		}
+	}
+	root := jsonx.NewOrderedMap()
+	root.Set("providers", composition)
+	decoded, err := packdecl.DecodeProviderTable(root)
+	if err != nil {
+		return nil, err
+	}
+	return decoded.Declarations, nil
+}
+
+func composeProviderTable(user *jsonx.OrderedMap, packs []*Pack, cfg composeOpts,
+	encode func(packdecl.ProviderContribution) *jsonx.OrderedMap) (*jsonx.OrderedMap, map[string]string, map[string]bool, error) {
+	out := jsonx.NewOrderedMap()
+	shipper := map[string]string{}
+	providerSupplied := map[string]bool{}
+	type shipped struct {
+		pack string
+		prov packdecl.ProviderContribution
+	}
+	var all []shipped
+	for _, pack := range packs {
+		for _, provider := range pack.Decl.Providers() {
+			all = append(all, shipped{pack: pack.Name, prov: provider})
+		}
+	}
+	holds := laterWins(len(all), func(i int) string { return all[i].prov.Name })
+	for i, selected := range all {
+		if !holds[i] {
+			continue
+		}
+		out.Set(selected.prov.Name, encode(selected.prov))
+		shipper[selected.prov.Name] = selected.pack
+		providerSupplied[selected.prov.Name] = selected.prov.Models != nil
+	}
+	// THE `models` CONTRIBUTIONS remain between the packs' own providers and the user's entries.
+	contributed := applyModelContributions(out, user, packs, cfg.modelNote)
+	for name := range contributed {
+		providerSupplied[name] = true
+	}
+	if user != nil {
+		for _, name := range user.Keys() {
+			value, _ := user.Get(name)
+			if value == nil {
+				out.Delete(name)
+				continue
+			}
+			// Every caller keeps its own input map; the deep copy covers the malformed
+			// passthrough, new-entry paths, and the nested existing-entry fold.
+			value = jsonx.DeepCopy(value)
+			override, ok := value.(*jsonx.OrderedMap)
+			if !ok {
+				out.Set(name, value)
+				continue
+			}
+			current, exists := out.Get(name)
+			if !exists {
+				out.Set(name, override)
+				continue
+			}
+			base, ok := current.(*jsonx.OrderedMap)
+			if !ok {
+				out.Set(name, override)
+				continue
+			}
+			dropRepointedVendors(base, override)
+			mergeUnder(base, override)
+			if err := addressConflict(name, base, shipper[name]); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	return out, shipper, providerSupplied, nil
+}
+
+func canonicalProviderEntry(provider packdecl.ProviderContribution) *jsonx.OrderedMap {
+	entry := jsonx.NewOrderedMap()
+	if provider.Alias != "" {
+		entry.Set("alias", provider.Alias)
+	}
+	if provider.Model != "" {
+		entry.Set("model", provider.Model)
+	}
+	if provider.Via != "" {
+		entry.Set("via", provider.Via)
+	}
+	if provider.Platform != "" {
+		entry.Set("platform", provider.Platform)
+	}
+	if provider.Region != "" {
+		entry.Set("region", provider.Region)
+	}
+	if provider.RegionEnvName != nil {
+		entry.Set("region_env_name", stringSliceAny(provider.RegionEnvName))
+	}
+	if provider.RegionFile != nil {
+		entry.Set("region_file", map[string]any{"path": provider.RegionFile.Path, "key": provider.RegionFile.Key,
+			"profile_section": provider.RegionFile.ProfileSection, "default_profile": provider.RegionFile.DefaultProfile,
+			"profile_env_name": provider.RegionFile.ProfileEnvName, "path_env_name": provider.RegionFile.PathEnvName})
+	}
+	if provider.EveryModel != nil {
+		entry.Set("every_model", canonicalProviderModel(*provider.EveryModel))
+	}
+	if provider.ModelRows != nil || provider.Models != nil {
+		models := jsonx.NewOrderedMap()
+		for _, id := range provider.ModelOrder {
+			if row, ok := provider.ModelRows[id]; ok {
+				models.Set(id, canonicalProviderModel(row))
+			}
+		}
+		for _, id := range sortedProviderModelIDs(provider.ModelRows) {
+			if _, already := models.Get(id); !already {
+				models.Set(id, canonicalProviderModel(provider.ModelRows[id]))
+			}
+		}
+		for _, alias := range sortedMapKeys(provider.Models) {
+			if _, already := models.Get(alias); !already {
+				models.Set(alias, provider.Models[alias])
+			}
+		}
+		entry.Set("models", models)
+	}
+	if provider.ModelOptions != nil {
+		options := jsonx.NewOrderedMap()
+		for _, alias := range sortedProviderKeys(provider.ModelOptions) {
+			facts := jsonx.NewOrderedMap()
+			for _, name := range sortedProviderKeys(provider.ModelOptions[alias]) {
+				value := provider.ModelOptions[alias][name]
+				if value == nil {
+					facts.Set(name, nil)
+				} else {
+					facts.Set(name, *value)
+				}
+			}
+			options.Set(alias, facts)
+		}
+		entry.Set("model_options", options)
+	}
+	if provider.Variants != nil {
+		variants := jsonx.NewOrderedMap()
+		for _, name := range provider.VariantOrder {
+			if variant, ok := provider.Variants[name]; ok {
+				variants.Set(name, canonicalProviderVariant(variant))
+			}
+		}
+		for _, name := range sortedProviderVariantNames(provider.Variants) {
+			if _, already := variants.Get(name); !already {
+				variants.Set(name, canonicalProviderVariant(provider.Variants[name]))
+			}
+		}
+		entry.Set("variants", variants)
+	}
+	if provider.Endpoints != nil {
+		endpoints := jsonx.NewOrderedMap()
+		for _, protocol := range sortedEndpointProtocols(provider.Endpoints) {
+			e := provider.Endpoints[protocol]
+			value := jsonx.NewOrderedMap()
+			if e.BaseURL != "" {
+				value.Set("base_url", e.BaseURL)
+			}
+			if e.WireAPI != "" {
+				value.Set("wire_api", e.WireAPI)
+			}
+			endpoints.Set(protocol, value)
+		}
+		entry.Set("endpoints", endpoints)
+	}
+	if len(provider.APIKeyEnvName) != 0 {
+		entry.Set("api_key_env_name", stringSliceAny(provider.APIKeyEnvName))
+	}
+	if provider.Options != nil {
+		options := jsonx.NewOrderedMap()
+		for _, name := range sortedProviderKeys(provider.Options) {
+			value := provider.Options[name]
+			if value.Defaulted {
+				options.Set(name, value.Value)
+			} else {
+				options.Set(name, nil)
+			}
+		}
+		entry.Set("options", options)
+	}
+	if provider.Capabilities != nil {
+		entry.Set("capabilities", stringSliceAny(provider.Capabilities))
+	}
+	return entry
+}
+
+func canonicalProviderVariant(variant packdecl.ProviderVariant) *jsonx.OrderedMap {
+	value := jsonx.NewOrderedMap()
+	if variant.Model != "" {
+		value.Set("model", variant.Model)
+	}
+	if variant.Via != "" {
+		value.Set("via", variant.Via)
+	}
+	if variant.Options != nil {
+		options := jsonx.NewOrderedMap()
+		for _, name := range sortedProviderKeys(variant.Options) {
+			option := variant.Options[name]
+			if option.Defaulted {
+				options.Set(name, option.Value)
+			} else {
+				options.Set(name, nil)
+			}
+		}
+		value.Set("options", options)
+	}
+	if variant.Subagents != nil {
+		value.Set("subagents", jsonx.DeepCopy(variant.Subagents))
+	}
+	if variant.EnforceModels != nil {
+		value.Set("enforce_models", *variant.EnforceModels)
+	}
+	if variant.Capabilities != nil {
+		value.Set("capabilities", stringSliceAny(variant.Capabilities))
+	}
+	if variant.Protocols != nil {
+		value.Set("protocols", stringSliceAny(variant.Protocols))
+	}
+	return value
+}
+
+func canonicalProviderModel(model packdecl.ProviderModel) *jsonx.OrderedMap {
+	value := jsonx.NewOrderedMap()
+	if model.Name != "" {
+		value.Set("name", model.Name)
+	}
+	if model.Description != "" {
+		value.Set("description", model.Description)
+	}
+	if model.Vendor != "" {
+		value.Set("vendor", model.Vendor)
+	}
+	if model.API != "" {
+		value.Set("api", model.API)
+	}
+	if model.Thinking != nil {
+		value.Set("thinking", stringSliceAny(model.Thinking))
+	}
+	if model.Images != nil {
+		value.Set("images", map[string]any{"max_width": model.Images.MaxWidth, "max_height": model.Images.MaxHeight, "max_bytes": model.Images.MaxBytes, "jpeg_quality": model.Images.JPEGQuality})
+	}
+	if model.Price != nil {
+		price := map[string]any{}
+		if model.Price.Input != nil {
+			price["input"] = *model.Price.Input
+		}
+		if model.Price.Output != nil {
+			price["output"] = *model.Price.Output
+		}
+		if model.Price.CacheRead != nil {
+			price["cache_read"] = *model.Price.CacheRead
+		}
+		if model.Price.CacheWrite != nil {
+			price["cache_write"] = *model.Price.CacheWrite
+		}
+		value.Set("price", price)
+	}
+	if model.Context != 0 {
+		value.Set("context", jsonx.IntValue(model.Context))
+	}
+	if model.MaxTokens != 0 {
+		value.Set("max_tokens", jsonx.IntValue(model.MaxTokens))
+	}
+	if model.Reasoning != nil {
+		value.Set("reasoning", *model.Reasoning)
+	}
+	if model.Accepts != nil {
+		value.Set("accepts", stringSliceAny(model.Accepts))
+	}
+	if model.Base != "" {
+		value.Set("base", model.Base)
+	}
+	if model.WireID != "" {
+		value.Set("wire_id", model.WireID)
+	}
+	if model.Extends != "" {
+		value.Set("extends", model.Extends)
+	}
+	if model.OpenRouterRouting != nil {
+		value.Set("openrouter_routing", jsonx.DeepCopy(model.OpenRouterRouting))
+	}
+	if model.TwinOf != "" {
+		value.Set("twin_of", model.TwinOf)
+	}
+	if model.CompactAt != 0 {
+		value.Set("compact_at", jsonx.IntValue(model.CompactAt))
+	}
+	return value
+}
+
+func stringSliceAny(values []string) []any {
+	out := make([]any, len(values))
+	for i, value := range values {
+		out[i] = value
+	}
+	return out
+}
+func sortedProviderModelIDs(values map[string]packdecl.ProviderModel) []string {
+	return sortedProviderKeys(values)
+}
+func sortedProviderVariantNames(values map[string]packdecl.ProviderVariant) []string {
+	return sortedProviderKeys(values)
+}
+func sortedProviderKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // liftModelFacts lowers every OBJECT-form `models.<alias>` entry in the finished table into

@@ -6,6 +6,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
 func validateReadableTOML(values *jsonx.OrderedMap, scope SchemaScope, label string, index *configdoc.Index) error {
@@ -186,10 +187,10 @@ func readableRenameForPath(path []string) (RenameDescriptor, bool) {
 }
 
 func readableTOMLError(label string, index *configdoc.Index, path []string, locationPath []configdoc.Step, message string) error {
-	location := label
+	location := termsafe.Visible(label)
 	if span, ok, err := index.Value(locationPath...); err == nil && ok {
 		line, column := index.Position(span.Start)
-		location = fmt.Sprintf("%s:%d:%d", label, line, column)
+		location = fmt.Sprintf("%s:%d:%d", location, line, column)
 	}
 	return configErr("%s: config.%s: %s", location, readablePathDisplay(path, locationPath), message)
 }

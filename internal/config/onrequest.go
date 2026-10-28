@@ -37,7 +37,7 @@ func onRequestValue(cfg *jsonx.OrderedMap) string {
 // validateOnRequest type-checks the key and refuses it in a workspace config. A launch
 // runs this validation too, so a workspace that names it refuses the launch as `yolo check`
 // reports it.
-func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	if v, present := config.Get(OnRequestKey); present && v != nil {
 		if s, ok := v.(string); !ok || strings.TrimSpace(s) == "" {
 			add(errs, fmt.Sprintf("config.%s: expected a shell command as a non-empty string, such as "+
@@ -45,7 +45,7 @@ func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]strin
 				OnRequestKey, pyReprValue(v), paths.UserConfigPath()))
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}

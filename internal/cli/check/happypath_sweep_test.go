@@ -104,11 +104,7 @@ func TestEveryGradedFindingInTheFixturesHasANote(t *testing.T) {
 // end at the problem: every [FAIL] and [WARN] they record names a next step now.
 func TestSweptSectionsNameANextStep(t *testing.T) {
 	gpu := func(vendor string) *jsonx.OrderedMap {
-		m, err := jsonx.Decode([]byte(`{"gpu": {"enabled": true, "vendor": "` + vendor + `"}, "kvm": true}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return m.(*jsonx.OrderedMap)
+		return loadLegacyCheckConfig(t, `{"gpu": {"enabled": true, "vendor": "`+vendor+`"}, "kvm": true}`)
 	}
 	loophole, err := jsonx.Decode([]byte(`{"loopholes": {"svc": {"command": ["no-such-daemon"]},
 		"abs": {"command": ["/no/such/daemon"]}}}`))

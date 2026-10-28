@@ -33,12 +33,13 @@ func sourcesHome(t *testing.T) (home, cfgDir string) {
 // errors and warnings located.
 func locatedErrors(t *testing.T, ws string) (errs, warns []string) {
 	t.Helper()
-	cfg, src, err := LoadConfigWithSources(ws, true, discard)
+	cfg, sourceNode, err := composeConfig(ws, true, discard, true, true)
+	src := sourcesOf(sourceNode)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if src == nil {
-		t.Fatal("LoadConfigWithSources returned no record for a config read from files")
+		t.Fatal("legacy compatibility composition returned no source record for a config read from files")
 	}
 	e, w := ValidateConfig(cfg, ws, nil)
 	return src.Annotate(e), src.Annotate(w)

@@ -182,7 +182,7 @@ func TestConfigRenderAndLsFollowAPostureOverlaysNotch(t *testing.T) {
 		notch string
 		want  bool
 	}{{"host", true}, {"jail", false}} {
-		rc, out, errw := runConfigVerb(t, "render", "pi/settings", "--at", c.notch)
+		rc, out, errw := runSurfaceVerb(t, "render", "pi/settings", "--at", c.notch)
 		if rc != 0 {
 			t.Fatalf("render --at %s rc=%d\n%s%s", c.notch, rc, out, errw)
 		}
@@ -191,7 +191,7 @@ func TestConfigRenderAndLsFollowAPostureOverlaysNotch(t *testing.T) {
 				c.want, out)
 		}
 
-		rc, out, errw = runConfigVerb(t, "ls", "--at", c.notch)
+		rc, out, errw = runSurfaceVerb(t, "ls", "--at", c.notch)
 		if rc != 0 {
 			t.Fatalf("ls --at %s rc=%d\n%s%s", c.notch, rc, out, errw)
 		}

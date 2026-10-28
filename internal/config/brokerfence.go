@@ -26,7 +26,7 @@ import (
 // state directory (context-mounts.md#the-refusal-set clause 1, config.rwMountRefusal).
 
 func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver,
-	errs, warns *[]string) {
+	errs, warns *[]string, edit ...*editValidationContext) {
 	// The fence is the host launcher's: in a jail the paths it would compare are the jail's,
 	// not the machine's, and nothing in a jail mounts anything.
 	if resolver == nil || inJail() {
@@ -70,7 +70,7 @@ func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolv
 	}
 
 	wsMounts := map[string]bool{}
-	if wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {}); err == nil && wsCfg != nil {
+	if wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...); err == nil && wsCfg != nil {
 		for spec := range mountHostSources(wsCfg) {
 			wsMounts[spec] = true
 		}

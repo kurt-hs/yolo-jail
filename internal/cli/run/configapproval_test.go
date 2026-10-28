@@ -12,6 +12,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // configapproval_test.go covers the LAUNCHER half of docs/reference/config-safety.md's
@@ -50,6 +51,23 @@ func approvalConfig(t *testing.T, s string) *jsonx.OrderedMap {
 	return m
 }
 
+func approveWorkspaceConfigThroughGate(t *testing.T, o *Options, ws, body string, output *bytes.Buffer) {
+	t.Helper()
+	writeWorkspaceConfig(t, ws, body)
+	previousAccept := o.AcceptConfigChanges
+	previousStdinTTY, previousStderrTTY := o.IsTTYStdin, o.IsTTYStderr
+	o.AcceptConfigChanges = true
+	o.IsTTYStdin = func() bool { return false }
+	o.IsTTYStderr = func() bool { return false }
+	approved := o.checkConfigChanges(nil, "podman")
+	o.AcceptConfigChanges = previousAccept
+	o.IsTTYStdin, o.IsTTYStderr = previousStdinTTY, previousStderrTTY
+	if !approved {
+		t.Fatalf("seeding the workspace approval through the public gate failed: %s", output.String())
+	}
+	output.Reset()
+}
+
 // A REFUSED LAUNCH MUST SAY HOW TO PROCEED. The reader of this message is, by
 // construction, someone who cannot be prompted — so the launcher has to print the
 // flag, the files the merged config came from, and the change itself. Printing a
@@ -58,12 +76,7 @@ func TestNonInteractiveConfigChangeRefusalIsActionable(t *testing.T) {
 	ws := t.TempDir()
 	o, buf := approvalOptions(t, ws, false /*non-tty*/)
 
-	// Establish an approved baseline the same way an earlier launch would have.
-	if ok, err := config.CheckConfigChanges(ws, approvalConfig(t, `{"packages": ["strace"]}`),
-		false, true, nil); err != nil || !ok {
-		t.Fatalf("seeding the baseline: ok=%v err=%v", ok, err)
-	}
-
+	approveWorkspaceConfigThroughGate(t, o, ws, `{"packages": ["strace"]}`, buf)
 	writeWorkspaceConfig(t, ws, `{"packages": ["strace", "htop"]}`)
 	if o.checkConfigChanges(nil, "podman") {
 		t.Fatal("a changed config with no terminal to approve it on must refuse the launch")
@@ -74,7 +87,7 @@ func TestNonInteractiveConfigChangeRefusalIsActionable(t *testing.T) {
 		config.AcceptConfigChangesFlag,
 		filepath.Join(ws, config.WorkspaceConfigName),
 		config.ApprovalSnapshotPath(ws),
-		`+    "htop"`, // the diff, not just the fact of one
+		`+      "htop"`, // the changed value remains visible in the canonical workspace diff
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("refusal output does not mention %q:\n%s", want, out)
@@ -99,10 +112,7 @@ func TestConfigChangePromptRequiresTerminalStdinAndStderr(t *testing.T) {
 			o.IsTTYStderr = func() bool { return tc.ttyErr }
 			stdin := strings.NewReader("y\n")
 			o.Stdin = stdin
-			if ok, err := config.CheckConfigChanges(ws, approvalConfig(t, `{"packages": ["strace"]}`),
-				false, true, nil); err != nil || !ok {
-				t.Fatalf("seeding the baseline: ok=%v err=%v", ok, err)
-			}
+			approveWorkspaceConfigThroughGate(t, o, ws, `{"packages": ["strace"]}`, buf)
 			writeWorkspaceConfig(t, ws, `{"packages": ["strace", "htop"]}`)
 
 			got := o.checkConfigChanges(nil, "podman")
@@ -166,13 +176,10 @@ func TestFreshLaunchDeliversTheAssembledConfigTheJailReadsBack(t *testing.T) {
 // next scripted run refuses over the same unchanged change.
 func TestAcceptConfigChangesFlagLetsANonInteractiveLaunchThrough(t *testing.T) {
 	ws := t.TempDir()
-	o, _ := approvalOptions(t, ws, false /*non-tty*/)
+	o, buf := approvalOptions(t, ws, false /*non-tty*/)
 	o.AcceptConfigChanges = true
 
-	if ok, err := config.CheckConfigChanges(ws, approvalConfig(t, `{"packages": ["strace"]}`),
-		false, true, nil); err != nil || !ok {
-		t.Fatalf("seeding the baseline: ok=%v err=%v", ok, err)
-	}
+	approveWorkspaceConfigThroughGate(t, o, ws, `{"packages": ["strace"]}`, buf)
 
 	writeWorkspaceConfig(t, ws, `{"packages": ["strace", "htop"]}`)
 	if !o.checkConfigChanges(nil, "podman") {
@@ -355,23 +362,99 @@ func methodDecl(t *testing.T, file, name string) *ast.FuncDecl {
 	return nil
 }
 
-// User config changes (e.g. adding a pack or loophole globally) must not trigger
-// approval prompts or refusals on existing workspaces (OQ-S1).
+// A change to the machine-wide User config must not trigger approval prompts or refusals
+// on an existing workspace whose own config is unchanged (OQ-S1).
 func TestUserConfigChangeDoesNotTriggerWorkspacePrompt(t *testing.T) {
 	ws := t.TempDir()
-	o, _ := approvalOptions(t, ws, false /*non-tty*/)
+	o, output := approvalOptions(t, ws, false /*non-tty*/)
+	t.Setenv(config.UserLayerEnv, "")
 
-	// Establish baseline for workspace config.
-	wsCfg := approvalConfig(t, `{"packages": ["strace"]}`)
-	if ok, err := config.CheckConfigChanges(ws, wsCfg, false, true, nil); err != nil || !ok {
-		t.Fatalf("establishing baseline: ok=%v err=%v", ok, err)
+	approveWorkspaceConfigThroughGate(t, o, ws, `{"packages": ["strace"]}`, output)
+	workspacePath := filepath.Join(ws, config.WorkspaceConfigName)
+	workspaceBefore, err := os.ReadFile(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceInfo, err := os.Stat(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselineRead, err := config.ReadWorkspaceForGate(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselineJSON, err := config.SnapshotJSON(baselineRead.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := config.ConfigPartChanged(ws, baselineRead.Config); err != nil || changed {
+		t.Fatalf("public approval baseline does not match the typed workspace read: changed=%v err=%v", changed, err)
+	}
+	userBefore, err := config.LoadReadableUserScopeConfig(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userBeforeJSON, err := config.SnapshotJSON(userBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userPath := paths.UserConfigPath()
+	if err := os.MkdirAll(filepath.Dir(userPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userPath, []byte(`{"packs": ["copilot"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	userAfter, err := config.LoadReadableUserScopeConfig(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userAfterJSON, err := config.SnapshotJSON(userAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if userAfterJSON == userBeforeJSON {
+		t.Fatal("typed User-scope read did not observe the changed user config")
+	}
+	packsValue, present := userAfter.Get("packs")
+	packs, ok := packsValue.([]any)
+	if !present || !ok || len(packs) != 1 || packs[0] != "copilot" {
+		t.Fatal("typed User-scope read did not contain the changed packs value")
+	}
+	gateRead, err := config.ReadWorkspaceForGate(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := gateRead.Config.Get("packs"); present {
+		t.Fatal("workspace approval read acquired a User-scope key")
+	}
+	currentJSON, err := config.SnapshotJSON(gateRead.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if currentJSON != baselineJSON {
+		t.Fatal("User-scope change altered the typed workspace approval input")
+	}
+	if changed, err := config.ConfigPartChanged(ws, gateRead.Config); err != nil || changed {
+		t.Fatalf("User-scope change made the public workspace approval baseline pending: changed=%v err=%v", changed, err)
+	}
+	workspaceAfter, err := os.ReadFile(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceInfoAfter, err := os.Stat(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(workspaceBefore, workspaceAfter) || workspaceInfo.Mode().Perm() != workspaceInfoAfter.Mode().Perm() {
+		t.Fatal("User-scope change modified the workspace config bytes or mode")
 	}
 
-	// Host user modifies ~/.config/yolo-jail/config.jsonc (e.g. adding serial loophole pack).
-	// The workspace config itself remains unchanged.
 	// CheckConfigChanges must pass with zero prompts and zero refusals.
-	writeWorkspaceConfig(t, ws, `{"packages": ["strace"]}`)
 	if !o.checkConfigChanges(nil, "podman") {
 		t.Fatal("user-level config change must not refuse or prompt on an unchanged workspace")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("unchanged workspace config produced approval output: %q", output.String())
 	}
 }

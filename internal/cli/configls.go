@@ -123,12 +123,12 @@ func configLs(t configTarget, args []string, out, errw io.Writer, color bool) (r
 	for _, a := range args {
 		switch {
 		case isHelpToken(a):
-			writeConfigUsage(out, color)
+			writeSurfaceUsage(out, color)
 			return 0
 		case a == "--all":
 			all = true
 		default:
-			fmt.Fprintf(errw, "yolo config ls: unknown argument %q\n\n%s\n", a, configUsage)
+			fmt.Fprintf(errw, "yolo config ls: unknown argument %q\n\n%s\n", a, surfaceUsage)
 			return 2
 		}
 	}

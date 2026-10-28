@@ -40,7 +40,10 @@
   "brokered": {
     "source": "github",
     "remote_host": "github.com",
-    "credential_paths": ["$GH_CONFIG_DIR", "$XDG_CONFIG_HOME/gh", "~/.config/gh"]
+    "credential_paths": ["$GH_CONFIG_DIR", "$XDG_CONFIG_HOME/gh", "~/.config/gh"],
+    "read_capability": "read",
+    "kind_capabilities": {"create-pr": "create_pr", "create-issue": "create_issue"},
+    "pending_capabilities": ["create_pr", "create_issue"]
   },
 
   // One daemon per jail, behind yolo's front, with the connection preamble on: every grant

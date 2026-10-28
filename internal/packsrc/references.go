@@ -31,6 +31,7 @@ type PackReference struct {
 	Name            string
 	SourceID        string
 	LocalPath       string
+	EmbeddedName    string
 	AllowDefaultRef bool
 	Origin          string
 }
@@ -48,7 +49,7 @@ func ParseSourceDefinitions(raw any) (map[string]SourceDefinition, error) {
 	}
 	out := make(map[string]SourceDefinition, len(m.Keys()))
 	for _, name := range m.Keys() {
-		if !validHandleSegment(name) || name == "local" {
+		if !validHandleSegment(name) || name == "local" || name == "yolo" {
 			return nil, fmt.Errorf("pack_sources.%s: invalid source name", name)
 		}
 		value, _ := m.Get(name)
@@ -100,13 +101,20 @@ func ParsePackReference(raw any, sources map[string]SourceDefinition, localRoot,
 		}
 		if !strings.Contains(text, "/") {
 			if shippedNames[text] {
-				return PackReference{Source: "embedded:" + text, Name: text, SourceID: "shipped", Origin: origin}, nil
+				return PackReference{Source: "embedded:" + text, Name: text, SourceID: "shipped", EmbeddedName: text, Origin: origin}, nil
 			}
 			return PackReference{}, fmt.Errorf("%s: only shipped packs may be named without a source", origin)
 		}
 		parts := strings.Split(text, "/")
 		if len(parts) != 2 || !validHandleSegment(parts[0]) || !validHandleSegment(parts[1]) {
 			return PackReference{}, fmt.Errorf("%s: expected source/pack, such as local/matt", origin)
+		}
+		if parts[0] == "yolo" {
+			if !shippedNames[parts[1]] {
+				return PackReference{}, fmt.Errorf("%s: yolo/%s does not name a shipped pack", origin, parts[1])
+			}
+			return PackReference{Source: "embedded:" + parts[1], Name: text, SourceID: "shipped",
+				EmbeddedName: parts[1], Origin: origin}, nil
 		}
 		if parts[0] == "local" {
 			if localRoot == "" {
@@ -217,7 +225,10 @@ func normalizeRepository(raw string) (string, error) {
 	if u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("source repository URL takes no query or fragment")
 	}
-	u.Path = strings.TrimSuffix(strings.TrimRight(u.Path, "/"), ".git")
+	u.Path = strings.TrimRight(u.Path, "/")
+	if u.Scheme != "file" {
+		u.Path = strings.TrimSuffix(u.Path, ".git")
+	}
 	if u.Path == "" || u.Path == "/" {
 		return "", fmt.Errorf("repository URL must name a repository")
 	}
