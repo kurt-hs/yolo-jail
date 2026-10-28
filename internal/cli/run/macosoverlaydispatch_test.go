@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
@@ -111,9 +112,9 @@ func TestMacosUserDryRunStillComposesTheOverlay(t *testing.T) {
 	}
 }
 
-// THE INHERITED USER SCOPE (OQ-LP9) on this arm: the generated ~/.config/yolo-jail/config.jsonc
-// a container mounts as a single `:ro` file rides in the overlay as a destination of its own, so
-// the bootstrap installs it and the Seatbelt profile write-protects it. Before, the sandbox had no
+// THE INHERITED USER SCOPE (OQ-LP9) on this arm: the generated TOML config a container
+// mounts as a single `:ro` file rides in the overlay as a destination of its own, so the
+// bootstrap installs it and the Seatbelt profile write-protects it. Before, the sandbox had no
 // user scope at all: an in-sandbox `yolo pack ls` listed no packs and `yolo check` judged no user
 // config. Fails if the arm stops handing the overlay builder the rendered files.
 func TestMacosUserOverlayCarriesTheInheritedUserScope(t *testing.T) {
@@ -133,15 +134,14 @@ func TestMacosUserOverlayCarriesTheInheritedUserScope(t *testing.T) {
 		if rc := Run(*o); rc != 0 {
 			t.Fatalf("Run(dryRun=%v) = %d\nstderr:\n%s", dryRun, rc, stderr.String())
 		}
-		if !slices.Contains(got.overlay.Dests, inheritPreflightRel) {
-			t.Fatalf("dryRun=%v: the overlay's destinations %v do not name %s, so the sandbox "+
-				"gets no user scope", dryRun, got.overlay.Dests, inheritPreflightRel)
+		if _, _, ok := entrypoint.HomeOverlayDigest(got.overlay.Tree); !ok {
+			t.Errorf("dryRun=%v: the inherited user scope did not participate in a valid content-keyed overlay digest", dryRun)
 		}
 		body, err := os.ReadFile(filepath.Join(got.overlay.Tree, filepath.FromSlash(inheritPreflightRel)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.HasPrefix(string(body), inheritHeaderFirstLine()) || !strings.Contains(string(body), `"claude"`) {
+		if !strings.HasPrefix(string(body), inheritTOMLHeaderFirstLine()) || !strings.Contains(string(body), `"claude"`) {
 			t.Errorf("dryRun=%v: the delivered user scope lacks the generated header or the user's "+
 				"packs:\n%s", dryRun, body)
 		}
@@ -151,29 +151,121 @@ func TestMacosUserOverlayCarriesTheInheritedUserScope(t *testing.T) {
 		}
 		// WRITE-PROTECTED: the profile's content rules name the file where the layout puts it.
 		ro := macosuser.ResolveHomeReadonly(macosuser.SandboxHome(), ws, got.overlay.WorkspaceDirs, got.overlay.Dests)
-		want := filepath.Join(paths.WorkspaceHomeState(ws), "config", "yolo-jail", "config.jsonc")
+		want := filepath.Join(paths.WorkspaceHomeState(ws), "config", "yolo-jail", "config.toml")
 		if !slices.Contains(ro.Paths, want) {
 			t.Errorf("dryRun=%v: the Seatbelt content rules %v do not protect %s", dryRun, ro.Paths, want)
 		}
 	}
 }
 
-// A user config with nothing to inherit delivers no file — and a launch removes the one a previous
-// launch installed in the sidecar, which the overlay install would otherwise leave serving a stale
-// user scope. Only that file: one an agent wrote at the path, without the generated header, stays.
-// A dry run removes nothing.
+func TestMacosUserRunRefusesExistingDestinationsBeforeOverlayInstall(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		legacy    []byte
+		toml      []byte
+		link      bool
+		wantPaths []string
+	}{
+		{name: "legacy owner", legacy: []byte("// operator comment\n{\"packs\": [\"copilot\"]}\n"), wantPaths: []string{"config.jsonc"}},
+		{name: "toml owner", toml: []byte("# operator comment\npacks = [\"copilot\"]\n"), wantPaths: []string{"config.toml"}},
+		{name: "mixed owners", legacy: []byte("{\"packs\": [\"copilot\"]}\n"), toml: []byte("packs = [\"codex\"]\n"), wantPaths: []string{"config.jsonc", "config.toml"}},
+		{name: "linked legacy owner", link: true, wantPaths: []string{"config.jsonc"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := packHome(t)
+			writeUserPacks(t, home, `["claude"]`)
+			ws := floortest.ResolvedTemp(t)
+			configDir := filepath.Join(paths.WorkspaceHomeState(ws), "config", "yolo-jail")
+			if err := os.MkdirAll(configDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			legacy := filepath.Join(configDir, "config.jsonc")
+			toml := filepath.Join(configDir, "config.toml")
+			ownerFiles := map[string][]byte{}
+			if len(tc.legacy) > 0 {
+				ownerFiles[legacy] = tc.legacy
+				if err := os.WriteFile(legacy, tc.legacy, 0o640); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(tc.toml) > 0 {
+				ownerFiles[toml] = tc.toml
+				if err := os.WriteFile(toml, tc.toml, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var linkTarget string
+			if tc.link {
+				linkTarget = filepath.Join(t.TempDir(), "owner.jsonc")
+				targetBytes := []byte("// link target\n{\"packs\": [\"codex\"]}\n")
+				if err := os.WriteFile(linkTarget, targetBytes, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(linkTarget, legacy); err != nil {
+					t.Fatal(err)
+				}
+				ownerFiles[linkTarget] = targetBytes
+			}
+
+			var stdout, stderr bytes.Buffer
+			o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
+			called := false
+			o.MacosUserRun = fakeMacosUserRun(func(macosUserCall) int {
+				called = true
+				return 0
+			})
+			if rc := Run(*o); rc == 0 || called {
+				t.Fatalf("existing owner destination was not refused before overlay install/dispatch: rc=%d called=%v", rc, called)
+			}
+			for _, name := range tc.wantPaths {
+				if !strings.Contains(stderr.String(), filepath.Join(configDir, name)) {
+					t.Errorf("refusal did not name %s:\n%s", name, stderr.String())
+				}
+			}
+			if !strings.Contains(stderr.String(), "preserv") {
+				t.Errorf("refusal did not give a safe preservation step:\n%s", stderr.String())
+			}
+			for path, want := range ownerFiles {
+				got, err := os.ReadFile(path)
+				if err != nil || string(got) != string(want) {
+					t.Errorf("refusal changed owner bytes at %s (err %v): %q", path, err, got)
+				}
+			}
+			for path, wantMode := range map[string]os.FileMode{legacy: 0o640, toml: 0o600} {
+				if _, exists := ownerFiles[path]; !exists {
+					continue
+				}
+				if info, err := os.Stat(path); err != nil || info.Mode().Perm() != wantMode {
+					t.Errorf("refusal changed mode at %s (info=%v err=%v), want %04o", path, info, err, wantMode)
+				}
+			}
+			if tc.link {
+				link, err := os.Readlink(legacy)
+				if err != nil || link != linkTarget {
+					t.Errorf("refusal changed link %s (got %q err %v), want %q", legacy, link, err, linkTarget)
+				}
+			}
+		})
+	}
+}
+
 func TestMacosUserEmptyUserScopeRemovesOnlyTheGeneratedFile(t *testing.T) {
 	packHome(t) // no user config at all: nothing to inherit
 	ws := floortest.ResolvedTemp(t)
-	stale := filepath.Join(paths.WorkspaceHomeState(ws), "config", "yolo-jail", "config.jsonc")
-	plant := func(body string) {
+	stale := map[string]string{
+		inheritPreflightRel:       config.InheritTOMLHeader(config.InheritPreflight, "2026-10-01T00:00:00Z") + `packs = ["claude"]` + "\n",
+		inheritPreflightLegacyRel: config.InheritHeader(config.InheritPreflight, "2026-10-01T00:00:00Z") + `{"packs": ["claude"]}` + "\n",
+	}
+	plant := func(rel, body string) string {
 		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
+		path := filepath.Join(paths.WorkspaceHomeState(ws), filepath.FromSlash(strings.TrimPrefix(rel, ".")))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(stale, []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		return path
 	}
 	launch := func(dryRun bool) macosUserCall {
 		t.Helper()
@@ -190,25 +282,31 @@ func TestMacosUserEmptyUserScopeRemovesOnlyTheGeneratedFile(t *testing.T) {
 		}
 		return got
 	}
-	generated := config.InheritHeader(config.InheritPreflight, "2026-10-01T00:00:00Z") + `{"packs": ["claude"]}` + "\n"
-
-	plant(generated)
-	if got := launch(true); slices.Contains(got.overlay.Dests, inheritPreflightRel) {
-		t.Fatalf("a user config with nothing to inherit delivered %s", inheritPreflightRel)
+	for rel, body := range stale {
+		plant(rel, body)
 	}
-	if _, err := os.Stat(stale); err != nil {
-		t.Fatalf("a --dry-run removed %s (%v); a plan render removes nothing", stale, err)
+	for _, rel := range []string{inheritPreflightRel, inheritPreflightLegacyRel} {
+		if got := launch(true); slices.Contains(got.overlay.Dests, rel) {
+			t.Fatalf("a user config with nothing to inherit delivered %s", rel)
+		}
+		if _, err := os.Stat(filepath.Join(paths.WorkspaceHomeState(ws), filepath.FromSlash(strings.TrimPrefix(rel, ".")))); err != nil {
+			t.Fatalf("a --dry-run removed %s (%v); a plan render removes nothing", rel, err)
+		}
 	}
 	launch(false)
-	if _, err := os.Stat(stale); err == nil {
-		t.Errorf("the generated %s a previous launch installed survived a launch that renders none", stale)
+	for rel := range stale {
+		if _, err := os.Stat(filepath.Join(paths.WorkspaceHomeState(ws), filepath.FromSlash(strings.TrimPrefix(rel, ".")))); err == nil {
+			t.Errorf("the generated %s a previous launch installed survived a launch that renders none", rel)
+		}
 	}
 
 	agents := `{"packs": ["mine"]}` + "\n"
-	plant(agents)
-	launch(false)
-	if b, err := os.ReadFile(stale); err != nil || string(b) != agents {
-		t.Errorf("a launch removed or changed the agent's own %s (err %v): %q", stale, err, b)
+	for _, rel := range []string{inheritPreflightRel, inheritPreflightLegacyRel} {
+		path := plant(rel, agents)
+		launch(false)
+		if b, err := os.ReadFile(path); err != nil || string(b) != agents {
+			t.Errorf("a launch removed or changed the agent's own %s (err %v): %q", rel, err, b)
+		}
 	}
 }
 
@@ -230,10 +328,16 @@ func TestMacosUserArmWarnsAboutUnclassifiedInheritKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := floortest.ResolvedTemp(t)
+	if err := os.MkdirAll(paths.WorkspaceHomeState(ws), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "macos-user", &stdout, &stderr, nil)
-	core := o.macosUserInheritedScope("macos-user")
+	core, err := o.macosUserInheritedScope("macos-user")
+	if err != nil {
+		t.Fatalf("rendering the macos-user inherited scope: %v", err)
+	}
 
 	if !strings.Contains(stderr.String(), "no inherit classification") || !strings.Contains(stderr.String(), key) {
 		t.Errorf("the macos-user arm dropped %s from the sandbox's user scope without saying so:\n"+
@@ -246,7 +350,8 @@ func TestMacosUserArmWarnsAboutUnclassifiedInheritKeys(t *testing.T) {
 			body = string(f.Body)
 		}
 	}
-	if !strings.Contains(body, `"claude"`) || strings.Contains(body, key) {
-		t.Errorf("the delivered user scope should keep the packs and drop %s:\n%s", key, body)
+	if !strings.Contains(body, `"claude"`) || strings.Contains(body, key) ||
+		!strings.HasPrefix(body, inheritTOMLHeaderFirstLine()) {
+		t.Errorf("the delivered user scope should keep the packs, drop %s, and use the TOML header:\n%s", key, body)
 	}
 }

@@ -34,6 +34,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -47,6 +48,7 @@ import (
 // launch origins (inherit.go's RenderFilteredWithOrigins). It sits in the file's leading comment
 // block, which is where a jail looks for it.
 const originsLinePrefix = "// yolo-origins: "
+const originsTOMLLinePrefix = "# yolo-origins: "
 
 // originTree is the launch-origins record of one value: W is the labels of the files that wrote
 // it, lowest precedence first, absent where they are its parent's; K and E are its members and
@@ -191,12 +193,19 @@ func parseOrigins(data []byte) *originTree {
 func generatedOrigins(data []byte) *originTree {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "//") {
-			return nil
+		if strings.HasPrefix(line, "//") {
+			if rest, ok := strings.CutPrefix(line, originsLinePrefix); ok {
+				return parseOrigins([]byte(rest))
+			}
+			continue
 		}
-		if rest, ok := strings.CutPrefix(line, originsLinePrefix); ok {
-			return parseOrigins([]byte(rest))
+		if strings.HasPrefix(line, "#") {
+			if rest, ok := strings.CutPrefix(line, originsTOMLLinePrefix); ok {
+				return parseOrigins([]byte(rest))
+			}
+			continue
 		}
+		return nil
 	}
 	return nil
 }
@@ -207,7 +216,11 @@ func isGeneratedUserScope(path string) bool {
 	if !inJail() || path == "" {
 		return false
 	}
-	return path == paths.UserConfigPath() || path == InheritedLaunchPath()
+	userDir := filepath.Dir(paths.UserConfigPath())
+	return path == paths.UserConfigPath() ||
+		path == filepath.Join(userDir, paths.UserConfigTOMLName) ||
+		path == filepath.Join(userDir, "inherited-launch.jsonc") ||
+		path == filepath.Join(userDir, "inherited-launch.toml")
 }
 
 // launchCopyStep is the clause a refusal located through a launch copy ends with: the next step

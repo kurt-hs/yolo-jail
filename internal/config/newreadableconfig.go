@@ -82,6 +82,11 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 		return doc.Values, file, readableResetTree(doc.Values, nil), nil
 	}
 	node := fileTree(file, doc.Values)
+	if rel == "" && isGeneratedUserScope(path) {
+		if origins := generatedOrigins(data); origins != nil {
+			return doc.Values, file, launchCopyTree(file, doc.Values, origins), nil
+		}
+	}
 	markReadableRemovalValues(node, doc.Values, nil)
 	return doc.Values, file, node, nil
 }
