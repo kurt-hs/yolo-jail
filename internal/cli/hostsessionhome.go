@@ -45,6 +45,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/packoverlay"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -78,6 +79,7 @@ type hostSessionHomes struct {
 // hostSessionCapture is one render home and the surfaces its session-home declaration holds.
 type hostSessionCapture struct {
 	home     string
+	rel      string // the declared directory relative to the scratch home
 	surfaces []manifest.Surface
 }
 
@@ -278,12 +280,17 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 	// THE REAP FIRST, on every owned launch, whatever this one declares: a launch whose program
 	// died leaves its directory for the next one (SP-D24). Capture precedes removal; a refusal
 	// leaves the source for retry and stops this launch from proceeding past the failed capture.
-	reaped := prune.ReapHostSessionHomes(root, true, time.Now(), func(dir string) error {
+	reaped := prune.ReapHostSessionHomes(root, true, time.Now(), func(dir string) (string, string, error) {
 		return captureHostSessionHomePath(dir, errw)
 	})
+	// A reap problem is janitorial work, never a reason to deny THIS launch (design §5, SHR-D8).
+	// The source is kept and named, and the launch proceeds: refusing here let one dead session's
+	// 20-byte stray file lock every future launch out, with a next step that could not work.
 	for _, entry := range reaped.Removed {
 		if entry.Err != nil {
-			return nil, environ, fmt.Errorf("could not capture ended session home %s: %w; it was kept for retry",
+			fmt.Fprintf(errw, "yolo host: could not capture the ended session home %s: %v\n"+
+				"  it was kept, and this launch continues: the problem is on that directory, not on this launch. "+
+				"`yolo prune --apply` retries it once the cause is gone, or inspect it and remove it by hand.\n",
 				entry.Path, entry.Err)
 		}
 	}
@@ -362,7 +369,7 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 			}
 			return captureSurfaces[i].Name < captureSurfaces[j].Name
 		})
-		homes.captures = append(homes.captures, hostSessionCapture{home: scratch, surfaces: captureSurfaces})
+		homes.captures = append(homes.captures, hostSessionCapture{home: scratch, rel: d.rel, surfaces: captureSurfaces})
 		homes.vars = append(homes.vars, d.env+"="+sessionHome)
 		fmt.Fprintf(errw, "yolo host: yolo SET %s=%s for %s, from pack %s: this launch's own config "+
 			"directory, rendered for %s, with everything else linked to %s, which it leaves untouched; "+
@@ -379,27 +386,61 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 }
 
 func finishHostSessionHomes(h *hostSessionHomes, errw io.Writer) error {
-	if err := captureHostSessionHomes(h, errw); err != nil {
-		h.preserveForRetry()
-		return err
-	}
-	if h != nil && !h.kept {
-		h.remove()
-	}
-	return nil
-}
-
-func captureHostSessionHomes(h *hostSessionHomes, errw io.Writer) error {
 	if h == nil || h.kept {
 		return nil
 	}
-	return captureHostSessionDirs(h.captures, errw)
+	if err := settleHostSessionHomes(h, errw); err != nil {
+		h.preserveForRetry()
+		return err
+	}
+	h.remove()
+	return nil
+}
+
+// settleHostSessionHomes applies the reaper's rule to a home this launch still holds, so every
+// path follows one rule (design §5, SHR-D5): capture what the render accounts for, then either
+// let the caller delete the directory or move it aside whole with one line. The resident path
+// used to delete a stray silently — the only path that could actually lose a byte.
+func settleHostSessionHomes(h *hostSessionHomes, errw io.Writer) error {
+	type kept struct{ dir, reason string }
+	var captures []hostSessionCapture
+	var keptWhole []kept
+	for _, c := range h.captures {
+		dir := filepath.Dir(c.home)
+		strays, cannot := auditHostSessionHome(dir, c.rel, c.surfaces)
+		if cannot != "" {
+			// Capture would read this session's profile values as the user's edits (SP-D18).
+			keptWhole = append(keptWhole, kept{dir, cannot})
+			continue
+		}
+		captures = append(captures, c)
+		if len(strays) > 0 {
+			sort.Strings(strays)
+			keptWhole = append(keptWhole, kept{dir, fmt.Sprintf("it held %s, which yolo neither rendered nor linked", strings.Join(strays, ", "))})
+		}
+	}
+	if err := captureHostSessionDirs(captures, errw); err != nil {
+		return err
+	}
+	for _, k := range keptWhole {
+		if _, _, err := setAsideHostSessionHome(k.dir, errw, k.reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // captureHostSessionHomePath captures one ended host session home before the lease-protected
 // reaper removes it. Its name identifies the pack; the current user-scope selection supplies the
 // same surfaces and host composition that ordinary capture uses.
-func captureHostSessionHomePath(dir string, errw io.Writer) error {
+//
+// It returns keptAt non-empty when the home must be KEPT rather than deleted, with why: either it
+// held entries yolo neither rendered nor linked (a STRAY, design §3), or its own bookkeeping does
+// not account for what is there, in which case capture would read this session's profile values as
+// the user's edits (SP-D18) and nothing is captured. A stray is what the program wrote into its
+// own config directory — every extension that keeps state there produces one — so it is a normal
+// event, never a reason to refuse a launch (design §5, SHR-D8).
+func captureHostSessionHomePath(dir string, errw io.Writer) (keptAt, why string, err error) {
 	set := selectConfiguredHostPacks()
 	decls := hostSessionDecls(set.packs, paths.Home())
 	name := filepath.Base(dir)
@@ -410,10 +451,11 @@ func captureHostSessionHomePath(dir string, errw io.Writer) error {
 		}
 	}
 	if packName == "" {
-		return fmt.Errorf("cannot identify ended host session home %q from the current selected packs; its source was kept. Restore the pack that declared it in %s, then retry `yolo prune --apply`, or inspect and remove the retained directory manually",
-			name, paths.UserConfigPath())
+		return setAsideHostSessionHome(dir, errw, fmt.Sprintf("no selected pack in %s declares a session home whose directory name starts %q", paths.UserConfigPath(), name))
 	}
 	var captures []hostSessionCapture
+	var strays []string
+	unaccounted := ""
 	for _, d := range decls {
 		if d.pack != packName {
 			continue
@@ -428,20 +470,71 @@ func captureHostSessionHomePath(dir string, errw io.Writer) error {
 			}
 			return surfaces[i].Name < surfaces[j].Name
 		})
-		if err := verifyHostSessionCaptureInventory(dir, d, surfaces); err != nil {
-			return err
+		found, cannot := auditHostSessionHome(dir, d.rel, surfaces)
+		if cannot != "" && unaccounted == "" {
+			unaccounted = cannot
 		}
+		strays = append(strays, found...)
 		captures = append(captures, hostSessionCapture{
-			home: filepath.Join(dir, hostScratchHomeName), surfaces: surfaces,
+			home: filepath.Join(dir, hostScratchHomeName), rel: d.rel, surfaces: surfaces,
 		})
 	}
-	return captureHostSessionDirs(captures, errw)
+	if unaccounted == "" {
+		if err := captureHostSessionDirs(captures, errw); err != nil {
+			return "", "", err
+		}
+	}
+	if unaccounted != "" {
+		return setAsideHostSessionHome(dir, errw, unaccounted)
+	}
+	if len(strays) == 0 {
+		return "", "", nil
+	}
+	sort.Strings(strays)
+	return setAsideHostSessionHome(dir, errw,
+		fmt.Sprintf("it held %s, which yolo neither rendered nor linked", strings.Join(strays, ", ")))
 }
 
-// verifyHostSessionCaptureInventory uses the retained render's own files and sidecars as the
-// inventory. If a pack's surfaces disappeared or moved since the launch, the current selection
-// cannot account for those bytes; refuse cleanup instead of treating them as uncapturable.
-func verifyHostSessionCaptureInventory(dir string, decl hostSessionDecl, surfaces []manifest.Surface) error {
+// setAsideHostSessionHome moves an ended home out of the swept root, under
+// prune.HostSessionHomesKeptLeaf, so nothing is lost and no later sweep judges it again, and says
+// so in one line with a step that works (design §5, SHR-D8/D9).
+func setAsideHostSessionHome(dir string, errw io.Writer, reason string) (string, string, error) {
+	root := filepath.Join(paths.GlobalStorage(), prune.HostSessionHomesKeptLeaf)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", "", fmt.Errorf("cannot keep the ended session home %s (%s): creating %s: %w; inspect that directory and remove it by hand",
+			dir, reason, root, err)
+	}
+	for n := 0; ; n++ {
+		to := filepath.Join(root, filepath.Base(dir))
+		if n > 0 {
+			to = fmt.Sprintf("%s-%d", to, n)
+		}
+		if _, err := os.Lstat(to); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", "", err
+		}
+		if err := os.Rename(dir, to); err != nil {
+			return "", "", fmt.Errorf("cannot keep the ended session home %s (%s): %w; inspect that directory and remove it by hand",
+				dir, reason, err)
+		}
+		if errw != nil {
+			fmt.Fprintf(errw, "yolo host: kept an ended session home whole instead of deleting it: %s → %s, because %s.\n"+
+				"  Nothing was lost. Inspect it, then delete it when you no longer need it: rm -rf %s\n",
+				filepath.Base(dir), to, reason, shquote.Quote(to))
+		}
+		return to, reason, nil
+	}
+}
+
+// auditHostSessionHome classifies one ended home against the CURRENT selection, which is all a
+// reaper that reads today's packs can honestly do: the retained baselines name the stateful
+// surfaces, so a baseline the current packs do not declare, a stateful surface with no baseline,
+// or a root that is gone or unreadable means capture cannot be trusted and the directory is kept
+// whole. Everything else is a stray — a regular file no surface renders — and is RETURNED rather
+// than refused: the program wrote it into what it was told is its config directory, so it is
+// normal, and the design's own rule is that strays are kept and named (SP-D3).
+func auditHostSessionHome(dir, rel string, surfaces []manifest.Surface) (strays []string, cannot string) {
 	scratch := filepath.Join(dir, hostScratchHomeName)
 	target := render.Host(scratch, nil, render.OwnershipOwn)
 	known := make(map[string]manifest.Surface, len(surfaces))
@@ -454,15 +547,15 @@ func verifyHostSessionCaptureInventory(dir string, decl hostSessionDecl, surface
 				continue
 			}
 			if _, ok := known[entry.Name()]; !ok {
-				return hostSessionInventoryRefusal(dir, "the retained render has baseline "+entry.Name()+", which the current selected packs no longer declare")
+				return nil, "the retained render has baseline " + entry.Name() + ", which the current selected packs no longer declare"
 			}
 			info, err := entry.Info()
 			if err != nil || !info.Mode().IsRegular() {
-				return hostSessionInventoryRefusal(dir, "the retained baseline "+entry.Name()+" is not a regular file")
+				return nil, "the retained baseline " + entry.Name() + " is not a regular file"
 			}
 		}
 	} else if !os.IsNotExist(err) {
-		return hostSessionInventoryRefusal(dir, fmt.Sprintf("cannot read retained capture baselines: %v", err))
+		return nil, fmt.Sprintf("its retained capture baselines cannot be read: %v", err)
 	}
 	for _, s := range surfaces {
 		if s.Mode != "" && s.Mode != manifest.ModeStateful {
@@ -474,30 +567,32 @@ func verifyHostSessionCaptureInventory(dir string, decl hostSessionDecl, surface
 			continue // deleting the whole surface file is the capture engine's existing no-op.
 		}
 		if err != nil {
-			return hostSessionInventoryRefusal(dir, fmt.Sprintf("cannot inspect rendered surface %s/%s: %v", s.Agent, s.Name, err))
+			return nil, fmt.Sprintf("cannot inspect rendered surface %s/%s: %v", s.Agent, s.Name, err)
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
 		baseline, err := os.Lstat(target.LastRenderPath(s.Agent, s.Name))
 		if err != nil || !baseline.Mode().IsRegular() {
-			return hostSessionInventoryRefusal(dir, fmt.Sprintf("rendered stateful surface %s/%s has no retained baseline", s.Agent, s.Name))
+			return nil, fmt.Sprintf("rendered stateful surface %s/%s has no retained baseline, so its edits cannot be told from this session's profile values", s.Agent, s.Name)
 		}
 	}
-	root := filepath.Join(scratch, decl.rel)
+	root := filepath.Join(scratch, rel)
 	rootInfo, err := os.Lstat(root)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return hostSessionInventoryRefusal(dir, fmt.Sprintf("the retained session-home root %s is missing", decl.rel))
+			return nil, fmt.Sprintf("the retained session-home root %s is missing", rel)
 		}
-		return hostSessionInventoryRefusal(dir, fmt.Sprintf("cannot inspect retained session-home root %s: %v", decl.rel, err))
+		return nil, fmt.Sprintf("cannot inspect retained session-home root %s: %v", rel, err)
 	}
 	if !rootInfo.IsDir() {
-		return hostSessionInventoryRefusal(dir, fmt.Sprintf("the retained session-home root %s is not a real directory", decl.rel))
+		return nil, fmt.Sprintf("the retained session-home root %s is not a real directory", rel)
 	}
-	expected := make(map[string]bool, len(decl.rendered))
-	for _, rel := range decl.rendered {
-		expected[filepath.FromSlash(rel)] = true
+	expected := make(map[string]bool, len(surfaces))
+	for _, s := range surfaces {
+		if at, ok := strings.CutPrefix(target.SurfacePath(s), root+string(filepath.Separator)); ok {
+			expected[filepath.FromSlash(at)] = true
+		}
 	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -513,23 +608,23 @@ func verifyHostSessionCaptureInventory(dir string, decl hostSessionDecl, surface
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
+		// A lock name is the program's own lock, never a stray (SP-D34): the session home never
+		// links one, so finding one is expected and means nothing.
+		if packdecl.SessionHomeNameProblem(entry.Name()) != "" {
+			return nil
+		}
+		relPath, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
-		if !expected[rel] {
-			return fmt.Errorf("retained file %s is not in the current session-home render inventory", filepath.ToSlash(rel))
+		if !expected[relPath] {
+			strays = append(strays, filepath.ToSlash(relPath))
 		}
 		return nil
 	}); err != nil && !os.IsNotExist(err) {
-		return hostSessionInventoryRefusal(dir, err.Error())
+		return nil, fmt.Sprintf("cannot read the retained session home: %v", err)
 	}
-	return nil
-}
-
-func hostSessionInventoryRefusal(dir, reason string) error {
-	return fmt.Errorf("ended host session home %s does not match the current pack capture inventory: %s; its source was kept. Restore the original pack manifest and surface paths, then retry `yolo prune --apply`; if that is unavailable, inspect the retained directory before removing it manually",
-		dir, reason)
+	return strays, ""
 }
 
 // captureHostSessionDirs captures each home under the ordinary host apply lock. The render reads

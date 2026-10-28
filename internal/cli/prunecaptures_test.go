@@ -158,10 +158,17 @@ func TestPruneWiresCaptureForEndedHostSessionHomes(t *testing.T) {
 	}
 }
 
-func TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges(t *testing.T) {
+// A retained home the current selection cannot account for is KEPT WHOLE, never deleted and never
+// a launch-blocking refusal (design §5, SHR-D8; §3's stray rule). The two cases are the two ways
+// it happens: a baseline naming a surface the packs no longer declare, and a rendered file the
+// program renamed (a stray). Either way the sweep reports the kept path and returns success; the
+// bytes are the user's to inspect.
+func TestPruneKeepsHostSessionHomeWholeWhenItCannotBeAccountedFor(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		change func(*testing.T, string)
+		// kept is the file inside the kept home that must still hold the user's edit.
+		kept string
 	}{
 		{
 			name: "surface identity removed",
@@ -173,6 +180,7 @@ func TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
+			kept: ".pi/agent/settings.json",
 		},
 		{
 			name: "rendered path changed",
@@ -182,6 +190,7 @@ func TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
+			kept: ".pi/agent/settings.json.old",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -194,6 +203,14 @@ func TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges(t *testing.T) {
 				t.Fatalf("prepare session home: homes=%+v err=%v", homes, err)
 			}
 			dir := homes.dirs[0]
+			_, sessionHome, ok := strings.Cut(homes.vars[0], "=")
+			if !ok {
+				t.Fatalf("malformed session-home variable %q", homes.vars[0])
+			}
+			const edited = `{"defaultProvider":"openrouter","customUserSetting":"saved-by-user"}`
+			if err := os.WriteFile(filepath.Join(sessionHome, "settings.json"), []byte(edited), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			tc.change(t, dir)
 			for _, lease := range homes.leases {
 				_ = lease.Close()
@@ -208,15 +225,19 @@ func TestPruneRetainsHostSessionHomeWhenCaptureInventoryChanges(t *testing.T) {
 			opts.Now = time.Now
 			opts.Apply = true
 			opts.NoEmbeddedPacks = true
-			if rc := prune.Run(opts); rc == 0 {
-				t.Fatalf("prune accepted changed inventory; source exists=%v:\n%s", existsHostPath(dir), out.String())
+			if rc := prune.Run(opts); rc != 0 {
+				t.Fatalf("prune failed instead of reporting a kept home:\n%s", out.String())
 			}
-			if !existsHostPath(dir) {
-				t.Fatal("prune removed a source whose capture inventory changed")
+			if existsHostPath(dir) {
+				t.Fatal("the unaccountable home was left in the swept root")
 			}
-			for _, want := range []string{"FAILED", "source was kept", "Restore the original pack manifest", "retry `yolo prune --apply`"} {
+			kept := filepath.Join(paths.GlobalStorage(), prune.HostSessionHomesKeptLeaf, filepath.Base(dir))
+			if data, err := os.ReadFile(filepath.Join(kept, "home", filepath.FromSlash(tc.kept))); err != nil || string(data) != edited {
+				t.Fatalf("the kept home did not retain the session bytes: %q (%v)", data, err)
+			}
+			for _, want := range []string{"kept whole, not deleted", kept} {
 				if !strings.Contains(out.String(), want) {
-					t.Errorf("prune inventory refusal omitted %q:\n%s", want, out.String())
+					t.Errorf("the report must name %q:\n%s", want, out.String())
 				}
 			}
 		})
@@ -242,8 +263,8 @@ func TestPruneFailsAndRetainsHostSessionHomeWhenCaptureFails(t *testing.T) {
 	opts.Now = time.Now
 	opts.Apply = true
 	opts.NoEmbeddedPacks = true
-	opts.CaptureHostSessionHome = func(string) error {
-		return errors.New("capture refused; retry with `yolo prune --apply`")
+	opts.CaptureHostSessionHome = func(string) (string, string, error) {
+		return "", "", errors.New("capture refused; retry with `yolo prune --apply`")
 	}
 	if rc := prune.Run(opts); rc == 0 {
 		t.Fatalf("prune returned success after capture failed; source exists=%v:\n%s", existsHostPath(dir), out.String())

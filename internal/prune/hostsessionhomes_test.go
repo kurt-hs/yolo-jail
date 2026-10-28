@@ -34,17 +34,17 @@ func TestReapHostSessionHomes(t *testing.T) {
 	unleasedOld := mkEmbeddedDir(t, filepath.Join(root, "pi-unleased-old"), false, 2*time.Hour, now)
 
 	calls := 0
-	dry := ReapHostSessionHomes(root, false, now, func(string) error { calls++; return nil })
+	dry := ReapHostSessionHomes(root, false, now, func(string) (string, string, error) { calls++; return "", "", nil })
 	if dry.RemovedCount() != 2 || !exists(ended) || !exists(unleasedOld) || calls != 0 {
 		t.Fatalf("a dry run must name two, remove nothing and not capture: %+v calls=%d", dry.Removed, calls)
 	}
 	var order []string
-	r := ReapHostSessionHomes(root, true, now, func(path string) error {
+	r := ReapHostSessionHomes(root, true, now, func(path string) (string, string, error) {
 		if !exists(path) {
 			t.Errorf("capture ran after the source was removed: %s", path)
 		}
 		order = append(order, filepath.Base(path))
-		return nil
+		return "", "", nil
 	})
 	var removed []string
 	for _, e := range r.Removed {
@@ -74,12 +74,12 @@ func TestReapHostSessionHomesKeepsSourceWhenCaptureFails(t *testing.T) {
 	root := t.TempDir()
 	ended := mkEmbeddedDir(t, filepath.Join(root, "pi-ended"), true, 2*time.Hour, now)
 	called := false
-	r := ReapHostSessionHomes(root, true, now, func(path string) error {
+	r := ReapHostSessionHomes(root, true, now, func(path string) (string, string, error) {
 		called = true
 		if path != ended || !exists(path) {
 			t.Fatalf("capture received %s after its source disappeared", path)
 		}
-		return errors.New("capture refused")
+		return "", "", errors.New("capture refused")
 	})
 	if !called || !exists(ended) || r.RemovedCount() != 0 || len(r.Removed) != 1 || r.Removed[0].Err == nil {
 		t.Fatalf("capture failure must retain and report the source: called=%v exists=%v reap=%+v",
@@ -96,7 +96,7 @@ func TestYoloPruneReapsAnEndedHostLaunchsSessionHome(t *testing.T) {
 	ended := mkEmbeddedDir(t, filepath.Join(root, "pi-ended"), true, 2*time.Hour, now)
 	running := mkEmbeddedDir(t, filepath.Join(root, "pi-running"), true, 2*time.Hour, now)
 	holdShared(t, running)
-	o.CaptureHostSessionHome = func(string) error { return nil }
+	o.CaptureHostSessionHome = func(string) (string, string, error) { return "", "", nil }
 	var buf bytes.Buffer
 	o.Out = &buf
 	Run(o)

@@ -145,8 +145,11 @@ type Options struct {
 	CaptureRecords capture.Records
 	// CaptureHostSessionHome runs the CLI's ordinary owned-host capture for an ended session home
 	// before removal. nil leaves that section unable to capture, so an applying sweep retains the
-	// source and reports the per-entry error rather than silently losing user edits.
-	CaptureHostSessionHome func(path string) error
+	// source and reports the per-entry error rather than silently losing user edits. A non-empty
+	// keptAt means the capture moved the whole directory aside instead of letting the sweep delete
+	// it (it held entries yolo did not render, or could not be accounted for); why is the report's
+	// one-line reason.
+	CaptureHostSessionHome func(path string) (keptAt, why string, err error)
 	// GuestPackTrees sweeps macos-user's per-launch guest pack trees (internal/macosuser's
 	// PrunePackTrees, which this package does not import: it pulls internal/config), returning
 	// the sweep and whether the staging root has a packs directory at all. nil, and a machine
@@ -1549,6 +1552,12 @@ func renderHostSessionHomeReap(p *printer, apply bool, r EmbeddedReap) bool {
 		failed = true
 		p.line(fmt.Sprintf("  [bold red]FAILED — capture failed for %s; source retained for retry; rerun `yolo prune --apply`: %v[/bold red]",
 			e.Name, e.Err))
+	}
+	// A home the sweep cannot account for is not deleted: it is kept whole, out of the sweep, and
+	// the line names where it went and what the user can do with it (design §5, SHR-D8/D9).
+	for _, e := range r.Aside {
+		p.line(fmt.Sprintf("  [yellow]kept whole, not deleted:[/yellow] %s → %s  [dim](%s; inspect it, then delete it when you no longer need it)[/dim]",
+			e.Name, e.Aside, e.Why))
 	}
 	return failed
 }

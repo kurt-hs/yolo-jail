@@ -30,6 +30,15 @@ import (
 // plant a file a host program then reads as its config.
 const HostSessionHomesLeaf = "host-session-homes"
 
+// HostSessionHomesKeptLeaf is the state-dir child an ended session home is MOVED to when the
+// sweep may not simply delete it: it held entries yolo neither rendered nor linked (a STRAY,
+// docs/design/session-home-contents-and-reaping.md §3 — a directory the program wrote into its
+// own config dir, or a rendered file it renamed), or its capture could not be trusted. Its
+// config edits are captured first where that is safe, then the whole directory is kept here and
+// one line names it. Outside HostSessionHomesLeaf on purpose: it must not be judged by the
+// sweep again, and its bytes are the user's to inspect and remove.
+const HostSessionHomesKeptLeaf = "host-session-homes-kept"
+
 // hostSessionReapFloor: no session home younger than this is judged, whatever its lease says. Its
 // launch locks the lease a moment after making the directory, so a minute is ample, and a launch
 // waits on nothing this long before the exec. hostSessionUnleasedFloor: one with no lease file at
@@ -45,7 +54,9 @@ const (
 // user's directory and anything not a directory are kept. An absent root is no work. When apply
 // is true, capture runs after the lease is proven free and before removal; an error retains the
 // source and is recorded on that entry.
-func ReapHostSessionHomes(root string, apply bool, now time.Time, capture func(string) error) EmbeddedReap {
+// A capture that reports a directory it moved aside instead (one it cannot account for) puts it
+// in Aside, not Removed.
+func ReapHostSessionHomes(root string, apply bool, now time.Time, capture func(string) (keptAt, why string, err error)) EmbeddedReap {
 	var r EmbeddedReap
 	if root == "" {
 		return r
@@ -90,20 +101,32 @@ func ReapHostSessionHomes(root string, apply bool, now time.Time, capture func(s
 			e.Why = "its launch has ended"
 		}
 		e.Bytes = dirSizeBytes(p)
+		var keptAt string
 		if apply {
 			if capture == nil {
 				e.Err = errors.New("host session-home capture is unavailable; source retained")
 			} else {
-				e.Err = capture(p)
+				var why string
+				keptAt, why, e.Err = capture(p)
+				if e.Err == nil && keptAt != "" {
+					e.Why, e.Aside = why, keptAt
+				}
 			}
 			if e.Err != nil {
 				unlock()
 				r.Removed = append(r.Removed, e)
 				continue
 			}
-			e.Err = os.RemoveAll(p)
+			if keptAt == "" {
+				e.Err = os.RemoveAll(p)
+			}
 		}
 		unlock()
+		if keptAt != "" {
+			// Moved, not reclaimed: those bytes are still on this disk.
+			r.Aside = append(r.Aside, e)
+			continue
+		}
 		if e.Err == nil {
 			r.Bytes += e.Bytes
 		}

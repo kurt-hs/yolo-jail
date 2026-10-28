@@ -118,6 +118,10 @@ type EmbeddedEntry struct {
 	Detail string
 	// Err is set on a removal that failed; the entry is then NOT removed.
 	Err error
+	// Aside is the directory this entry was MOVED to instead of being deleted: the sweep could
+	// not account for what was in it, so it was preserved whole, outside the swept root, and the
+	// entry is then in EmbeddedReap.Aside rather than Removed.
+	Aside string
 }
 
 // EmbeddedReap is one sweep's outcome. Bytes counts what was (dry-run: would be) removed
@@ -125,7 +129,11 @@ type EmbeddedEntry struct {
 type EmbeddedReap struct {
 	Removed []EmbeddedEntry
 	Kept    []EmbeddedEntry
-	Bytes   int64
+	// Aside holds the entries a capture moved out of the swept root instead of letting the
+	// sweep delete them; each names where it went. Nothing there was lost, and nothing there
+	// counts as reclaimed.
+	Aside []EmbeddedEntry
+	Bytes int64
 	// Skipped counts entries passed over without a verdict — another user's directory, for
 	// example, which on macOS is the sandbox account's and never this user's to judge.
 	Skipped map[string]int
