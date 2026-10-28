@@ -39,7 +39,10 @@ settle it.
 
 ## Current yolo boundary
 
-`gpu.enabled` defaults to false and GPU passthrough is a container launch concern. The current run
+`gpu.enabled` defaults to false and GPU device passthrough is a Linux-container launch concern. A
+container guest's requested flag can trigger tree setup even when device availability is false; Apple
+Container may therefore receive the Linux driver tree without GPU hardware access. Native host and
+macos-user execution do not own this `/run` provisioning step. The current run
 path builds device/runtime arguments in [`gpuArgs`](../../internal/cli/run/helpers.go); it does not
 provision `/run/opengl-driver`. The host-side GPU checks inspect host devices and driver readiness in
 [`sections_devices.go`](../../internal/cli/check/sections_devices.go), not the guest's library tree.

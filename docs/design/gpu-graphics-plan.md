@@ -17,7 +17,7 @@ depends-on:
 | :--- | :--- | :--- |
 | A — metadata and boot | `flake.nix` | Emit resolved graphics-driver manifest beside baked image metadata and selected package profiles; validate actual outputs. |
 | A | `internal/entrypoint/graphics.go` (new), `graphics_test.go` (new) | Parse selected manifest, preserve existing destination trees, create only absent `lib`/`share` links, write runtime provenance, reject invalid selected records without partial creation. |
-| A | `internal/entrypoint/bootsteps.go`, `bootsteps_test.go` | Add container-only step after `generate_store_packages`, before loader-cache/application bootstrap; declare Darwin exclusion and pin order. |
+| A | `internal/entrypoint/bootsteps.go`, `bootsteps_test.go` | Add container-only step after `generate_store_packages`, before loader-cache/application bootstrap; declare macos-user exclusion and pin order. Container entrypoint includes Apple Container's Linux guest. |
 | A | `internal/cli/run/assemble.go`, GPU-contract test (new) | Pass explicit `YOLO_GPU_ENABLED=1|0` from requested config, independent of host device availability; disable inherited enablement. |
 | B — diagnostics | `internal/cli/check/check.go`, `internal/cli/check/sections_devices.go` if needed; graphics diagnostics/test files (new) | Connect the enabled-Linux check to resolved package/version and guest exposure; separate in-jail provenance from host readiness. |
 
@@ -27,7 +27,7 @@ A and B own only their listed files and may work concurrently. Commit each lane 
 
 ## Reuse and traps
 
-- `bootSteps` is shared by container and macos-user; `notDarwin` must state why this `/run` step is container-only. `bootsteps_test.go` pins both boot orders.
+- `bootSteps` is shared by container and macos-user; `notDarwin` must state why this `/run` step is container-only. `bootsteps_test.go` pins both boot orders. Apple Container uses the container entrypoint and gets the tree from requested config even though it cannot pass through GPU devices; this is not hardware evidence.
 - `generate_store_packages` materializes `YOLO_STORE_PROFILES`; `generate_ld_cache` follows it. Provision graphics links between those boot actions and loader-cache/application bootstrap, not on the host or at image build time.
 - `assemble.go` already distinguishes requested GPU config from host-confirmed `gpuEnabled`; the new boot signal intentionally follows the requested setting, not the latter.
 - A preexisting tree is wholly user-supplied even if incomplete or dangling. Check its root without following links; do not repair, roll back, or replace any child.
@@ -36,7 +36,7 @@ A and B own only their listed files and may work concurrently. Commit each lane 
 
 ## Tests and gates
 
-A's boot tests cover resolved 64-bit paths, distinct lib/share roots, optional 32-bit metadata, first-record selection, preexisting/incomplete/dangling trees, disabled/no-driver no-op, invalid metadata/output fatality, and no partial tree. A launch call-site regression verifies explicit true/false env values even when host GPU probing declines.
+A's boot tests cover resolved 64-bit paths, distinct lib/share roots, optional 32-bit metadata, first-record selection, preexisting/incomplete/dangling trees, disabled/no-driver no-op, invalid metadata/output fatality, and no partial tree. Launch call-site regressions verify explicit true/false env values when host GPU probing declines, including the Apple Container runtime where no device is passed through.
 
 B's actual `Check` call-site tests cover resolved name/version, present and absent paths, no driver, malformed/unreadable metadata, optional 32-bit absence, existing tree that differs from selected outputs, and in-jail versus host facts. Removing the call site must fail the tests.
 
