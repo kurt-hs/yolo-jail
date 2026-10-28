@@ -1260,39 +1260,39 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
 	}
-	if cancelDuringResume || cancelAfterResumeCheck || cancelWakeAfterResumeCallback {
-		if cancelWakeAfterResumeCallback {
-			cancelSnapshotErr := waitForFile(control+".cancel-snapshot", time.Now().Add(childDeadline))
-			resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
-			killErr := os.WriteFile(control+".kill", []byte("observed"), 0600)
-			var waitErr error
-			select {
-			case waitErr = <-waitResult:
-			case <-time.After(childDeadline):
-				proxyStages, proxyErr := os.ReadFile(control + ".proxy")
-				childReceipt, childErr := os.ReadFile(control)
-				resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
-				t.Fatalf("late cancel-wake fixture did not terminate after checked resume: snapshot=%v resume=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", cancelSnapshotErr, resumeMarkerErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
-			}
-			<-waitDone
-			stopDrain()
+	if cancelWakeAfterResumeCallback {
+		cancelSnapshotErr := waitForFile(control+".cancel-snapshot", time.Now().Add(childDeadline))
+		resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
+		killErr := os.WriteFile(control+".kill", []byte("observed"), 0600)
+		var waitErr error
+		select {
+		case waitErr = <-waitResult:
+		case <-time.After(childDeadline):
 			proxyStages, proxyErr := os.ReadFile(control + ".proxy")
 			childReceipt, childErr := os.ReadFile(control)
 			resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
-			snapshot, snapshotErr := os.ReadFile(control + ".cancel-snapshot")
-			injected, injectedErr := os.ReadFile(control + ".cancel-wake-injected")
-			assertSignalExit(t, waitErr, syscall.SIGTERM)
-			if cancelSnapshotErr != nil || resumeMarkerErr != nil || killErr != nil || snapshotErr != nil || injectedErr != nil || string(injected) != "SIGTERM" || string(snapshot) != "true" {
-				t.Fatalf("late cancellation notification was not published before the controlling snapshot: injection=%q injectionErr=%v snapshot=%q snapshotErr=%v wait=%v resume=%v kill=%v trace=%q traceErr=%v", injected, injectedErr, snapshot, snapshotErr, waitErr, resumeMarkerErr, killErr, resumeTrace, traceErr)
-			}
-			if traceErr != nil || childErr != nil || bytes.Contains(childReceipt, []byte{'R'}) || !strings.Contains(string(resumeTrace), "event=resume-callback-return") || !strings.Contains(string(resumeTrace), "event=resume-cancellation-check cancel-or-exit=true pending=1") || strings.Contains(string(resumeTrace), "event=resume-write-attempt") || strings.Contains(string(resumeTrace), "event=resume-enqueue-result") {
-				t.Fatalf("late buffered notification did not prevent resumed forwarding: proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
-			}
-			if after := mustGetTermios(t, modeFD); *after != *termios {
-				t.Fatalf("late cancel-wake cleanup did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
-			}
-			return
+			t.Fatalf("late cancel-wake fixture did not terminate after checked resume: snapshot=%v resume=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", cancelSnapshotErr, resumeMarkerErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
 		}
+		<-waitDone
+		stopDrain()
+		proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+		childReceipt, childErr := os.ReadFile(control)
+		resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
+		snapshot, snapshotErr := os.ReadFile(control + ".cancel-snapshot")
+		injected, injectedErr := os.ReadFile(control + ".cancel-wake-injected")
+		assertSignalExit(t, waitErr, syscall.SIGTERM)
+		if cancelSnapshotErr != nil || resumeMarkerErr != nil || killErr != nil || snapshotErr != nil || injectedErr != nil || string(injected) != "SIGTERM" || string(snapshot) != "true" {
+			t.Fatalf("late cancellation notification was not published before the controlling snapshot: injection=%q injectionErr=%v snapshot=%q snapshotErr=%v wait=%v resume=%v kill=%v trace=%q traceErr=%v", injected, injectedErr, snapshot, snapshotErr, waitErr, resumeMarkerErr, killErr, resumeTrace, traceErr)
+		}
+		if traceErr != nil || childErr != nil || bytes.Contains(childReceipt, []byte{'R'}) || !strings.Contains(string(resumeTrace), "event=resume-callback-return") || !strings.Contains(string(resumeTrace), "event=resume-cancellation-check cancel-or-exit=true pending=1") || strings.Contains(string(resumeTrace), "event=resume-write-attempt") || strings.Contains(string(resumeTrace), "event=resume-enqueue-result") {
+			t.Fatalf("late buffered notification did not prevent resumed forwarding: proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
+		}
+		if after := mustGetTermios(t, modeFD); *after != *termios {
+			t.Fatalf("late cancel-wake cleanup did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+		}
+		return
+	}
+	if cancelDuringResume || cancelAfterResumeCheck {
 		cancelWaitErr := waitForFile(control+".cancel-published", time.Now().Add(childDeadline))
 		resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
 		inputErr := waitPressureMarker(t, control, 'R', time.Now().Add(childDeadline))
