@@ -2,6 +2,7 @@ package check
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,21 @@ func writeGraphicsFixture(t *testing.T, root, path, contents string) {
 func mkdirGraphicsFixture(t *testing.T, root, path string) {
 	t.Helper()
 	if err := os.MkdirAll(rootedPath(root, path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func linkGraphicsFixture(t *testing.T, root, path, target string) {
+	t.Helper()
+	full := rootedPath(root, path)
+	resolvedTarget := rootedPath(root, target)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(resolvedTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(resolvedTarget, full); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -61,11 +77,13 @@ func TestGraphicsRuntimeMetadataReportsSelectedTreesAndOptional32Bit(t *testing.
 	writeGraphicsFixture(t, root, graphicsRuntimeManifest, `{"drivers":[`+
 		`{"name":"mesa","version":"26.2.5","arch":"64","lib":"/nix/store/mesa/lib","share":"/nix/store/mesa/share","preserved":false},`+
 		`{"name":"mesa-32","version":"26.2.5","arch":"32","lib":"/nix/store/mesa32/lib","share":"/nix/store/mesa32/share","preserved":false}]}`)
-	for _, p := range []string{
-		graphics64Tree + "/lib", graphics64Tree + "/share",
-		graphics32Tree + "/lib", graphics32Tree + "/share",
+	for _, pair := range [][2]string{
+		{graphics64Tree + "/lib", "/nix/store/mesa/lib"},
+		{graphics64Tree + "/share", "/nix/store/mesa/share"},
+		{graphics32Tree + "/lib", "/nix/store/mesa32/lib"},
+		{graphics32Tree + "/share", "/nix/store/mesa32/share"},
 	} {
-		mkdirGraphicsFixture(t, root, p)
+		linkGraphicsFixture(t, root, pair[0], pair[1])
 	}
 	out, warned := graphicsReport(t, graphicsConfig(t, `{"gpu":{"enabled":true},"packages":["mesa"]}`), root, "")
 	for _, want := range []string{"Selected driver mesa 26.2.5 exposed at /run/opengl-driver",
@@ -76,6 +94,30 @@ func TestGraphicsRuntimeMetadataReportsSelectedTreesAndOptional32Bit(t *testing.
 	}
 	if warned != 0 {
 		t.Errorf("complete 64-bit and supplied 32-bit trees produced %d warnings:\n%s", warned, out)
+	}
+}
+
+func TestGraphicsLeafInspectionRequiresSelectedDirectoryTarget(t *testing.T) {
+	root := graphicsFixture(t)
+	mkdirGraphicsFixture(t, root, "/nix/store/mesa/lib")
+	linkGraphicsFixture(t, root, graphics64Tree+"/lib", "/nix/store/replacement/lib")
+	if err := inspectGraphicsLeafReal(root, graphics64Tree+"/lib", "/nix/store/mesa/lib"); err == nil || !strings.Contains(err.Error(), "not selected output") {
+		t.Fatalf("replacement tree leaf did not fail selected-output inspection: %v", err)
+	}
+
+	filePath := rootedPath(root, graphics64Tree+"/share")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := inspectGraphicsLeafReal(root, graphics64Tree+"/share", ""); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("non-directory tree leaf did not fail inspection: %v", err)
+	}
+
+	if err := inspectGraphicsLeafReal(root, graphics64Tree+"/missing", ""); err == nil || !strings.Contains(err.Error(), "cannot stat") {
+		t.Fatalf("missing tree leaf did not fail inspection: %v", err)
 	}
 }
 
@@ -186,10 +228,17 @@ func TestGraphicsNoDriverAndDisabledConfig(t *testing.T) {
 
 	var disabled bytes.Buffer
 	r := newReporter(&disabled, false)
-	o := &Options{Getenv: func(string) string { return "" }}
+	reads := 0
+	o := &Options{
+		Getenv: func(string) string { return "" },
+		readFile: func(string) ([]byte, error) {
+			reads++
+			return nil, os.ErrNotExist
+		},
+	}
 	o.sectionGPUGraphics(r, graphicsConfig(t, `{"gpu":{"enabled":false}}`))
-	if disabled.Len() != 0 {
-		t.Fatalf("disabled GPU emitted a graphics section:\n%s", disabled.String())
+	if disabled.Len() != 0 || reads != 0 {
+		t.Fatalf("disabled GPU emitted a section or read graphics metadata (%d reads):\n%s", reads, disabled.String())
 	}
 }
 
@@ -209,6 +258,7 @@ func TestGraphicsHostReportDoesNotInspectHostTreeAsJailState(t *testing.T) {
 func TestCheckRunsGraphicsDiagnosticsForEnabledGPU(t *testing.T) {
 	manifest := []byte(`{"drivers":[{"name":"mesa","version":"26.2.5","arch":"64","lib":"/nix/store/mesa/lib","share":"/nix/store/mesa/share","preserved":false}]}`)
 	reads := 0
+	inspected := map[string]string{}
 	got := runCheckOverConfigWith(t, `{"gpu":{"enabled":true},"packages":["mesa"]}`, false, nil, func(o *Options) {
 		o.readFile = func(path string) ([]byte, error) {
 			if path == graphicsRuntimeManifest {
@@ -217,12 +267,9 @@ func TestCheckRunsGraphicsDiagnosticsForEnabledGPU(t *testing.T) {
 			}
 			return nil, os.ErrNotExist
 		}
-		pathExists := o.PathExists
-		o.PathExists = func(path string) bool {
-			if strings.HasPrefix(path, graphics64Tree+"/") {
-				return true
-			}
-			return pathExists(path)
+		o.inspectGraphicsPath = func(_, leaf, expected string) error {
+			inspected[leaf] = expected
+			return nil
 		}
 	})
 	if reads == 0 {
@@ -230,6 +277,48 @@ func TestCheckRunsGraphicsDiagnosticsForEnabledGPU(t *testing.T) {
 	}
 	if !strings.Contains(got, "Selected driver mesa 26.2.5 exposed at /run/opengl-driver") {
 		t.Fatalf("Check did not report the selected resolved graphics driver:\n%s", got)
+	}
+	if inspected[graphics64Tree+"/lib"] != "/nix/store/mesa/lib" || inspected[graphics64Tree+"/share"] != "/nix/store/mesa/share" {
+		t.Fatalf("Check did not validate both declared output targets: %#v", inspected)
+	}
+}
+
+func TestCheckWarnsForDeletedOrReplacedGraphicsLeaves(t *testing.T) {
+	manifest := []byte(`{"drivers":[{"name":"mesa","version":"26.2.5","arch":"64","lib":"/nix/store/mesa/lib","share":"/nix/store/mesa/share","preserved":false}]}`)
+	for _, tc := range []struct {
+		name, leaf, expected, issue string
+	}{
+		{"deleted lib", graphics64Tree + "/lib", "/nix/store/mesa/lib", "does not exist"},
+		{"deleted share", graphics64Tree + "/share", "/nix/store/mesa/share", "does not exist"},
+		{"replaced lib", graphics64Tree + "/lib", "/nix/store/mesa/lib", "resolves to /nix/store/replacement/lib"},
+		{"replaced share", graphics64Tree + "/share", "/nix/store/mesa/share", "resolves to /nix/store/replacement/share"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runCheckOverConfigWith(t, `{"gpu":{"enabled":true},"packages":["mesa"]}`, false, nil, func(o *Options) {
+				o.readFile = func(path string) ([]byte, error) {
+					if path == graphicsRuntimeManifest {
+						return manifest, nil
+					}
+					return nil, os.ErrNotExist
+				}
+				o.inspectGraphicsPath = func(_, leaf, expected string) error {
+					if leaf == tc.leaf {
+						if expected != tc.expected {
+							t.Errorf("expected target for %s = %q, want %q", leaf, expected, tc.expected)
+						}
+						return errors.New(tc.issue)
+					}
+					return nil
+				}
+			})
+			if strings.Contains(got, "Selected driver mesa 26.2.5 exposed at /run/opengl-driver") {
+				t.Fatalf("Check credited selected version to a damaged/replaced tree:\n%s", got)
+			}
+			if !strings.Contains(got, "current exposure at /run/opengl-driver is not verified") ||
+				!strings.Contains(got, tc.leaf+" should resolve to "+tc.expected) || !strings.Contains(got, "restart the jail") {
+				t.Fatalf("Check did not report an actionable current-tree warning:\n%s", got)
+			}
+		})
 	}
 }
 

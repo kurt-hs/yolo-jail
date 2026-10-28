@@ -170,6 +170,9 @@ type Options struct {
 	PathExists func(string) bool
 	// readFile loads a diagnostic metadata artifact. nil => os.ReadFile.
 	readFile func(string) ([]byte, error)
+	// inspectGraphicsPath verifies one jail graphics tree directory and, when expected is
+	// non-empty, that its resolved target matches the selected output. nil => filesystem inspection.
+	inspectGraphicsPath func(root, leaf, expected string) error
 	// ioSysRoot is the root the disk resolver reads the mount table and sysfs under
 	// (internal/ioprio.Resolve, for sectionIOPriority). "" => the real root; tests point it
 	// at a fake tree.
@@ -306,6 +309,9 @@ func fillDefaults(o *Options) {
 	}
 	if o.readFile == nil {
 		o.readFile = os.ReadFile
+	}
+	if o.inspectGraphicsPath == nil {
+		o.inspectGraphicsPath = inspectGraphicsLeafReal
 	}
 	if o.Geteuid == nil {
 		o.Geteuid = os.Geteuid

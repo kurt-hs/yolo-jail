@@ -133,11 +133,12 @@ func (o *Options) reportJailGraphicsState(r *reporter, merged *jsonx.OrderedMap,
 		"Selected driver metadata: "+formatGraphicsDrivers(drivers)+". Runtime provenance is absent, so `/run/opengl-driver` is not attributed to this driver; restart the jail and run `yolo check` again.")
 	for _, driver := range drivers {
 		tree := graphicsTree(driver.Arch)
-		if !o.graphicsPathExists(root, filepath.Join(tree, "lib")) {
-			r.warn(fmt.Sprintf("Graphics tree %s is missing lib", tree), "The selected driver was not verified as exposed. Restart the jail so its graphics tree can be created, then run `yolo check` again.")
-		}
-		if !o.graphicsPathExists(root, filepath.Join(tree, "share")) {
-			r.warn(fmt.Sprintf("Graphics tree %s is missing share", tree), "The selected driver was not verified as exposed. Restart the jail so its graphics tree can be created, then run `yolo check` again.")
+		for _, leaf := range []string{"lib", "share"} {
+			path := filepath.Join(tree, leaf)
+			if err := o.checkGraphicsLeaf(root, path, ""); err != nil {
+				r.warn("Graphics tree path is unavailable: "+path,
+					fmt.Sprintf("%v. Restart the jail so its graphics tree can be created, then run `yolo check` again.", err))
+			}
 		}
 	}
 }
@@ -149,15 +150,33 @@ func (o *Options) reportGraphicsRuntimeDrivers(r *reporter, drivers []graphicsRu
 		if driver.Preserved != nil && *driver.Preserved {
 			r.warn(label+"; existing user-supplied tree preserved at "+tree,
 				"The tree was left untouched and is not asserted to belong to the selected driver. Check the paths below; if they are not the intended driver tree, remove or replace the supplied tree and restart the jail.")
-		} else {
-			r.ok(label + " exposed at " + tree + " (lib -> " + driver.Lib + ", share -> " + driver.Share + ")")
+			for _, leaf := range []string{"lib", "share"} {
+				path := filepath.Join(tree, leaf)
+				if err := o.checkGraphicsLeaf(root, path, ""); err != nil {
+					r.warn("Preserved graphics tree path is unavailable: "+path,
+						fmt.Sprintf("%v. The supplied tree remains untouched; correct it yourself and restart the jail if needed.", err))
+				}
+			}
+			continue
 		}
+
+		var problems []string
 		for _, leaf := range []string{"lib", "share"} {
-			if !o.graphicsPathExists(root, filepath.Join(tree, leaf)) {
-				r.warn("Graphics tree path is absent: "+filepath.Join(tree, leaf),
-					fmt.Sprintf("The jail did not expose %s. Restart the jail; if the problem remains, verify the selected driver package and any preexisting user-supplied tree.", filepath.Join(tree, leaf)))
+			path := filepath.Join(tree, leaf)
+			expected := driver.Lib
+			if leaf == "share" {
+				expected = driver.Share
+			}
+			if err := o.checkGraphicsLeaf(root, path, expected); err != nil {
+				problems = append(problems, fmt.Sprintf("%s should resolve to %s: %v", path, expected, err))
 			}
 		}
+		if len(problems) == 0 {
+			r.ok(label + " exposed at " + tree + " (lib -> " + driver.Lib + ", share -> " + driver.Share + ")")
+			continue
+		}
+		r.warn("Driver "+driver.Name+" "+driver.Version+" was selected at boot, but current exposure at "+tree+" is not verified",
+			strings.Join(problems, "\n")+"\nThe jail's current lib/share leaves are missing, not directories, or no longer point at the selected outputs. Restore the selected tree and restart the jail, then run `yolo check` again.")
 	}
 }
 
@@ -193,13 +212,37 @@ func readProfileGraphicsManifests(root, profiles string, readFile func(string) (
 	return selected, nil
 }
 
-func (o *Options) graphicsPathExists(root, path string) bool {
-	fullPath := rootedPath(root, path)
-	if root == "/" && o.PathExists != nil {
-		return o.PathExists(fullPath)
+func (o *Options) checkGraphicsLeaf(root, leaf, expected string) error {
+	if o.inspectGraphicsPath != nil {
+		return o.inspectGraphicsPath(root, leaf, expected)
 	}
-	_, err := os.Stat(fullPath)
-	return err == nil
+	return inspectGraphicsLeafReal(root, leaf, expected)
+}
+
+func inspectGraphicsLeafReal(root, leaf, expected string) error {
+	full := rootedPath(root, leaf)
+	info, err := os.Stat(full)
+	if err != nil {
+		return fmt.Errorf("cannot stat %s: %w", leaf, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", leaf)
+	}
+	if expected == "" {
+		return nil
+	}
+	actualTarget, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return fmt.Errorf("cannot resolve %s: %w", leaf, err)
+	}
+	expectedTarget, err := filepath.EvalSymlinks(rootedPath(root, expected))
+	if err != nil {
+		return fmt.Errorf("cannot resolve selected output %s: %w", expected, err)
+	}
+	if filepath.Clean(actualTarget) != filepath.Clean(expectedTarget) {
+		return fmt.Errorf("resolves to %s, not selected output %s", actualTarget, expectedTarget)
+	}
+	return nil
 }
 
 func (o *Options) readGraphicsFile(root, path string) ([]byte, error) {
