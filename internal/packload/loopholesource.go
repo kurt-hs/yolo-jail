@@ -37,6 +37,7 @@ package packload
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -143,6 +144,50 @@ func (p *Pack) LoopholeModules() (mods []LoopholeModule, refusals, warnings []st
 		// honor, so the disclosed set and the effect cannot disagree. An author hears about a
 		// typo from the STRICT read `yolo pack lint` does (LoopholeDeclProblems).
 		decl, _, derr := loopholedecl.LoadDirTolerant(dir)
+		if derr != nil {
+			mod.Problem = fmt.Sprintf("its %s could not be read", loopholedecl.ManifestName)
+			warnings = append(warnings, fmt.Sprintf(
+				"pack %s: loophole %q (from %q): %v — it will not be discovered, and its "+
+					"host access is claimed as UNENUMERABLE rather than as nothing",
+				p.Name, name, rel, derr))
+		} else {
+			mod.Decl = decl
+		}
+		mods = append(mods, mod)
+	}
+	return mods, refusals, warnings
+}
+
+func (p *Pack) LoopholeModulesFromFS(fsys fs.FS, sourceRoot string) (mods []LoopholeModule, refusals, warnings []string) {
+	root := filepath.Clean(p.Root)
+	byName := map[string]string{}
+	for _, rel := range p.Decl.LoopholeSources() {
+		dir := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
+		if root != "" && root != "." && !strings.HasPrefix(dir, root+string(filepath.Separator)) {
+			refusals = append(refusals, fmt.Sprintf("pack %s: loophole `from` %q escapes the pack tree — refused", p.Name, rel))
+			continue
+		}
+		name := path.Base(path.Clean(filepath.ToSlash(rel)))
+		if prev, dup := byName[name]; dup {
+			refusals = append(refusals, fmt.Sprintf(
+				"pack %s: loopholes %q and %q are both named %q — a loophole's name is its "+
+					"directory basename and one name is one loophole, so one would shadow the "+
+					"other; rename one module directory", p.Name, prev, rel, name))
+			continue
+		}
+		byName[name] = rel
+
+		modulePath := path.Join(sourceRoot, filepath.ToSlash(rel))
+		fi, err := fs.Stat(fsys, modulePath)
+		if err != nil || !fi.IsDir() {
+			refusals = append(refusals, fmt.Sprintf(
+				"pack %s declares `loophole` from %q, which is not a directory in its content — "+
+					"a loophole contribution points at a module dir holding %s (check the path, "+
+					"and any only/exclude filters)", p.Name, rel, loopholedecl.ManifestName))
+			continue
+		}
+		mod := LoopholeModule{From: rel, Name: name, Dir: dir}
+		decl, _, derr := loopholedecl.LoadDirTolerantFS(fsys, modulePath, dir)
 		if derr != nil {
 			mod.Problem = fmt.Sprintf("its %s could not be read", loopholedecl.ManifestName)
 			warnings = append(warnings, fmt.Sprintf(

@@ -52,7 +52,9 @@ package loopholedecl
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -455,39 +457,66 @@ func LoadDirTolerant(dir string) (m *Manifest, skipped []string, err error) {
 	return DecodeTolerant(data, dir)
 }
 
-// readManifest is the package's ONLY filesystem access, and it reads the
-// manifest itself — never a path the manifest names.
 func readManifest(dir string) ([]byte, error) {
-	manifestPath := ManifestPath(dir)
-	if fi, err := os.Stat(manifestPath); err == nil && fi.Mode().IsRegular() {
-		raw, err := os.ReadFile(manifestPath)
+	join := func(a, b string) string { return filepath.Join(a, b) }
+	return readManifestWith(dir, os.Stat, os.ReadFile, ManifestPath(dir), dir, join)
+}
+
+// readManifestWith is the shared filename selection for path and fs.FS readers.
+func readManifestWith(dir string, stat func(string) (fs.FileInfo, error), readFile func(string) ([]byte, error), manifestPath, diagnosticDir string, join func(string, string) string) ([]byte, error) {
+	diagnosticPath := filepath.Join(diagnosticDir, filepath.Base(manifestPath))
+	if fi, err := stat(manifestPath); err == nil && fi.Mode().IsRegular() {
+		raw, err := readFile(manifestPath)
 		if err != nil {
-			return nil, Errorf("%s: %s", manifestPath, err)
+			return nil, Errorf("%s: %s", diagnosticPath, err)
 		}
 		return raw, nil
 	}
-	altPath := filepath.Join(dir, "manifest.json")
-	if fi, err := os.Stat(altPath); err == nil && fi.Mode().IsRegular() {
-		raw, err := os.ReadFile(altPath)
+	altPath := join(dir, "manifest.json")
+	altDiagnosticPath := filepath.Join(diagnosticDir, "manifest.json")
+	if fi, err := stat(altPath); err == nil && fi.Mode().IsRegular() {
+		raw, err := readFile(altPath)
 		if err != nil {
-			return nil, Errorf("%s: %s", altPath, err)
+			return nil, Errorf("%s: %s", altDiagnosticPath, err)
 		}
 		return raw, nil
 	}
-	return nil, Errorf("%s not found", manifestPath)
+	return nil, Errorf("%s not found", diagnosticPath)
+}
+
+func manifestPathWith(dir string, join func(string, string) string, stat func(string) (fs.FileInfo, error)) string {
+	jsoncPath := join(dir, ManifestName)
+	if _, err := stat(jsoncPath); err == nil {
+		return jsoncPath
+	}
+	jsonPath := join(dir, "manifest.json")
+	if _, err := stat(jsonPath); err == nil {
+		return jsonPath
+	}
+	return jsoncPath
 }
 
 // ManifestPath returns where a module directory's manifest lives.
 func ManifestPath(dir string) string {
-	jsoncPath := filepath.Join(dir, ManifestName)
-	if _, err := os.Stat(jsoncPath); err == nil {
-		return jsoncPath
+	return manifestPathWith(dir, func(a, b string) string { return filepath.Join(a, b) }, os.Stat)
+}
+
+// ManifestPathFS is ManifestPath for an immutable filesystem.
+func ManifestPathFS(fsys fs.FS, dir string) string {
+	return manifestPathWith(dir, func(a, b string) string { return path.Join(a, b) }, func(name string) (fs.FileInfo, error) { return fs.Stat(fsys, name) })
+}
+
+// LoadDirTolerantFS reads and decodes a module manifest from an fs.FS using the
+// same tolerant decoder and filename selection as LoadDirTolerant.
+func LoadDirTolerantFS(fsys fs.FS, dir, diagnosticDir string) (m *Manifest, skipped []string, err error) {
+	manifestPath := ManifestPathFS(fsys, dir)
+	join := func(a, b string) string { return path.Join(a, b) }
+	data, err := readManifestWith(dir, func(name string) (fs.FileInfo, error) { return fs.Stat(fsys, name) }, func(name string) ([]byte, error) { return fs.ReadFile(fsys, name) }, manifestPath, diagnosticDir, join)
+	if err != nil {
+		return nil, nil, err
 	}
-	jsonPath := filepath.Join(dir, "manifest.json")
-	if _, err := os.Stat(jsonPath); err == nil {
-		return jsonPath
-	}
-	return jsoncPath
+	diagnosticPath := filepath.Join(diagnosticDir, filepath.Base(manifestPath))
+	return decodeAt(data, diagnosticDir, diagnosticPath, false, true)
 }
 
 // decode is the shared walk. strict routes unknown keys into the returned
@@ -500,8 +529,11 @@ func decode(data []byte, dir string, strict bool) (*Manifest, []string, error) {
 // rewrites `host_daemon.scope: "host"` to ScopeJail before the walk, and its note is kept only
 // when the decode is tolerant.
 func decodeMode(data []byte, dir string, strict, readRetiredScope bool) (*Manifest, []string, error) {
-	manifestPath := ManifestPath(dir)
+	return decodeAt(data, dir, ManifestPath(dir), strict, readRetiredScope)
+}
 
+// decodeAt is decodeMode with the already-resolved manifest path, used by filesystem readers.
+func decodeAt(data []byte, dir, manifestPath string, strict, readRetiredScope bool) (*Manifest, []string, error) {
 	decoded, err := json5.Decode(data)
 	if err != nil {
 		// The decoder's exception text is not stable, but only the prefix

@@ -69,6 +69,13 @@ func SetEmbeddedFS(f fs.FS) {
 	embeddedHashMemo = nil
 }
 
+// EmbeddedFS returns the registered immutable source filesystem without loading or materializing packs.
+func EmbeddedFS() fs.FS {
+	embeddedMu.Lock()
+	defer embeddedMu.Unlock()
+	return embeddedFS
+}
+
 // Embedded returns the embedded packs, materialized on the FIRST CALL and shared by every
 // later one.
 //

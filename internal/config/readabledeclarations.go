@@ -23,7 +23,17 @@ func ReadableDeclarationsForPacks(packs []*packload.Pack) ([]ReadableBrokerDecla
 			return nil, nil, fmt.Errorf("readable declarations contain pack %q more than once", pack.Name)
 		}
 		seen[pack.Name] = true
-		modules, refusals, warnings := pack.LoopholeModules()
+		var modules []packload.LoopholeModule
+		var refusals, warnings []string
+		if pack.Official && pack.SourceRoot == "" {
+			fsys := packload.EmbeddedFS()
+			if fsys == nil {
+				return nil, nil, fmt.Errorf("pack %s embedded metadata source is not registered", pack.Name)
+			}
+			modules, refusals, warnings = pack.LoopholeModulesFromFS(fsys, pack.Name)
+		} else {
+			modules, refusals, warnings = pack.LoopholeModules()
+		}
 		if len(refusals) != 0 || len(warnings) != 0 {
 			return nil, nil, fmt.Errorf("pack %s readable declarations: %v", pack.Name, append(refusals, warnings...))
 		}

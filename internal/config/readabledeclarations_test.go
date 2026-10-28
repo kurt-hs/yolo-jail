@@ -7,6 +7,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/packs"
 )
 
 func editReadableMap(t *testing.T, text string) *jsonx.OrderedMap {
@@ -20,6 +23,25 @@ func editReadableMap(t *testing.T, text string) *jsonx.OrderedMap {
 		t.Fatalf("decoded value %T, want object", value)
 	}
 	return mapping
+}
+
+func TestReadableDeclarationsForOfficialPackReadsEmbeddedModuleFiles(t *testing.T) {
+	raw, err := packs.FS.ReadFile("aws-auth/pack.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, problems := packdecl.Decode(raw)
+	if len(problems) != 0 {
+		t.Fatalf("decode shipped pack declaration: %v", problems)
+	}
+	pack := &packload.Pack{Name: "aws-auth", Root: "/missing/embedded-cache/aws-auth", Decl: decl, Official: true}
+	brokers, settings, err := ReadableDeclarationsForPacks([]*packload.Pack{pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(settings) == 0 || settings[0].Pack != "aws-auth" {
+		t.Fatalf("embedded module metadata not projected: brokers=%#v settings=%#v", brokers, settings)
+	}
 }
 
 func TestReadableBrokerDeclarationClonesSettingsDefaultLists(t *testing.T) {
