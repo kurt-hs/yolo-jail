@@ -3,7 +3,7 @@ title: "Computed briefings: current-tree implementation handoff"
 date: 2026-10-28
 status: in-review
 stage: DESIGN
-next: "Resolve OQ-CBP1 and OQ-CBP2 and complete operation controls; proposed engineering APIs below are build work, not admission gates"
+next: "Resolve OQ-CBP1 and OQ-CBP2; materialize and verify the specified operation controls in an authorized implementation lane"
 depends-on:
   - computed-briefings.md
   - pack-manifests.md
@@ -16,13 +16,14 @@ vantage:
 
 # Computed briefings: current-tree implementation handoff
 
-**Status:** 2026-10-28. Written against `e02bb526bc5b4d59fa5ba7293163cdee44f3ff78`.
-The planner read the accepted design in full and replaced the seed with this source-grounded
-handoff. The planner observed the three printed baseline red controls using uniquely named
-temporary test files in the isolated worktree, then removed only those files; no behavioral
-test is committed and no production source was changed. The remaining operation-level bodies
-are not complete or verified. Two observable access-projection gaps and unfinished operation
-controls prevent an executable handoff; this is not a ready-to-build claim.
+**Status:** 2026-10-28. Written against `c7b58bc5a2484793049d555b5a3e46b08f827241`
+(tree `36fd267f1fbcef31fd617bca973d403cc7aefde9`); runtime source and build inputs are
+unchanged from `e02bb526bc5b4d59fa5ba7293163cdee44f3ff78`. The accepted design and prior
+handoff were read in full. The three printed baseline red controls below were observed by the
+prior planner using temporary tests, then removed; this continuation ran no software tests or
+mutation probes. Exact operation fixtures, assertions and deletion controls are now specified
+as **unexecuted test recipes**, not runtime evidence. Two observable access-projection choices
+remain pending. This is not a ready-to-build claim or authorization to implement.
 
 **Design:** [computed briefings](computed-briefings.md). **Precedence:** the design wins on
 behavior; the tree wins on cosmetic facts; the plan is advice and is the first thing to be wrong.
@@ -59,7 +60,7 @@ name overlapping source/API work, not a universal wait for a green base:
 | Manifest reader/producer representation from [pack manifests](pack-manifests.md) | Unit A | Confirm the landed `Contribution` fields and grouped `[[briefing]]` lowering; reserve `derive` and `reads` without reusing a surface-producer DTO. Current base has neither field. |
 | Approved carrier from [readable config plan](readable-config-plan.md) | Unit C | Transfer raw approved remote names, scope form, repositories, grants, and effective grant-kind eligibility without parsing display labels or rereading requested workspace config. Current predecessor is `ScopeCheck` → `Options.approvedScopes` / `approvedGrants`. |
 | Existing scope/keeper version contracts | Units C–E | Specify backward reads and keeper transport before adding remote-name facts; no credential, host path, or new grant may enter Lua. |
-| Verified red tests at actual callers | Every build unit | Three printed baseline probes were observed as described below; exact operation-level controls remain unfinished. Materialize permanent tests only in an authorized implementation lane and record actual red output before changing production. |
+| Verified red tests at actual callers | Every build unit | Three printed baseline probes were observed as described below; operation recipes below are specified but not materialized or verified. Materialize permanent tests only in an authorized implementation lane and record actual red output before changing production. |
 
 Explicit historical lookup: `d8ed0c9dd` was inspected with `git show` only. Its
 `readablescope.go` introduces `readableScopeCheck` and `scopeCheckFromReadable`; it still
@@ -171,7 +172,9 @@ singleton projection is ruled; do not make a display string the wire value. New 
 core carrier seam (names proposed, no existing API claimed):
 
 ```go
-type ApprovedRemote struct { Name, Identity string }
+// New brokerscope.ApprovedRemote owns the optional scope-file wire member.
+// Core carrier imports/aliases it; brokerscope never imports run/config.
+type ApprovedRemote = brokerscope.ApprovedRemote
 type ApprovedAccessScope struct {
     Source, Label, Form, LaunchID string
     Repositories []string
@@ -233,7 +236,8 @@ shared keeper's machine-wide `holdKey` composition.
 ```go
 type BriefingBrokerDisposition struct { Running bool; WhyNot string }
 // New projection, not the configured candidate set.
-func briefingBrokerDispositions(scopes []ApprovedAccessScope, handles []loopholeDaemon) map[string]BriefingBrokerDisposition
+type BriefingBrokerStartResult struct { Source, WhyNot string }
+func briefingBrokerDispositions(scopes []ApprovedAccessScope, handles []loopholeDaemon, results []BriefingBrokerStartResult) map[string]BriefingBrokerDisposition
 ```
 
 **New, proposed:** a per-source disposition containing `running` and `why_not`, produced from
@@ -289,7 +293,7 @@ Attach read failure produces the design's `running=false`, `why_not="its scope c
 read"`, and attach may continue **if the producer succeeds**. Unknown-source, producer, and
 read-declaration failures remain fatal. The API must distinguish unreadable matching scope
 from no live broker; `LiveFilesContext` alone cannot do that today. Snapshot/store error
-projection outside this specified attach case needs an explicit implementation handoff;
+projection outside this specified attach case is conditional on [OQ-CBP2](#OQ-CBP2);
 do not silently treat unknown working-set data as complete.
 
 ### C4 — error-bearing batch composition
@@ -557,6 +561,406 @@ assertion. Repeat at the jail caller with preexisting staging files, including a
 The operation-level tests below must additionally pin CLI failure; an error at a callee alone
 is insufficient.
 
+## Operation/caller regression recipes
+
+**Evidence boundary:** these are complete test *recipes*, in pseudocode, not compilable Go or
+executed tests. Names under `Test...` are proposed permanent tests. Helper operations in the
+fences describe fixture construction/assertions to implement, not landed APIs. On the current
+base the strict decoder fails first; that is A's RED, not evidence for Run/keeper/apply abort.
+After A/B/C make fixtures admissible, install D/E's tests before wiring their callers and record
+the specific behavioral RED below. A missing symbol/compile error is not that RED. Later,
+delete only the named **production** call in a disposable authorized implementation tree,
+rerun the named test, capture the failure, and restore byte-exact source. Never remove the
+callee, producer declaration, test assertion, or fixture injection to obtain a red result.
+
+### Frozen operation inputs and per-file deliverables
+
+D adds the following **proposed** request to the existing
+[`keeperPlan`](../../internal/cli/run/keeperplan.go); no user prose goes to a sealed plan.
+`FactSheet` is core-only and may contain host paths; it is never embedded in Lua `BriefingCtx`.
+Destinations carry their declared identity rather than a contributing pack's name.
+
+```go
+// New in run/briefingaccess.go; serialized by keeperplan.go.
+type JailBriefingDestination struct { Into, Agent string }
+type JailBriefingRequest struct {
+    Destinations []JailBriefingDestination
+    Base, Extra string
+    Provenance bool
+    IOPriority ioprio.Priority
+    Applied *jailcontent.FactSheet
+    Approved []ApprovedAccessScope
+}
+// Proposed field on keeperPlan, nil only for static legacy requests or sealed builds:
+// Briefing *JailBriefingRequest `json:"briefing,omitempty"`
+// New D APIs in prepare.go (or a D-owned new composition file):
+type JailBriefingOutput struct { Into, Agent, Text string }
+func (o *Options) composeJailBriefingBatch(req JailBriefingRequest, staged stagedPacks,
+    access map[string]luahook.BriefingAccess) ([]JailBriefingOutput, error)
+func (o *Options) publishJailBriefingBatch(cname string, req JailBriefingRequest,
+    batch []JailBriefingOutput) (string, error)
+// New C wire/replacement API in brokerscope/file.go and live.go:
+// type ApprovedRemote struct { Name, Identity string }
+func ReplaceAccessScopeContext(ctx context.Context, path string, before File,
+    repos []string, grants []Grant, remotes []ApprovedRemote) error
+```
+
+- **Parent D**, [fresh preparation](../../internal/cli/run/run.go#L2274-L2314) and
+  [refresh](../../internal/cli/run/prepare.go#L409-L439): split skills/directory/mount-anchor
+  preparation from composition/publication. Freeze applied base/extra/provenance/identity and
+  gate-approved carrier into the request; no producer evaluation, destination overwrite or
+  handoff consumption at the old parent refresh point. Preserve static-only requests and
+  `WriteBriefing` inode behavior. `stagePacks` only stages source, never computed text.
+- **Keeper D**, [service-start interval](../../internal/cli/run/keeper.go#L421-L477): after
+  `startPlannedLoopholes` and refusal handling, and only in the container arm, load the
+  transferred `PackTree`, project actual successful handles, compose all destinations, publish,
+  then materialize Apple Container delivery before `startJailMain`. Propagate failure through
+  existing stderr/exit frames and `unwindUnstarted(1)`; do not move the native `holdKey` arm into
+  container composition. Retain `endedBeforeTheContainer` and service-watch semantics.
+- **C disposition**, [start loop](../../internal/cli/run/loopholesruntime.go#L420-L598) and
+  [scope write](../../internal/cli/run/brokeredscope.go#L84-L143): carry per-source refusal
+  reasons from actual placement/scope/start results alongside handles. Extend C2's proposed
+  projector with these results; `handles` alone gives absence, not its reason. Successful handle
+  + matching approved source + successful scope write is running; candidate/declaration alone
+  is not. A later live snapshot uses scope identity and broker liveness, not yesterday's handle.
+- **Host D**, [CLI kind](../../internal/cli/applyhostbriefings.go#L260-L289) and
+  [outer caller](../../internal/cli/apply.go#L941-L945): make `ComposeHostBriefingBatch` return
+  an error; add proposed `RenderHostBriefingBatch(batch []HostBriefingDestination, home string,
+  req HostBriefingRequest, observe bool) ([]HostRenderResult, error)`. Report/render share the
+  batch. Composition error stops this briefing kind before render/prune/ownership-save and
+  contributes rc 1 to `applyHostSurveyed`. Preserve prior adoption/migration and unrelated kind
+  outcomes; this is not a whole-host-apply rollback. A migration that changes inputs requires a
+  new batch of those inputs, not a second evaluation merely for reporting.
+- **Attach D**, [actual caller](../../internal/cli/run/run.go#L3130-L3169): both
+  `refreshJailBriefings` and `refreshLegacyJailBriefings` use running-tree producers and the same
+  live access projection. Authenticated applied mechanics decides body/extra when available;
+  its legacy absence must not suppress producers. Producer failure propagates before exec,
+  discards only this entry's unused tree, releases locks and does not stop the live jail.
+- **E per-file result**, [scope loop](../../internal/cli/run/liveapply.go#L502-L539): a single
+  `changeScope` can replace file 1 and fail file 2. Track each successful replacement at the
+  loop, not only a successful whole step. Proposed `applyStep` returns `(scopeFilesChanged bool,
+  err error)`; other step kinds return false. C's additive `ReplaceAccessScopeContext` writes approved
+  raw remotes atomically with repos/grants, preserving launch identity and existing replacement
+  validation; E carries the gate's raw association through its replacement seam. The existing
+  `ReplaceScopeContext` remains for old callers, never used to silently discard new metadata.
+  `runApplySteps` ORs this bit, folds actual outcomes
+  and updates mechanics, then refreshes once if any scope file changed, even when the scope
+  step is pending. Read back applied files, never desired grants for failed files. Extend
+  proposed `applyExecution` with `ScopeFilesChanged bool`; its `BriefingErr` stays separate.
+- **E error propagation**, [liveApply](../../internal/cli/run/liveapply.go#L269-L295) and
+  [applyAtAttach](../../internal/cli/run/liveapply.go#L588-L608): proposed internal
+  `liveApplyExecution(cfg, rt, cname, envLines, mode) (rc int, briefingErr error)` shares the
+  existing gate/result reporting. Keep `liveApply(...) int` as the command wrapper; `configApply`
+  receives rc 1 on `BriefingErr`, overriding pending rc 3. `applyAtAttach(...) error` returns only
+  that typed error; decline, moved-config, no-TTY notice and pending-only behavior still continue
+  attach. `attachExisting` checks the error before its ordinary refresh/exec. No second failed
+  composition or fallback refresh, no rollback of approvals or already-replaced files.
+
+These are C/D/E's own new calls to build, not external global admission gates. Serialize
+`run.go` ownership D → E; E owns attach-apply error hunks after D's refresh changes. The exact
+internal helper factoring is cheap within those fences; the input provenance, result and
+publication/error boundaries above are not optional. Native macos-user may join a keeper that
+already holds services: its returned roster's declared service list is not proof of a live
+broker. C/D project that session's approved scope and verified live broker scope/endpoint;
+keeperless sessions project their own returned handles. Do not claim all native launches start
+local handles at the current `startLoopholesDisclosed` site.
+
+### Shared fixture protocol
+
+**Proposed new test fixture, owned by D:** adapt `packHome`, `writeUserPacks`, `dispatchOptions`
+in [dispatch tests](../../internal/cli/run/packstagedispatch_test.go#L40-L99),
+`inProcessKeeper` / `adoptLaunchSeams` in [keeper tests](../../internal/cli/run/keeper_test.go#L42-L124),
+and `fakeJail.mainArgv` / `exec` there. The fixture installs only a temporary selected `house`
+pack and destination-only `pi`/`claude` packs, no agent program surface. Resolve fixture paths where
+minted. Permit no real podman: put only a test shell runtime on PATH, recording `run` and
+`exec`, and emit `BootReadyLine`/hold only for the former. Auto-load returns the fake image;
+no nix build, agent invocation, credentials or API. Record calls from keeper and parent in a
+synchronized slice; existing `Options.Exec` does not intercept `startJailMain` or final session
+exec, so shell marker files are required. Adapt fixtures to preserve rc instead of discarding it.
+
+For actual-start positives, add a brokered test module to the selected `house` staged tree,
+with `source="gbsrc"`, approved read and `branch main` on `github.com/o/r`, and command using
+this test binary's existing `-front-upstream-child line {socket}` helper, not `/bin/cp`.
+Copy the no-credentials endpoint protocol from
+[`perJailFixture`](../../internal/cli/run/hostdaemonperjail_test.go#L203-L233), but set broker
+activation through approved selected-pack configuration, not `default_enabled`. Host-exec
+approval must be explicit; module and command must be outside the workspace/agent-writable
+placement boundary. The fixture's `.git/config` has exactly one approved URL:
+
+```ini
+[remote "origin"]
+    url = git@github.com:o/r.git
+```
+
+The read is core's gate read, not a git subprocess. The broker helper serves `ping` → `pong`;
+probe its endpoint once to establish actual successful startup, and ensure cleanup ends it.
+Do not assert authority enforcement from this no-op protocol. The
+[`/bin/cp` scope-transfer fixture](../../internal/cli/run/brokeredscope_test.go#L358-L402)
+exits without serving and **must not** be used to assert `running=true`.
+
+All tests below seed two destination files with `BEFORE-pi` and `BEFORE-claude`, store their
+bytes and inode identities, and seed `.yolo/handover.md` with `HANDOFF`. Fatal tests assert
+unchanged destinations, no `.consumed` pointer and no successful refresh report. An admitted
+empty producer is not failure. The success pair must prove composition reached the caller:
+`Run==0` with only old bytes is a failure, not a passing smoke test. No test calls the proposed
+composer directly in place of its named operation.
+
+### Fresh Run and keeper final-facts controls — D
+
+Permanent file: new `internal/cli/run/computedbriefing_test.go`; use the shared fixture above.
+This producer has no ambiguous URL projection or failing snapshot, so neither pending owner
+choice changes its assertions. The fake service is enabled, selected and actually started.
+
+```text
+TestComputedBriefingRunPublishesAfterActualStart:
+  setup shared fresh-Run fixture; approve read+branch-main only; accept gate via AcceptConfigChanges.
+  declare finishing with reads [{access:"gbsrc"}], agents ["pi"].
+  Lua: yolo.briefing("finishing", function(ctx)
+         local s = ctx.access.gbsrc
+         if not s.running then error("not-actually-started") end
+         if s.remotes.origin ~= "github.com/o/r" then error("not-approved-origin") end
+         if not s.repos["github.com/o/r"].read then error("read-not-applied") end
+         return "FINAL-jail-pi-main"
+       end)
+  run Run(*o) with Args ["true"] through inProcessKeeper (never real runtime).
+  at keeper spawn read plan: Briefing != nil, approved origin correct, transferred tree correct;
+    BOTH files still BEFORE, HANDOFF not consumed (parent did not publish).
+  fake runtime run entry reads pi staging: contains FINAL-jail-pi-main and HANDOFF;
+    claude has no FINAL; endpoint ping/pong already succeeded; note event "main".
+  fake runtime exec entry reads same pi bytes; note event "session"; exit 0.
+  assert Run rc == 0, main marker once, session marker once, publication before main,
+    no producer failure and HANDOFF consumed only after successful publication.
+  failure literal: "Run delivered before keeper composed actual approved/start facts".
+  deletion control: remove keeper.run -> final composition/publication call, leaving
+    parent preparation and service start intact; expected failure at main marker byte check.
+  second control: remove runContainer -> request population; same byte failure (not nil panic).
+```
+
+The shell runtime records marker/read failure explicitly and exits 91 on absent `FINAL`;
+the test's outer assertion prints the literal above plus captured bytes and rc. Do not let a
+shell read failure silently produce an empty record. Producer invocation count may be recorded
+by a test observer around the real session evaluation (new test-only seam, D's fence); never
+use that observer to synthesize output or grant running status.
+
+```text
+TestComputedBriefingRunFailureUnwindsBeforeMain:
+  identical successful-service setup; change Lua finishing body to error("producer-broken").
+  execute Run(*o), wait for keeper exit and helper cleanup (bounded 30s fixture wait).
+  assert rc == 1; stderr includes house/derive.lua, producer-broken, line attribution,
+    and "yolo pack lint"; no main marker, no session marker, endpoint no longer reachable;
+    service helper PID gone, own scope file removed; unrelated scope/tree untouched.
+  assert prior bytes/inodes, HANDOFF retained, lock reacquirable and own keeper record gone.
+  failure literal: "fresh producer failure reached startJailMain or escaped unwindUnstarted".
+  deletion control: remove keeper fatal-error -> unwindUnstarted return (keep evaluation);
+    expected main/session marker or rc mismatch with that literal.
+  remove keeper composition call separately: rc/no-diagnostic assertions must also fail.
+```
+
+Keeper-only `TestComputedBriefingKeeperFinalPublicationAndUnwind` in new
+`internal/cli/run/keeperbriefing_test.go` isolates the exact interval:
+adapt `startKeeperFixtureWith`, tune `Config`, `PackTree`, `Packs`, `Services`, `ApprovedScopes`,
+`ApprovedGrants` and new `Briefing` before `runKeeper`, enable only the helper capability,
+and set `RunCmd` to a marker-writing fake shell hold. `relay()==false`, `wait()==1`, no main
+marker and no endpoint after failure pin the unwinder; positive `relay()==true` requires the
+marker-time `FINAL` read before closing `lifeW` to terminate the held fake jail. This complements,
+not replaces, the `Run` request-transfer test. Include absent-request static compatibility and
+sealed-plan cases: no producer/user prose/access handed to the sealed keeper. Placement refusal,
+blocked scope write (fixture directory obstruction), and helper startup failure each produce a
+false source with a nonempty reason, never `FINAL`; preserve any existing startup refusal that
+aborts before composition rather than pretending those cases deliver a successful launch.
+
+### Attach: running staged context, fresh scoped facts — D
+
+Permanent file: new `internal/cli/run/computedbriefing_test.go`. Adapt
+[`attachStagingFixture`](../../internal/cli/run/concurrentstaging_test.go#L272-L328) **before**
+it stages the tree, adding the producer declaration/script to `treepack`. Extend
+`attachThroughRun` into a fixture returning `(rc, execMarker, runtimeCalls, staging)` without
+requiring success; its current helper discards rc and requires exec, so cannot test abort.
+Freeze current contract tags; seed authenticated mechanics for one row, omit it for the legacy
+row. Keep pack-tree load/contract gates valid so an unrelated skew refusal cannot pass the test.
+
+```text
+TestComputedBriefingAttachUsesRunningTreeAndFreshScope:
+  for mechanics in [authenticated, legacy]:
+    stage treepack producer that finds branch main by name and returns "BOOTED-main" plus
+      sorted names/reasons from ctx.access.gbsrc.repos["github.com/o/r"].push_branches.
+    persist live tree via writeLivePackTree; save snapshotTree(tree) and prior pi inode.
+    live scope matches workspace, cname, launch ID, launcher/broker liveness;
+      approved origin o/r, read+branch main; current live kind eligibility includes branch.
+    configured local treepack now returns "REQUESTED"; requested config adds branch forbidden;
+      mutable workspace remote now o/other (do not approve it).
+    add live WorkingBranch refs/heads/agent/fresh for same workspace/repo to store;
+      also ended, wrong-workspace and wrong-repo entries, which must not appear.
+    execute Run(*o) attach with matching contracts, no-TTY notice/no apply mutation.
+    assert rc==0, one session exec, no runtime run/stop/rm, live tree byte-identical,
+      only unused entry tree discarded, pi inode unchanged; prose starts BOOTED-main,
+      contains agent/fresh created reason, not REQUESTED/forbidden/o/other/filtered branches.
+    update working entry state then second attach: next invocation reflects the change.
+    failure literal: "attach composed requested staging or stale/unscoped access facts".
+    deletion controls: remove EACH normal/legacy refresh call in turn; corresponding row
+      must fail the new-byte assertion; keep evaluator and runningJailPackView intact.
+    replace running-tree argument with entry staged argument separately: REQUESTED assertion fails.
+```
+
+Use a deterministic Lua producer printing sorted branch names/reasons in addition to the
+prefix (do not depend on arbitrary map order); exact positive branch text is
+`agent/fresh:created,main:declared` with lexical name sorting;
+assert those tokens and no forbidden token. A branch-main first assumption must not be made
+on a lexically sorted list; select `main` by name in the prefix producer.
+
+```text
+TestComputedBriefingAttachFailureLeavesLiveJail:
+  both mechanics rows; running-tree producer errors("producer-broken"); requested producer succeeds.
+  execute Run attach; assert rc==1, diagnostics script/line/lint, no session marker,
+    no stop/rm/run, runtime still answers abc123, running tree identical;
+    prior bytes/inodes/HANDOFF retained, release invoked and session lock released.
+  failure literal: "attach delivered fallback or stopped the already-running jail".
+  deletion control: remove refreshErr fatal return at attachExisting, leaving refresh;
+    expect session marker or rc mismatch, not a helper-only evaluator failure.
+  independent row: unreadable matching live scope -> running=false,
+    why_not exactly "its scope could not be read"; successful producer returns SCOPE-UNREADABLE,
+    attach rc==0 and session reads that text. Erroring producer in same row still aborts.
+```
+
+### Host command/render propagation — D
+
+Permanent file: new `internal/cli/packbriefingapply_test.go`, package `cli`. Reuse
+[`applyWith`](../../internal/cli/applyhostprune_test.go#L64-L69), `selectPacks`, `writeFile`,
+`treeHashes`, `countLines` in [host briefing tests](../../internal/cli/applyhostbriefings_test.go).
+Select destination-only packs, not installed program surfaces; HOME/XDG point into test homes.
+First run a static-only successful apply to create the real briefing ownership record and
+prior bytes; then modify just the temporary house manifest/script to declare a producer.
+This avoids an adoption decline masquerading as producer failure. Snapshot destinations,
+manifest and archive listing immediately before the second command (not entire host home:
+other apply kinds may legitimately write). Use known optional gbsrc offline declaration input;
+host composer must not query workspace broker snapshots.
+
+```text
+TestComputedBriefingHostApplyPropagatesRenderFailure:
+  house producer returns "HOST-NEW" for claude, errors("producer-broken") for pi;
+    dest paths [.claude/CLAUDE.md, .pi/agent/AGENTS.md], resolves once per path.
+  execute applyWith(t, true, nil) -> actual applyHost -> applyHostSurveyed -> applyHostBriefings.
+  assert rc==1; report names house/derive.lua, producer-broken, line, yolo pack lint;
+    destinations and ownership manifest unchanged, no briefing retirement/archive mutation;
+    countLines(report,"briefing","refused") >= 1, no successful changed briefing line.
+  failure literal: "host apply swallowed producer error or published a failed briefing batch".
+  deletion controls: remove applyHostBriefings -> error-bearing compose/render call;
+    rc==1/diagnostic assertion fails; remove outer applyHostSurveyed brc handling separately;
+    rc==1 assertion fails even when kind report still says refused.
+  positive twin: producer validates ctx.notch=="host", destination identity and each named
+    source running==false, why_not=="on the host, the agent uses your own login";
+    returns "HOST-" .. ctx.agent; command rc==0, both exact tokens delivered.
+    Test-only evaluation observer counts one per admitted path; report/render do not double it.
+```
+
+The earlier `RenderHostBriefings` full Go control still pins all-batch failure and late pi
+error. Adapt its entrypoint call to the new error-bearing render API without precomputing in
+the test; it must exercise production composition. Broken-link I/O partial writes remain
+separate existing behavior. Repeat command in observe mode: rc 1 for producer failure and no
+briefing writes; do not claim observation successfully previewed broken computed prose.
+
+### Config apply: partial file success then fatal briefing — E
+
+Permanent file: new `internal/cli/run/liveapplybriefing_test.go`. Reuse
+[`applyFixture`](../../internal/cli/run/liveapply_test.go#L45-L111), `answer`, `swapSeam`,
+and gate/scope setup in [`TestConfigApplyReplacesGrants`](../../internal/cli/run/liveapply_test.go#L840-L884).
+Install a temporary selected brokered pack via the normal config reader (the older raw
+`SetPackModules` fixture alone is insufficient for `configApply` reload). Runtime answers a
+known running jail and frozen tags/mechanics. Two real temporary version-1 scope files A/B
+belong to the same source/cname/workspace with different valid launch identities; retain their
+old read-only grants and C1 metadata. Discovery seam may return these files but snapshot must
+read the resulting **actual bytes**, not desired grants. `replaceScopeReposSeam` delegates A
+to real C-owned `ReplaceAccessScopeContext` after that API exists (same identity checks as
+current `ReplaceScopeContext`), returns `errors.New("scope-B-blocked")` for B. Fake liveness
+for fixture PIDs only; no real broker/API required for this replacement operation.
+
+```text
+TestLiveApplyBriefingPartialScopeFailureReturnsFatalOne:
+  write desired workspace create-branch grant for github.com/o/r and user eligibility;
+    gate answers y; frozen applied baseline is read-only; running-tree producer errors("producer-broken").
+  seed BEFORE files/HANDOFF; execute o.configApply(false), not runApplySteps directly.
+  expect A new read+create-branch, B old read-only, approval recorded desired grant;
+    exactly two replacement attempts, exactly one refresh after A success/B failure,
+    refresh sees A new and B old and uses running-tree script/applied mechanics.
+  assert rc==1 (explicitly not 3); report includes Config apply result, scope-B-blocked,
+    producer-broken script/line/lint, no claim all changes applied;
+    folded baseline/mechanics must not claim the failed whole scope key fully applied.
+  prior briefing bytes/inodes/HANDOFF unchanged; A not rolled back; no restart/stop/exec.
+  failure literal: "partial scope mutation skipped refresh or BriefingErr became pending rc 3".
+  deletion controls: remove per-file success-bit recording or post-step refresh call;
+    expected rc==3/no producer diagnostic and the failure literal; remove BriefingErr->1
+    priority in liveApplyExecution separately -> rc mismatch with same literal.
+  positive twin: same A/B outcomes, successful producer returns "APPLY-jail-pi";
+    core snapshot observer sees A new/B old (raw files are not Lua inputs);
+    rc==3 only for B, A stays new/B old, exact APPLY token published once.
+  all-success twin: both replacements real, producer succeeds, command rc==0 and next
+    attach session reads refreshed text without runtime restart.
+```
+
+Before Lua, the source transaction must be released; assert it by an observer acquiring the
+same source transaction with a bounded context at evaluation entry. The observer records
+failure rather than hanging. At replacement and evaluation entry, a separate lock contender
+must fail a nonblocking workspace launch-lock take; after `configApply` it succeeds. Use
+existing lock primitives rather than sleeping to guess ordering. Never nest `Store.Working`
+inside its source transaction. Omit no-mutation rows: all B-like failures, record-only,
+nonrunning, unknown-runtime and unchanged scope perform zero refreshes and retain their
+existing rc/report posture; a missing producer call cannot pass solely on those negative rows.
+
+```text
+TestLiveApplyBriefingFatalErrorStopsAttach:
+  adapt attach fixture with real running tree/contracts/session marker, terminal y or
+    AcceptConfigChanges; same A-success/B-failure replacement and erroring producer.
+  execute attachExisting (or Run attach), assert (1,false), no session marker,
+    exactly one failed apply composition and no ordinary fallback refresh;
+    runtime remains live, A still new, B still old, prior briefings/HANDOFF unchanged.
+  failure literal: "applyAtAttach discarded BriefingErr and started a session".
+  deletion control: remove attachExisting -> applyAtAttach error check; session marker
+    or missing error assertion fails; remove applyAtAttach error return independently.
+  positive rows: y with successful producer reaches session reading new facts;
+    n, pending-only and no-TTY notice still reach session with live applied facts,
+    no replacement on n/no-TTY and no approval rollback.
+```
+
+### Native and conditional-policy rows
+
+New D native test uses `dispatchOptions(...,"macos-user",...)` and a `MacosUserRun` counter,
+never a real account/bootstrap. Cover keeperless returned handles and joined keeper/live
+scope separately; producer error → rc 1, zero `MacosUserRun`, own service cleanup only,
+no shared keeper teardown. Positive guest/jail notch rows deliver session-approved facts;
+unselected/disabled/placement-refused/helper-not-started rows cannot become running by reading
+manifest declarations. Delete native refresh fatal return to make the error row red, and
+native projection-to-refresh connection to make actual-facts positives red. Real native and
+Apple Container delivery remain platform/CI verification, not Linux fixture proof.
+
+Owner choices remain **conditional**, not accepted failure policy:
+
+- [OQ-CBP1](#OQ-CBP1): test raw carrier round-trip with one remote holding `url` A and
+  `pushurl` B. If owner selects omission of ambiguous names, assert no `origin` for A≠B.
+  If owner selects singleton only for normalized unanimity, assert `origin=github.com/o/r`
+  for several equivalent URL spellings, absent for A≠B. Do not select first/fetch/push by
+  ordering. Pin the chosen equal-identity and distinct-identity expectations only after ruling.
+- [OQ-CBP2](#OQ-CBP2): inject working-store/transaction error `snapshot-broken` at actual
+  Run/attach/apply snapshot acquisition, not Lua. **If fatal is ruled**, require operation
+  rc 1, no batch publication/session delivery, appropriate fresh unwind or live preservation,
+  and live-apply mutations retained. **If a nonfatal false-source projection is ruled**, require
+  precisely the owner-specified source/reason and empty/withheld fields, successful producer
+  prose and operation completion; never silently assert stale/partial facts are valid. No such
+  nonfatal field/reason policy is selected here. Attach's accepted matching unreadable-scope
+  exception above is unconditional and distinct from this outer snapshot error.
+
+**Unexecuted RED/green commands for the authorized builders**, after fixture/API materialization:
+
+```bash
+go test -short ./internal/cli/run -run '^TestComputedBriefing(RunPublishesAfterActualStart|RunFailureUnwindsBeforeMain|AttachUsesRunningTreeAndFreshScope|AttachFailureLeavesLiveJail)$' -count=1
+go test -short ./internal/cli/run -run '^TestComputedBriefingKeeper' -count=1
+go test -short ./internal/cli -run '^TestComputedBriefingHostApply' -count=1
+go test -short ./internal/cli/run -run '^TestLiveApplyBriefing' -count=1
+```
+
+Record actual argv/base, fixture path, direct exit and expected assertion text at RED, green
+and each single-call deletion. Keep these permanent tests in the named implementation units;
+this docs-only continuation installs none and makes no executed-operation claim.
+
 ## Ordered build units
 
 Every unit reports baseline SHA, installed test path, actual red output, green gates, caller
@@ -639,12 +1043,10 @@ conditions. Commit messages are proposals to use exactly once the respective uni
   unchanged prior bytes/inodes/ownership record/handoff; diagnostics name pack script and line
   plus `yolo pack lint`; host context/access false; guest/jail notch; static/computed order and
   provenance parity; missing declaration warning; registration surplus failure at operation.
-- **Permanent operation controls:** drive `Run` with fake keeper/runtime seams and assert agent
-  exec count zero on fresh failure; drive `attachExisting` and assert no session exec/no stop;
-  drive actual host apply and assert failure/no successful refresh report. Adapt existing
-  [`jailmain_test.go`](../../internal/cli/run/jailmain_test.go) operation fixtures rather than
-  pinning only a new evaluator. Delete each production composition call in an authorized
-  disposable implementation tree and record the respective test failing.
+- **Permanent operation controls:** materialize the [operation recipes](#operationcaller-regression-recipes)
+  at `Run`, `keeper.run`, both attach refresh paths and `applyHost`; the request-transfer,
+  marker-time publication and fatal-return controls are independent of evaluator-only tests.
+  Record the specified production-call deletion failures in an authorized disposable tree.
 - **Change:** D's fence. All Lua completes before publication. Do not precompute producer text
   in `stagePacks`; attach loads running pack sources through `runningJailPackView`/`loadPackTree`
   and evaluates using live applied access, regardless of current cfg requests. Normal and
@@ -664,8 +1066,8 @@ conditions. Commit messages are proposals to use exactly once the respective uni
   partial multi-file replacement composes only actual state; postreplacement producer failure
   returns failure and publishes no text while reporting mutations already performed; source
   lock released before Lua; launch lock serializes competing refresh; macos-user sessions use
-  their applied scopes rather than one requested config. Exact full red fixture body depends
-  on the missing refresh outcome/start/carrier handoffs; it is not supplied as verified here.
+  their applied scopes rather than one requested config. The [operation recipes](#operationcaller-regression-recipes) specify exact fixtures and
+  failure controls; their implementation and RED executions are still owed.
 - **Change:** E's fence. Compose once after the applicable scope step group, before successful
   operation completion. Do not silently map producer failure to pending/restart or omit it
   from the void attach apply path. Preserve `foldApplied`'s truthful partial state.
@@ -739,9 +1141,9 @@ refresh/render never evaluate one. The old seed's static map did not cover the k
 applied remote-name carrier, live kind eligibility, or incremental-publication failure.
 
 Before affected implementation dispatch, route the two observable gaps into the behavioral
-authority, complete exact operation-level red test bodies against the proposed contracts, and
-verify those controls. The three baseline red bodies printed here were observed on the
-unchanged production tree; operation abort/lock/keeper/live-apply controls remain unverified.
+authority, materialize the exact operation recipes below against the proposed contracts, and
+record their behavioral RED and deletion-control results. The three baseline red bodies printed here were observed on the
+unchanged production tree; operation abort/lock/keeper/live-apply recipes remain unexecuted.
 The proposed C1–C5/live-apply APIs are implementation deliverables, not
 admission gates. All three original owner product rulings stay closed. Independent docs-only review may be
 explicitly skipped for this planning change; neither that skip nor targeted render/link checks
