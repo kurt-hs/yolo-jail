@@ -527,6 +527,23 @@ func observeResumeInputState(obs Observer, event string, cancelOrExit bool, pend
 	obs.resumeInputObserve(observation)
 }
 
+func publishCancelWake(obs Observer) {
+	if obs.run == nil || obs.cancelWake == nil {
+		return
+	}
+	// Drain notifications already published to Go's channel after the callback and before
+	// the lifecycle snapshot. A kernel-pending signal not yet delivered to this channel is
+	// outside this publication boundary.
+	for {
+		select {
+		case <-obs.cancelWake:
+			obs.run.requestCancel()
+		default:
+			return
+		}
+	}
+}
+
 // RunWithProxyObserved is RunWithProxy plus an Observer.
 func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate func(), obs Observer) (int, error) {
 	hook := obs.Stage
@@ -645,6 +662,7 @@ func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate
 				resyncWinsize(inFd, master, c)
 			case syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM:
 				sess.requestCancel()
+				observeResumeInputState(obs, "resume-signal-cancellation-published", sess.cancellationOrExitPublished(), 0, 0, 0, 0)
 				callStage(hook, StageCancelRequested)
 				// The terminate arm must reach os.Exit from the background too: that is
 				// where `kill %1` finds a job the user ^Z'd out of a lingering quit, and
@@ -1138,6 +1156,7 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		observeResumePendingInput(obs, "resume-callback-entry", len(pending))
 		callStage(hook, StageResumed)
 		observeResumePendingInput(obs, "resume-callback-return", len(pending))
+		publishCancelWake(obs)
 		cancelOrExit := obs.run != nil && obs.run.cancellationOrExitPublished()
 		observeResumeInputState(obs, "resume-cancellation-check", cancelOrExit, len(pending), 0, 0, 0)
 		if cancelOrExit {

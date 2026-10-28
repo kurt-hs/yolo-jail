@@ -304,6 +304,7 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 		fifo := os.Getenv("YOLO_TTYPROXY_PRESSURE_FIFO")
 		outputBytes := os.Getenv("YOLO_TTYPROXY_PRESSURE_BYTES")
 		observer := Observer{Env: []string{"YOLO_TTYPROXY_PRESSURE_FIFO=" + fifo, "YOLO_TTYPROXY_PRESSURE_BYTES=" + outputBytes, "YOLO_TTYPROXY_OUTPUT_ACK=" + os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK")}}
+		var cancelWake chan os.Signal
 		var resumeHandle Handle
 		if os.Getenv("YOLO_TTYPROXY_EXPECT_SUSPEND") == "1" {
 			if os.Getenv("YOLO_TTYPROXY_BG_FG") == "1" {
@@ -312,7 +313,11 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 					return err == nil && string(mode) == "foreground"
 				}
 			}
-			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" {
+			if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" {
+				cancelWake = make(chan os.Signal, 1)
+				observer.cancelWake = cancelWake
+			}
+			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" {
 				terminateSignals := make(chan os.Signal, 1)
 				signal.Notify(terminateSignals, syscall.SIGTERM)
 				observer.Arm = func(h Handle) {
@@ -346,6 +351,9 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 								}
 							}
 							if _, err := os.Stat(fifo + ".kill"); err == nil {
+								if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" {
+									h.Terminate()
+								}
 								h.Kill()
 								os.Exit(128 + int(syscall.SIGTERM))
 							} else if !errors.Is(err, os.ErrNotExist) {
@@ -400,6 +408,13 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 			if os.Getenv("YOLO_TTYPROXY_TRACE_RESUME") == "1" {
 				observer.resumeInputObserve = func(observation resumeInputObservation) {
 					writeResumeObservation(fifo, observation)
+					if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" && observation.Event == "resume-callback-return" {
+						cancelWake <- syscall.SIGTERM
+						_ = os.WriteFile(fifo+".cancel-wake-injected", []byte("SIGTERM"), 0600)
+					}
+					if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" && observation.Event == "resume-cancellation-check" {
+						_ = os.WriteFile(fifo+".cancel-snapshot", []byte(strconv.FormatBool(observation.CancellationOrExitPublished)), 0600)
+					}
 					if os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" && observation.Event == "resume-cancellation-check" && !observation.CancellationOrExitPublished {
 						if resumeHandle.Terminate() {
 							_ = os.WriteFile(fifo+".cancel-published", []byte("terminated-after-check"), 0600)
@@ -887,15 +902,30 @@ func waitForTTYOutputPressure(t *testing.T, master int) bool {
 }
 
 func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
-	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false) })
-	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false, false, false, false) })
-	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true, false, false, false) })
-	t.Run("caller-cancel-published-during-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, true, false, false) })
-	t.Run("caller-cancel-published-after-resume-check", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, true, false) })
-	t.Run("negative-write-count-retries-flush", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, true) })
+	t.Run("foreground-resume", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false, false)
+	})
+	t.Run("background-child-exit", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, true, false, false, false, false, false)
+	})
+	t.Run("queued-termination-after-stop", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, true, false, false, false, false)
+	})
+	t.Run("caller-cancel-published-during-resume", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, true, false, false, false)
+	})
+	t.Run("caller-cancel-published-after-resume-check", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, true, false, false)
+	})
+	t.Run("cancel-wake-published-after-resume-callback", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, true, false)
+	})
+	t.Run("negative-write-count-retries-flush", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false, true)
+	})
 }
 
-func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume, cancelAfterResumeCheck, negativeResumeWrite bool) {
+func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume, cancelAfterResumeCheck, cancelWakeAfterResumeCallback, negativeResumeWrite bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -923,10 +953,13 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if cancelAfterResumeCheck {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK=1")
 	}
+	if cancelWakeAfterResumeCallback {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK=1")
+	}
 	if negativeResumeWrite {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_NEGATIVE_RESUME_WRITE=1")
 	}
-	if terminateAfterStop || cancelDuringResume || cancelAfterResumeCheck || negativeResumeWrite {
+	if terminateAfterStop || cancelDuringResume || cancelAfterResumeCheck || cancelWakeAfterResumeCallback || negativeResumeWrite {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_TRACE_RESUME=1")
 	}
 	var stderr bytes.Buffer
@@ -1131,7 +1164,6 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		stopDrain()
 		stages, stagesErr := os.ReadFile(control + ".proxy")
 		input, inputErr := os.ReadFile(control)
-		resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
 		resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
 		postExitSnapshot := queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios)
 		t.Logf("queued-SIGTERM post-exit boundary: %s", postExitSnapshot)
@@ -1146,12 +1178,10 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		if after := mustGetTermios(t, modeFD); *after != *termios {
 			t.Fatalf("queued cancellation did not preserve cooked terminal state: before=%+v after=%+v; %s", *termios, *after, postExitSnapshot)
 		}
-		if inputErr != nil {
-			t.Fatalf("read owned child input receipt after queued cancellation: %v; %s", inputErr, postExitSnapshot)
+		if inputErr != nil || stagesErr != nil || traceErr != nil {
+			t.Fatalf("read queued termination receipts: child=%q childErr=%v stages=%q stagesErr=%v trace=%q traceErr=%v; %s", input, inputErr, stages, stagesErr, resumeTrace, traceErr, postExitSnapshot)
 		}
-		if bytes.Contains(input, []byte{'R'}) {
-			t.Fatalf("owned child consumed queued input before cancellation: child=%q proxy=%q proxyErr=%v resumed-mode=%q modeErr=%v trace=%q traceErr=%v; %s", input, stages, stagesErr, resumedMode, modeErr, resumeTrace, traceErr, postExitSnapshot)
-		}
+		assertQueuedTerminationResume(t, resumeTrace, input, stages)
 		if err := unix.Kill(childPID, 0); !errors.Is(err, unix.ESRCH) {
 			t.Fatalf("queued cancellation left owned child %d alive: %v; %s", childPID, err, postExitSnapshot)
 		}
@@ -1230,7 +1260,39 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
 	}
-	if cancelDuringResume || cancelAfterResumeCheck {
+	if cancelDuringResume || cancelAfterResumeCheck || cancelWakeAfterResumeCallback {
+		if cancelWakeAfterResumeCallback {
+			cancelSnapshotErr := waitForFile(control+".cancel-snapshot", time.Now().Add(childDeadline))
+			resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
+			killErr := os.WriteFile(control+".kill", []byte("observed"), 0600)
+			var waitErr error
+			select {
+			case waitErr = <-waitResult:
+			case <-time.After(childDeadline):
+				proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+				childReceipt, childErr := os.ReadFile(control)
+				resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
+				t.Fatalf("late cancel-wake fixture did not terminate after checked resume: snapshot=%v resume=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", cancelSnapshotErr, resumeMarkerErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
+			}
+			<-waitDone
+			stopDrain()
+			proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+			childReceipt, childErr := os.ReadFile(control)
+			resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
+			snapshot, snapshotErr := os.ReadFile(control + ".cancel-snapshot")
+			injected, injectedErr := os.ReadFile(control + ".cancel-wake-injected")
+			assertSignalExit(t, waitErr, syscall.SIGTERM)
+			if cancelSnapshotErr != nil || resumeMarkerErr != nil || killErr != nil || snapshotErr != nil || injectedErr != nil || string(injected) != "SIGTERM" || string(snapshot) != "true" {
+				t.Fatalf("late cancellation notification was not published before the controlling snapshot: injection=%q injectionErr=%v snapshot=%q snapshotErr=%v wait=%v resume=%v kill=%v trace=%q traceErr=%v", injected, injectedErr, snapshot, snapshotErr, waitErr, resumeMarkerErr, killErr, resumeTrace, traceErr)
+			}
+			if traceErr != nil || childErr != nil || bytes.Contains(childReceipt, []byte{'R'}) || !strings.Contains(string(resumeTrace), "event=resume-callback-return") || !strings.Contains(string(resumeTrace), "event=resume-cancellation-check cancel-or-exit=true pending=1") || strings.Contains(string(resumeTrace), "event=resume-write-attempt") || strings.Contains(string(resumeTrace), "event=resume-enqueue-result") {
+				t.Fatalf("late buffered notification did not prevent resumed forwarding: proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
+			}
+			if after := mustGetTermios(t, modeFD); *after != *termios {
+				t.Fatalf("late cancel-wake cleanup did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+			}
+			return
+		}
 		cancelWaitErr := waitForFile(control+".cancel-published", time.Now().Add(childDeadline))
 		resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
 		inputErr := waitPressureMarker(t, control, 'R', time.Now().Add(childDeadline))
@@ -2129,6 +2191,54 @@ func waitForOutputPressure(t *testing.T, pipeFD, pipeSize int) (bool, int) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	return false, maxBuffered
+}
+
+func assertQueuedTerminationResume(t *testing.T, trace, childReceipt, stages []byte) {
+	t.Helper()
+	text := string(trace)
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	find := func(fragment string) int {
+		for i, line := range lines {
+			if strings.Contains(line, fragment) {
+				return i
+			}
+		}
+		return -1
+	}
+	entry := find("event=resume-callback-entry cancel-or-exit=false pending=1")
+	returned := find("event=resume-callback-return cancel-or-exit=false pending=1")
+	checkTrue := find("event=resume-cancellation-check cancel-or-exit=true pending=1")
+	checkFalse := find("event=resume-cancellation-check cancel-or-exit=false pending=1")
+	armCancel := find("event=resume-signal-cancellation-published cancel-or-exit=true")
+	writeCount, enqueueCount := strings.Count(text, "event=resume-write-attempt "), strings.Count(text, "event=resume-enqueue-result ")
+	if checkTrue >= 0 && checkFalse < 0 {
+		if !bytes.Contains(stages, []byte{'R'}) || entry < 0 || returned <= entry || writeCount != 0 || enqueueCount != 0 || bytes.Contains(childReceipt, []byte{'R'}) {
+			t.Fatalf("true controlling cancellation snapshot was not followed by zero resumed writes/consumption: stages=%q trace=%q child=%q", stages, trace, childReceipt)
+		}
+		return
+	}
+	if armCancel >= 0 && checkTrue < 0 && checkFalse < 0 {
+		if bytes.Contains(stages, []byte{'R'}) || entry >= 0 || returned >= 0 || writeCount != 0 || enqueueCount != 0 || bytes.Contains(childReceipt, []byte{'R'}) {
+			t.Fatalf("signal-arm cancellation before resume did not prevent all resumed forwarding: stages=%q trace=%q child=%q", stages, trace, childReceipt)
+		}
+		return
+	}
+	if checkFalse < 0 || checkTrue >= 0 || entry < 0 || returned <= entry || checkFalse <= returned || writeCount != 1 {
+		t.Fatalf("queued termination has a missing, contradictory, or incomplete controlling snapshot trace: trace=%q child=%q", trace, childReceipt)
+	}
+	write := find("event=resume-write-attempt ")
+	if write <= checkFalse || !strings.Contains(lines[write], "pending=0 attempted=1") {
+		t.Fatalf("false snapshot has no causally subsequent one-byte write attempt: trace=%q", trace)
+	}
+	enqueue := find("event=resume-enqueue-result ")
+	flush := find("event=resume-flush-result ")
+	outcome := enqueue
+	if outcome < 0 || !strings.Contains(lines[outcome], "attempted=1 written=1 queued=0") {
+		outcome = flush
+	}
+	if outcome <= write || outcome < 0 || !strings.Contains(lines[outcome], "written=1 queued=0") || !bytes.Contains(childReceipt, []byte{'R'}) {
+		t.Fatalf("false snapshot lacks a causally consistent successful write and verified child receipt: trace=%q child=%q", trace, childReceipt)
+	}
 }
 
 func queuedTerminationBoundarySnapshot(control string, childPID, proxyPID, modeFD int, before unix.Termios) string {
