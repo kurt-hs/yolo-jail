@@ -1504,7 +1504,7 @@
 "packs/claude/loopholes/claude-oauth-broker/manifest.jsonc",
 "packs/claude/pack.json",
 "packs/codex/pack.json",
-"packs/copilot/pack.json",
+"packs/copilot/*.json",
 "packs/git/loopholes/git-broker/manifest.jsonc",
 "packs/git/pack.json",
 "packs/github/loopholes/github-broker/manifest.jsonc",
