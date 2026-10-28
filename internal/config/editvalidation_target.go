@@ -347,8 +347,8 @@ func resolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		if err != nil {
 			return ResolvedEditTarget{}, fmt.Errorf("read config target %s: %w", selected.logical, err)
 		}
-		if intent.Kind == EditMutationRemove && format == configdoc.JSONC {
-			mapped, found, mapErr := editTargetJSONCRemovalPath(node, key, selected, role, preimage)
+		if (intent.Kind == EditMutationSet || intent.Kind == EditMutationRemove) && format == configdoc.JSONC {
+			mapped, found, mapErr := editTargetJSONCAuthoredPath(node, key, selected, role, preimage)
 			if mapErr != nil {
 				return ResolvedEditTarget{}, mapErr
 			}
@@ -366,7 +366,7 @@ func resolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		prospective: copyProspectiveSelection(prospective)}, nil
 }
 
-func editTargetJSONCRemovalPath(root *srcNode, key []configdoc.Step, selected editTargetFile, role ExplicitEditScope, preimage []byte) ([]configdoc.Step, bool, error) {
+func editTargetJSONCAuthoredPath(root *srcNode, key []configdoc.Step, selected editTargetFile, role ExplicitEditScope, preimage []byte) ([]configdoc.Step, bool, error) {
 	if err := rejectChangedSelectedJSONCConsumedSource(sourcesOf(root), selected, role, preimage); err != nil {
 		return nil, false, err
 	}
@@ -390,7 +390,7 @@ func editTargetJSONCRemovalPath(root *srcNode, key []configdoc.Step, selected ed
 		}
 		physical, err := filepath.EvalSymlinks(f.path)
 		if err != nil {
-			return nil, false, fmt.Errorf("resolve JSONC removal source %s: %w", f.path, err)
+			return nil, false, fmt.Errorf("resolve JSONC edit source %s: %w", f.path, err)
 		}
 		physical, err = filepath.Abs(physical)
 		if err != nil {
@@ -403,11 +403,11 @@ func editTargetJSONCRemovalPath(root *srcNode, key []configdoc.Step, selected ed
 			return nil, false, fmt.Errorf("config target %s changed between source discovery and target binding; reread the config and retry (no file was written)", selected.logical)
 		}
 		if _, present := f.locate(origin.steps, origin.documentSteps); !present {
-			return nil, false, fmt.Errorf("selected JSONC removal source %s has no unique authored value at %s", selected.logical, strings.Join(stepPathNames(origin.documentSteps), "."))
+			return nil, false, fmt.Errorf("selected JSONC edit source %s has no unique authored value at %s", selected.logical, strings.Join(stepPathNames(origin.documentSteps), "."))
 		}
 		candidate := append([]configdoc.Step(nil), origin.documentSteps...)
 		if authored != nil && !sameEditTargetPath(authored, candidate) {
-			return nil, false, fmt.Errorf("selected JSONC removal source %s has ambiguous authored paths for %s", selected.logical, strings.Join(stepPathNames(key), "."))
+			return nil, false, fmt.Errorf("selected JSONC edit source %s has ambiguous authored paths for %s", selected.logical, strings.Join(stepPathNames(key), "."))
 		}
 		authored = candidate
 	}
@@ -439,7 +439,7 @@ func rejectChangedSelectedJSONCConsumedSource(sources *Sources, selected editTar
 			seenFiles[f] = true
 			physical, err := filepath.EvalSymlinks(f.path)
 			if err != nil {
-				return fmt.Errorf("resolve JSONC removal source %s: %w", f.path, err)
+				return fmt.Errorf("resolve consumed JSONC edit source %s: %w", f.path, err)
 			}
 			physical, err = filepath.Abs(physical)
 			if err != nil {

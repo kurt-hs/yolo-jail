@@ -37,7 +37,8 @@ managed separately by 'yolo surface'.
 
 Subcommands:
   set <key> <value> [target] [--dry-run]
-                           Set one typed value in an existing readable config file.
+                           Set one typed value in a readable config file; may create
+                           a missing standard Project/Local TOML target.
   add <key> <value> [target] [--dry-run]
                            Append one typed value to an existing list.
   unset <key> [target] [--dry-run]
@@ -72,8 +73,8 @@ const configEditUsage = `Usage:
   yolo config add <key> <value> [target] [--dry-run]
   yolo config unset <key> [target] [--dry-run]
 
-set and add require one typed value; unset physically removes an ordinary recognized scalar from the named file, so a lower layer or default may reappear. Table, list, native, and null removals keep their schema-specific forms; unsupported removals refuse without writing. Edits target an existing config file only.
-The default target is Project when it exists, even if User or Local currently wins. No config file is created.
+set and add require one typed value; unset physically removes an ordinary recognized scalar from the named file, so a lower layer or default may reappear. Table, list, native, and null removals keep their schema-specific forms; unsupported removals refuse without writing. Edits require an existing config file except for the bounded, standard Project/Local TOML target, which may be created when absent.
+The default target is Project when it exists, even if User or Local currently wins. User and named-file targets must exist. A missing standard Project/Local TOML target may be created; --dry-run never creates it.
 
 Flags:
   --user, --project, --local

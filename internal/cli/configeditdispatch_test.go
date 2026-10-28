@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/testconfig"
 )
@@ -274,11 +276,63 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 	if _, ok := registry["config"]; !ok || subcommandUsage["config"].text != configUsage {
 		t.Fatal("the existing config CLI registration/help text no longer advertises its production dispatcher")
 	}
+	if !strings.Contains(configEditUsage, "may be created when absent") ||
+		!strings.Contains(configEditUsage, "--dry-run never creates it") || strings.Contains(configEditUsage, "No config file is created") {
+		t.Fatalf("config edit help misstates bounded Project/Local TOML creation: %s", configEditUsage)
+	}
 	for _, verb := range []string{"set", "add", "unset"} {
 		if !strings.Contains(configUsage, "  "+verb+" ") {
 			t.Errorf("config usage does not advertise working verb %q", verb)
 		}
 	}
+}
+
+func TestConfigRegistrySetLegacyResourcesUsesAuthoredCoordinatesAndEffectiveValue(t *testing.T) {
+	workspace := testconfig.WorkspaceFormat(t, configdoc.JSONC, `{"resources":{"cpus":2}}`)
+	user := testconfig.UserFormat(t, configdoc.JSONC, `{}`)
+	t.Setenv("HOME", user.Root)
+	t.Setenv("YOLO_VERSION", "")
+	withConfigEditCWD(t, workspace.Root)
+
+	rc, out, errw := dispatchConfigCapture(t, []string{"set", "machine.resources.cpus", "4", "--project"})
+	assertPublicPostWriteCheck(t, rc, out, errw)
+	written, err := os.ReadFile(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(written, []byte(`"resources":{"cpus":4}`)) || bytes.Contains(written, []byte(`"machine"`)) {
+		t.Fatalf("canonical Set did not update the existing legacy authored coordinate: %s", written)
+	}
+	cfg, err := config.LoadConfig(workspace.Root, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, _ := cfg.Get("machine")
+	machineMap, ok := machine.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("effective machine table missing: %#v", cfg)
+	}
+	resources, _ := machineMap.Get("resources")
+	resourcesMap, ok := resources.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("effective machine.resources table missing: %#v", cfg)
+	}
+	cpus, ok := jsonx.AsInt(mustConfigEditValue(t, resourcesMap, "cpus"))
+	if !ok || cpus != 4 {
+		t.Fatalf("effective machine.resources.cpus = %v (integer=%t), want 4; config=%#v", cpus, ok, cfg)
+	}
+}
+
+func mustConfigEditValue(t *testing.T, m *jsonx.OrderedMap, key string) any {
+	t.Helper()
+	if m == nil {
+		t.Fatalf("missing map while reading %s", key)
+	}
+	value, ok := m.Get(key)
+	if !ok {
+		t.Fatalf("missing config key %s", key)
+	}
+	return value
 }
 
 func TestConfigRunWJailedUserEditRefusesBeforeTargetEffects(t *testing.T) {
