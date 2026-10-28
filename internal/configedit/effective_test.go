@@ -16,6 +16,26 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+func TestApplyEffectiveRefusesInvalidExistingResourceSemanticsBeforeWrite(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+	before := []byte("[install]\nnix = ['just']\n[machine.resources]\ncpus = -1\n")
+	writeEditFixture(t, path, string(before))
+	mutation := Mutation{Action: Append, Path: []configdoc.Step{{Key: "install"}, {Key: "nix"}}, Value: "cmake"}
+	if _, err := ApplyEffective(workspace, path, configdoc.TOML, mutation, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "cpus") {
+		t.Fatalf("effective edit accepted a semantically invalid resource graph: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, before) {
+		t.Fatalf("semantic refusal changed target bytes: got %q, want %q", got, before)
+	}
+}
+
 func TestApplyEffectiveEditsSymlinkedUserIncludeAgainstWholeLayerGraph(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
