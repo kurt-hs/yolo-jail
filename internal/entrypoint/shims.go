@@ -841,7 +841,6 @@ func nativeAgentLauncherWithTmpdir(pack string, inst *packdecl.Install, stampDir
 		"__YOLO_EXEC_PREFIX__", "",
 		// The gate a patched extension this agent loads puts on it (patchedtrees.go, PPX-D18).
 		"__YOLO_TREE_GATE__", shquote.Quote(inst.Gate),
-		"__YOLO_COMPATIBILITY__", nativeCompatibilityShell(inst.VersionCompatibility, sandboxContext, sandboxNative),
 	}, append(append(append(append(launchFlagSplices(flags), useInstalledSplices(binName, pack)...), refreshSplices(inst.Refresh, inst.RefreshTiming)...), modelMenuSplices(inst.ModelMenu)...), startupSplicesWithTmpdir(inst, false, sandboxContext, sandboxNative)...)...)...)
 	return r.Replace(nativeLauncherTemplate)
 }
@@ -1947,10 +1946,7 @@ SERVERS_NPM=__YOLO_SERVERS_NPM__
 # every expansion of the array for HAS_UPDATE_VERB's reason: bash 3.2 under "set -u".
 HAS_LAUNCH_FLAGS=__YOLO_HAS_LAUNCH_FLAGS__
 LAUNCH_FLAGS=(__YOLO_LAUNCH_FLAGS__)
-` + refreshDeclShell + probeArgsDeclShell + `
-__YOLO_COMPATIBILITY__
-` + modelMenuDeclShell + launchFlagsShellFn + `
-if ! _yolo_compatibility_check; then exit 1; fi
+` + refreshDeclShell + probeArgsDeclShell + modelMenuDeclShell + launchFlagsShellFn + `
 # ONE lock per INSTALL PREFIX, not per program: §3.5's contention rule is about who may
 # write into $HOME/.local, and two vendor updaters running there at once is what it
 # forbids. On the container backends the prefix is a per-workspace bind and nothing can
@@ -2474,7 +2470,6 @@ if [ "${YOLO_PACK_UPDATE:-}" = "1" ]; then
         ` + installerMisplacedCall + `
         _rc=1
     fi
-    if ! _yolo_compatibility_check; then exit 1; fi
     exit "$_rc"
 fi
 ` + treeGateShell + `
@@ -2493,7 +2488,6 @@ elif [ "${` + InstallOnlyEnv + `:-}" != "1" ] && _update_due; then
     _locked_update || true
     _yolo_refuse_failed "$STAMP"
 fi
-if ! _yolo_compatibility_check; then exit 1; fi
 # Whatever ran above, or nothing: see _locked_prune.
 _locked_prune || true
 # INSTALL AND STOP. See InstallOnlyEnv: yolo capture needs the install this launcher

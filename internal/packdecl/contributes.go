@@ -221,10 +221,6 @@ type Contribution struct {
 	// `--help` only after resolving every package and installing a missing one with no lock, so
 	// it declares `--version` and `-v` alone.
 	ProbeArgs []string `json:"probe_args,omitempty"`
-	// VersionCompatibility is a pack-owned threshold and refusal for a program whose native
-	// launcher cannot safely run in a specific trusted launch context. Read only by that
-	// program's native launcher and refused without the version probe needed to evaluate it.
-	VersionCompatibility *VersionCompatibility `json:"version_compatibility,omitempty"`
 	// TempCaches names directories the program keeps COMPILED CODE in under its temporary
 	// directory, Node's os.tmpdir() (`$TMPDIR`, else `$TMP`, `$TEMP`, `/tmp`): `"temp_caches":
 	// ["jiti"]` for pi, whose extension loader writes each extension it compiles to
@@ -1463,10 +1459,6 @@ func (m *Manifest) InstallContributions() []Install {
 		// delivered it. Copied, for Refresh's reason.
 		if len(c.ProbeArgs) > 0 {
 			in.ProbeArgs = append([]string(nil), c.ProbeArgs...)
-		}
-		if c.VersionCompatibility != nil {
-			compatibility := *c.VersionCompatibility
-			in.VersionCompatibility = &compatibility
 		}
 		if len(c.TempCaches) > 0 {
 			in.TempCaches = append([]string(nil), c.TempCaches...)
@@ -3693,54 +3685,6 @@ func onlyIfProblems(field string, o *RefreshOnlyIf) []string {
 	return problems
 }
 
-// versionCompatibilityProblems validates a program's version compatibility refusal. The
-// native launcher is its only reader, so it requires an installer-delivered program and
-// declared version probe; its text is one shell-quoted, single-line refusal message.
-func versionCompatibilityProblems(label string, c Contribution) []string {
-	if c.VersionCompatibility == nil {
-		return nil
-	}
-	field := label + ".version_compatibility"
-	if c.Kind != KindProgram || c.Via != "installer" {
-		return []string{fmt.Sprintf(
-			"%s: only a native installer program takes version_compatibility — its native launcher is the only reader", field)}
-	}
-	var problems []string
-	if !numericVersionTriplet(c.VersionCompatibility.RefuseAtOrAbove) {
-		problems = append(problems, field+`.refuse_at_or_above: must be a numeric major.minor.patch version with components of at most 9 digits`)
-	}
-	if len(c.ProbeArgs) == 0 {
-		problems = append(problems, field+`: requires the program's declared probe_args so the launcher can read its installed version`)
-	}
-	message := c.VersionCompatibility.Message
-	if strings.TrimSpace(message) == "" || len(message) > 500 {
-		problems = append(problems, field+`.message: must be a non-empty refusal of at most 500 bytes`)
-	}
-	for _, r := range message {
-		if unicode.IsControl(r) {
-			problems = append(problems, field+`.message: must be one printable line`)
-			break
-		}
-	}
-	return problems
-}
-
-func numericVersionTriplet(version string) bool {
-	parts := strings.Split(version, ".")
-	if len(parts) != 3 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" || len(part) > 9 || len(part) > 1 && part[0] == '0' {
-			return false
-		}
-		if _, err := strconv.ParseUint(part, 10, 32); err != nil {
-			return false
-		}
-	}
-	return true
-}
-
 // versionsDirProblems validates Contribution.VersionsDir. It is refused off a `program`
 // delivered `via: "installer"` for `update`'s reason — the native launcher's version prune is
 // its one reader, so anywhere else it would be a declaration that silently does nothing — and
@@ -4333,7 +4277,6 @@ func validateContribution(label string, c Contribution) []string {
 		problems = append(problems, refreshProblems(label+".refresh", c.Refresh)...)
 	}
 	problems = append(problems, probeArgsProblems(label, c)...)
-	problems = append(problems, versionCompatibilityProblems(label, c)...)
 	problems = append(problems, tempCachesProblems(label, c)...)
 	problems = append(problems, sandboxTmpdirEnvProblems(label, c)...)
 	problems = append(problems, versionsDirProblems(label, c)...)

@@ -244,14 +244,6 @@ var retiredHooks = map[string]string{
 // any other name — including a live hook and a name that was never one here.
 func RetiredHook(name string) string { return retiredHooks[name] }
 
-// VersionCompatibility declares a narrow version boundary a native program launcher refuses
-// in a trusted launch context. Versions are numeric major.minor.patch triplets; the launcher
-// compares them numerically and uses Message as the actionable refusal.
-type VersionCompatibility struct {
-	RefuseAtOrAbove string `json:"refuse_at_or_above"`
-	Message         string `json:"message"`
-}
-
 // Install declares a program the pack wants present in the jail.
 type Install struct {
 	// Kind is "npm", "native" or "source" (InstallKindSource: a fork's, or a pack-tree
@@ -310,10 +302,6 @@ type Install struct {
 	// ProbeArgs are the first arguments that make an invocation a VERSION PROBE, nil when the
 	// program declares none. The Contribution field of the same name carries the reasoning.
 	ProbeArgs []string `json:"probe_args,omitempty"`
-	// VersionCompatibility carries a pack's native-launcher version refusal, nil when absent.
-	// The Contribution field carries its grammar; it is read only when trusted native launch
-	// metadata says the configured context applies.
-	VersionCompatibility *VersionCompatibility `json:"version_compatibility,omitempty"`
 	// TempCaches names the directories the program keeps compiled code in under its temporary
 	// directory, nil when it declares none. The Contribution field of the same name carries the
 	// reasoning.
