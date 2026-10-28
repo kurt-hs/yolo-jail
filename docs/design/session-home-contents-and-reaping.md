@@ -18,10 +18,10 @@ This review is reasoning from the measured facts in the review brief, including 
 **Status 2026-10-28.** Built for the host notch, in two commits: `5f215ed10` (a stray is captured,
 kept whole, named and never a launch refusal; one rule on the reap and resident paths; `yolo prune`
 reports a kept home) and `6be8f6439` (the launch manifest, SHR-D3; repatriation, SHR-D4; kept-home
-reporting, SHR-D9). Not built: the jail boot's retire path still keeps a stray home and warns
-rather than repatriating it — it loses nothing today, so parity (SHR-D5) is a follow-up. Open:
-SHR-Q2's audit, which decides whether link replacement is the common case or a one-extension
-accident.
+reporting, SHR-D9). Parity is built too, in `224320259`: the rule lives once in
+`internal/sessionhome.Repatriate`, and the jail boot's retire path calls it, so all three paths —
+jail boot, host resident close, host reap — give a stray one fate. Open: SHR-Q2's audit for
+programs other than `pi-web-access`, whose write behavior is now measured ([§3](#3-q2-what-a-stray-is-and-its-fate)).
 
 ## 2. Q1: the reaper's requirement
 
@@ -57,14 +57,20 @@ The correct fate follows from whose bytes they are. A stray is program-owned sta
 | Symlinks, rendered-and-captured surfaces, sidecars, `.lease` | Delete with the home | Classes (a)–(d) of [§2](#2-q1-the-reapers-requirement) |
 
 The `pi-web-access` case is row one: all three preserved homes show the name **absent** from the
-real directory at build time. Whether a later session turns it into row two depends on how the
-extension writes, which is UNMEASURED (see [§7](#7-q6-smallest-change-durable-change-evidence)):
-the maintainer created the real directory after the lockout, and no ended home has yet been
-judged since, so "the program replaces the link" is a hypothesis, not a measurement. It matters,
-because if the program writes *through* an existing link then declaring the name shared **is**
-the cure, and the jail warning that recommends it is right. What is certain either way is that
-the declaration cannot be the *only* remedy: it is unavailable to a third-party extension whose
-name the pack cannot know in advance, and the first session to run one creates a stray regardless.
+real directory at build time.
+
+MEASURED 2026-10-28, and it settles the mechanism: the extension writes **through** an existing
+link. Two live host session homes hold `pi-web-access` as a symlink to the real directory, and the
+directory the extension wrote is the real one. So this class is row one only — the first session to
+run such an extension creates the directory, and every session after it links it — and the lockout
+was three stale homes from before the real directory existed, not a program defeating the farm.
+
+Two consequences. Repatriation is the whole cure here, not merely preservation: the first session's
+directory goes home and no later session can create it again. And "declare the name shared" is
+equally a cure for this class, so the jail's old warning was right about the remedy and wrong about
+the timing — it fired on homes the user no longer had to act on. A program that *replaces* a link
+by renaming over it is still unmeasured; that is what SHR-Q2's audit is for, and it is the case
+row two exists for.
 
 ## 4. Q3: is the symlink farm the right mechanism
 
@@ -114,7 +120,7 @@ The inventory check was invented precisely because corollary (3) was missing: wi
 
 | Question | Measurement | Where |
 |---|---|---|
-| *How* does `pi-web-access` defeat the link — rename, unlink+mkdir, other? | File-operation trace of one extension write against a linked name | Maintainer's jail, podman backend |
+| *How* does `pi-web-access` defeat the link — rename, unlink+mkdir, other? | **MEASURED 2026-10-28: it does not defeat it.** Two live host session homes hold the name as a symlink to the real directory, so the write goes through the link | the maintainer's host, two `ls -la` readings |
 | Does any program rename over a rendered **surface**, or over the `auth.json` link? (Would reopen [§4](#4-q3-is-the-symlink-farm-the-right-mechanism) toward mounts) | Audit kept/session homes across backends for replaced surface paths and replaced credential links | Jail session homes under `~/.pi/.yolo-sessions/` and host `<state>/host-session-homes*/`, over normal use |
 | How common are strays in jails vs. host, per backend? | Count and classify kept homes per [§3](#3-q2-what-a-stray-is-and-its-fate)'s table over a fixed window | podman, Apple Container, macos-user, host notch |
 | Is per-file bind-mounting (option b) viable where namespaces exist? | Rename-over-mounted-file behavior, two concurrent profile views, capture diffing | Container backends only; explicitly not a parity candidate |
@@ -144,7 +150,7 @@ first row (a name absent from the real directory), not a collision.
 | SHR-D2 | The current-selection inventory check is removed as a deletion gate | It enforces a closed world the design never promised (SP-D3) and judges old homes against new packs |
 | SHR-D3 | Classification at reap/close time is against the originating launch (manifest; baselines until then), not the current packs | Accountability attaches to the launch that built the home |
 | SHR-D4 | A stray's fate is repatriation: adopt if the name is absent from the real directory, keep aside on collision; never silently delete | The bytes are program-owned and addressed to the real directory; divergent merges are the user's call |
-| SHR-D5 | One stray rule on every path: jail boot, host resident `Close`, host reap | Parity; the silent host delete is the only data-loss path and ends first |
+| SHR-D5 | One stray rule on every path: jail boot, host resident `Close`, host reap | Parity; the silent host delete is the only data-loss path and ends first. Built in `224320259`, rule in `internal/sessionhome.Repatriate` |
 | SHR-D6 | Retain the symlink farm; treat link replacement as normal program behavior, repaired by SHR-D4 | It is the only mechanism available on all backends and the host notch; profile isolation survives replacement |
 | SHR-D7 | Revisit bind-mount views only on measured evidence of harm repatriation cannot repair ([§7](#7-q6-smallest-change-durable-change-evidence)) | Mounts cannot serve the host notch, so they cannot be the parity mechanism |
 | SHR-D8 | Janitorial reaping during a launch never refuses the launch; it keeps aside and warns once. Launch refusal is reserved for the new launch's own build/render failures (SP-D6, SP-D26) | Retention protects the same bytes without denying service; a stop must name a step that works |
@@ -157,6 +163,6 @@ first row (a name absent from the real directory), not a collision.
 | ID | Question | Settled by |
 |---|---|---|
 | SHR-Q1 | Does a complete launch manifest already exist in some form beyond baseline sidecars? | **Settled: no.** The sidecars are per-surface, keyed by `agent-name` (`last_render`, `selection`, `overlay`, `list-capture`, `list-record`, `provenance`); none records a rendered path, a link name or a link target, so SHR-D3 needs a new record rather than a reader |
-| SHR-Q2 | Do any packs' programs replace links to *files* (not directories) holding credentials or session state? (UNMEASURED) | The audit in [§7](#7-q6-smallest-change-durable-change-evidence), row 2 |
+| SHR-Q2 | Do any packs' programs replace links to *files* (not directories) holding credentials or session state? `pi-web-access` writes through a link (measured 2026-10-28), so the class is unproven for anything else | The audit in [§7](#7-q6-smallest-change-durable-change-evidence), row 2 |
 | SHR-Q3 | For a kept-aside collision, should `yolo prune` grow an explicit adopt/discard verb, or is naming the path enough? | Maintainer preference after living with kept-home volume from SHR-Q2's window |
 | SHR-Q4 | Should adoption (SHR-D4) apply recursively inside rendered parent trees, or is keep-aside right for all non-top-level strays? | SHR-Q2's classification data; keep-aside is the safe default until then |
