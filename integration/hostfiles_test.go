@@ -112,9 +112,9 @@ func TestHostFilesSourceLessModes(t *testing.T) {
 	}
 }
 
-// TestHostFilesConfigLsAndReset drives the Phase-3 visibility commands against a
-// real jail: `config ls` must flag exactly the capture surface that diverged, and
-// `config reset` must clear it. These run host-side against the workspace the jail
+// TestHostFilesSurfaceLsAndReset drives the Phase-3 visibility commands against a
+// real jail: `surface ls` must flag exactly the capture surface that diverged, and
+// `surface reset` must clear it. These run host-side against the workspace the jail
 // wrote its sidecars into, so they exercise the same sidecar layout the entrypoint
 // produced rather than a fixture.
 //
@@ -122,7 +122,7 @@ func TestHostFilesSourceLessModes(t *testing.T) {
 // stopped jail's captured edits is the fourth disposition, and it is the only exit from a
 // captured edit that does not require launching the jail whose capture you are discarding.
 // See the comment at that call.
-func TestHostFilesConfigLsAndReset(t *testing.T) {
+func TestHostFilesSurfaceLsAndReset(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProjectWithPacks(t, `{
@@ -152,13 +152,13 @@ func TestHostFilesConfigLsAndReset(t *testing.T) {
 		t.Errorf("boot printed no divergence notice for a non-empty overlay:\n%s", boot2.stderr)
 	}
 
-	// `config ls` must flag the capture surface — and only it.
-	ls := runYoloCLI(t, dir, "config", "ls")
+	// `surface ls` must flag the capture surface — and only it.
+	ls := runYoloCLI(t, dir, "surface", "ls")
 	if ls.rc != 0 {
-		t.Fatalf("config ls rc=%d\n%s\n%s", ls.rc, ls.stdout, ls.stderr)
+		t.Fatalf("surface ls rc=%d\n%s\n%s", ls.rc, ls.stdout, ls.stderr)
 	}
 	if !strings.Contains(ls.stdout, "captured in-jail edits") {
-		t.Errorf("config ls did not flag the diverged surface:\n%s", ls.stdout)
+		t.Errorf("surface ls did not flag the diverged surface:\n%s", ls.stdout)
 	}
 	for _, line := range strings.Split(ls.stdout, "\n") {
 		if strings.Contains(line, "plain.conf") && strings.Contains(line, "⚠") {
@@ -166,16 +166,16 @@ func TestHostFilesConfigLsAndReset(t *testing.T) {
 		}
 	}
 
-	// `config diff user` must show the captured key.
-	diff := runYoloCLI(t, dir, "config", "diff", "user")
+	// `surface diff user` must show the captured key.
+	diff := runYoloCLI(t, dir, "surface", "diff", "user")
 	if diff.rc != 0 {
-		t.Fatalf("config diff rc=%d\n%s\n%s", diff.rc, diff.stdout, diff.stderr)
+		t.Fatalf("surface diff rc=%d\n%s\n%s", diff.rc, diff.stdout, diff.stderr)
 	}
 	if !strings.Contains(diff.stdout, "mine") {
-		t.Errorf("config diff did not show the captured key:\n%s", diff.stdout)
+		t.Errorf("surface diff did not show the captured key:\n%s", diff.stdout)
 	}
 
-	// `config reset user` NEEDS NO --force HERE, and that is the whole of [OQ-CR4]
+	// `surface reset user` NEEDS NO --force HERE, and that is the whole of [OQ-CR4]
 	// (docs/reference/config-target-resolution.md) — do not "fix" this by adding the flag back.
 	//
 	// It used to refuse, on the premise that reset truncates a surface file resolved against
@@ -191,12 +191,12 @@ func TestHostFilesConfigLsAndReset(t *testing.T) {
 	// This harness's jail has exited by now, which is the disposition under test. The running
 	// and unqueryable arms are unit-pinned, in internal/cli/confighostjailreset_test.go,
 	// because they need a stubbed runtime probe.
-	reset := runYoloCLI(t, dir, "config", "reset", "user")
+	reset := runYoloCLI(t, dir, "surface", "reset", "user")
 	if reset.rc != 0 {
-		t.Fatalf("config reset rc=%d\n%s\n%s", reset.rc, reset.stdout, reset.stderr)
+		t.Fatalf("surface reset rc=%d\n%s\n%s", reset.rc, reset.stdout, reset.stderr)
 	}
 	if overlays := captureOverlays(dir); len(overlays) != 0 {
-		t.Errorf("config reset left user capture overlays behind: %v", overlays)
+		t.Errorf("surface reset left user capture overlays behind: %v", overlays)
 	}
 	// AND IT TRUNCATED THE JAIL'S OWN FILE, which is the half deleting sidecars does not do:
 	// without it the next boot finds no baseline, takes the first-migration branch and ADOPTS
@@ -221,10 +221,10 @@ func TestHostFilesConfigLsAndReset(t *testing.T) {
 			"    %q\n\nThe next render diffs the two and captures the difference as a user edit.",
 			baseline, data)
 	}
-	// And `ls` must now be clean.
-	ls2 := runYoloCLI(t, dir, "config", "ls")
+	// And `surface ls` must now be clean.
+	ls2 := runYoloCLI(t, dir, "surface", "ls")
 	if strings.Contains(ls2.stdout, "captured in-jail edits") {
-		t.Errorf("config ls still reports divergence after reset:\n%s", ls2.stdout)
+		t.Errorf("surface ls still reports divergence after reset:\n%s", ls2.stdout)
 	}
 }
 
@@ -234,7 +234,7 @@ func TestHostFilesConfigLsAndReset(t *testing.T) {
 const userCapSlug = ".config_2fyolo-it_2fcap.json"
 
 // captureOverlays lists the user-surface CAPTURE OVERLAYS — the captured edits themselves,
-// which is what `config reset` discards.
+// which is what `surface reset` discards.
 //
 // ⚠ IT USED TO LIST THE BASELINE TOO, and required both to be gone. That was right while a
 // `user` surface had no codec and reset could not truncate one: nothing was written, so no
@@ -321,15 +321,15 @@ func TestHostFilesReservedDestinationRejected(t *testing.T) {
 //     (OQ-CR2). A confident empty answer was the original defect, so the failure this
 //     guards against is silence, not an error.
 //
-// It runs the CLI host-side with no container: `config ls` reads and never launches.
+// It runs the CLI host-side with no container: `surface ls` reads and never launches.
 func TestConfigTargetResolvesFromTheCwd(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProjectWithPacks(t, `{"network": {"mode": "bridge"}}`, "claude")
 
-	inside := runYoloCLI(t, dir, "config", "ls")
+	inside := runYoloCLI(t, dir, "surface", "ls")
 	if inside.rc != 0 {
-		t.Fatalf("config ls in a workspace rc=%d\n%s\n%s", inside.rc, inside.stdout, inside.stderr)
+		t.Fatalf("surface ls in a workspace rc=%d\n%s\n%s", inside.rc, inside.stdout, inside.stderr)
 	}
 	if !strings.Contains(inside.combined(), "jail notch") || !strings.Contains(inside.combined(), dir) {
 		t.Errorf("a workspace cwd must resolve THAT workspace at the jail notch, and the "+
@@ -339,7 +339,7 @@ func TestConfigTargetResolvesFromTheCwd(t *testing.T) {
 	// A directory that is neither a workspace nor inside one: no `.yolo/config-boot.json`
 	// and no workspace config, which is exactly the marker OQ-CR2 ruled.
 	outside := t.TempDir()
-	out := runYoloCLI(t, outside, "config", "ls")
+	out := runYoloCLI(t, outside, "surface", "ls")
 	if out.rc != 0 {
 		t.Fatalf("a non-workspace cwd must ANSWER about the host, not refuse: rc=%d\n%s\n%s",
 			out.rc, out.stdout, out.stderr)
