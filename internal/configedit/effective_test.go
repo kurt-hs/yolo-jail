@@ -24,7 +24,7 @@ func TestApplyEffectiveRefusesInvalidExistingResourceSemanticsBeforeWrite(t *tes
 	before := []byte("[install]\nnix = ['just']\n[machine.resources]\ncpus = -1\n")
 	writeEditFixture(t, path, string(before))
 	mutation := Mutation{Action: Append, Path: []configdoc.Step{{Key: "install"}, {Key: "nix"}}, Value: "cmake"}
-	if _, err := ApplyEffective(workspace, path, configdoc.TOML, mutation, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "cpus") {
+	if _, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, mutation, config.ExplicitEditProject, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "cpus") {
 		t.Fatalf("effective edit accepted a semantically invalid resource graph: %v", err)
 	}
 	got, err := os.ReadFile(path)
@@ -62,7 +62,7 @@ func TestApplyEffectiveEditsSymlinkedUserIncludeAgainstWholeLayerGraph(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyEffective(workspace, alias, configdoc.TOML, mutation, ApplyOptions{ExpectedBytes: original}); err != nil {
+	if _, err := applyEffectiveTest(t, workspace, alias, configdoc.TOML, mutation, config.ExplicitEditUser, ApplyOptions{ExpectedBytes: original}); err != nil {
 		t.Fatal(err)
 	}
 	gotBytes, err := os.ReadFile(physical)
@@ -156,7 +156,7 @@ func TestApplyEffectiveRejectsUnsupportedTargetsBeforeDryRunAndNoop(t *testing.T
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := ApplyEffective(workspace, path, configdoc.TOML, tc.mutation, tc.options); err == nil || !strings.Contains(err.Error(), "not read by the standard config graph") {
+			if _, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, tc.mutation, config.ExplicitEditProject, tc.options); err == nil || !strings.Contains(err.Error(), "not consumed by the standard config graph") {
 				t.Fatalf("unconsumed target was not refused: %v", err)
 			}
 			got, _ := os.ReadFile(path)
@@ -174,7 +174,7 @@ func TestApplyEffectiveUsesReaderScopeAndSchemaValidationBeforeWrite(t *testing.
 	userOnly := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
 	userOnlyBefore := []byte("[allow.git]\nalways = ['fetch']\n")
 	writeEditFixture(t, userOnly, string(userOnlyBefore))
-	_, err := ApplyEffective(workspace, userOnly, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "allow"}, {Key: "git"}, {Key: "always"}}, Value: []any{"fetch", "push"}}, ApplyOptions{})
+	_, err := applyEffectiveTest(t, workspace, userOnly, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "allow"}, {Key: "git"}, {Key: "always"}}, Value: []any{"fetch", "push"}}, config.ExplicitEditProject, ApplyOptions{})
 	if err == nil || !strings.Contains(err.Error(), "user-scope only") {
 		t.Fatalf("workspace user-only mutation was not refused by standard reader: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestApplyEffectiveUsesReaderScopeAndSchemaValidationBeforeWrite(t *testing.
 	invalid := filepath.Join(invalidWorkspace, config.WorkspaceLocalTOMLConfigName)
 	invalidBefore := []byte("machine.ports = []\n")
 	writeEditFixture(t, invalid, string(invalidBefore))
-	_, err = ApplyEffective(invalidWorkspace, invalid, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "ports"}}, Value: "not-a-list"}, ApplyOptions{DryRun: true})
+	_, err = applyEffectiveTest(t, invalidWorkspace, invalid, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "ports"}}, Value: "not-a-list"}, config.ExplicitEditLocal, ApplyOptions{DryRun: true})
 	if err == nil || !strings.Contains(err.Error(), "expected a list") {
 		t.Fatalf("invalid effective type was not refused: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestApplyEffectiveRejectsStaleExpectedBytes(t *testing.T) {
 	path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
 	before := []byte("packs = []\n")
 	writeEditFixture(t, path, string(before))
-	_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Append, Path: []configdoc.Step{{Key: "packs"}}, Value: "claude"}, ApplyOptions{ExpectedBytes: []byte("packs = ['stale']\n")})
+	_, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, Mutation{Action: Append, Path: []configdoc.Step{{Key: "packs"}}, Value: "claude"}, config.ExplicitEditProject, ApplyOptions{ExpectedBytes: []byte("packs = ['stale']\n")})
 	if err == nil || !strings.Contains(err.Error(), "changed since it was planned") {
 		t.Fatalf("stale expected bytes accepted: %v", err)
 	}
@@ -236,7 +236,8 @@ func TestApplyEffectiveRestoresExactTargetAfterEffectiveMismatch(t *testing.T) {
 		return nil
 	}
 	mutation := Mutation{Action: Append, Path: []configdoc.Step{{Key: "machine"}, {Key: "ports"}}, Value: map[string]any{"host": 8000, "jail": 8000}}
-	_, err := applyEffectiveWithOps(workspace, path, configdoc.TOML, mutation, ApplyOptions{}, ops)
+	options := effectiveTestOptions(t, workspace, path, configdoc.TOML, config.ExplicitEditProject, ApplyOptions{})
+	_, err := applyEffectiveWithOps(workspace, path, configdoc.TOML, mutation, options, ops)
 	if err == nil || !strings.Contains(err.Error(), "effective config differs from the planned graph") || !strings.Contains(err.Error(), "original bytes restored") {
 		t.Fatalf("effective mismatch did not fail with rollback: %v", err)
 	}
@@ -255,7 +256,7 @@ func TestApplyEffectiveSerializesIndependentProcessesFromLockedPreimages(t *test
 			port = 8002
 		}
 		mutation := Mutation{Action: Append, Path: []configdoc.Step{{Key: "machine"}, {Key: "ports"}}, Value: map[string]any{"host": port, "jail": port}}
-		if _, err := ApplyEffective(workspace, path, configdoc.TOML, mutation, ApplyOptions{}); err != nil {
+		if _, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, mutation, config.ExplicitEditProject, ApplyOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		return
@@ -293,6 +294,46 @@ func TestApplyEffectiveSerializesIndependentProcessesFromLockedPreimages(t *test
 	if !ok || len(ports) != 2 {
 		t.Fatalf("serialized effective edits lost an update: %#v", portsValue)
 	}
+}
+
+func applyEffectiveTest(t *testing.T, workspace, path string, format configdoc.Format, mutation Mutation, scope config.ExplicitEditScope, options ApplyOptions) (*Plan, error) {
+	t.Helper()
+	// These fixtures exercise host edits even when the test suite runs inside a jail.
+	t.Setenv("YOLO_VERSION", "")
+	physicalWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		return nil, err
+	}
+	physicalTarget, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, err
+	}
+	target, err := config.NewExplicitEditTarget(physicalWorkspace, physicalTarget, scope, format)
+	if err != nil {
+		return nil, err
+	}
+	options.Target = target
+	return ApplyEffective(physicalWorkspace, path, format, mutation, options)
+}
+
+func effectiveTestOptions(t *testing.T, workspace, path string, format configdoc.Format, scope config.ExplicitEditScope, options ApplyOptions) ApplyOptions {
+	t.Helper()
+	// These fixtures exercise host edits even when the test suite runs inside a jail.
+	t.Setenv("YOLO_VERSION", "")
+	physicalWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	physicalTarget, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := config.NewExplicitEditTarget(physicalWorkspace, physicalTarget, scope, format)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options.Target = target
+	return options
 }
 
 func writeEditFixture(t *testing.T, path, body string) {

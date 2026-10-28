@@ -24,7 +24,7 @@ func TestApplyEffectiveValidatesReadableRemovalAndLiteralValues(t *testing.T) {
 		path := filepath.Join(workspace, config.WorkspaceLocalTOMLConfigName)
 		writeEditFixture(t, path, "machine.ports = [{ host = 9001, jail = 9001 }]\n")
 		mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "ports"}}, Value: []any{}}
-		if _, err := ApplyEffective(workspace, path, configdoc.TOML, mutation, ApplyOptions{}); err != nil {
+		if _, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, mutation, config.ExplicitEditLocal, ApplyOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		effective, err := config.LoadConfig(workspace, true, nil)
@@ -46,7 +46,7 @@ func TestApplyEffectiveValidatesReadableRemovalAndLiteralValues(t *testing.T) {
 		path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
 		writeEditFixture(t, path, "[mcp_servers.demo]\ncommand = ['workspace']\n")
 		mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "mcp_servers"}, {Key: "demo"}}, Value: "off"}
-		if _, err := ApplyEffective(workspace, path, configdoc.TOML, mutation, ApplyOptions{}); err != nil {
+		if _, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, mutation, config.ExplicitEditProject, ApplyOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		effective, err := config.LoadConfig(workspace, true, nil)
@@ -66,11 +66,11 @@ func TestApplyEffectiveValidatesReadableRemovalAndLiteralValues(t *testing.T) {
 		userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
 		writeEditFixture(t, userPath, "[env]\nunset = []\n[env.set]\nLITERAL = 'before'\n")
 		setMutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "env"}, {Key: "set"}, {Key: "LITERAL"}}, Value: "off"}
-		if _, err := ApplyEffective(workspace, userPath, configdoc.TOML, setMutation, ApplyOptions{}); err != nil {
+		if _, err := applyEffectiveTest(t, workspace, userPath, configdoc.TOML, setMutation, config.ExplicitEditUser, ApplyOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		appendMutation := Mutation{Action: Append, Path: []configdoc.Step{{Key: "env"}, {Key: "unset"}}, Value: "UNWANTED"}
-		if _, err := ApplyEffective(workspace, userPath, configdoc.TOML, appendMutation, ApplyOptions{}); err != nil {
+		if _, err := applyEffectiveTest(t, workspace, userPath, configdoc.TOML, appendMutation, config.ExplicitEditUser, ApplyOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		effective, err := config.LoadConfig(workspace, true, nil)
@@ -94,7 +94,7 @@ func TestApplyEffectiveValidatesReadableRemovalAndLiteralValues(t *testing.T) {
 		userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
 		writeEditFixture(t, userPath, "[active_provider]\ndefault = 'codex'\n")
 		mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "active_provider"}, {Key: "default"}}, Value: "native"}
-		if _, err := ApplyEffective(workspace, userPath, configdoc.TOML, mutation, ApplyOptions{}); err != nil {
+		if _, err := applyEffectiveTest(t, workspace, userPath, configdoc.TOML, mutation, config.ExplicitEditUser, ApplyOptions{}); err != nil {
 			t.Fatal(err)
 		}
 		effective, err := config.LoadConfig(workspace, true, nil)
@@ -124,7 +124,7 @@ func TestApplyEffectiveEditsSymlinkedUserConfigDFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}
-	if _, err := ApplyEffective(workspace, alias, configdoc.TOML, mutation, ApplyOptions{}); err != nil {
+	if _, err := applyEffectiveTest(t, workspace, alias, configdoc.TOML, mutation, config.ExplicitEditUser, ApplyOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	effective, err := config.LoadConfig(workspace, true, nil)
@@ -155,11 +155,11 @@ func TestApplyEffectiveEditsProjectIncludeAndLocalTargets(t *testing.T) {
 	writeEditFixture(t, localPath, "[machine.resources]\ncpus = 2\n")
 
 	projectMutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "memory"}}, Value: "24g"}
-	if _, err := ApplyEffective(workspace, projectInclude, configdoc.TOML, projectMutation, ApplyOptions{}); err != nil {
+	if _, err := applyEffectiveTest(t, workspace, projectInclude, configdoc.TOML, projectMutation, config.ExplicitEditProject, ApplyOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	localMutation := Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}
-	if _, err := ApplyEffective(workspace, localPath, configdoc.TOML, localMutation, ApplyOptions{}); err != nil {
+	if _, err := applyEffectiveTest(t, workspace, localPath, configdoc.TOML, localMutation, config.ExplicitEditLocal, ApplyOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	effective, err := config.LoadConfig(workspace, true, nil)
@@ -188,7 +188,7 @@ func TestApplyEffectiveRejectsUnknownKeyInDryRun(t *testing.T) {
 	path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
 	before := []byte("machine.ports = []\n")
 	writeEditFixture(t, path, string(before))
-	_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Add, Path: []configdoc.Step{{Key: "unrecognized"}}, Value: true}, ApplyOptions{DryRun: true})
+	_, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, Mutation{Action: Add, Path: []configdoc.Step{{Key: "unrecognized"}}, Value: true}, config.ExplicitEditProject, ApplyOptions{DryRun: true})
 	if err == nil || !strings.Contains(err.Error(), "unknown TOML config key") {
 		t.Fatalf("unknown key accepted by effective validation: %v", err)
 	}

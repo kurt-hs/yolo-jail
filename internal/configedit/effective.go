@@ -20,16 +20,17 @@ func applyEffectiveWithOps(workspace, path string, format configdoc.Format, muta
 		if err != nil {
 			return err
 		}
-		effective, consumed, err := config.LoadConfigWithReadInputResult(workspace, true, nil, input)
+		result, err := config.ValidateExplicitEdit(workspace, options.Target, input)
 		if err != nil {
-			return fmt.Errorf("read planned config: %w", err)
+			return fmt.Errorf("validate planned config: %w", err)
 		}
-		if !consumed {
-			return fmt.Errorf("explicit target %s was not read by the standard config graph", physical)
+		validatedSnapshot, ok := result.SnapshotJSON()
+		if !ok {
+			return fmt.Errorf("planned config validation returned no validated snapshot")
 		}
-		plannedSnapshot, err = config.SnapshotJSON(effective)
-		if err != nil {
-			return fmt.Errorf("snapshot planned config: %w", err)
+		plannedSnapshot = validatedSnapshot
+		if options.OnValidated != nil {
+			options.OnValidated(result)
 		}
 		return nil
 	}
@@ -38,16 +39,13 @@ func applyEffectiveWithOps(workspace, path string, format configdoc.Format, muta
 		if err != nil {
 			return err
 		}
-		actual, consumed, err := config.LoadConfigWithReadInputResult(workspace, true, nil, input)
+		result, err := config.ValidateExplicitEdit(workspace, options.Target, input)
 		if err != nil {
-			return fmt.Errorf("read actual config: %w", err)
+			return fmt.Errorf("validate actual config: %w", err)
 		}
-		if !consumed {
-			return fmt.Errorf("explicit target %s was not read by the standard config graph after write", physical)
-		}
-		actualSnapshot, err := config.SnapshotJSON(actual)
-		if err != nil {
-			return fmt.Errorf("snapshot actual config: %w", err)
+		actualSnapshot, ok := result.SnapshotJSON()
+		if !ok {
+			return fmt.Errorf("actual config validation returned no validated snapshot")
 		}
 		if plannedSnapshot != actualSnapshot {
 			return fmt.Errorf("effective config differs from the planned graph")

@@ -7,12 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
 
 type ApplyOptions struct {
 	DryRun bool
+	// Target binds an effective edit to its caller-declared reader scope and format.
+	Target config.ExplicitEditTarget
+	// OnValidated receives detached diagnostics from the validated planned graph. It is
+	// observational only; its result cannot authorize or alter the transaction.
+	OnValidated func(config.ValidatedExplicitEditResult)
 	// ExpectedBytes, when non-nil, refuses to apply over a preimage that changed since planning.
 	ExpectedBytes []byte
 	// Verify compares caller-defined effective meaning after the write. An error restores the
