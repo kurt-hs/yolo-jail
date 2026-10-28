@@ -168,6 +168,8 @@ type Options struct {
 	// PathExists tests filesystem presence (device nodes, /nix, CDI specs,
 	// creds file, flake.nix). nil => os.Stat.
 	PathExists func(string) bool
+	// readFile loads a diagnostic metadata artifact. nil => os.ReadFile.
+	readFile func(string) ([]byte, error)
 	// ioSysRoot is the root the disk resolver reads the mount table and sysfs under
 	// (internal/ioprio.Resolve, for sectionIOPriority). "" => the real root; tests point it
 	// at a fake tree.
@@ -301,6 +303,9 @@ func fillDefaults(o *Options) {
 			_, err := os.Stat(p)
 			return err == nil
 		}
+	}
+	if o.readFile == nil {
+		o.readFile = os.ReadFile
 	}
 	if o.Geteuid == nil {
 		o.Geteuid = os.Geteuid

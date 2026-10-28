@@ -64,6 +64,7 @@ func baseOptions(t *testing.T, out *bytes.Buffer) Options {
 		Workspace:    ws,
 		RepoRoot:     func() (reporoot.Resolution, bool) { return reporoot.Resolution{}, false },
 		PathExists:   func(string) bool { return false },
+		readFile:     func(string) ([]byte, error) { return nil, os.ErrNotExist },
 		BuildImage:   func(string, []any) (string, []string) { return "", nil },
 		AccessRW:     func(string) bool { return false },
 		NodeGID:      func(string) (int, string, bool) { return 0, "", false },
