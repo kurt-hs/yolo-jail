@@ -198,31 +198,40 @@ func homeStrays(h sessionCaptureHome) []string {
 	return strays
 }
 
-// noteSessionHomeStrays is the one warning line per pass naming every stray, with the next step.
+// noteSessionHomeStrays names, once per pass and per declared directory, the strays yolo will KEEP
+// when it retires the home, with the reason: a file that may be a renamed render, a name the shared
+// directory already holds, or something nested inside a rendered directory. The ones it can move
+// are reported when they move (retireSessionHomes), so no entry is named twice.
 func noteSessionHomeStrays(e *Env, homes []sessionCaptureHome) {
-	var found []string
-	packs := map[string]bool{}
+	kept := map[string][]string{}
 	for _, h := range homes {
 		if h.shared {
 			continue
 		}
+		spec := h.decl.spec(h.home)
 		for _, name := range homeStrays(h) {
-			found = append(found, filepath.Join(h.home, name))
-			packs[h.decl.pack] = true
+			_, why, err := sessionhome.Fate(spec, name)
+			if err != nil {
+				why = "it cannot be inspected: " + err.Error()
+			}
+			if why == "" {
+				continue // yolo moves this one into the shared directory when the home is retired
+			}
+			kept[spec.Shared] = append(kept[spec.Shared], filepath.Join(h.home, name)+" ("+why+")")
 		}
 	}
-	if len(found) == 0 {
-		return
+	shared := make([]string, 0, len(kept))
+	for dir := range kept {
+		shared = append(shared, dir)
 	}
-	var names []string
-	for p := range packs {
-		names = append(names, p)
+	sort.Strings(shared)
+	for _, dir := range shared {
+		names := kept[dir]
+		sort.Strings(names)
+		e.warn(fmt.Sprintf("Warning: session homes hold %d entr%s yolo neither linked nor rendered and "+
+			"cannot move into %s, so %s kept where it is: %s",
+			len(names), plural(len(names), "y", "ies"), dir, plural(len(names), "it is", "they are"), strings.Join(names, ", ")))
 	}
-	sort.Strings(names)
-	e.warn(fmt.Sprintf("Warning: session homes hold %d entr%s yolo neither linked nor rendered, kept "+
-		"where they are: %s — pack %s's session_homes declaration should list each name as shared; "+
-		"until it does, move what should be shared into the pack's config directory by hand",
-		len(found), plural(len(found), "y", "ies"), strings.Join(found, ", "), strings.Join(names, ", ")))
 }
 
 // keepSessionHome marks id's home as one the jail's own boot keeps (Env.keepHomes).
@@ -243,10 +252,44 @@ func retireSessionHomes(e *Env, homes []sessionCaptureHome) {
 	}
 	kept := map[string]bool{}
 	for _, h := range homes {
-		strays, strayErr := sessionhome.Strays(h.decl.spec(h.home))
-		if strayErr != nil || len(strays) > 0 || e.keepHomes[h.id] {
+		if e.keepHomes[h.id] {
 			kept[h.id] = true
 			continue
+		}
+		spec := h.decl.spec(h.home)
+		strays, strayErr := sessionhome.Strays(spec)
+		if strayErr != nil {
+			e.warn("warning: could not read the leftover session home " + h.home + ": " + strayErr.Error() + "; it was kept")
+			kept[h.id] = true
+			continue
+		}
+		if len(strays) > 0 {
+			// What the program created in what it was told is its config directory belongs in the
+			// shared one (design §3, SHR-D4), and moving it there is what stops the next session
+			// creating it again. Whatever cannot go stays, and keeps the home with it — named once
+			// by noteSessionHomeStrays, which ran before capture.
+			outcomes, err := sessionhome.Repatriate(spec, strays)
+			var moved, stayed []string
+			for _, o := range outcomes {
+				if o.To != "" {
+					moved = append(moved, o.Name+" → "+o.To)
+				} else {
+					stayed = append(stayed, o.Name)
+				}
+			}
+			if len(moved) > 0 {
+				e.warn(fmt.Sprintf("moved %s from a session home into %s, where the program meant it; "+
+					"later sessions link it", strings.Join(moved, ", "), spec.Shared))
+			}
+			if err != nil {
+				e.warn("warning: could not move what a session created out of " + h.home + ": " + err.Error() + "; it was kept")
+				kept[h.id] = true
+				continue
+			}
+			if len(stayed) > 0 {
+				kept[h.id] = true
+				continue
+			}
 		}
 		if err := os.RemoveAll(h.home); err != nil {
 			e.warn("warning: could not remove the leftover session home " + h.home + ": " + err.Error())

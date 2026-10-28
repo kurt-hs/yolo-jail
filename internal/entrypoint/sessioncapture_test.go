@@ -151,6 +151,79 @@ func TestAStrayIsNamedOnceAndKept(t *testing.T) {
 	}
 }
 
+// A top-level directory the program created in its session home is what an extension does when it
+// keeps state under the config dir. It belongs in the shared directory, where the program meant it
+// (design §3, SHR-D4): the jail's own boot moves it there, removes the home, and the next session
+// links it — so the name cannot become a stray again.
+func TestTheJailsBootMovesAStrayDirectoryIntoTheSharedDirectory(t *testing.T) {
+	j := newSessionHomeJail(t)
+	j.cleanPass(t, "", "acme", false)
+	j.cleanPass(t, sessionA, "beta", true)
+	stray := filepath.Join(j.sessionHome(t, sessionA), "pi-web-access")
+	if err := os.MkdirAll(stray, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const stamp = `{"version":"0.45.0"}`
+	if err := os.WriteFile(filepath.Join(stray, "last-seen-version.json"), []byte(stamp), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, errw := j.pass(t, "", "acme", false, JailMainEnv, JailMainHold)
+	mustBootClean(t, e, errw)
+	if got, err := os.ReadFile(j.shared(filepath.Join("pi-web-access", "last-seen-version.json"))); err != nil || string(got) != stamp {
+		t.Fatalf("the stray directory did not reach the shared directory: %q (%v)", got, err)
+	}
+	if _, err := os.Lstat(j.sessionHome(t, sessionA)); !os.IsNotExist(err) {
+		t.Errorf("the home whose stray was moved was not removed: %v", err)
+	}
+	if !strings.Contains(errw.String(), "moved pi-web-access") {
+		t.Errorf("the boot must say what it moved:\n%s", errw.String())
+	}
+	// The next session links it, so the program writes through to the shared copy.
+	j.cleanPass(t, sessionB, "acme", true)
+	info, err := os.Lstat(filepath.Join(j.sessionHome(t, sessionB), "pi-web-access"))
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the next session did not link the repatriated directory: %v (%v)", info, err)
+	}
+}
+
+// A name the shared directory already holds is two divergent copies: the boot keeps the home and
+// says why, and overwrites nothing (SHR-D4).
+func TestTheJailsBootKeepsAStrayWhoseNameTheSharedDirectoryHolds(t *testing.T) {
+	j := newSessionHomeJail(t)
+	j.cleanPass(t, "", "acme", false)
+	// The shared directory already holds the name, so session A's home links it.
+	if err := os.MkdirAll(j.shared("pi-web-access"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const mine = "mine"
+	if err := os.WriteFile(j.shared(filepath.Join("pi-web-access", "last-seen-version.json")), []byte(mine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	j.cleanPass(t, sessionA, "beta", true)
+	// The program replaced that link with a real directory, so the home holds a stray.
+	stray := filepath.Join(j.sessionHome(t, sessionA), "pi-web-access")
+	if err := os.Remove(stray); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(stray, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stray, "last-seen-version.json"), []byte(`{"version":"0.45.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, errw := j.pass(t, "", "acme", false, JailMainEnv, JailMainHold)
+	mustBootClean(t, e, errw)
+	if got, err := os.ReadFile(j.shared(filepath.Join("pi-web-access", "last-seen-version.json"))); err != nil || string(got) != mine {
+		t.Fatalf("the boot overwrote the shared copy: %q (%v)", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(stray, "last-seen-version.json")); err != nil {
+		t.Errorf("the boot removed a home holding a stray it could not move: %v", err)
+	}
+	if !strings.Contains(errw.String(), "already holds that name") {
+		t.Errorf("the line must say why it was kept:\n%s", errw.String())
+	}
+}
+
 // M1 of the review: capturing ANOTHER session's home must take only that file's own edits, never
 // the capturing pass's profile selection. A pass on no profile capturing a home a profile wrote
 // used to read every key that profile's selection wrote as "deselected" and clear it from the

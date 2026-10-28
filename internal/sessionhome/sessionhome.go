@@ -341,3 +341,76 @@ func Strays(s Spec) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// RepatriateOutcome is one stray's fate: moved into the shared directory, or kept where it is.
+type RepatriateOutcome struct {
+	// Name is the entry, slash-separated and relative to the home.
+	Name string
+	// To is where it was moved, empty when it stayed.
+	To string
+	// Kept is why it stayed, empty when it moved.
+	Kept string
+}
+
+// Fate says what Repatriate does with one stray, WITHOUT doing it: to is where it would move, and
+// kept is why it stays (exactly one of them is non-empty). The jail's boot uses it to name only
+// the strays it cannot handle for the user, so no entry is reported twice — once as a prediction
+// and once as an outcome.
+//
+// Three cases stay, and each is a decision this package must not make on the user's behalf:
+//
+//   - a name the shared directory already holds — two divergent copies, and merging two trees
+//     silently is not a thing a tool may do;
+//   - a top-level FILE — it may be a rendered file the program renamed (`settings.json.old`), so
+//     it is not obviously the program's own state;
+//   - anything nested — it lies inside a directory the session rendered into, where the two trees
+//     cannot be reconciled without knowing which side is newer.
+func Fate(s Spec, name string) (to, kept string, err error) {
+	if strings.Contains(name, "/") {
+		return "", "it lies inside a directory the session rendered into, so the two trees cannot be reconciled automatically", nil
+	}
+	from := filepath.Join(s.Home, filepath.FromSlash(name))
+	info, err := os.Lstat(from)
+	if err != nil {
+		return "", "", fmt.Errorf("inspecting %s: %w", from, err)
+	}
+	if !info.IsDir() {
+		return "", "a file may be a rendered file the program renamed, so it is not clearly the program's own state", nil
+	}
+	to = filepath.Join(s.Shared, filepath.FromSlash(name))
+	if _, err := os.Lstat(to); err == nil {
+		return "", "the shared directory already holds that name, so the two copies are kept apart", nil
+	} else if !os.IsNotExist(err) {
+		return "", "", fmt.Errorf("inspecting %s: %w", to, err)
+	}
+	return to, "", nil
+}
+
+// Repatriate moves what a program created in a session home into the SHARED directory that home
+// stands in for (docs/design/session-home-contents-and-reaping.md §3, SHR-D4).
+//
+// From the program's side the session home IS its config directory, so the entries it created
+// there are addressed to the shared one: that is where they belong, and once they are there the
+// next Build links them and the name can never become a stray again. Moving them is the whole
+// cure; keeping them aside is only preservation.
+//
+// Fate decides each entry; an I/O failure is returned as an error, and the caller keeps the home,
+// which loses nothing. It creates nothing and removes nothing.
+func Repatriate(s Spec, strays []string) ([]RepatriateOutcome, error) {
+	out := make([]RepatriateOutcome, 0, len(strays))
+	for _, name := range strays {
+		to, kept, err := Fate(s, name)
+		if err != nil {
+			return out, err
+		}
+		if to == "" {
+			out = append(out, RepatriateOutcome{Name: name, Kept: kept})
+			continue
+		}
+		if err := os.Rename(filepath.Join(s.Home, filepath.FromSlash(name)), to); err != nil {
+			return out, fmt.Errorf("moving %s into %s: %w", filepath.Join(s.Home, filepath.FromSlash(name)), s.Shared, err)
+		}
+		out = append(out, RepatriateOutcome{Name: name, To: to})
+	}
+	return out, nil
+}

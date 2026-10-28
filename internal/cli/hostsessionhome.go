@@ -786,47 +786,31 @@ func auditHostSessionHome(dir, rel string, surfaces []manifest.Surface) hostSess
 	return out
 }
 
-// repatriateHostSessionStrays moves what the program created in a session home into the real
-// config directory (design §3, SHR-D4). From the program's side the session home WAS that
-// directory, so that is where its own state belongs; the next launch links it and the name can
-// never become a stray again.
-//
-// It adopts a TOP-LEVEL DIRECTORY only. A file at the top level may be a mangled copy of a
-// rendered one (`settings.json.old`), and anything nested is inside a tree yolo rendered into, so
-// both keep the home aside instead (SHR-Q4: keep-aside is the safe default until measured). A name
-// the real directory already holds is a collision — two divergent copies — and is never merged.
-//
-// It returns a non-empty keep reason when the home must be preserved instead.
+// repatriateHostSessionStrays is sessionhome.Repatriate at the host notch: it moves what the
+// program created in an ended session home into the real config directory, and returns a keep
+// reason for anything that cannot go there (design §3, SHR-D4 — the rule itself lives in
+// internal/sessionhome, so the jail's retire path and this one cannot disagree).
 func repatriateHostSessionStrays(dir, rel, shared string, strays []string, errw io.Writer) (keep string) {
-	root := filepath.Join(dir, hostScratchHomeName, rel)
-	var adopted []string
-	for _, stray := range strays {
-		name := filepath.FromSlash(stray)
-		if strings.Contains(stray, "/") {
-			return fmt.Sprintf("it held %s, inside a directory yolo rendered into, so the two trees cannot be reconciled automatically", stray)
+	spec := sessionhome.Spec{Home: filepath.Join(dir, hostScratchHomeName, rel), Shared: shared}
+	outcomes, err := sessionhome.Repatriate(spec, strays)
+	var moved, stayed []string
+	for _, o := range outcomes {
+		if o.To != "" {
+			moved = append(moved, o.Name+" → "+o.To)
+		} else {
+			stayed = append(stayed, o.Name+" ("+o.Kept+")")
 		}
-		info, err := os.Lstat(filepath.Join(root, name))
-		if err != nil {
-			return fmt.Sprintf("cannot inspect the entry %s the program created: %v", stray, err)
-		}
-		if !info.IsDir() {
-			return fmt.Sprintf("it held the file %s, which yolo neither rendered nor linked; a file may be a renamed copy of a rendered one, so it was kept with the home", stray)
-		}
-		to := filepath.Join(shared, name)
-		if _, err := os.Lstat(to); err == nil {
-			return fmt.Sprintf("the program created %s in its config directory, and your real %s already holds that name, so the two copies were kept apart", stray, shared)
-		} else if !os.IsNotExist(err) {
-			return fmt.Sprintf("cannot inspect %s: %v", to, err)
-		}
-		if err := os.Rename(filepath.Join(root, name), to); err != nil {
-			return fmt.Sprintf("cannot move %s into %s: %v", stray, shared, err)
-		}
-		adopted = append(adopted, stray+" → "+to)
 	}
-	if len(adopted) > 0 && errw != nil {
+	if len(moved) > 0 && errw != nil {
 		fmt.Fprintf(errw, "yolo host: an ended session home held %d entr%s yolo neither rendered nor linked, and moved %s into your config directory: %s.\n"+
 			"  From the program's side the session home was that directory, so that is where its state belongs; later launches link it, so that name cannot become a stray again.\n",
-			len(adopted), plural(len(adopted), "y", "ies"), plural(len(adopted), "it", "them"), strings.Join(adopted, ", "))
+			len(moved), plural(len(moved), "y", "ies"), plural(len(moved), "it", "them"), strings.Join(moved, ", "))
+	}
+	if err != nil {
+		return fmt.Sprintf("moving what the program created into %s failed: %v", shared, err)
+	}
+	if len(stayed) > 0 {
+		return "it held " + strings.Join(stayed, ", ")
 	}
 	return ""
 }
