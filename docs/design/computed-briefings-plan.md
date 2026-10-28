@@ -448,9 +448,10 @@ the chosen behavior into that authority before dispatching affected implementati
 
 ## Permanent caller-red controls
 
-These are proposed permanent test sources for the implementation package; this docs-only lane
+These are proposed permanent test sources for the implementation package. The **prior planner**
 observed the three printed bodies as temporary baseline probes, then removed its temporary
-files. Declaration probe failed on unknown `derive`; jail caller probe failed on absent
+files; the **current continuation ran no software tests**. Declaration probe failed on unknown
+`derive`; jail caller probe failed on absent
 `COMPUTED-jail-pi`; host render probe failed on missing producer error. No production mutation
 control or green implementation is claimed. The first two controls use current caller/fixture APIs;
 fixture JSON unmarshaling intentionally bypasses declaration validation so the caller test
@@ -1121,9 +1122,11 @@ conditions. Commit messages are proposals to use exactly once the respective uni
 ## Don't
 
 - Do not build affected access projections until the two pending observable decisions are
-  recorded in the behavioral authority and the operation controls are complete/verified.
-  C1–C5 and live-apply signatures above are proposed engineering work, not preexisting APIs
-  that must land before the responsible units may begin.
+  recorded in the behavioral authority. Once separately authorized, the responsible units
+  materialize their proposed interfaces/fixtures/permanent tests, obtain behavioral RED before
+  implementing the caller, then run caller-deletion controls after green and restore source.
+  C1–C5 and live-apply signatures above are their engineering work, not preexisting APIs or
+  executed-control admission gates. Precise recipes are the planning deliverable.
 - Do not read full config into producers, add typed settings preemptively, publish pack facts,
   probe logins, widen credentials/grants, or treat generated prose as broker authority.
 - Do not activate the old seed, implement in a private user's pack, or reinterpret an unknown
@@ -1141,13 +1144,18 @@ refresh/render never evaluate one. The old seed's static map did not cover the k
 applied remote-name carrier, live kind eligibility, or incremental-publication failure.
 
 Before affected implementation dispatch, route the two observable gaps into the behavioral
-authority, materialize the exact operation recipes below against the proposed contracts, and
-record their behavioral RED and deletion-control results. The three baseline red bodies printed here were observed on the
-unchanged production tree; operation abort/lock/keeper/live-apply recipes remain unexecuted.
-The proposed C1–C5/live-apply APIs are implementation deliverables, not
-admission gates. All three original owner product rulings stay closed. Independent docs-only review may be
-explicitly skipped for this planning change; neither that skip nor targeted render/link checks
-is equivalent to a HIGH code review or the separately requested whole-document review.
+authority. This plan supplies [precise operation recipes](#operationcaller-regression-recipes),
+not executed closure. In the first separately authorized responsible unit, materialize its
+interface, fixtures and permanent tests; record expected behavioral RED before implementing
+that caller. After green, run the specified production-call deletion controls and restore
+source. Neither absent feature APIs nor unexecuted deletion controls are global prerequisites
+to beginning that unit. The prior planner observed the three baseline red bodies on unchanged
+production source; the current continuation ran no tests. Operation abort/lock/keeper/live-apply
+recipes remain unexecuted. The proposed C1–C5/live-apply APIs are implementation deliverables,
+not admission gates. All three original owner product rulings stay closed. Independent docs-only
+review may be explicitly skipped for this planning change; neither that skip nor targeted
+render/link checks is equivalent to a HIGH code review or the separately requested
+whole-document review.
 
 The [roadmap's computed-briefings entry](../plans/roadmap.md#immediate-continuation) routes this
 plan's pending [remote projection](#OQ-CBP1) and [snapshot failure](#OQ-CBP2) questions at the
