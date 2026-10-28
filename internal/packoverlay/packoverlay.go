@@ -30,7 +30,6 @@
 package packoverlay
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -321,7 +320,6 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 	// contribution's position, so "later wins" between the two is declaration order.
 	selected := packdecl.PostureOf(autonomy)
 	for _, p := range packs {
-		usedOverlayContributions := map[int]bool{}
 		for _, ov := range p.Decl.OverlayContributions() {
 			kind := packdecl.KindConfigOverlay
 			var key manifest.SurfaceKey
@@ -421,7 +419,7 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 				set.posturePlaced[p.Name] = true
 			}
 			set.byTarget[key] = append(set.byTarget[key], agentcfg.Overlay{
-				Pack: p.Name, Data: data, AppendArrays: overlayAppendsArrays(p, ov, usedOverlayContributions),
+				Pack: p.Name, Data: data, AppendArrays: overlayAppendsArrays(ov),
 			})
 		}
 		for _, file := range p.OverlayFiles {
@@ -513,22 +511,10 @@ func Collect(packs []*packload.Pack, autonomy bool, activeProfiles map[string][]
 	return set
 }
 
-// overlayAppendsArrays applies grouped-manifest defaults only to the declaration whose
-// normalized body is being placed. Legacy manifest projections intentionally keep their
-// replacement behavior.
-func overlayAppendsArrays(p *packload.Pack, overlay packdecl.ConfigOverlay, used map[int]bool) bool {
-	if p.Decl == nil || p.Decl.Origin.Format != packdecl.ManifestFormatTOML || overlay.Posture != "" {
-		return false
-	}
-	for index, contribution := range p.Decl.Contributions() {
-		if used[index] || contribution.Kind != packdecl.KindConfigOverlay || contribution.Surface != overlay.Surface ||
-			contribution.Profile != overlay.Profile || !bytes.Equal(contribution.Raw, overlay.Config) {
-			continue
-		}
-		used[index] = true
-		return !contribution.Replace
-	}
-	return false
+// overlayAppendsArrays applies the grouped-manifest default using the metadata attached to
+// this exact declaration row. Legacy manifests and explicit replace retain array replacement.
+func overlayAppendsArrays(overlay packdecl.ConfigOverlay) bool {
+	return overlay.Origin.Format == packdecl.ManifestFormatTOML && !overlay.Replace
 }
 
 // profileActive reports membership without changing the ordered set used by other profile

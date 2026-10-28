@@ -24,9 +24,11 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/manifest"
+	"github.com/mschulkind-oss/yolo-jail/internal/arraymerge"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -264,7 +266,13 @@ func (p *Pack) SurfacesForReport(autonomy bool) ([]manifest.Surface, []string, [
 		for _, prob := range probs {
 			problems = append(problems, "pack "+p.Name+" (autonomy): "+prob)
 		}
-		surfaces = foldPostureManaged(surfaces, patches)
+		postureRows := make([]packdecl.ConfigOverlay, 0)
+		for _, row := range p.Decl.OverlayContributions() {
+			if row.Posture == packdecl.PostureOf(autonomy) {
+				postureRows = append(postureRows, row)
+			}
+		}
+		surfaces = foldPostureManaged(surfaces, patches, postureRows)
 	}
 	return surfaces, problems, nil
 }
@@ -349,17 +357,22 @@ func ProfileTable(m *jsonx.OrderedMap) map[string]string {
 // asserts its permission keys onto the pack's OWN surface without being a second config
 // writer. A patch matching no base surface is skipped: it names another pack's surface, and
 // packoverlay.Collect places it there as a posture overlay (or reports it as an orphan).
-func foldPostureManaged(base, patches []manifest.Surface) []manifest.Surface {
-	for _, patch := range patches {
+func foldPostureManaged(base, patches []manifest.Surface, rows []packdecl.ConfigOverlay) []manifest.Surface {
+	for patchIndex, patch := range patches {
 		pm := patch.ManagedMap()
 		if pm == nil {
 			continue
 		}
+		appendArrays := patchIndex < len(rows) && rows[patchIndex].Origin.Format == packdecl.ManifestFormatTOML && !rows[patchIndex].Replace
 		for i := range base {
 			if base[i].Agent != patch.Agent || base[i].Name != patch.Name {
 				continue
 			}
-			base[i].Managed = mergeManagedMap(base[i].ManagedMap(), pm)
+			if appendArrays {
+				base[i].Managed = arraymerge.MergeAppending(base[i].ManagedMap(), pm)
+			} else {
+				base[i].Managed = mergeManagedMap(base[i].ManagedMap(), pm)
+			}
 		}
 	}
 	return base
@@ -1341,9 +1354,9 @@ func union(packs []*Pack, pick func(*Pack) []string) []string {
 	return out
 }
 
-// LaunchFlagsFor merges every pack's launch flags for one notch, keyed by binary name — a
-// later pack wins on a conflicting binary, matching the "later entries win" rule packs
-// already use.
+// LaunchFlagsFor merges every selected posture's launch rows for one notch, keyed by binary
+// name. Grouped TOML rows append in selected pack and declaration order by default; an explicit
+// `replace` row and every legacy manifest retain their replacement behavior.
 //
 // EVERY FLAG IS NOTCH-GATED, because the §4.2 autonomy posture is the only place a flag
 // can be declared: the `--dangerously-*` flags live in the autonomous posture and vanish
@@ -1357,46 +1370,67 @@ func union(packs []*Pack, pick func(*Pack) []string) []string {
 func LaunchFlagsFor(packs []*Pack, autonomy bool) map[string][]string {
 	out := map[string][]string{}
 	for bin, c := range launchFlagClaims(packs, autonomy) {
-		out[bin] = c.flags
+		out[bin] = c.flags()
 	}
 	return out
 }
 
-// launchFlagClaim is one binary's launch flags AND the pack that declared them.
-//
-// The provenance half exists for the disclosure: a launch that rewrites the user's argv
-// says which pack asked for the flags, and "which pack" is the fact the merge below
-// destroys — later pack wins, and by the time the map is a map[string][]string nothing
-// can say who won. So the walk records it and LaunchFlagsFor PROJECTS the record down,
-// rather than a second walk deriving the same answer beside this one: two walks over
-// packs × postures is exactly the pair that drifts, and the one that drifted would be the
-// one nothing executes except at print time.
-type launchFlagClaim struct {
-	pack  string
-	flags []string
+// launchFlagClaimRow retains a selected manifest row alongside its actual flags.
+type launchFlagClaimRow struct {
+	pack   string
+	flags  []string
+	origin packdecl.ManifestOrigin
+	loc    packdecl.ManifestLocation
+	path   string
 }
 
-// launchFlagClaims folds every pack's launch flags for the given notch, later packs
-// winning a repeated binary.
-//
-// ONE SOURCE: the selected autonomy posture's nested `launch` block. There used to be a
-// second — a top-level `kind: "launch"` contribution, folded first and then REPLACED by
-// any posture entry for the same binary — and its removal is the point rather than a
-// simplification. A flag declared outside a posture was a flag no notch could withhold,
-// which is exactly what the confinement policy exists to prevent, and copilot's `--yolo`
-// spent a while declared that way. The kind is retired with the migration named
-// (packdecl.RetiredKind).
+type launchFlagClaim struct {
+	rows []launchFlagClaimRow
+}
+
+func (c launchFlagClaim) flags() []string {
+	var out []string
+	for _, row := range c.rows {
+		out = append(out, row.flags...)
+	}
+	return out
+}
+
+// launchFlagClaims folds each selected posture in pack and row order. TOML rows append by
+// default, while an explicit replace and every legacy row retain replacement behavior.
 func launchFlagClaims(packs []*Pack, autonomy bool) map[string]launchFlagClaim {
 	out := map[string]launchFlagClaim{}
 	for _, p := range packs {
+		if p == nil || p.Decl == nil {
+			continue
+		}
 		posture := p.Decl.PostureFor(autonomy)
 		if posture == nil {
 			continue
 		}
-		for _, l := range posture.Launch {
-			if l.Bin != "" {
-				out[l.Bin] = launchFlagClaim{pack: p.Name, flags: l.Flags}
+		for _, launch := range posture.Launch {
+			if launch.Bin == "" {
+				continue
 			}
+			origin := launch.Origin
+			if origin.Format == 0 {
+				origin = p.Decl.Origin
+			}
+			file := launch.Location.File
+			if file == "" {
+				file = origin.File
+			}
+			row := launchFlagClaimRow{pack: p.Name, flags: append([]string(nil), launch.Flags...),
+				origin: origin, loc: launch.Location}
+			if p.Root != "" && file != "" {
+				row.path = filepath.Join(p.Root, file)
+			}
+			claim := out[launch.Bin]
+			if launch.Replace || origin.Format != packdecl.ManifestFormatTOML {
+				claim.rows = nil
+			}
+			claim.rows = append(claim.rows, row)
+			out[launch.Bin] = claim
 		}
 	}
 	return out
@@ -1422,34 +1456,43 @@ func RetireMiseTools(_ []*Pack) []string {
 	return append([]string(nil), RetiredMiseTools...)
 }
 
-// LaunchInjection is the record of ONE argv rewrite: the pack whose declaration asked for
-// it, the flags actually added, and the argv on either side.
-//
-// It is RETURNED rather than re-derived by whoever discloses the rewrite. "Which flags did
-// yolo add" is derivable from Before and After by anyone willing to diff two slices — and a
-// diff written at the print site is a second implementation of this function's skip rules,
-// which would agree with it right up until one of them changed. The injector is the only
-// thing that knows; it says so.
-//
-// Nil means NOTHING WAS REWRITTEN, which is a different fact from "the binary declares no
-// flags": a user who already typed every declared flag gets a nil record too, because
-// nothing about their command line changed and a disclosure of an empty rewrite is the
-// line-on-every-launch noise a disclosure surface dies of.
+// LaunchFlagSource identifies one authored posture row that supplied flags yolo actually added.
+type LaunchFlagSource struct {
+	Pack     string
+	Flags    []string
+	Origin   packdecl.ManifestOrigin
+	Location packdecl.ManifestLocation
+	Path     string
+}
+
+func (source LaunchFlagSource) Attribution() string {
+	name := "pack " + source.Pack
+	if source.Path == "" {
+		return name
+	}
+	name += " (" + source.Path
+	if source.Location.Line != 0 {
+		name += ":" + strconv.Itoa(source.Location.Line)
+		if source.Location.Column != 0 {
+			name += ":" + strconv.Itoa(source.Location.Column)
+		}
+	}
+	if source.Location.Key != "" {
+		name += " " + source.Location.Key
+	}
+	return name + ")"
+}
+
+// LaunchInjection records one argv rewrite and its ordered source rows. Pack remains set
+// only when all added flags came from that same pack, preserving the single-pack API without
+// misattributing a multi-pack append.
 type LaunchInjection struct {
-	// Pack is the name of the pack whose declaration won this binary.
-	Pack string
-	// Flags are the flags yolo added, in the order they now appear in After.
-	Flags []string
-	// Before and After are the whole argv on either side of the rewrite. There is
-	// deliberately no `Bin` beside them: the binary is Before[0], and a field carrying a
-	// second copy of it is one the two could disagree about.
-	Before []string
-	After  []string
-	// Why, when set, is what the flags are for, closing the line that names the pack. Empty for
-	// a pack's launch flags, which say what they are for in their own words; set by a rewrite
-	// whose flag names a file yolo made, such as `yolo host --`'s model menu
-	// (docs/design/model-lists-and-pickers.md MM-D26), whose path alone would not say why.
-	Why string
+	Pack    string
+	Flags   []string
+	Sources []LaunchFlagSource
+	Before  []string
+	After   []string
+	Why     string
 }
 
 // InjectLaunchFlags returns fullCommand with the flags declared for its leading binary
@@ -1494,28 +1537,41 @@ func InjectLaunchFlags(packs []*Pack, autonomy bool, fullCommand []string) ([]st
 		return fullCommand, nil
 	}
 	claim := launchFlagClaims(packs, autonomy)[filepath.Base(fullCommand[0])]
-	if len(claim.flags) == 0 {
+	if len(claim.rows) == 0 {
 		return fullCommand, nil
 	}
-	out := append([]string{}, fullCommand...)
 	var added []string
-	for i := len(claim.flags) - 1; i >= 0; i-- {
-		flag := claim.flags[i]
-		if hasFlag(out, flag) {
-			continue
+	var sources []LaunchFlagSource
+	for _, row := range claim.rows {
+		var sourceFlags []string
+		for _, flag := range row.flags {
+			if hasFlag(fullCommand, flag) || hasFlag(added, flag) {
+				continue
+			}
+			added = append(added, flag)
+			sourceFlags = append(sourceFlags, flag)
 		}
-		out = append(out[:1], append([]string{flag}, out[1:]...)...)
-		added = append([]string{flag}, added...)
+		if len(sourceFlags) != 0 {
+			sources = append(sources, LaunchFlagSource{Pack: row.pack, Flags: sourceFlags,
+				Origin: row.origin, Location: row.loc, Path: row.path})
+		}
 	}
 	if len(added) == 0 {
-		return out, nil
+		return fullCommand, nil
 	}
-	return out, &LaunchInjection{
-		Pack:   claim.pack,
-		Flags:  added,
-		Before: append([]string{}, fullCommand...),
-		After:  append([]string{}, out...),
+	out := make([]string, 0, len(fullCommand)+len(added))
+	out = append(out, fullCommand[0])
+	out = append(out, added...)
+	out = append(out, fullCommand[1:]...)
+	pack := sources[0].Pack
+	for _, source := range sources[1:] {
+		if source.Pack != pack {
+			pack = ""
+			break
+		}
 	}
+	return out, &LaunchInjection{Pack: pack, Flags: added, Sources: sources,
+		Before: append([]string{}, fullCommand...), After: append([]string{}, out...)}
 }
 
 // DisclosureLines is the one wording of an argv rewrite, for every notch that performs one:
@@ -1526,20 +1582,26 @@ func InjectLaunchFlags(packs []*Pack, autonomy bool, fullCommand []string) ([]st
 //
 // Nil for a nil record, which is "nothing was rewritten": a disclosure printing nothing on
 // every launch is how a disclosure surface becomes wallpaper.
+// DisclosureLines gives the before/after command and names each actual contributing row.
 func (inj *LaunchInjection) DisclosureLines() []string {
 	if inj == nil {
 		return nil
 	}
-	added := "  added by pack " + inj.Pack + ": " + strings.Join(inj.Flags, " ")
-	if inj.Why != "" {
-		added += " (" + inj.Why + ")"
-	}
-	return []string{
+	lines := []string{
 		"yolo CHANGED the command you asked for:",
 		"  you asked for: " + shquote.Join(inj.Before),
 		"  yolo will run: " + shquote.Join(inj.After),
-		added,
 	}
+	if len(inj.Sources) == 0 && (inj.Pack != "" || len(inj.Flags) != 0) {
+		lines = append(lines, "  added by pack "+inj.Pack+": "+strings.Join(inj.Flags, " "))
+	}
+	for _, source := range inj.Sources {
+		lines = append(lines, "  added by "+source.Attribution()+": "+strings.Join(source.Flags, " "))
+	}
+	if inj.Why != "" && len(lines) > 3 {
+		lines[len(lines)-1] += " (" + inj.Why + ")"
+	}
+	return lines
 }
 
 func hasFlag(argv []string, flag string) bool {
