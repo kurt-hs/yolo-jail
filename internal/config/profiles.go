@@ -299,21 +299,38 @@ func checkProfileSubagents(path string, raw any) (luahook.Subagents, string) {
 // validateUserScopeProfiles is validateProfiles' user-file half: every `profiles` entry's shape.
 func validateUserScopeProfiles(errs *[]string) {
 	userPath := paths.UserConfigPath()
-	if userCfg, err := loadUserScopeConfig(userPath, userPath, false, func(string) {}); err == nil && userCfg != nil {
-		if v, present := userCfg.Get(profilesKey); present && v != nil {
-			_, problems := checkProfiles(v)
-			for _, p := range problems {
-				add(errs, p)
-			}
+	userCfg, err := loadUserScopeConfig(userPath, userPath, false, func(string) {})
+	if err != nil || userCfg == nil {
+		return
+	}
+	validateUserScopeProfilesConfig(userCfg, errs)
+}
+
+func validateUserScopeProfilesConfig(userCfg *jsonx.OrderedMap, errs *[]string) {
+	if v, present := userCfg.Get(profilesKey); present && v != nil {
+		_, problems := checkProfiles(v)
+		for _, p := range problems {
+			add(errs, p)
 		}
 	}
 }
 
 func validateProfiles(workspace string, errs *[]string) {
-	validateUserScopeProfiles(errs)
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
-	if err != nil || wsCfg == nil {
-		return
+	validateProfilesWithScopes(workspace, nil, nil, errs)
+}
+
+func validateProfilesWithScopes(workspace string, userCfg, wsCfg *jsonx.OrderedMap, errs *[]string) {
+	if userCfg == nil {
+		validateUserScopeProfiles(errs)
+	} else {
+		validateUserScopeProfilesConfig(userCfg, errs)
+	}
+	if wsCfg == nil {
+		var err error
+		wsCfg, err = LoadWorkspaceConfig(workspace, false, func(string) {})
+		if err != nil || wsCfg == nil {
+			return
+		}
 	}
 	// ProfileKey (profileselection.go) is the key that ACTIVATES a profile; it shares one scope
 	// rule and one refusal with profilesKey. The retired `use_profiles` keeps the scope refusal

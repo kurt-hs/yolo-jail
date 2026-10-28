@@ -51,7 +51,7 @@ func macosUserModeProblem(v any) string {
 // validateMacosUserMode type-checks `macos_user_mode` and refuses the workspace
 // spelling. The reader reads user scope only, so a workspace value would never
 // be consulted; saying so beats a silent no-op.
-func validateMacosUserMode(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateMacosUserMode(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(macosUserModeKey)
 	if !present {
 		return
@@ -61,7 +61,7 @@ func validateMacosUserMode(config *jsonx.OrderedMap, workspace string, errs *[]s
 			add(errs, "config."+macosUserModeKey+": "+prob)
 		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}

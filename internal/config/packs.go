@@ -271,25 +271,7 @@ func loadPackEntries(warn Warn) ([]PackEntry, []string, error) {
 	var entries []PackEntry
 	var problems []string
 	if readable {
-		var rawSources any
-		if value, ok := userCfg.Get("pack_sources"); ok {
-			rawSources = value
-		}
-		sourceDefs, sourceErr := packsrc.ParseSourceDefinitions(rawSources)
-		if sourceErr != nil {
-			problem := "config.pack_sources: " + sourceErr.Error()
-			if key, _, ok := strings.Cut(sourceErr.Error(), ":"); ok {
-				if locations := sources.Locations("config." + key); len(locations) > 0 {
-					problem = locations[0] + ": " + sourceErr.Error()
-				}
-			}
-			problems = append(problems, problem)
-		}
-		if v, present := userCfg.Get(packsKey); present && v != nil && sourceErr == nil {
-			var entryProblems []string
-			entries, entryProblems = checkReadablePacks(v, sourceDefs, sources)
-			problems = append(problems, entryProblems...)
-		}
+		entries, problems = lowerReadablePackEntries(userCfg, sources)
 	} else if v, present := userCfg.Get(packsKey); present && v != nil {
 		entries, problems = checkPacks(v)
 	}
@@ -303,10 +285,40 @@ func loadPackEntries(warn Warn) ([]PackEntry, []string, error) {
 	// checkPacks refuses among configured entries, which this one bypasses by being appended
 	// rather than lowered). Yielding to the explicit entry is the honest direction: a config
 	// line the user wrote outranks a convention yolo applied for them.
+	entries = appendImplicitLocalPack(entries)
+	return entries, problems, nil
+}
+
+func appendImplicitLocalPack(entries []PackEntry) []PackEntry {
 	if local, ok := localPackEntry(); ok && !hasPackNamed(entries, local.Name) {
 		entries = append(entries, local)
 	}
-	return entries, problems, nil
+	return entries
+}
+
+func lowerReadablePackEntries(userCfg *jsonx.OrderedMap, sources *Sources) ([]PackEntry, []string) {
+	var entries []PackEntry
+	var problems []string
+	var rawSources any
+	if value, ok := userCfg.Get("pack_sources"); ok {
+		rawSources = value
+	}
+	sourceDefs, sourceErr := packsrc.ParseSourceDefinitions(rawSources)
+	if sourceErr != nil {
+		problem := "config.pack_sources: " + sourceErr.Error()
+		if key, _, ok := strings.Cut(sourceErr.Error(), ":"); ok {
+			if locations := sources.Locations("config." + key); len(locations) > 0 {
+				problem = locations[0] + ": " + sourceErr.Error()
+			}
+		}
+		problems = append(problems, problem)
+	}
+	if v, present := userCfg.Get(packsKey); present && v != nil && sourceErr == nil {
+		var entryProblems []string
+		entries, entryProblems = checkReadablePacks(v, sourceDefs, sources)
+		problems = append(problems, entryProblems...)
+	}
+	return entries, problems
 }
 
 // hasPackNamed reports whether any entry already carries this name.
@@ -636,16 +648,23 @@ func checkPackName(name, itemPath string) string {
 // A `packs` key found in the WORKSPACE config is a hard error naming the fix: it is
 // not merely ignored, because a silently-inert key looks exactly like a broken
 // feature.
-func validatePacks(workspace string, errs *[]string) {
-	_, problems, err := LoadPackEntries()
-	if err != nil {
-		add(errs, "config.packs: "+err.Error())
-	} else {
+func validatePacks(workspace string, errs *[]string, edit ...*editValidationContext) {
+	if len(edit) != 0 && edit[0] != nil && edit[0].rawUser != nil {
+		_, problems := lowerReadablePackEntries(edit[0].rawUser, edit[0].userOrigins)
 		for _, problem := range problems {
 			add(errs, problem)
 		}
+	} else {
+		_, problems, err := LoadPackEntries()
+		if err != nil {
+			add(errs, "config.packs: "+err.Error())
+		} else {
+			for _, problem := range problems {
+				add(errs, problem)
+			}
+		}
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}

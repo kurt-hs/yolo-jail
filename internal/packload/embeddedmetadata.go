@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 
@@ -21,6 +22,7 @@ type embeddedMetadataBinding struct {
 	sourceIdentity string
 	loadedIdentity string
 	loadedDecl     *packdecl.Manifest
+	selectedName   string
 	selectedRoot   string
 	only           []string
 	exclude        []string
@@ -39,6 +41,28 @@ func ReadSelectedPackFS(fsys fs.FS, sourceRoot, diagnosticRoot, name string, onl
 		return nil, nil, fmt.Errorf("pack %s embedded source %s: %w", name, sourceRoot, err)
 	}
 	selectedFS := filteredSourceFS{source: source, only: append([]string(nil), only...), exclude: append([]string(nil), exclude...)}
+	return readSelectedPackView(fsys, sourceRoot, diagnosticRoot, name, selectedFS, fsPackTreeOps(selectedFS), false, only, exclude)
+}
+
+// ReadSelectedPackPath reads a disk-backed source without staging it. The whole source is checked
+// before its exact filter view is constructed, matching packstage's no-escape policy without a copy.
+func ReadSelectedPackPath(root, name string, only, exclude []string, followLocalLinks bool) (*Pack, []string, error) {
+	physicalRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	result, err := packstage.Check(packstage.Spec{
+		Root: physicalRoot, Only: only, Exclude: exclude, FollowSymlinks: followLocalLinks,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("pack %s source check: %w", name, err)
+	}
+	source := os.DirFS(physicalRoot)
+	selectedFS := newSelectedPathFS(physicalRoot, result.Staged)
+	return readSelectedPackView(source, ".", physicalRoot, name, selectedFS, fsPackTreeOps(selectedFS), false, only, exclude)
+}
+
+func readSelectedPackView(fsys fs.FS, sourceRoot, diagnosticRoot, name string, selectedFS fs.FS, ops packTreeOps, followLocalLinks bool, only, exclude []string) (*Pack, []string, error) {
 	data, manifestName, problem := discoverManifestWith(".",
 		func(name string) (fs.FileInfo, error) { return fs.Stat(selectedFS, name) },
 		func(name string) ([]byte, error) { return fs.ReadFile(selectedFS, name) },
@@ -53,8 +77,14 @@ func ReadSelectedPackFS(fsys fs.FS, sourceRoot, diagnosticRoot, name string, onl
 	if name == "" {
 		name = filepath.Base(diagnosticRoot)
 	}
-	homeFiles, homeProblems := discoverHomeFilesFS(selectedFS)
-	overlayFiles, overlayProblems := discoverOverlayFilesFS(selectedFS)
+	var homeFiles []packdecl.Contribution
+	var homeProblems []string
+	if followLocalLinks {
+		homeFiles, homeProblems = discoverLocalHomeFiles(diagnosticRoot, only, exclude)
+	} else {
+		homeFiles, homeProblems = discoverHomeFilesWithOps(".", ops, only, exclude)
+	}
+	overlayFiles, overlayProblems := discoverOverlayFilesWithOps(".", followLocalLinks, ops, only, exclude)
 	description := ""
 	if manifestName == "" {
 		if readme, err := fs.ReadFile(selectedFS, "README.md"); err == nil {
@@ -73,7 +103,7 @@ func ReadSelectedPackFS(fsys fs.FS, sourceRoot, diagnosticRoot, name string, onl
 	}
 	selected.embeddedMetadata = &embeddedMetadataBinding{
 		fsys: fsys, selectedFS: selectedFS, sourceRoot: sourceRoot,
-		sourceIdentity: identity, loadedIdentity: identity, loadedDecl: decl, selectedRoot: diagnosticRoot,
+		sourceIdentity: identity, loadedIdentity: identity, loadedDecl: decl, selectedName: name, selectedRoot: diagnosticRoot,
 		only: append([]string(nil), only...), exclude: append([]string(nil), exclude...),
 	}
 	return selected, problems, nil
@@ -90,7 +120,7 @@ func declarationIdentity(decl *packdecl.Manifest) (string, error) {
 func preserveEmbeddedMetadataBinding(source, clone *Pack) {
 	binding := source.embeddedMetadata
 	if binding == nil || source.Decl == nil || clone.Decl == nil || binding.loadedDecl != source.Decl ||
-		binding.selectedRoot != source.Root || binding.sourceIdentity == "" {
+		binding.selectedName != source.Name || clone.Name != source.Name || binding.selectedRoot != source.Root || binding.sourceIdentity == "" {
 		clone.embeddedMetadata = nil
 		return
 	}
@@ -115,7 +145,7 @@ func refreshEmbeddedMetadataBinding(p *Pack) {
 		return
 	}
 	binding := p.embeddedMetadata
-	if p.Decl == nil || binding.loadedDecl != p.Decl || binding.selectedRoot != p.Root || binding.sourceIdentity == "" {
+	if p.Decl == nil || binding.loadedDecl != p.Decl || binding.selectedName != p.Name || binding.selectedRoot != p.Root || binding.sourceIdentity == "" {
 		p.embeddedMetadata = nil
 		return
 	}
@@ -139,7 +169,7 @@ func ReadableLoopholeModules(p *Pack) ([]LoopholeModule, []string, []string, err
 		return mods, refusals, warnings, nil
 	}
 	identity, err := declarationIdentity(p.Decl)
-	if err != nil || binding.fsys == nil || binding.selectedFS == nil || binding.loadedDecl != p.Decl || binding.selectedRoot != p.Root ||
+	if err != nil || binding.fsys == nil || binding.selectedFS == nil || binding.loadedDecl != p.Decl || binding.selectedName != p.Name || binding.selectedRoot != p.Root ||
 		binding.sourceIdentity == "" || identity != binding.loadedIdentity {
 		return nil, nil, nil, fmt.Errorf("pack %s selected metadata no longer matches its parsed declaration and root", p.Name)
 	}

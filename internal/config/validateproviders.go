@@ -424,6 +424,10 @@ func validateProviderCredentialScope(workspace string, errs *[]string) {
 	if err != nil || wsCfg == nil {
 		return
 	}
+	validateProviderCredentialScopeConfig(wsCfg, errs)
+}
+
+func validateProviderCredentialScopeConfig(wsCfg *jsonx.OrderedMap, errs *[]string) {
 	v, present := wsCfg.Get(providersKey)
 	if !present {
 		return

@@ -27,8 +27,8 @@ func hostPackTreeOps() packTreeOps {
 	}
 }
 
-// fsPackTreeOps is only for immutable symlink-free sources such as packreg's embedded FS.
-// Path-backed packs use hostPackTreeOps plus the caller's existing whole-root Check.
+// fsPackTreeOps reads a source view that has already enforced path checks or is intrinsically
+// immutable and symlink-free, such as packreg's embedded FS.
 func fsPackTreeOps(fsys fs.FS) packTreeOps {
 	return packTreeOps{
 		lstat:        func(name string) (fs.FileInfo, error) { return fs.Stat(fsys, name) },

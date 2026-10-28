@@ -127,12 +127,18 @@ func checkAdapters(v any) (map[string]string, []string) {
 // shape, which `yolo host` runs too (ValidateProviderSection).
 func validateUserScopeAdapters(errs *[]string) {
 	userPath := paths.UserConfigPath()
-	if userCfg, err := loadUserScopeConfig(userPath, userPath, false, func(string) {}); err == nil && userCfg != nil {
-		if v, present := userCfg.Get(adaptersKey); present && v != nil {
-			_, problems := checkAdapters(v)
-			for _, p := range problems {
-				add(errs, p)
-			}
+	userCfg, err := loadUserScopeConfig(userPath, userPath, false, func(string) {})
+	if err != nil || userCfg == nil {
+		return
+	}
+	validateUserScopeAdaptersConfig(userCfg, errs)
+}
+
+func validateUserScopeAdaptersConfig(userCfg *jsonx.OrderedMap, errs *[]string) {
+	if v, present := userCfg.Get(adaptersKey); present && v != nil {
+		_, problems := checkAdapters(v)
+		for _, p := range problems {
+			add(errs, p)
 		}
 	}
 }
@@ -144,10 +150,21 @@ func validateUserScopeAdapters(errs *[]string) {
 // validatePacks is the pattern and validateProfiles restates the reason: in the merged map
 // an `adapters` key from either scope looks the same, and only the workspace one is wrong.
 func validateAdapters(workspace string, errs *[]string) {
-	validateUserScopeAdapters(errs)
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
-	if err != nil || wsCfg == nil {
-		return
+	validateAdaptersWithScopes(workspace, nil, nil, errs)
+}
+
+func validateAdaptersWithScopes(workspace string, userCfg, wsCfg *jsonx.OrderedMap, errs *[]string) {
+	if userCfg == nil {
+		validateUserScopeAdapters(errs)
+	} else {
+		validateUserScopeAdaptersConfig(userCfg, errs)
+	}
+	if wsCfg == nil {
+		var err error
+		wsCfg, err = LoadWorkspaceConfig(workspace, false, func(string) {})
+		if err != nil || wsCfg == nil {
+			return
+		}
 	}
 	if _, atWorkspace := wsCfg.Get(adaptersKey); atWorkspace && WorkspaceUserScopeOnlyKey(adaptersKey) {
 		add(errs, adapterScopeMessage())

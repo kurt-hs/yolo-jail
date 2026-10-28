@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packstage"
 )
 
 type OverlayFile struct {
@@ -19,17 +20,21 @@ type OverlayFile struct {
 }
 
 func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribution, []string) {
+	return discoverHomeFilesFiltered(root, followLocalLinks, nil, nil)
+}
+
+func discoverHomeFilesFiltered(root string, followLocalLinks bool, only, exclude []string) ([]packdecl.Contribution, []string) {
 	if followLocalLinks {
-		return discoverLocalHomeFiles(root)
+		return discoverLocalHomeFiles(root, only, exclude)
 	}
-	return discoverHomeFilesWithOps(root, hostPackTreeOps())
+	return discoverHomeFilesWithOps(root, hostPackTreeOps(), only, exclude)
 }
 
 func discoverHomeFilesFS(fsys fs.FS) ([]packdecl.Contribution, []string) {
-	return discoverHomeFilesWithOps(".", fsPackTreeOps(fsys))
+	return discoverHomeFilesWithOps(".", fsPackTreeOps(fsys), nil, nil)
 }
 
-func discoverHomeFilesWithOps(root string, ops packTreeOps) ([]packdecl.Contribution, []string) {
+func discoverHomeFilesWithOps(root string, ops packTreeOps, only, exclude []string) ([]packdecl.Contribution, []string) {
 	homeRoot := ops.join(root, "home")
 	info, err := ops.lstat(homeRoot)
 	if os.IsNotExist(err) || errors.Is(err, fs.ErrNotExist) {
@@ -96,6 +101,9 @@ func discoverHomeFilesWithOps(root string, ops packTreeOps) ([]packdecl.Contribu
 				walk(child, childRel)
 				continue
 			}
+			if !packstage.Matches("home/"+childRel, only, exclude) {
+				continue
+			}
 			info, err := entry.Info()
 			if err != nil {
 				problems = append(problems, fmt.Sprintf("cannot inspect home/%s: %v", childRel, err))
@@ -115,7 +123,7 @@ func discoverHomeFilesWithOps(root string, ops packTreeOps) ([]packdecl.Contribu
 // discoverLocalHomeFiles follows the same user-owned content links as packstage's local
 // FollowSymlinks policy. Contribution paths retain the names inside home/, not the targets'
 // physical paths, so aliases stage and deliver identically.
-func discoverLocalHomeFiles(root string) ([]packdecl.Contribution, []string) {
+func discoverLocalHomeFiles(root string, only, exclude []string) ([]packdecl.Contribution, []string) {
 	homeRoot := filepath.Join(root, "home")
 	info, err := os.Lstat(homeRoot)
 	if os.IsNotExist(err) {
@@ -191,6 +199,9 @@ func discoverLocalHomeFiles(root string) ([]packdecl.Contribution, []string) {
 				walk(child, childRel)
 				continue
 			}
+			if !packstage.Matches("home/"+childRel, only, exclude) {
+				continue
+			}
 			fileInfo, err := entry.Info()
 			if err != nil {
 				problems = append(problems, fmt.Sprintf("cannot inspect home/%s: %v", childRel, err))
@@ -221,14 +232,14 @@ func dirTargetIsDirectory(path string) bool {
 // readers refuse links because they lack origin context; only the explicit local-use reader may
 // follow local links. Fetched sources retain staged-tree containment enforcement.
 func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []string) {
-	return discoverOverlayFilesWithOps(root, followLocalLinks, hostPackTreeOps())
+	return discoverOverlayFilesWithOps(root, followLocalLinks, hostPackTreeOps(), nil, nil)
 }
 
 func discoverOverlayFilesFS(fsys fs.FS) ([]OverlayFile, []string) {
-	return discoverOverlayFilesWithOps(".", false, fsPackTreeOps(fsys))
+	return discoverOverlayFilesWithOps(".", false, fsPackTreeOps(fsys), nil, nil)
 }
 
-func discoverOverlayFilesWithOps(root string, followLocalLinks bool, ops packTreeOps) ([]OverlayFile, []string) {
+func discoverOverlayFilesWithOps(root string, followLocalLinks bool, ops packTreeOps, only, exclude []string) ([]OverlayFile, []string) {
 	dir := ops.join(root, "overlays")
 	info, err := ops.lstat(dir)
 	if os.IsNotExist(err) || errors.Is(err, fs.ErrNotExist) {
@@ -256,6 +267,9 @@ func discoverOverlayFilesWithOps(root string, followLocalLinks bool, ops packTre
 	var files []OverlayFile
 	var problems []string
 	for _, entry := range entries {
+		if !packstage.Matches("overlays/"+entry.Name(), only, exclude) {
+			continue
+		}
 		if entry.Type()&os.ModeSymlink != 0 {
 			if !followLocalLinks {
 				problems = append(problems, fmt.Sprintf("overlays/%s is a symlink; symlinked overlay sources are not followed during discovery", entry.Name()))

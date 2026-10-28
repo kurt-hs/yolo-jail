@@ -7,6 +7,10 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // ExplicitEditScope is the normal config-graph role the caller intends to edit. Its zero value
@@ -127,6 +131,66 @@ func NewExplicitEditTarget(workspace, physicalTarget string, scope ExplicitEditS
 	return ExplicitEditTarget{workspace: workspace, physical: physical, scope: scope, format: format}, nil
 }
 
+type editValidationContext struct {
+	workspace        string
+	target           ExplicitEditTarget
+	input            ConfigReadInput
+	witness          *editReadWitness
+	effective        *jsonx.OrderedMap
+	rawUser          *jsonx.OrderedMap
+	rawWorkspace     *jsonx.OrderedMap
+	userOrigins      *Sources
+	workspaceOrigins *Sources
+	reads            []editReadObservation
+	packs            []*packload.Pack
+	catalog          map[string]map[string]packdecl.ProviderModel
+	semantic         *ReadableSemanticInputs
+}
+
+type ValidatedReadableRequest struct {
+	Path       string
+	Files      []string
+	Capability string
+	Status     ReadableRequestStatus
+	Reason     string
+}
+
+type ValidatedExplicitEditResult struct {
+	snapshot         string
+	warnings         []string
+	readableWarnings []string
+	readableRequests []ValidatedReadableRequest
+	validated        bool
+}
+
+// SnapshotJSON returns the validated planned snapshot and false for a zero, unvalidated result.
+func (r ValidatedExplicitEditResult) SnapshotJSON() (string, bool) {
+	if !r.validated {
+		return "", false
+	}
+	return r.snapshot, true
+}
+
+// Warnings returns a detached copy of warnings from the unchanged common validator.
+func (r ValidatedExplicitEditResult) Warnings() []string {
+	return append([]string(nil), r.warnings...)
+}
+
+// ReadableWarnings returns detached diagnostics from the existing typed readable allowance plan.
+func (r ValidatedExplicitEditResult) ReadableWarnings() []string {
+	return append([]string(nil), r.readableWarnings...)
+}
+
+// ReadableRequests returns detached statuses produced by the existing readable allowance plan.
+func (r ValidatedExplicitEditResult) ReadableRequests() []ValidatedReadableRequest {
+	out := make([]ValidatedReadableRequest, len(r.readableRequests))
+	for i, request := range r.readableRequests {
+		request.Files = append([]string(nil), request.Files...)
+		out[i] = request
+	}
+	return out
+}
+
 // ExplicitEditReadResult is an immutable view of one planned graph read. It proves input
 // consumption and role binding only; it is NOT a semantic validation result.
 type ExplicitEditReadResult struct{ snapshot string }
@@ -145,53 +209,162 @@ func resolvedAbsolutePath(path string) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
-// ReadExplicitEditConfig substitutes planned bytes through the normal graph and proves that the
-// physical file was consumed under exactly the caller-requested role and decoder. This read/bind
-// primitive deliberately does not claim semantic validation; callers must not treat its snapshot
-// as validated until invocation-aware common/F/G validation is wired through the same context.
-func ReadExplicitEditConfig(workspace string, target ExplicitEditTarget, input ConfigReadInput) (ExplicitEditReadResult, error) {
-	if target.scope == 0 || target.physical == "" || target.workspace == "" || target.format == 0 {
-		return ExplicitEditReadResult{}, fmt.Errorf("explicit edit target is incomplete")
-	}
-	actualWorkspace, err := resolvedAbsolutePath(workspace)
+func ValidateExplicitEdit(workspace string, target ExplicitEditTarget, input ConfigReadInput) (ValidatedExplicitEditResult, error) {
+	ctx, err := readExplicitEditContext(workspace, target, input)
 	if err != nil {
-		return ExplicitEditReadResult{}, fmt.Errorf("resolve explicit edit workspace: %w", err)
+		return ValidatedExplicitEditResult{}, err
 	}
-	if actualWorkspace != target.workspace {
-		return ExplicitEditReadResult{}, fmt.Errorf("explicit edit workspace %s does not match config graph workspace %s", target.workspace, actualWorkspace)
+	if err := ctx.readRawScopes(); err != nil {
+		return ValidatedExplicitEditResult{}, err
 	}
-	if input.target == "" || filepath.Clean(input.target) != target.physical {
-		return ExplicitEditReadResult{}, fmt.Errorf("explicit edit input does not match the bound physical target %s", target.physical)
+	ctx.packs, err = ctx.selectedPacks()
+	if err != nil {
+		return ValidatedExplicitEditResult{}, err
 	}
-	if inJail() && target.scope == ExplicitEditUser {
-		return ExplicitEditReadResult{}, fmt.Errorf("user-scope config edits are only allowed on the host; run the edit command for %s on the host", target.physical)
+	ctx.catalog, err = explicitProviderCatalog(ctx, ctx.effective)
+	if err != nil {
+		return ValidatedExplicitEditResult{}, err
 	}
-	witness := &editReadWitness{}
-	invocation := *input.clone()
-	invocation.witness = witness
-	cfg, _, err := composeReadableConfigWithInputUse(actualWorkspace, true, nil, true, true, &invocation, nil)
+	errs, warnings := validateConfigWithEditContext(ctx.effective, ctx.workspace, nil, ctx)
+	if len(errs) != 0 {
+		return ValidatedExplicitEditResult{}, fmt.Errorf("validate planned effective config: %s", strings.Join(errs, "; "))
+	}
+	if ctx.semantic == nil {
+		return ValidatedExplicitEditResult{}, fmt.Errorf("validate planned readable F/G semantics: typed consumer did not run")
+	}
+	if err := ctx.validateInputWitness(); err != nil {
+		return ValidatedExplicitEditResult{}, err
+	}
+	snapshot, err := SnapshotJSON(ctx.effective)
+	if err != nil {
+		return ValidatedExplicitEditResult{}, fmt.Errorf("snapshot validated explicit edit config: %w", err)
+	}
+	readableRequests := make([]ValidatedReadableRequest, 0, len(ctx.semantic.AllowancePlan.Requests))
+	for _, request := range ctx.semantic.AllowancePlan.Requests {
+		readableRequests = append(readableRequests, ValidatedReadableRequest{
+			Path: request.Path, Files: append([]string(nil), request.Files...), Capability: request.Capability,
+			Status: request.Status, Reason: request.Reason,
+		})
+	}
+	return ValidatedExplicitEditResult{
+		snapshot: snapshot, warnings: append([]string(nil), warnings...),
+		readableWarnings: append([]string(nil), ctx.semantic.AllowancePlan.Diagnostics...),
+		readableRequests: readableRequests, validated: true,
+	}, nil
+}
+
+func ReadExplicitEditConfig(workspace string, target ExplicitEditTarget, input ConfigReadInput) (ExplicitEditReadResult, error) {
+	ctx, err := readExplicitEditContext(workspace, target, input)
 	if err != nil {
 		return ExplicitEditReadResult{}, err
 	}
-	if len(witness.reads) == 0 {
-		return ExplicitEditReadResult{}, fmt.Errorf("explicit target %s was not consumed by the standard config graph", target.physical)
+	snapshot, err := SnapshotJSON(ctx.effective)
+	if err != nil {
+		return ExplicitEditReadResult{}, fmt.Errorf("snapshot explicit edit config read: %w", err)
+	}
+	return ExplicitEditReadResult{snapshot: snapshot}, nil
+}
+
+func readExplicitEditContext(workspace string, target ExplicitEditTarget, input ConfigReadInput) (*editValidationContext, error) {
+	if target.scope == 0 || target.physical == "" || target.workspace == "" || target.format == 0 {
+		return nil, fmt.Errorf("explicit edit target is incomplete")
+	}
+	actualWorkspace, err := resolvedAbsolutePath(workspace)
+	if err != nil {
+		return nil, fmt.Errorf("resolve explicit edit workspace: %w", err)
+	}
+	if actualWorkspace != target.workspace {
+		return nil, fmt.Errorf("explicit edit workspace %s does not match config graph workspace %s", target.workspace, actualWorkspace)
+	}
+	invocation := input.clone()
+	if invocation.target == "" || filepath.Clean(invocation.target) != target.physical {
+		return nil, fmt.Errorf("explicit edit input does not match the bound physical target %s", target.physical)
+	}
+	if inJail() && target.scope == ExplicitEditUser {
+		return nil, fmt.Errorf("user-scope config edits are only allowed on the host; run the edit command for %s on the host", target.physical)
+	}
+	witness := &editReadWitness{}
+	invocation.witness = witness
+	cfg, _, err := composeReadableConfigWithInputUse(actualWorkspace, true, nil, true, true, invocation, nil)
+	if err != nil {
+		return nil, err
+	}
+	ctx := &editValidationContext{
+		workspace: actualWorkspace, target: target, input: *invocation, witness: witness,
+		effective: cfg, reads: append([]editReadObservation(nil), witness.reads...),
+	}
+	if err := ctx.validateInputWitness(); err != nil {
+		return nil, err
+	}
+	return ctx, nil
+}
+
+func validationUserSources(edit ...*editValidationContext) *Sources {
+	if len(edit) != 0 && edit[0] != nil && edit[0].userOrigins != nil {
+		return edit[0].userOrigins
+	}
+	return UserScopeSources()
+}
+
+func loadValidationWorkspaceConfigWithNode(workspace string, edit ...*editValidationContext) (*jsonx.OrderedMap, *srcNode, error) {
+	cfg, sources, err := loadValidationWorkspaceConfigWithSources(workspace, edit...)
+	if err != nil || cfg == nil || sources == nil {
+		return cfg, nil, err
+	}
+	return cfg, sources.node(), nil
+}
+
+func loadValidationWorkspaceConfigWithSources(workspace string, edit ...*editValidationContext) (*jsonx.OrderedMap, *Sources, error) {
+	if len(edit) != 0 && edit[0] != nil && edit[0].rawWorkspace != nil {
+		return edit[0].rawWorkspace, edit[0].workspaceOrigins, nil
+	}
+	return LoadWorkspaceConfigWithSources(workspace, false, func(string) {})
+}
+
+func loadValidationWorkspaceConfig(workspace string, edit ...*editValidationContext) (*jsonx.OrderedMap, error) {
+	if len(edit) != 0 && edit[0] != nil && edit[0].rawWorkspace != nil {
+		return edit[0].rawWorkspace, nil
+	}
+	return LoadWorkspaceConfig(workspace, false, func(string) {})
+}
+
+func (ctx *editValidationContext) validateInputWitness() error {
+	if ctx == nil || ctx.witness == nil || len(ctx.witness.reads) == 0 {
+		return fmt.Errorf("explicit target %s was not consumed by the standard config graph", ctx.target.physical)
 	}
 	wantRole := map[ExplicitEditScope]editReadRole{
 		ExplicitEditUser:    editRoleUser,
 		ExplicitEditProject: editRoleProject,
 		ExplicitEditLocal:   editRoleLocal,
-	}[target.scope]
-	for _, read := range witness.reads {
+	}[ctx.target.scope]
+	for _, read := range ctx.witness.reads {
 		if read.role != wantRole {
-			return ExplicitEditReadResult{}, fmt.Errorf("explicit target %s was read under conflicting or unauthorized config role %s", target.physical, read.role.String())
+			return fmt.Errorf("explicit target %s was read under conflicting or unauthorized config role %s", ctx.target.physical, read.role.String())
 		}
-		if read.format != target.format {
-			return ExplicitEditReadResult{}, fmt.Errorf("explicit target %s was read as a different config format", target.physical)
+		if read.format != ctx.target.format {
+			return fmt.Errorf("explicit target %s was read as a different config format", ctx.target.physical)
 		}
 	}
-	snapshot, err := SnapshotJSON(cfg)
+	ctx.reads = append([]editReadObservation(nil), ctx.witness.reads...)
+	return nil
+}
+
+func (ctx *editValidationContext) readRawScopes() error {
+	if ctx == nil {
+		return fmt.Errorf("explicit edit validation context is missing")
+	}
+	user, userNode, err := loadReadableUserScopeWithInputUse(paths.UserConfigPath(), true, nil, true, &ctx.input, nil)
 	if err != nil {
-		return ExplicitEditReadResult{}, fmt.Errorf("snapshot explicit edit config read: %w", err)
+		return fmt.Errorf("read raw user config scope: %w", err)
 	}
-	return ExplicitEditReadResult{snapshot: snapshot}, nil
+	workspace, workspaceNode, err := loadReadableWorkspaceConfigOverWithInputUse(ctx.workspace, true, nil, true, jsonx.NewOrderedMap(), nil, &ctx.input, nil)
+	if err != nil {
+		return fmt.Errorf("read raw workspace config scope: %w", err)
+	}
+	ctx.rawUser, ctx.userOrigins = user, sourcesOf(userNode)
+	ctx.rawWorkspace, ctx.workspaceOrigins = workspace, sourcesOf(workspaceNode)
+	if err := ctx.validateInputWitness(); err != nil {
+		return err
+	}
+	return nil
 }

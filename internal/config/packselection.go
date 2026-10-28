@@ -114,6 +114,10 @@ func (s PackSelection) Complete() bool {
 // that did not resolve cannot contribute a need; the selection is then incomplete, which the
 // result says.
 func SelectPacks(entries []PackEntry, spec PackSelectSpec) (PackSelection, error) {
+	return selectPacksWithEmbeddedLookup(entries, spec, embeddedPackLookup())
+}
+
+func selectPacksWithEmbeddedLookup(entries []PackEntry, spec PackSelectSpec, embedded func(string) (*packload.Pack, bool)) (PackSelection, error) {
 	var sel PackSelection
 	for _, e := range entries {
 		p, err := spec.Resolve(e)
@@ -135,7 +139,7 @@ func SelectPacks(entries []PackEntry, spec PackSelectSpec) (PackSelection, error
 		}
 	}
 	closure := spec.Selection
-	closure.Embedded = embeddedPackLookup()
+	closure.Embedded = embedded
 	added, causes, err := closure.Close(sel.Configured)
 	if err != nil {
 		sel.ClosureErr = err

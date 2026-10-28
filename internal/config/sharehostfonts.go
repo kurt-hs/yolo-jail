@@ -28,7 +28,7 @@ func shareHostFontsValue(cfg *jsonx.OrderedMap) bool {
 
 // validateShareHostFonts shape-checks the key and refuses a workspace value, which would
 // otherwise be a silent no-op (ShareHostFonts never reads it).
-func validateShareHostFonts(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateShareHostFonts(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(shareHostFontsKey)
 	if !present {
 		return
@@ -36,7 +36,7 @@ func validateShareHostFonts(config *jsonx.OrderedMap, workspace string, errs *[]
 	if v != nil && !isBool(v) {
 		add(errs, "config."+shareHostFontsKey+": expected a boolean (got "+pyReprValue(v)+")")
 	}
-	wsCfg, err := LoadWorkspaceConfig(workspace, false, func(string) {})
+	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}

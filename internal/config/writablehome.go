@@ -306,12 +306,17 @@ func checkWritableHomeDir(s string, reserved map[string]string) string {
 // The selection is resolved only when the key is present, so a config without it costs no
 // pack resolution. A selection that resolves only partly still reserves what it could
 // read; resolveSelectedPacks says why that is the right answer.
-func validateWritableHomeDirs(config *jsonx.OrderedMap, errs *[]string) {
+func validateWritableHomeDirs(config *jsonx.OrderedMap, errs *[]string, selectedPacks ...[]*packload.Pack) {
 	v, present := config.Get(writableHomeDirsKey)
 	if !present || v == nil {
 		return
 	}
-	selected, _ := resolveSelectedPacks()
+	var selected []*packload.Pack
+	if len(selectedPacks) != 0 {
+		selected = selectedPacks[0]
+	} else {
+		selected, _ = resolveSelectedPacks()
+	}
 	_, problems := checkWritableHomeDirs(v, selected)
 	for _, p := range problems {
 		add(errs, p)

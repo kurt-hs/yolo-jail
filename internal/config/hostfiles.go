@@ -401,15 +401,15 @@ func dedupeHostFilesByPath(entries []HostFileEntry, warn Warn) []HostFileEntry {
 //
 // scope labels the entries for error messages and the ls listing. probeSource is
 // the filesystem-probe gate — see LoadHostFiles.
-func checkHostFiles(v any, scope string, probeSource bool) (entries []HostFileEntry, problems []string) {
-	entries, _, problems = checkHostFilesIndexed(v, scope, probeSource)
+func checkHostFiles(v any, scope string, probeSource bool, selected ...[]*packload.Pack) (entries []HostFileEntry, problems []string) {
+	entries, _, problems = checkHostFilesIndexed(v, scope, probeSource, selected...)
 	return entries, problems
 }
 
 // checkHostFilesIndexed is checkHostFiles plus, for each entry it returns, that entry's index
 // in the list it was handed: an entry refused above it is not returned, so the two counts
 // part there.
-func checkHostFilesIndexed(v any, scope string, probeSource bool) (entries []HostFileEntry, indices []int, problems []string) {
+func checkHostFilesIndexed(v any, scope string, probeSource bool, selected ...[]*packload.Pack) (entries []HostFileEntry, indices []int, problems []string) {
 	prefix := "config." + hostFilesKey
 	list, ok := asList(v)
 	if !ok {
@@ -418,8 +418,13 @@ func checkHostFilesIndexed(v any, scope string, probeSource bool) (entries []Hos
 	}
 	// The selection, resolved as validateWritableHomeDirs resolves it: a partly unresolvable
 	// selection still reserves what it could read (resolveSelectedPacks says why).
-	selected, _ := resolveSelectedPacks()
-	reserved := hostFileReservedDests(selected)
+	var selectedPacks []*packload.Pack
+	if len(selected) != 0 {
+		selectedPacks = selected[0]
+	} else {
+		selectedPacks, _ = resolveSelectedPacks()
+	}
+	reserved := hostFileReservedDests(selectedPacks)
 	byPath := make(map[string]int, len(list)) // dest -> first index claiming it
 	for idx, raw := range list {
 		itemPath := fmt.Sprintf("%s[%d]", prefix, idx)
@@ -948,7 +953,7 @@ func probeHostFileSource(entry HostFileEntry) string {
 // way carrying HOST paths that are deliberately not in the jail's mount namespace.
 // Stat'ing them would turn a valid host config into a fatal error on every nested
 // run. Shape and scope rules still apply everywhere.
-func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]string) {
+func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	v, present := config.Get(hostFilesKey)
 	if !present {
 		// Every workspace key survives into the merged map, so an absent key here
@@ -956,7 +961,12 @@ func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]strin
 		return
 	}
 	if v != nil {
-		_, problems := checkHostFiles(v, "merged", !inJail())
+		var problems []string
+		if len(edit) != 0 && edit[0] != nil {
+			_, problems = checkHostFiles(v, "merged", !inJail(), edit[0].packs)
+		} else {
+			_, problems = checkHostFiles(v, "merged", !inJail())
+		}
 		for _, p := range problems {
 			add(errs, p)
 		}
@@ -965,7 +975,7 @@ func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	// Warnings from the re-read are discarded: this same file was already loaded
 	// (and any parse problem already reported) by whoever produced the merged
 	// config we were handed.
-	wsCfg, wsNode, err := loadWorkspaceConfig(workspace, false, func(string) {}, true)
+	wsCfg, wsNode, err := loadValidationWorkspaceConfigWithNode(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
@@ -977,7 +987,13 @@ func validateHostFiles(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	// the user wrote in their workspace config, not their position in the merge.
 	// For the same reason the refusal is located here, in the workspace files' own
 	// record (sources.go): the merged list's entry at this index is someone else's.
-	wsEntries, wsIndices, _ := checkHostFilesIndexed(wsValue, "workspace", false)
+	var wsEntries []HostFileEntry
+	var wsIndices []int
+	if len(edit) != 0 && edit[0] != nil {
+		wsEntries, wsIndices, _ = checkHostFilesIndexed(wsValue, "workspace", false, edit[0].packs)
+	} else {
+		wsEntries, wsIndices, _ = checkHostFilesIndexed(wsValue, "workspace", false)
+	}
 	for n, e := range wsEntries {
 		i := wsIndices[n]
 		if !e.SourceBearing() {

@@ -526,8 +526,10 @@ func ApplyForks(packs []*Pack) ([]*Pack, error) {
 		sort.Strings(problems)
 		return nil, fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
-	for _, pack := range out {
-		refreshEmbeddedMetadataBinding(pack)
+	for i, wasCopied := range copied {
+		if wasCopied {
+			refreshEmbeddedMetadataBinding(out[i])
+		}
 	}
 	return out, nil
 }
