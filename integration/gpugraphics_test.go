@@ -17,7 +17,7 @@ func TestMesaGraphicsDriverReachesContainerBootAndCheck(t *testing.T) {
 		t.Skip("the nested container boot integration needs Linux Podman")
 	}
 
-	dir := writeProject(t, `{"gpu":{"enabled":true},"packages":["mesa"]}`)
+	dir := writeProject(t, `{"gpu":{"enabled":true},"packages":["mesa","pkgsi686Linux.mesa"]}`)
 	r := runYolo(t, dir, strings.Join([]string{
 		`echo GRAPHICS-MANIFEST-BEGIN`,
 		`cat /run/yolo/graphics-drivers.json`,
