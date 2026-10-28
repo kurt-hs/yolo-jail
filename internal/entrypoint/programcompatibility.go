@@ -2,12 +2,80 @@ package entrypoint
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
 	"strconv"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
+
+const programCompatibilityDir = ".config/yolo-program-compatibility"
+
+// selectedProgramCompatibility reads a constraint only from a files contribution declared by
+// the pack that owns this installed bin. The generated launcher bakes these pack-tree bytes;
+// it never trusts the mutable home file to which the generic files surface may also deliver them.
+func selectedProgramCompatibility(p *packload.Pack, inst *packdecl.Install) (*packdecl.VersionCompatibility, error) {
+	if p == nil || inst == nil || !packdecl.ValidBinName(inst.Bin) {
+		return nil, nil
+	}
+	into := path.Join(programCompatibilityDir, inst.Bin+".json")
+	var declaration *packdecl.Contribution
+	for _, c := range p.Decl.Contributions() {
+		if c.Kind != packdecl.KindFiles || c.Into != into {
+			continue
+		}
+		if declaration != nil {
+			return nil, fmt.Errorf("pack %s: duplicate program compatibility files contributions for %s — remove the duplicate declaration and restart", p.Name, inst.Bin)
+		}
+		copy := c
+		declaration = &copy
+	}
+	if declaration == nil {
+		return nil, nil
+	}
+	if inst.Kind != "native" {
+		return nil, fmt.Errorf("pack %s: compatibility data for %s requires a native installer program — use a native installer or remove this compatibility files contribution, then restart", p.Name, inst.Bin)
+	}
+	if !fs.ValidPath(declaration.From) || declaration.From == "." {
+		return nil, fmt.Errorf("pack %s: invalid compatibility source path %q — correct the files contribution's from path and restart", p.Name, declaration.From)
+	}
+	root, err := os.OpenRoot(p.Root)
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: open compatibility source root: %w — repair the selected pack tree and restart", p.Name, err)
+	}
+	defer root.Close()
+	file, err := root.Open(declaration.From)
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: open compatibility source %q: %w — restore the declared source file and restart", p.Name, declaration.From, err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: stat compatibility source %q: %w — restore a regular declared source file and restart", p.Name, declaration.From, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("pack %s: compatibility source %q is not a regular file — select a regular JSON file in the files contribution and restart", p.Name, declaration.From)
+	}
+	const maxCompatibilityBytes = 4096
+	data, err := io.ReadAll(io.LimitReader(file, maxCompatibilityBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("pack %s: read compatibility source %q: %w — repair the declared JSON file and restart", p.Name, declaration.From, err)
+	}
+	if len(data) > maxCompatibilityBytes {
+		return nil, fmt.Errorf("pack %s: compatibility source %q exceeds %d bytes — reduce it to a small JSON constraint and restart", p.Name, declaration.From, maxCompatibilityBytes)
+	}
+	compatibility, problems := packdecl.DecodeVersionCompatibility(data, inst.ProbeArgs)
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("pack %s: %s — correct the declared compatibility JSON and restart", p.Name, strings.Join(problems, "; "))
+	}
+	return compatibility, nil
+}
 
 // nativeCompatibilityShell emits a version refusal only for the self mode carried by the
 // host-resolved native launch context. Container launchers and explicit account mode keep their

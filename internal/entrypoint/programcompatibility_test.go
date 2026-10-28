@@ -51,6 +51,196 @@ func TestShippedCopilotCompatibilityRefusesOnlyMacosUserSelf(t *testing.T) {
 	}
 }
 
+func TestShippedCopilotCompatibilityBakesItsOwnPackData(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+	p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", "1.0.103")
+	mutable := filepath.Join(p.home, ".config", "yolo-program-compatibility", "copilot.json")
+	if err := os.MkdirAll(filepath.Dir(mutable), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mutable, []byte(`{"refuse_at_or_above":"99.0.0","message":"mutable home data"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.run(t, "")
+	if err == nil || !strings.Contains(out, "macos-user self's required SecurityServer deny") || strings.Contains(out, "mutable home data") || strings.Contains(p.log(t), "EXEC") {
+		t.Fatalf("launcher did not use its baked pack-owned compatibility data (err=%v, log=%q):\n%s", err, p.log(t), out)
+	}
+}
+
+func TestGenerateAgentLaunchersRejectsInvalidDeclaredCopilotCompatibilityData(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		edit       func(*testing.T, string)
+	}{
+		{
+			name: "malformed source",
+			want: "compatibility",
+			edit: func(t *testing.T, root string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(root, "_official", "copilot", "compatibility.json"), []byte(`{`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing source",
+			want: "compatibility",
+			edit: func(t *testing.T, root string) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(root, "_official", "copilot", "compatibility.json")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "traversal source",
+			want: `must not contain ".."`,
+			edit: func(t *testing.T, root string) {
+				t.Helper()
+				manifest := filepath.Join(root, "_official", "copilot", "pack.json")
+				data, err := os.ReadFile(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				updated := strings.Replace(string(data), `"from": "compatibility.json"`, `"from": "../outside.json"`, 1)
+				if updated == string(data) {
+					t.Fatal("Copilot compatibility files declaration not found")
+				}
+				if err := os.WriteFile(manifest, []byte(updated), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "symlink escapes owning pack",
+			want: "compatibility",
+			edit: func(t *testing.T, root string) {
+				t.Helper()
+				packDir := filepath.Join(root, "_official", "copilot")
+				manifest := filepath.Join(packDir, "pack.json")
+				data, err := os.ReadFile(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				updated := strings.Replace(string(data), `"from": "compatibility.json"`, `"from": "compatibility-link.json"`, 1)
+				if updated == string(data) {
+					t.Fatal("Copilot compatibility files declaration not found")
+				}
+				if err := os.WriteFile(manifest, []byte(updated), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				outside := filepath.Join(root, "_official", "outside.json")
+				if err := os.WriteFile(outside, []byte(`{"refuse_at_or_above":"1.0.93","message":"outside pack root"}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("../outside.json", filepath.Join(packDir, "compatibility-link.json")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "duplicate declaration",
+			want: "compatibility",
+			edit: func(t *testing.T, root string) {
+				t.Helper()
+				manifest := filepath.Join(root, "_official", "copilot", "pack.json")
+				data, err := os.ReadFile(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				declaration := `    {
+      "from": "compatibility.json",
+      "into": ".config/yolo-program-compatibility/copilot.json",
+      "kind": "files"
+    },
+`
+				if !strings.Contains(string(data), declaration) {
+					t.Fatal("Copilot compatibility files declaration not found")
+				}
+				updated := strings.Replace(string(data), declaration, declaration+declaration, 1)
+				if err := os.WriteFile(manifest, []byte(updated), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := imageProbeBase
+			imageProbeBase = t.TempDir()
+			t.Cleanup(func() { imageProbeBase = orig })
+			home := t.TempDir()
+			root := stageShippedPacks(t)
+			tc.edit(t, root)
+			e := NewEnv(map[string]string{
+				"JAIL_HOME": home, "YOLO_PACK_ROOT": root, AgentUpdatesEnv: "false",
+			})
+			e.Stderr = &strings.Builder{}
+			if err := GenerateAgentLaunchers(e); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("invalid declared compatibility data did not fail closed: %v", err)
+			}
+		})
+	}
+}
+
+func TestGenerateAgentLaunchersIgnoresCompatibilityDataOwnedByAnotherPack(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+	root := stageShippedPacks(t)
+	copilotDir := filepath.Join(root, "_official", "copilot")
+	claudeDir := filepath.Join(root, "_official", "claude")
+	copilotManifest := filepath.Join(copilotDir, "pack.json")
+	copilot, err := os.ReadFile(copilotManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := `    {
+      "from": "compatibility.json",
+      "into": ".config/yolo-program-compatibility/copilot.json",
+      "kind": "files"
+    },
+`
+	if !strings.Contains(string(copilot), owned) {
+		t.Fatal("Copilot compatibility files declaration not found")
+	}
+	copilot = []byte(strings.Replace(string(copilot), owned, "", 1))
+	if err := os.WriteFile(copilotManifest, copilot, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	claudeManifest := filepath.Join(claudeDir, "pack.json")
+	claude, err := os.ReadFile(claudeManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude = []byte(strings.Replace(string(claude), `  "contributes": [`, `  "contributes": [
+    {
+      "from": "compatibility.json",
+      "into": ".config/yolo-program-compatibility/copilot.json",
+      "kind": "files"
+    },`, 1))
+	if err := os.WriteFile(claudeManifest, claude, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "compatibility.json"), []byte(`{"refuse_at_or_above":"1.0.93","message":"foreign pack data"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	e := NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": root, AgentUpdatesEnv: "false"})
+	e.Stderr = &strings.Builder{}
+	if err := GenerateAgentLaunchers(e); err != nil {
+		t.Fatalf("GenerateAgentLaunchers: %v", err)
+	}
+	launcher, err := os.ReadFile(filepath.Join(e.LaunchDir(), "copilot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(launcher), "foreign pack data") || strings.Contains(string(launcher), "COMPATIBILITY_REFUSE_AT_OR_ABOVE='1.0.93'") {
+		t.Fatalf("Copilot launcher consumed another pack's data:\n%s", launcher)
+	}
+}
+
 func TestShippedCopilotInvalidGenerationMetadataRefuses(t *testing.T) {
 	orig := imageProbeBase
 	imageProbeBase = t.TempDir()
