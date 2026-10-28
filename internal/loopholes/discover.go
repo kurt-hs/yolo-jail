@@ -245,11 +245,13 @@ func applyWorkspaceOverrides(existing map[string]*Loophole, loopholesConfig *jso
 // SourcePack from every production call site today; the parameter stays because the mapping
 // source → loader is the security property, and a loader hardcoded here would put it back
 // where it was before loaderFor existed (a subset nothing on the launch path applied).
-func loadModuleDirs(dirs []string, source string) (map[string]*Loophole, []string) {
+func loadModuleDirs(modules []PackModule, source string) (map[string]*Loophole, []string) {
 	out := map[string]*Loophole{}
 	var order []string
+	ambiguous := map[string]bool{}
 	load := loaderFor(source)
-	for _, dir := range dirs {
+	for _, module := range modules {
+		dir := module.Dir
 		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 			warnf("loophole module dir %s is not a directory, so that loophole is NOT active", dir)
 			continue
@@ -268,6 +270,24 @@ func loadModuleDirs(dirs []string, source string) (map[string]*Loophole, []strin
 			warnf("loophole %s: %s", loophole.Name, note)
 		}
 		loophole.Source = source
+		if source == SourcePack {
+			loophole.Pack = module.Pack
+		}
+		if ambiguous[loophole.Name] {
+			continue
+		}
+		if previous, seen := out[loophole.Name]; seen && source == SourcePack && previous.Pack != loophole.Pack {
+			warnf("loophole %s has conflicting selected pack owners %q and %q, so it is NOT active; give the modules distinct loophole names or select only one owner", loophole.Name, previous.Pack, loophole.Pack)
+			delete(out, loophole.Name)
+			ambiguous[loophole.Name] = true
+			for i, name := range order {
+				if name == loophole.Name {
+					order = append(order[:i], order[i+1:]...)
+					break
+				}
+			}
+			continue
+		}
 		if _, seen := out[loophole.Name]; !seen {
 			order = append(order, loophole.Name)
 		}
@@ -376,6 +396,9 @@ type DiscoverOptions struct {
 type PackModule struct {
 	// Dir is the absolute path to the module directory (holding manifest.jsonc).
 	Dir string
+	// Pack is the actual selected pack that contributed this module; it is not inferred from
+	// the module or loophole name.
+	Pack string
 	// HostExecApproved says the caller RESOLVED this module from a pack the host user
 	// selected in their own config, and so vouches for running its host code.
 	//
@@ -798,11 +821,7 @@ func Discover(opts DiscoverOptions) []*Loophole {
 	// pack-vs-pack name collision never reaches here at all — the launch pre-flight
 	// refused it (docs/reference/loophole-system.md#selection-and-discovery).
 	if len(opts.PackModules) > 0 {
-		dirs := make([]string, 0, len(opts.PackModules))
-		for _, m := range opts.PackModules {
-			dirs = append(dirs, m.Dir)
-		}
-		pm, pk := loadModuleDirs(dirs, SourcePack)
+		pm, pk := loadModuleDirs(opts.PackModules, SourcePack)
 		appendOrdered(pm, pk)
 	}
 

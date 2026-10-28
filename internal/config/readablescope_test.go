@@ -48,6 +48,86 @@ func writeReadableScopeUser(t *testing.T, home, body string) {
 	}
 }
 
+func TestSelectedScopeFailsClosedForMissingAndConflictingPackProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		broker ScopeBroker
+	}{
+		{name: "config-only impostor", broker: readableScopeBroker("spoofed-owner", "git", "git-broker", "github.com", "fetch", nil, nil)},
+		{name: "conflicting owner", broker: ScopeBroker{Source: "git", Label: "git-broker", RemoteHost: "github.com", Pack: "git-owner",
+			Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "github.com", ReadCapability: "fetch"},
+			Readable: &ReadableBrokerDeclaration{Pack: "spoofed-owner", Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "github.com", ReadCapability: "fetch"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "")
+			writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\n")
+			workspace := t.TempDir()
+			read, err := ReadWorkspaceForGate(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected := []ReadablePackDeclaration{{Pack: "git-owner"}}
+			check := NewSelectedScopeCheck(workspace, []ScopeBroker{tc.broker}, read, selected, nil)
+			if check == nil || check.Fatal == nil {
+				t.Fatalf("selected scope accepted missing/conflicting pack provenance: %+v", check)
+			}
+			if check.ReadableInput != nil || len(check.Sources) != 1 || len(check.Sources[0].Grants) != 0 {
+				t.Fatalf("failed provenance reached grants or readable input: %+v", check)
+			}
+		})
+	}
+}
+
+func TestSelectedScopeRejectsMixedCanonicalAndMetadataFreeBrokers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\n\n[allow.github]\nalways = [\"read\"]\n")
+	workspace := t.TempDir()
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := ScopeBroker{Source: "git", Label: "git-broker", RemoteHost: "github.com", Pack: "git-owner",
+		Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "github.com", ReadCapability: "fetch"}}
+	legacy := ScopeBroker{Source: "github", Label: "github-broker", RemoteHost: "github.com"}
+	check := NewSelectedScopeCheck(workspace, []ScopeBroker{git, legacy}, read, []ReadablePackDeclaration{{Pack: "git-owner"}}, []ReadableSelectedBroker{{Pack: "git-owner", Label: "git-broker", Brokered: git.Brokered}})
+	if check == nil || check.Fatal == nil {
+		t.Fatalf("mixed provenance fell through to legacy scope: %+v", check)
+	}
+	if check.ReadableInput != nil || len(check.Sources) != 2 {
+		t.Fatalf("mixed provenance produced a partial readable input: %+v", check)
+	}
+	for _, source := range check.Sources {
+		if len(source.Grants) != 0 {
+			t.Fatalf("mixed provenance granted %s: %+v", source.Source, source.Grants)
+		}
+	}
+}
+
+func TestSelectedScopeDoesNotDropUnknownAllowanceAuthority(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\n\n[allow.unselected-auth]\nprofile = \"prod\"\n")
+	workspace := t.TempDir()
+	read, err := ReadWorkspaceForGate(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokered := loopholedecl.Brokered{Source: "git", RemoteHost: "github.com", ReadCapability: "fetch"}
+	broker := ScopeBroker{Source: "git", Label: "git-broker", RemoteHost: "github.com", Pack: "git-owner", Brokered: brokered}
+	check := NewSelectedScopeCheck(workspace, []ScopeBroker{broker}, read, []ReadablePackDeclaration{{Pack: "git-owner"}}, []ReadableSelectedBroker{{Pack: "git-owner", Label: "git-broker", Brokered: brokered}})
+	if check == nil || check.Fatal == nil || !strings.Contains(check.Fatal.Error(), "unselected-auth") {
+		t.Fatalf("unselected allowance was silently discarded or granted: %+v", check)
+	}
+	if check.ReadableInput != nil || len(check.Sources) != 1 || len(check.Sources[0].Grants) != 0 {
+		t.Fatalf("unknown allowance reached a readable grant: %+v", check)
+	}
+}
+
 func TestReadableLegacyBranchProjectionNamesOnlyUnrepresentableRepository(t *testing.T) {
 	first := brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/first", Branch: "main"}
 	second := brokerscope.Grant{Kind: "branch", Repo: "github.com/acme/second", Branch: "main"}

@@ -158,6 +158,34 @@ func TestDiscoverEmptyAndNonexistent(t *testing.T) {
 	}
 }
 
+func TestDiscoverCarriesOwningPackFromSelectedModule(t *testing.T) {
+	module := mkdir(t, filepath.Join(t.TempDir(), "git-broker"))
+	writeManifest(t, module, map[string]any{"name": "git-broker", "description": "selected broker"})
+	loaded := Discover(DiscoverOptions{IncludeDisabled: true, PackModules: []PackModule{{Dir: module, Pack: "git-owner", HostExecApproved: true}}})
+	if len(loaded) != 1 {
+		t.Fatalf("loaded %v, want one pack module", names(loaded))
+	}
+	if loaded[0].Pack != "git-owner" || loaded[0].Name == loaded[0].Pack {
+		t.Fatalf("resolved loophole owner = %q for module %q, want distinct actual pack git-owner", loaded[0].Pack, loaded[0].Name)
+	}
+}
+
+func TestDiscoverRejectsSameCanonicalNameFromDifferentSelectedPacks(t *testing.T) {
+	root := t.TempDir()
+	modules := make([]PackModule, 0, 2)
+	for _, owner := range []string{"git-owner-a", "git-owner-b"} {
+		module := mkdir(t, filepath.Join(root, owner, "git-broker"))
+		writeManifest(t, module, map[string]any{"name": "git-broker", "description": "selected broker"})
+		modules = append(modules, PackModule{Dir: module, Pack: owner, HostExecApproved: true})
+	}
+	loaded := Discover(DiscoverOptions{IncludeDisabled: true, PackModules: modules})
+	for _, loophole := range loaded {
+		if loophole.Name == "git-broker" {
+			t.Fatalf("conflicting selected owners resolved to pack %q; a same-name broker alias must be rejected before overwrite", loophole.Pack)
+		}
+	}
+}
+
 func TestLoadsMinimalManifest(t *testing.T) {
 	md := modsDir(t)
 	mod := mkdir(t, filepath.Join(md, "my-mod"))
