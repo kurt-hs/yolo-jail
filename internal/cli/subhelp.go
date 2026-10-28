@@ -67,7 +67,9 @@ var subcommandUsage = map[string]subUsage{
 	// runHelpRequested, next to the parse it mirrors.
 	"run": {text: runUsage},
 	// Answer inside their own testable bodies (case isHelpToken(a): ...).
-	"config":  {text: configUsage},
+	// config's own handler answers help and owns this shared usage. Its readable
+	// set/add/unset verbs consume the next token after --file as a path.
+	"config":  {text: configUsage, valueFlags: []string{"--file"}},
 	"surface": {text: surfaceUsage},
 	"pack":    {text: packUsage},
 	"apply":   {text: applyUsage},

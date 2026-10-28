@@ -36,6 +36,12 @@ Edit and inspect yolo's own configuration. Generated config surfaces are
 managed separately by 'yolo surface'.
 
 Subcommands:
+  set <key> <value> [target] [--dry-run]
+                           Set one typed value in an existing readable config file.
+  add <key> <value> [target] [--dry-run]
+                           Append one typed value to an existing list.
+  unset <key> [target] [--dry-run]
+                           Remove one key using the existing config removal policy.
   apply [--record-only] [--accept-config-changes]
                            HOST ONLY. Approve this workspace's config changes and
                            apply to its RUNNING jail what it can take without a
@@ -49,9 +55,27 @@ Flags:
   --help, -h               Show this help.
 
 Examples:
+  yolo config set machine.resources.cpus 4 --project
+  yolo config add env.unset '"NEW"' --local
+  yolo config unset mcp_servers.tavily --project
   yolo config apply
   yolo config drift
   yolo config dump`
+
+const configEditUsage = `Usage:
+  yolo config set <key> <value> [target] [--dry-run]
+  yolo config add <key> <value> [target] [--dry-run]
+  yolo config unset <key> [target] [--dry-run]
+
+set and add require one typed value; unset removes a key. Edits target an existing config file only.
+The default target is Project when it exists, even if User or Local currently wins. No config file is created.
+
+Flags:
+  --user, --project, --local
+                           Select an existing config target.
+  --file PATH              Select an existing config file.
+  --dry-run                Print the proposed path and changes without writing.
+  --help, -h               Show this help.`
 
 // runConfig dispatches `yolo config <subcommand>`. Registered in dispatch.go.
 // Per the dispatch convention (see runBroker), args[0] is the command name
@@ -65,15 +89,16 @@ func runConfig(args []string) int {
 }
 
 // configRunW is the testable body: args is everything after `config`.
+// Generic set/add/unset edits return through configedit before the composition target path below;
+// they select existing readable config files, not generated surface composition targets.
 //
-// THIS IS THE ONE RESOLUTION POINT (docs/reference/config-target-resolution.md#the-config-target,
-// [P2](docs/reference/config-target-resolution.md#principles)).
-// The target is resolved here — after argv is parsed, because the selector is an input, and
-// before any verb's first read — DISCLOSED, and then handed to the verb. Nothing below
-// resolves a second time: two predicates resolved independently is how one report came to
-// describe two homes (F1, docs/reference/config-target-resolution.md#the-config-target), and a verb
-// free to resolve its own could grow that defect
-// back.
+// THIS IS THE ONE RESOLUTION POINT for the composition verbs
+// (docs/reference/config-target-resolution.md#the-config-target,
+// [P2](docs/reference/config-target-resolution.md#principles)). The target is resolved here — after argv is
+// parsed, because the selector is an input, and before any composition verb's first read — DISCLOSED, and
+// then handed to the verb. Nothing below resolves a second time: two predicates resolved independently is how
+// one report came to describe two homes (F1, docs/reference/config-target-resolution.md#the-config-target), and
+// a verb free to resolve its own could grow that defect back.
 //
 // The disclosure is printed for every VERB, and not above the usage text: help has no report
 // whose subject there is to disclose, and neither has an unknown subcommand.
@@ -89,6 +114,12 @@ func configRunW(args []string, out, errw io.Writer) int {
 	case "ls", "render", "diff", "reset", "promote", "capture":
 		fmt.Fprintf(errw, "yolo config %s has moved to yolo surface %s; use `yolo surface %s` instead.\n", verb, verb, verb)
 		return 2
+	case "set", "add", "unset":
+		if helpRequested(args[1:], "--file") {
+			writeCLIUsage(out, colorForWriter(out), configEditUsage)
+			return 0
+		}
+		return runConfigEditWith(args, out, errw, configEditWorkspace())
 	}
 	rest, at, rc := extractAtFlag(verb, args[1:], errw)
 	if rc != 0 {
@@ -243,7 +274,8 @@ func writeCLIUsage(out io.Writer, color bool, usage string) {
 
 func configHelpToken(token string) bool {
 	switch token {
-	case "ls", "render", "diff", "reset", "promote", "capture", "drift", "dump", "apply",
+	case "ls", "render", "diff", "reset", "promote", "capture", "set", "add", "unset", "drift", "dump", "apply",
+		"--user", "--project", "--local", "--file", "--dry-run",
 		"--help", "-h", "--all", "--explain", "--at", "--force", "--keys", "--to",
 		"--plan", "--json", "--accept-promotion", "--record-only", "--accept-config-changes":
 		return true

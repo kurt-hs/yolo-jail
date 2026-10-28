@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/configedit"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
@@ -229,7 +231,24 @@ func configEditNeedsHostForJailedUserScope(path []configdoc.Step, choice config.
 	if rule.Scope == config.SchemaScopeWorkspaceOnly {
 		return false
 	}
+	if choice.Kind == config.EditTargetFile && configEditIsCanonicalUserFile(choice.File) {
+		return true
+	}
 	return choice.Kind == config.EditTargetUser || (choice.Kind == config.EditTargetAutomatic && rule.Scope == config.SchemaScopeUserOnly)
+}
+
+func configEditIsCanonicalUserFile(file string) bool {
+	absolute, err := filepath.Abs(file)
+	if err != nil {
+		return false
+	}
+	userDir := filepath.Dir(paths.UserConfigPath())
+	for _, name := range []string{paths.UserConfigTOMLName, paths.UserConfigLegacyJSONCName, paths.UserConfigLegacyJSONName} {
+		if filepath.Clean(absolute) == filepath.Join(userDir, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func printConfigEditHostRun(errw io.Writer, workspace string, argv []string) {
