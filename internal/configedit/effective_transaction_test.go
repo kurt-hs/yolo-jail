@@ -358,31 +358,62 @@ func TestApplyEffectiveRestoresWhenIndependentPostWriteSemanticValidationFails(t
 	home, workspace := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("YOLO_VERSION", "")
-	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
-	writeEditFixture(t, userPath, "[machine.resources]\ncpus = 2\n")
-	path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
-	before := []byte("machine.ports = [] # exact preimage\n")
+	userPath := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+	writeEditFixture(t, userPath, `{"adapters":{"openai->anthropic":{"address":"https://example.invalid"}}}`)
+	projectPath := filepath.Join(workspace, config.WorkspaceConfigName)
+	projectBefore := []byte(`{}`)
+	projectAfter := []byte(`{"adapters":{"openai->anthropic":{"address":"https://example.invalid"}}}`)
+	writeEditFixture(t, projectPath, string(projectBefore))
+	path := filepath.Join(workspace, config.WorkspaceLocalConfigName)
+	before := []byte(`{"resources":{"cpus":2}}`)
 	writeEditFixture(t, path, string(before))
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := effectiveTestOptions(t, workspace, path, configdoc.TOML, config.ExplicitEditProject, ApplyOptions{})
+	options := effectiveTestOptions(t, workspace, path, configdoc.JSONC, config.ExplicitEditLocal, ApplyOptions{})
 	ops := systemFileOps
 	writes := 0
+	canonicalSame := false
 	ops.WriteAtomic = func(target string, data []byte, mode os.FileMode) error {
 		writes++
 		if err := writeAtomic(target, data, mode); err != nil {
 			return err
 		}
 		if writes == 1 {
-			return os.WriteFile(userPath, []byte("[machine.resources]\ncpus = -1\n"), 0600)
+			if err := os.WriteFile(projectPath, projectAfter, 0600); err != nil {
+				return err
+			}
+			withProject, err := config.LoadConfig(workspace, true, nil)
+			if err != nil {
+				return err
+			}
+			withProjectJSON, err := config.SnapshotJSON(withProject)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(projectPath, projectBefore, 0600); err != nil {
+				return err
+			}
+			withoutProject, err := config.LoadConfig(workspace, true, nil)
+			if err != nil {
+				return err
+			}
+			withoutProjectJSON, err := config.SnapshotJSON(withoutProject)
+			if err != nil {
+				return err
+			}
+			canonicalSame = withProjectJSON == withoutProjectJSON
+			return os.WriteFile(projectPath, projectAfter, 0600)
 		}
 		return nil
 	}
-	_, err = applyEffectiveWithOps(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "ports"}}, Value: []any{map[string]any{"host": 8000, "jail": 8000}}}, options, ops)
+	_, err = applyEffectiveWithOps(workspace, path, configdoc.JSONC, Mutation{Action: Set, Path: []configdoc.Step{{Key: "resources"}, {Key: "cpus"}}, Value: 4}, options, ops)
+	if !canonicalSame {
+		t.Fatal("postwrite invalid project-scope adapter did not preserve the effective snapshot")
+	}
 	if err == nil || !strings.Contains(err.Error(), "validate actual config") || !strings.Contains(err.Error(), "original bytes restored") {
-		t.Fatalf("postwrite semantic invalidation did not rollback: %v", err)
+		t.Fatalf("postwrite raw-scope semantic invalidation did not rollback: %v", err)
 	}
 	got, readErr := os.ReadFile(path)
 	gotInfo, statErr := os.Stat(path)
@@ -401,26 +432,59 @@ func TestApplyEffectiveRestoresWhenPostwriteTargetIsNoLongerConsumed(t *testing.
 	path := filepath.Join(workspace, "parts", "edit.toml")
 	before := []byte("[machine.resources]\ncpus = 2\n")
 	writeEditFixture(t, path, string(before))
+	writeEditFixture(t, filepath.Join(workspace, config.WorkspaceLocalTOMLConfigName), "[machine.resources]\ncpus = 4\n")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	options := effectiveTestOptions(t, workspace, path, configdoc.TOML, config.ExplicitEditProject, ApplyOptions{})
 	ops := systemFileOps
 	writes := 0
+	canonicalSame := false
 	ops.WriteAtomic = func(target string, data []byte, mode os.FileMode) error {
 		writes++
 		if err := writeAtomic(target, data, mode); err != nil {
 			return err
 		}
 		if writes == 1 {
+			if err := os.WriteFile(base, nil, 0600); err != nil {
+				return err
+			}
+			withoutInclude, err := config.LoadConfig(workspace, true, nil)
+			if err != nil {
+				return err
+			}
+			withoutJSON, err := config.SnapshotJSON(withoutInclude)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(base, baseBefore, 0600); err != nil {
+				return err
+			}
+			withInclude, err := config.LoadConfig(workspace, true, nil)
+			if err != nil {
+				return err
+			}
+			withJSON, err := config.SnapshotJSON(withInclude)
+			if err != nil {
+				return err
+			}
+			canonicalSame = withoutJSON == withJSON
 			return os.WriteFile(base, nil, 0600)
 		}
 		return nil
 	}
-	_, err := applyEffectiveWithOps(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options, ops)
+	_, err = applyEffectiveWithOps(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options, ops)
+	if !canonicalSame {
+		t.Fatal("removing the edited include changed the canonical graph despite local cpus override")
+	}
 	if err == nil || !strings.Contains(err.Error(), "not consumed by the standard config graph") || !strings.Contains(err.Error(), "original bytes restored") {
 		t.Fatalf("postwrite consumption loss did not rollback: %v", err)
 	}
 	got, readErr := os.ReadFile(path)
-	if readErr != nil || !bytes.Equal(got, before) || writes != 2 {
-		t.Fatalf("postwrite consumption rollback failed: bytes=%q writes=%d err=%v", got, writes, readErr)
+	gotInfo, statErr := os.Stat(path)
+	if readErr != nil || statErr != nil || !bytes.Equal(got, before) || gotInfo.Mode().Perm() != info.Mode().Perm() || writes != 2 {
+		t.Fatalf("postwrite consumption rollback failed exact bytes/mode: bytes=%q info=%v writes=%d readErr=%v statErr=%v", got, gotInfo, writes, readErr, statErr)
 	}
 	if err := os.WriteFile(base, baseBefore, 0600); err != nil {
 		t.Fatal(err)
