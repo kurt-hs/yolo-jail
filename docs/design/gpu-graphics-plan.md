@@ -27,7 +27,7 @@ A and B own only their listed files and may work concurrently. Commit each lane 
 
 ## Reuse and traps
 
-- `bootSteps` is shared by container and macos-user; `notDarwin` must state why this `/run` step is container-only. `bootsteps_test.go` pins both boot orders. Apple Container uses the container entrypoint and gets the tree from requested config even though it cannot pass through GPU devices; this is not hardware evidence.
+- `bootSteps` is shared by container and macos-user; `notDarwin` must state why this `/run` step is container-only. The graphics action is also marked `notSessionPass`: jail-own boot creates the tree and an attach preserves the running jail's provenance. `bootsteps_test.go` pins both boot orders. Apple Container uses the container entrypoint and gets the tree from requested config even though it cannot pass through GPU devices; this is not hardware evidence.
 - `generate_store_packages` materializes `YOLO_STORE_PROFILES`; `generate_ld_cache` follows it. Provision graphics links between those boot actions and loader-cache/application bootstrap, not on the host or at image build time.
 - `assemble.go` already distinguishes requested GPU config from host-confirmed `gpuEnabled`; the new boot signal intentionally follows the requested setting, not the latter.
 - A preexisting tree is wholly user-supplied even if incomplete or dangling. Check its root without following links; do not repair, roll back, or replace any child.

@@ -160,6 +160,12 @@
       normally in a container.
     Find nixpkgs commits per version: https://lazamar.co.uk/nix-versions/
     Search package names: https://search.nixos.org/packages
+    For Mesa graphics libraries in a GPU-enabled Linux container, select
+    `mesa`; its resolved profile may also supply the 32-bit tree. The explicit
+    nixpkgs attr `pkgsi686Linux.mesa` can be selected where supplied. Pin with
+    the existing object form, for example
+    `{"name": "mesa", "nixpkgs": "fe13242281a67641c0102cdb1087f0ebe586c7df"}`;
+    that revision is this checkout's `.nodes.nixpkgs.locked.rev` in `flake.lock`.
     Image rebuilds only when this list changes.
     Nix caches builds — identical configs across jails share cached results.
 

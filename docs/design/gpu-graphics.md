@@ -7,7 +7,7 @@ next: "Build from the [completed implementation plan](gpu-graphics-plan.md), the
 
 # A GPU container needs the driver tree its libraries expect
 
-**Status:** 2026-10-28. Accepted against source base `e02bb526`; implementation and GPU-host acceptance remain outstanding.
+**Status:** 2026-10-28. Accepted against source base `e02bb526`; implementation is present in the combined source, while GPU-host acceptance remains outstanding.
 
 > **In short.** When GPU support is enabled, a Linux container boot should expose the selected graphics driver's actual library and data outputs at the conventional runtime paths. Device passthrough and driver-tree exposure are separate requirements.
 
@@ -27,7 +27,7 @@ next: "Build from the [completed implementation plan](gpu-graphics-plan.md), the
 
 The Nix image/profile producer records selected graphics-driver entries in `graphics-drivers.json`. Each entry carries the resolved package name and version, architecture (`64` or `32`), and the actual `lib` and `share` output paths. The producer validates both directories. Entries follow selected package order; the first selected entry for each architecture is the one exposed. The baked image installs the manifest at `/etc/yolo-jail/graphics-drivers.json`; store-delivered packages carry the same manifest beside that package profile. This is runtime metadata, not a new user config key. The current locked nixpkgs has Mesa `out` candidates for 64-bit and 32-bit, but generation must validate the required directories; the nested NVIDIA package's graphics-library layout is unverified and is not claimed as supported until its outputs are validated ([research](../research/gpu-graphics.md#fast-moving--verify-before-building)).
 
-At container boot, after store-profile setup and before loader-cache/application bootstrap:
+At container boot, after store-profile setup and before loader-cache/application bootstrap. This is the jail's own boot step, marked `notSessionPass`; an attach never reruns it and therefore preserves the running jail's driver provenance.
 
 1. Run only when the launch explicitly hands off `gpu.enabled: true`. Device availability is not the gate: the tree can be prepared even when a requested device is unavailable.
 2. Read the selected profile's manifest when store delivery is active; otherwise read baked-image metadata. Never combine a stale baked manifest with a selected store profile.
