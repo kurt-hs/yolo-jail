@@ -1,7 +1,9 @@
 package config
 
 import (
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
@@ -25,16 +27,41 @@ func editReadableMap(t *testing.T, text string) *jsonx.OrderedMap {
 	return mapping
 }
 
-func TestReadableDeclarationsForOfficialPackReadsEmbeddedModuleFiles(t *testing.T) {
-	raw, err := packs.FS.ReadFile("aws-auth/pack.json")
+func selectedEmbeddedPackForReadableDeclarations(t *testing.T, name string) *packload.Pack {
+	t.Helper()
+	selected, problems, err := packload.ReadSelectedPackFS(packs.FS, name, "/selected/"+name, name, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decl, problems := packdecl.Decode(raw)
 	if len(problems) != 0 {
-		t.Fatalf("decode shipped pack declaration: %v", problems)
+		t.Fatalf("load selected embedded pack %s: %v", name, problems)
 	}
-	pack := &packload.Pack{Name: "aws-auth", Root: "/missing/embedded-cache/aws-auth", Decl: decl, Official: true}
+	return selected
+}
+
+func pathBackedOfficialPackForReadableDeclarations(t *testing.T, name string) *packload.Pack {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate test source")
+	}
+	root, err := filepath.Abs(filepath.Join(filepath.Dir(file), "..", "..", "packs", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, problems := packload.LoadDir(root, name)
+	if len(problems) != 0 {
+		t.Fatalf("load path-backed official pack %s: %v", name, problems)
+	}
+	loaded.Official = true
+	return loaded
+}
+
+func TestReadableDeclarationsForOfficialPackReadsEmbeddedModuleFiles(t *testing.T) {
+	pack := selectedEmbeddedPackForReadableDeclarations(t, "aws-auth")
+	if pack == nil {
+		t.Fatal("selected embedded aws-auth pack is missing")
+	}
 	brokers, settings, err := ReadableDeclarationsForPacks([]*packload.Pack{pack})
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +69,55 @@ func TestReadableDeclarationsForOfficialPackReadsEmbeddedModuleFiles(t *testing.
 	if len(settings) == 0 || settings[0].Pack != "aws-auth" {
 		t.Fatalf("embedded module metadata not projected: brokers=%#v settings=%#v", brokers, settings)
 	}
+}
+
+func TestReadableDeclarationsForOfficialPathPackReadsItsOwnModuleFiles(t *testing.T) {
+	pack := pathBackedOfficialPackForReadableDeclarations(t, "aws-auth")
+	if _, _, err := ReadableDeclarationsForPacks([]*packload.Pack{pack}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadableDeclarationsForPacksRejectsUnboundOfficialDeclaration(t *testing.T) {
+	raw, err := packs.FS.ReadFile("aws-auth/pack.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, problems := packdecl.Decode(raw)
+	if len(problems) != 0 {
+		t.Fatalf("decode fixture declaration: %v", problems)
+	}
+	pack := &packload.Pack{Name: "aws-auth", Root: "/stale/tree/aws-auth", Decl: decl, Official: true}
+	if _, _, err := ReadableDeclarationsForPacks([]*packload.Pack{pack}); err == nil {
+		t.Fatal("an official declaration without loaded source binding was paired with the current embedded FS by name")
+	}
+}
+
+func TestReadableDeclarationsForPacksPreservesExplicitEmptyStringListDefault(t *testing.T) {
+	pack := selectedEmbeddedPackForReadableDeclarations(t, "host-processes")
+	if pack == nil {
+		t.Fatalf("selected embedded host-processes pack is missing")
+	}
+	_, settings, err := ReadableDeclarationsForPacks([]*packload.Pack{pack})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, declaration := range settings {
+		if declaration.Pack != "host-processes" {
+			continue
+		}
+		for _, setting := range declaration.Settings {
+			if setting.Key != "visible" {
+				continue
+			}
+			values, ok := setting.Default.([]string)
+			if !ok || values == nil || len(values) != 0 || !setting.DefaultSet {
+				t.Fatalf("visible default = %#v (%T), defaultSet=%t; want explicit non-nil empty []string", setting.Default, setting.Default, setting.DefaultSet)
+			}
+			return
+		}
+	}
+	t.Fatal("host-processes visible setting missing from readable declarations")
 }
 
 func TestReadableBrokerDeclarationClonesSettingsDefaultLists(t *testing.T) {

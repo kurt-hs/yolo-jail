@@ -267,6 +267,11 @@ func matches(rel string, only, exclude []string) bool {
 	return !matchAny(rel, exclude)
 }
 
+// Matches reports whether a pack-relative path survives the filters used by Stage and Check.
+func Matches(rel string, only, exclude []string) bool {
+	return matches(rel, only, exclude)
+}
+
 func matchAny(rel string, globs []string) bool {
 	for _, g := range globs {
 		g = strings.Trim(g, "/")

@@ -137,6 +137,8 @@ type Pack struct {
 	// declaration that switches the implicit broadcast off (governance.go's header). Unexported
 	// because nothing outside governance needs to know a pack was resolved.
 	origDecl *packdecl.Manifest
+
+	embeddedMetadata *embeddedMetadataBinding
 }
 
 // MayRunHostHalf reports whether a launch runs this pack's HOST CODE as its own child, outside
@@ -1052,36 +1054,7 @@ func loadDir(root, name string, forUse, followLocalLinks bool) (*Pack, []string)
 	if discoveryProblem != "" {
 		return nil, []string{"pack " + name + ": " + discoveryProblem}
 	}
-	var problems, skewNotes []string
-	if manifestFound != "" {
-		decodeTOML := manifestFound == packdecl.ManifestTOMLName
-		switch {
-		case tolerateUnknownFields && decodeTOML:
-			decl, problems, skewNotes = packdecl.DecodeTOMLTolerant(data)
-		case forUse && decodeTOML:
-			decl, problems, skewNotes = packdecl.DecodeTOMLForUse(data)
-		case decodeTOML:
-			decl, problems = packdecl.DecodeTOML(data)
-		case tolerateUnknownFields:
-			decl, problems, skewNotes = packdecl.DecodeTolerant(data)
-		case forUse:
-			decl, problems, skewNotes = packdecl.DecodeForUse(data)
-		default:
-			decl, problems = packdecl.Decode(data)
-		}
-		if decl != nil && !tolerateUnknownFields {
-			problems = append(problems, retiredSurfaceHostGrants(decl)...)
-		}
-		if decl == nil {
-			decl = &packdecl.Manifest{}
-		}
-		for i, prob := range problems {
-			problems[i] = "pack " + name + ": " + prob
-		}
-		for i, note := range skewNotes {
-			skewNotes[i] = "pack " + name + ": " + note
-		}
-	}
+	decl, problems, skewNotes := decodeManifest(data, manifestFound, name, forUse)
 	if name == "" {
 		name = decl.Name
 	}
@@ -1089,37 +1062,89 @@ func loadDir(root, name string, forUse, followLocalLinks bool) (*Pack, []string)
 		name = filepath.Base(root)
 	}
 	homeFiles, homeProblems := discoverHomeFiles(root, followLocalLinks)
-	for i, problem := range homeProblems {
-		homeProblems[i] = "pack " + name + ": " + problem
-	}
-	if len(homeFiles) > 0 {
-		homeDecl := &packdecl.Manifest{Contributes: homeFiles}
-		for _, problem := range homeDecl.Validate() {
-			homeProblems = append(homeProblems, fmt.Sprintf("pack %s: home/: %s", name, problem))
-		}
-		for _, homeFile := range homeFiles {
-			for _, existing := range decl.Contributions() {
-				if existing.Kind == packdecl.KindFiles && existing.Into == homeFile.Into {
-					homeProblems = append(homeProblems, fmt.Sprintf("pack %s: home/%s and its declared files contribution both target %q; keep one source", name, strings.TrimPrefix(homeFile.From, "home/"), homeFile.Into))
-				}
-			}
-		}
-		decl.Contributes = append(decl.Contributes, homeFiles...)
-	}
-	problems = append(problems, homeProblems...)
 	overlayFiles, overlayProblems := discoverOverlayFiles(root, followLocalLinks)
-	for i, problem := range overlayProblems {
-		overlayProblems[i] = "pack " + name + ": " + problem
-	}
-	problems = append(problems, overlayProblems...)
-	if manifestFound == "" {
-		decl.Description = packDescription(root, decl, manifestFound)
-	}
-	problems = append(problems, reservedBriefingFiles(root, name)...)
+	_, conventionProblems := finishPackMetadata(name, decl, manifestFound, homeFiles, homeProblems, overlayFiles,
+		overlayProblems, packDescription(root, decl, manifestFound), reservedBriefingFiles(root, name))
+	problems = append(problems, conventionProblems...)
 	return &Pack{
 		Name: name, OverlayFiles: overlayFiles,
 		Root: root, Decl: decl, SkewNotes: skewNotes,
 	}, problems
+}
+
+func finishPackMetadata(name string, decl *packdecl.Manifest, manifestFound string, homeFiles []packdecl.Contribution, homeDiscoveryProblems []string, overlayFiles []OverlayFile, overlayProblems []string, description string, reservedProblems []string) ([]OverlayFile, []string) {
+	problems := prefixPackProblems(name, homeDiscoveryProblems)
+	problems = append(problems, validateAndAppendHomeFiles(name, decl, homeFiles)...)
+	problems = append(problems, prefixPackProblems(name, overlayProblems)...)
+	if manifestFound == "" {
+		decl.Description = description
+	}
+	problems = append(problems, reservedProblems...)
+	return overlayFiles, problems
+}
+
+func validateAndAppendHomeFiles(name string, decl *packdecl.Manifest, homeFiles []packdecl.Contribution) []string {
+	var problems []string
+	if len(homeFiles) == 0 {
+		return problems
+	}
+	homeDecl := &packdecl.Manifest{Contributes: homeFiles}
+	for _, problem := range homeDecl.Validate() {
+		problems = append(problems, fmt.Sprintf("pack %s: home/: %s", name, problem))
+	}
+	for _, homeFile := range homeFiles {
+		for _, existing := range decl.Contributions() {
+			if existing.Kind == packdecl.KindFiles && existing.Into == homeFile.Into {
+				problems = append(problems, fmt.Sprintf("pack %s: home/%s and its declared files contribution both target %q; keep one source", name, strings.TrimPrefix(homeFile.From, "home/"), homeFile.Into))
+			}
+		}
+	}
+	decl.Contributes = append(decl.Contributes, homeFiles...)
+	return problems
+}
+
+func prefixPackProblems(name string, problems []string) []string {
+	out := make([]string, len(problems))
+	for i, problem := range problems {
+		out[i] = "pack " + name + ": " + problem
+	}
+	return out
+}
+
+func decodeManifest(data []byte, manifestFound, name string, forUse bool) (*packdecl.Manifest, []string, []string) {
+	decl := &packdecl.Manifest{}
+	if manifestFound == "" {
+		return decl, nil, nil
+	}
+	decodeTOML := manifestFound == packdecl.ManifestTOMLName
+	var problems, skewNotes []string
+	switch {
+	case tolerateUnknownFields && decodeTOML:
+		decl, problems, skewNotes = packdecl.DecodeTOMLTolerant(data)
+	case forUse && decodeTOML:
+		decl, problems, skewNotes = packdecl.DecodeTOMLForUse(data)
+	case decodeTOML:
+		decl, problems = packdecl.DecodeTOML(data)
+	case tolerateUnknownFields:
+		decl, problems, skewNotes = packdecl.DecodeTolerant(data)
+	case forUse:
+		decl, problems, skewNotes = packdecl.DecodeForUse(data)
+	default:
+		decl, problems = packdecl.Decode(data)
+	}
+	if decl != nil && !tolerateUnknownFields {
+		problems = append(problems, retiredSurfaceHostGrants(decl)...)
+	}
+	if decl == nil {
+		decl = &packdecl.Manifest{}
+	}
+	for i, problem := range problems {
+		problems[i] = "pack " + name + ": " + problem
+	}
+	for i, note := range skewNotes {
+		skewNotes[i] = "pack " + name + ": " + note
+	}
+	return decl, problems, skewNotes
 }
 
 // reservedBriefingFiles refuses a file inside the pack's briefing/ directory whose basename is a
@@ -1147,14 +1172,17 @@ func reservedBriefingFiles(root, name string) []string {
 	if err != nil {
 		return nil
 	}
+	return reservedBriefingFileProblems(name, entries)
+}
+
+func reservedBriefingFileProblems(name string, entries []fs.DirEntry) []string {
 	var problems []string
-	for _, e := range entries {
-		rel := packdecl.DefaultBriefingDir + "/" + e.Name()
+	for _, entry := range entries {
+		rel := packdecl.DefaultBriefingDir + "/" + entry.Name()
 		if !packdecl.RepositoryInstructionFile(rel) {
 			continue
 		}
-		problems = append(problems, "pack "+name+": "+
-			packdecl.ReservedBriefingSourceProblem("file", rel))
+		problems = append(problems, "pack "+name+": "+packdecl.ReservedBriefingSourceProblem("file", rel))
 	}
 	return problems
 }
@@ -1233,7 +1261,8 @@ func loadEmbeddedPacks(embedded fs.FS, dest string) ([]*Pack, []string) {
 	var packs []*Pack
 	var problems []string
 	for _, name := range names {
-		p, probs := loadEmbeddedPack(filepath.Join(dest, name), name)
+		root := filepath.Join(dest, name)
+		p, probs := loadEmbeddedPack(root, name)
 		problems = append(problems, probs...)
 		if p != nil {
 			packs = append(packs, p)

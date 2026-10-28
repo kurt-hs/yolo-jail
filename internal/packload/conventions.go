@@ -1,8 +1,11 @@
 package packload
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -19,9 +22,17 @@ func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribut
 	if followLocalLinks {
 		return discoverLocalHomeFiles(root)
 	}
-	homeRoot := filepath.Join(root, "home")
-	info, err := os.Lstat(homeRoot)
-	if os.IsNotExist(err) {
+	return discoverHomeFilesWithOps(root, hostPackTreeOps())
+}
+
+func discoverHomeFilesFS(fsys fs.FS) ([]packdecl.Contribution, []string) {
+	return discoverHomeFilesWithOps(".", fsPackTreeOps(fsys))
+}
+
+func discoverHomeFilesWithOps(root string, ops packTreeOps) ([]packdecl.Contribution, []string) {
+	homeRoot := ops.join(root, "home")
+	info, err := ops.lstat(homeRoot)
+	if os.IsNotExist(err) || errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -33,7 +44,7 @@ func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribut
 	if !info.IsDir() {
 		return nil, []string{"home/ is not a directory"}
 	}
-	rootResolved, err := filepath.EvalSymlinks(root)
+	rootResolved, err := ops.evalSymlinks(root)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("cannot resolve pack root: %v", err)}
 	}
@@ -41,14 +52,14 @@ func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribut
 	var problems []string
 	var walk func(string, string)
 	walk = func(dir, rel string) {
-		entries, err := os.ReadDir(dir)
+		entries, err := ops.readDir(dir)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("cannot read home/%s: %v", rel, err))
 			return
 		}
 		for _, entry := range entries {
-			childRel := filepath.ToSlash(filepath.Join(rel, entry.Name()))
-			child := filepath.Join(dir, entry.Name())
+			childRel := path.Join(rel, entry.Name())
+			child := ops.join(dir, entry.Name())
 			if entry.Name() == ".git" {
 				info, infoErr := entry.Info()
 				if infoErr == nil && info.IsDir() {
@@ -56,7 +67,7 @@ func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribut
 				}
 			}
 			if entry.Type()&os.ModeSymlink != 0 {
-				target, statErr := os.Stat(child)
+				target, statErr := ops.stat(child)
 				if statErr != nil {
 					problems = append(problems, fmt.Sprintf("home/%s is a symlink that resolves to nothing: %v", childRel, statErr))
 					continue
@@ -69,17 +80,16 @@ func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribut
 					problems = append(problems, fmt.Sprintf("home/%s is not a regular file", childRel))
 					continue
 				}
-				resolved, resolveErr := filepath.EvalSymlinks(child)
+				resolved, resolveErr := ops.evalSymlinks(child)
 				if resolveErr != nil {
 					problems = append(problems, fmt.Sprintf("home/%s cannot be resolved: %v", childRel, resolveErr))
 					continue
 				}
-				if !pathWithin(rootResolved, resolved) {
+				if !ops.within(rootResolved, resolved) {
 					problems = append(problems, fmt.Sprintf("home/%s points outside the pack; ordinary readers do not follow escaping file links", childRel))
 					continue
 				}
-				files = append(files, packdecl.Contribution{Kind: packdecl.KindFiles,
-					From: "home/" + childRel, Into: childRel})
+				files = append(files, packdecl.Contribution{Kind: packdecl.KindFiles, From: "home/" + childRel, Into: childRel})
 				continue
 			}
 			if entry.IsDir() {
@@ -95,8 +105,7 @@ func discoverHomeFiles(root string, followLocalLinks bool) ([]packdecl.Contribut
 				problems = append(problems, fmt.Sprintf("home/%s is not a regular file", childRel))
 				continue
 			}
-			files = append(files, packdecl.Contribution{Kind: packdecl.KindFiles,
-				From: "home/" + childRel, Into: childRel})
+			files = append(files, packdecl.Contribution{Kind: packdecl.KindFiles, From: "home/" + childRel, Into: childRel})
 		}
 	}
 	walk(homeRoot, "")
@@ -212,9 +221,17 @@ func dirTargetIsDirectory(path string) bool {
 // readers refuse links because they lack origin context; only the explicit local-use reader may
 // follow local links. Fetched sources retain staged-tree containment enforcement.
 func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []string) {
-	dir := filepath.Join(root, "overlays")
-	info, err := os.Lstat(dir)
-	if os.IsNotExist(err) {
+	return discoverOverlayFilesWithOps(root, followLocalLinks, hostPackTreeOps())
+}
+
+func discoverOverlayFilesFS(fsys fs.FS) ([]OverlayFile, []string) {
+	return discoverOverlayFilesWithOps(".", false, fsPackTreeOps(fsys))
+}
+
+func discoverOverlayFilesWithOps(root string, followLocalLinks bool, ops packTreeOps) ([]OverlayFile, []string) {
+	dir := ops.join(root, "overlays")
+	info, err := ops.lstat(dir)
+	if os.IsNotExist(err) || errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -224,7 +241,7 @@ func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []
 		if !followLocalLinks {
 			return nil, []string{"overlays/ is a symlink; use a directory within the pack so staged-tree containment remains enforceable"}
 		}
-		info, err = os.Stat(dir)
+		info, err = ops.stat(dir)
 		if err != nil {
 			return nil, []string{fmt.Sprintf("overlays/ is a symlink that resolves to nothing: %v", err)}
 		}
@@ -232,7 +249,7 @@ func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []
 	if !info.IsDir() {
 		return nil, []string{"overlays/ is not a directory"}
 	}
-	entries, err := os.ReadDir(dir)
+	entries, err := ops.readDir(dir)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("cannot read overlays/: %v", err)}
 	}
@@ -244,7 +261,7 @@ func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []
 				problems = append(problems, fmt.Sprintf("overlays/%s is a symlink; symlinked overlay sources are not followed during discovery", entry.Name()))
 				continue
 			}
-			fileInfo, err := os.Stat(filepath.Join(dir, entry.Name()))
+			fileInfo, err := ops.stat(ops.join(dir, entry.Name()))
 			if err != nil {
 				problems = append(problems, fmt.Sprintf("overlays/%s is a symlink that resolves to nothing: %v", entry.Name(), err))
 				continue
@@ -278,15 +295,19 @@ func discoverOverlayFiles(root string, followLocalLinks bool) ([]OverlayFile, []
 // between the new format and either legacy spelling. Legacy-only selection order remains
 // pack.jsonc before pack.json.
 func discoverManifest(root string) (data []byte, name, problem string) {
-	newPath := filepath.Join(root, packdecl.ManifestTOMLName)
-	newExists, err := pathExists(newPath)
+	return discoverManifestWith(root, os.Lstat, os.ReadFile, func(a, b string) string { return filepath.Join(a, b) })
+}
+
+func discoverManifestWith(root string, stat func(string) (os.FileInfo, error), readFile func(string) ([]byte, error), join func(string, string) string) (data []byte, name, problem string) {
+	newPath := join(root, packdecl.ManifestTOMLName)
+	newExists, err := pathExistsWith(newPath, stat)
 	if err != nil {
 		return nil, "", fmt.Sprintf("cannot inspect %s: %v", packdecl.ManifestTOMLName, err)
 	}
 	legacy := []string{packdecl.ManifestLegacyJSONCName, packdecl.ManifestLegacyJSONName}
 	var legacyFound []string
 	for _, candidate := range legacy {
-		exists, err := pathExists(filepath.Join(root, candidate))
+		exists, err := pathExistsWith(join(root, candidate), stat)
 		if err != nil {
 			return nil, "", fmt.Sprintf("cannot inspect %s: %v", candidate, err)
 		}
@@ -301,8 +322,8 @@ func discoverManifest(root string) (data []byte, name, problem string) {
 		name = packdecl.ManifestTOMLName
 	} else {
 		for _, candidate := range legacyFound {
-			data, err = os.ReadFile(filepath.Join(root, candidate))
-			if os.IsNotExist(err) {
+			data, err = readFile(join(root, candidate))
+			if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
 				continue // retain the legacy reader's dangling/vanished sibling fallback
 			}
 			if err != nil {
@@ -312,7 +333,7 @@ func discoverManifest(root string) (data []byte, name, problem string) {
 		}
 		return nil, "", ""
 	}
-	data, err = os.ReadFile(filepath.Join(root, name))
+	data, err = readFile(join(root, name))
 	if err != nil {
 		return nil, "", err.Error()
 	}
@@ -320,11 +341,15 @@ func discoverManifest(root string) (data []byte, name, problem string) {
 }
 
 func pathExists(path string) (bool, error) {
-	_, err := os.Lstat(path)
+	return pathExistsWith(path, os.Lstat)
+}
+
+func pathExistsWith(path string, stat func(string) (os.FileInfo, error)) (bool, error) {
+	_, err := stat(path)
 	if err == nil {
 		return true, nil
 	}
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
 		return false, nil
 	}
 	return false, err
@@ -338,6 +363,10 @@ func packDescription(root string, decl *packdecl.Manifest, manifestName string) 
 	if err != nil {
 		return ""
 	}
+	return firstLineDescription(data)
+}
+
+func firstLineDescription(data []byte) string {
 	first, _, _ := strings.Cut(string(data), "\n")
 	return strings.TrimSpace(strings.TrimSuffix(first, "\r"))
 }
