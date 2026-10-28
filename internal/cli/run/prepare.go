@@ -56,7 +56,6 @@ func (o *Options) refreshJailBriefingsMode(cname string, cfg *jsonx.OrderedMap, 
 	if len(factSheets) > 0 {
 		facts = factSheets[0]
 	}
-	netSec := cfgMap(cfg, "network")
 	netMode := o.resolveNetMode(cfg)
 
 	// WHAT THE LAUNCH APPLIES, not what the config asked for — the same predicate
@@ -83,7 +82,7 @@ func (o *Options) refreshJailBriefingsMode(cname string, cfg *jsonx.OrderedMap, 
 	// together on purpose. On Apple Container the applied mode is bridge however the key
 	// is set, so an unhonored `network.mode: "host"` no longer takes the ports with it,
 	// here or in the argv.
-	publishPorts, forwardHostPorts := briefingPortsFor(appliedNet, netSec, cfgMap(cfg, "providers"))
+	publishPorts, forwardHostPorts := briefingReadablePortsFor(appliedNet, cfg, cfgMap(cfg, "providers"))
 
 	// Blocked-tools → jailcontent.BlockedTool records.
 	blocked := blockedToolRecords(config.NormalizeBlockedToolsWith(cfgMap(cfg, "security"),
@@ -153,7 +152,7 @@ func (o *Options) refreshJailBriefingsMode(cname string, cfg *jsonx.OrderedMap, 
 	// from the `resources` map, this told an Apple Container jail its pids_limit was
 	// kernel-enforced when that flag is never passed there, and told it nothing at all
 	// about the memory and cpu caps the backend applies by default.
-	resources := briefedResourceLimits(rt, cfgMap(cfg, "resources"))
+	resources := briefedResourceLimits(rt, readableResources(cfg))
 
 	// The one-time handoff: a fresh .yolo/handover.md pointer the host agent filed for
 	// this transition, surfaced via the briefing and then consumed so it never resurfaces
@@ -496,6 +495,13 @@ func (o *Options) refreshJailBriefingsMode(cname string, cfg *jsonx.OrderedMap, 
 //
 // netSec may be nil while providers is not — a config with providers and no `network`
 // section still forwards, which is why the nil guard moved off the early return.
+func briefingReadablePortsFor(netMode string, cfg, providers *jsonx.OrderedMap) (publish, forward []any) {
+	if netMode != "bridge" {
+		return nil, nil
+	}
+	return readablePublishPorts(cfg), mergeHostForwards(readableForwardPorts(cfg), localProviderForwards(providers))
+}
+
 func briefingPortsFor(netMode string, netSec, providers *jsonx.OrderedMap) (publish, forward []any) {
 	if netMode != "bridge" {
 		return nil, nil

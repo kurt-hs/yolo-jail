@@ -222,15 +222,34 @@ func (o *Options) selectionNarrowed() bool { return o.OnlyPacks != nil }
 // sealed launch is always one, so the seal answers too.
 func (o *Options) captureJail() bool { return o.Sealed || o.CapturesDir() == "" }
 
-// jailMiseTools is the `mise_tools` table this launch hands its jail, and the keys of the config's
-// own it withholds: under config.JailMiseTools' rule (FP-D19), none of the config's own in a
-// capture jail. Both readers of the table ask it — YOLO_MISE_TOOLS (commonEnvBlock) and the
-// MISE_DISABLE_TOOLS beside it (assembleRunCmd), which lifts pnpm out of the list for a declared
-// mise pnpm — because the jail writes yolo's pnpm launcher from the first, and the two halves
-// disagreeing leaves a jail with no pnpm at all (misepnpm_test.go). The sealed launch's withheld
-// line counts the second result (sealedWithheldLine).
+// jailMiseTools is the install.mise table this launch hands its jail — YOLO_MISE_TOOLS, which the jail's
+// global mise config and so its `mise install` are rendered from — and the keys of the config's own
+// table that it withholds in a capture jail. Both readers of the table ask it — YOLO_MISE_TOOLS
+// (commonEnvBlock) and the MISE_DISABLE_TOOLS beside it (assembleRunCmd), which lifts pnpm out of the
+// list for a declared mise pnpm — because the jail writes yolo's pnpm launcher from the first, and the
+// two halves disagreeing leaves a jail with no pnpm at all (misepnpm_test.go). The sealed launch's
+// withheld line counts the second result (sealedWithheldLine).
 func (in *assembleInput) jailMiseTools() (tools *jsonx.OrderedMap, withheld []string) {
-	return config.JailMiseTools(in.cfg, in.sealed || in.captureJail)
+	install := cfgMap(in.cfg, "install")
+	own := cfgMap(install, "mise")
+	if own == nil {
+		// Direct callers that have not crossed the format-aware reader retain the old API contract.
+		own = cfgMap(in.cfg, "mise_tools")
+	}
+	tools = config.MergeMiseTools(jsonx.NewOrderedMap())
+	if in.sealed || in.captureJail {
+		if own != nil {
+			withheld = own.Keys()
+		}
+		return tools, withheld
+	}
+	if own != nil {
+		for _, key := range own.Keys() {
+			value, _ := own.Get(key)
+			tools.Set(key, value)
+		}
+	}
+	return tools, nil
 }
 
 // assembledConfigFor is the merged config this launch writes to its workspace's delivery copy

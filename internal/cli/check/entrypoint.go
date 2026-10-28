@@ -22,7 +22,7 @@ func (o *Options) runEntrypointPreflight(r *reporter, _, workspace string, merge
 
 	normalizedBlocked := securitySection(merged)
 	blockedJSON := jsonDump(config.NormalizeBlockedTools(normalizedBlocked))
-	miseJSON := jsonDump(config.MergeMiseTools(merged))
+	miseJSON := jsonDump(readableCheckMiseTools(merged))
 	lspJSON := jsonDumpOrEmptyObj(mapOrNil(merged, "lsp_servers"))
 	mcpJSON := jsonDumpOrEmptyObj(mapOrNil(merged, "mcp_servers"))
 
@@ -136,6 +136,8 @@ func (o *Options) runEntrypointPreflight(r *reporter, _, workspace string, merge
 		return "mise: " + err.Error()
 	} else if err := parseToml(data); err != nil {
 		return "mise config parse error: " + err.Error()
+	} else if o.observeMisePreflight != nil {
+		o.observeMisePreflight(append([]byte(nil), data...))
 	}
 
 	return ""

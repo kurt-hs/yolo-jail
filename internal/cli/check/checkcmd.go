@@ -173,6 +173,10 @@ type Options struct {
 	// inspectGraphicsPath verifies one jail graphics tree directory and, when expected is
 	// non-empty, that its resolved target matches the selected output. nil => filesystem inspection.
 	inspectGraphicsPath func(root, leaf, expected string) error
+	// observeMisePreflight receives a detached copy of the generated mise TOML after the
+	// preflight parsed it successfully. Kept private and nil in production; check tests use
+	// it to assert the public runner's rendered config without replacing any generator.
+	observeMisePreflight func([]byte)
 	// ioSysRoot is the root the disk resolver reads the mount table and sysfs under
 	// (internal/ioprio.Resolve, for sectionIOPriority). "" => the real root; tests point it
 	// at a fake tree.

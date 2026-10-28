@@ -15,6 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func TestMechanicsSwitchFactsUseTheStagedPackSelection(t *testing.T) {
@@ -326,6 +327,102 @@ func TestFreshMechanicsRefreshFollowsStoreAndHostFileDecisions(t *testing.T) {
 	}
 }
 
+func TestMechanicsFactsUseCanonicalResourcesForNativeCPUGuidance(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, tc := range []struct {
+		name string
+		cfg  *jsonx.OrderedMap
+	}{
+		{
+			name: "TOML project resources",
+			cfg:  loadMechanicsReadableConfig(t, paths.WorkspaceConfigTOMLName, "[machine.resources]\ncpus = 2\n", ""),
+		},
+		{
+			name: "metadata-free legacy resources",
+			cfg:  mapOf(t, `{"resources":{"cpus":2}}`),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			facts := (&Options{Workspace: t.TempDir()}).mechanicsFactSheet("native-resources", tc.cfg, "macos-user", stagedPacks{}, storePackagesPlan{}, nil)
+			if len(facts.CooperativeCPUDefaults) != len(macosuser.CooperativeCPUVars) {
+				t.Fatalf("native cooperative CPU variables = %v, want %v", facts.CooperativeCPUDefaults, macosuser.CooperativeCPUVars)
+			}
+		})
+	}
+}
+
+func TestMechanicsPackageFactsHonorReadableProjectAndLocalNixDeclarations(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	gpu := "[machine.gpu]\nenabled = true\nvendor = 'amd'\nvaapi = true\n"
+	cases := []struct {
+		name    string
+		file    string
+		project string
+		local   string
+		want    changetiming.Outcome
+	}{
+		{
+			name:    "project TOML adds VA-API image packages",
+			file:    paths.WorkspaceConfigTOMLName,
+			project: gpu,
+			want:    changetiming.RestartAndRebuild,
+		},
+		{
+			name:    "local TOML already declares VA-API packages",
+			file:    paths.WorkspaceConfigTOMLName,
+			project: gpu,
+			local:   "[install]\nnix = ['mesa', 'libva-utils']\n",
+			want:    changetiming.AtNextRestart,
+		},
+		{
+			name:    "legacy workspace already declares VA-API packages",
+			file:    paths.WorkspaceConfigLegacyJSONCName,
+			project: `{"gpu":{"enabled":true,"vendor":"amd","vaapi":true},"packages":["mesa","libva-utils"]}`,
+			want:    changetiming.AtNextRestart,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := loadMechanicsReadableConfig(t, tc.file, tc.project, tc.local)
+			facts := (&Options{Workspace: t.TempDir(), Sealed: true}).mechanicsFactSheet("package-facts", cfg, "podman", stagedPacks{}, storePackagesPlan{}, nil)
+			for _, row := range facts.Timing {
+				if row.Key == "gpu" {
+					if row.Outcome != tc.want {
+						t.Fatalf("gpu timing = %s, want %s", row.Outcome, tc.want)
+					}
+					return
+				}
+			}
+			t.Fatal("mechanics facts have no gpu timing row")
+		})
+	}
+}
+
+func TestMechanicsGPUImagePackageCheckKeepsMetadataFreeLegacyFallback(t *testing.T) {
+	cfg := mapOf(t, `{"machine":{"gpu":{"enabled":true,"vendor":"amd","vaapi":true}},"packages":["mesa","libva-utils"]}`)
+	if gpuAddsImagePackages(cfg) {
+		t.Fatal("metadata-free legacy declared package names were treated as newly added image inputs")
+	}
+}
+
+func loadMechanicsReadableConfig(t *testing.T, filename, project, local string) *jsonx.OrderedMap {
+	t.Helper()
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, filename), []byte(project), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if local != "" {
+		if err := os.WriteFile(filepath.Join(workspace, paths.WorkspaceLocalConfigTOMLName), []byte(local), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	merged, err := config.LoadReadableConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatalf("LoadReadableConfig: %v", err)
+	}
+	return merged
+}
+
 func TestMechanicsFactSheetUsesActualImagePackageDecision(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cases := []struct {
@@ -342,7 +439,7 @@ func TestMechanicsFactSheetUsesActualImagePackageDecision(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := mapOf(t, tc.cfg)
+			cfg := loadMechanicsReadableConfig(t, paths.WorkspaceConfigLegacyJSONCName, tc.cfg, "")
 			store := storePackagesPlan{}
 			if tc.store {
 				store.Active = true

@@ -324,15 +324,15 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 
 	var publishArgs []string
 	var forwardHostPorts []any
-	if netSec := cfgMap(cfg, "network"); netSec != nil {
-		declaredPorts := asAnyList(mapGet(netSec, "ports"))
-		declaredForwards := asAnyList(mapGet(netSec, "forward_host_ports"))
+	declaredPorts := readablePublishPorts(cfg)
+	declaredForwards := readableForwardPorts(cfg)
+	if len(declaredPorts) > 0 || len(declaredForwards) > 0 {
 		if applied == "bridge" {
 			for _, p := range declaredPorts {
 				publishArgs = append(publishArgs, "-p", pyStrCoerce(p))
 			}
 			forwardHostPorts = declaredForwards
-		} else if netMode == "bridge" && (len(declaredPorts) > 0 || len(declaredForwards) > 0) {
+		} else if netMode == "bridge" {
 			// ONLY THE FORCED DROP WARNS, and only when there is something to drop. An
 			// explicit `network.mode: "host"` drops the same two keys and always has —
 			// that is the user's own declaration, and on Apple Container (where the mode
@@ -543,12 +543,12 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	gpuEnabled := false
 	// A sealed build requests no GPU (seal.go), so neither the passthrough nor the userns branch
 	// NVIDIA's needs is chosen for it.
-	if gpuSec := cfgMap(cfg, "gpu"); gpuSec != nil && !in.sealed {
-		gpuRequested = mapBoolOr(gpuSec, "enabled", false)
-		gpuVendor = mapStrOr(gpuSec, "vendor", "nvidia")
+	if gpu := readableGPU(cfg); gpu.enabled && !in.sealed {
+		gpuRequested = true
+		gpuVendor = gpu.vendor
 		// The same read, default included, as gpuArgs' choice of flags: the probe has to
 		// vet the mode whose flags the launch will emit.
-		gpuMode = mapStrOr(gpuSec, "mode", "devices")
+		gpuMode = gpu.mode
 	}
 	if gpuRequested {
 		var okGPU bool
@@ -760,18 +760,16 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	if len(publishArgs) > 0 && rt == "podman" && applied == "bridge" {
 		runCmd = append(runCmd, "--sysctl", "net.ipv4.conf.all.route_localnet=1")
 		var publishedPorts []string
-		if netSec := cfgMap(cfg, "network"); netSec != nil {
-			for _, p := range asAnyList(mapGet(netSec, "ports")) {
-				spec := pyStrCoerce(p)
-				proto := "tcp"
-				if i := strings.LastIndex(spec, "/"); i >= 0 {
-					proto = spec[i+1:]
-					spec = spec[:i]
-				}
-				parts := strings.Split(spec, ":")
-				containerPort := parts[len(parts)-1]
-				publishedPorts = append(publishedPorts, containerPort+"/"+proto)
+		for _, p := range readablePublishPorts(cfg) {
+			spec := pyStrCoerce(p)
+			proto := "tcp"
+			if i := strings.LastIndex(spec, "/"); i >= 0 {
+				proto = spec[i+1:]
+				spec = spec[:i]
 			}
+			parts := strings.Split(spec, ":")
+			containerPort := parts[len(parts)-1]
+			publishedPorts = append(publishedPorts, containerPort+"/"+proto)
 		}
 		if len(publishedPorts) > 0 {
 			runCmd = append(runCmd, "-e", "YOLO_PUBLISHED_PORTS="+jsonDumpsStrings(publishedPorts))
@@ -806,7 +804,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// The disk I/O priority is not a limit and takes no runtime flag: the entrypoint
 	// applies it from this variable (docs/design/io-priority.md §5.1). The decision is the
 	// one the briefing reads (appliedIOPriority).
-	runCmd = append(runCmd, ioPriorityEnvArgs(appliedIOPriority(rt, o.IsMacOS, cfgMap(cfg, "resources")))...)
+	runCmd = append(runCmd, ioPriorityEnvArgs(appliedIOPriority(rt, o.IsMacOS, readableResources(cfg)))...)
 
 	// --- host nvim config ---
 	// Read once at boot (entrypoint copies /ctx/host-nvim-config into the jail's
@@ -1243,7 +1241,7 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 	cfg := in.cfg
 	graphicsEnabled := "0"
 	if !in.sealed {
-		if gpu := cfgMap(cfg, "gpu"); gpu != nil && mapBoolOr(gpu, "enabled", false) {
+		if readableGPU(cfg).enabled {
 			graphicsEnabled = "1"
 		}
 	}

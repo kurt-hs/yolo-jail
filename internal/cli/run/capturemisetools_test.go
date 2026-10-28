@@ -1,8 +1,8 @@
 package run
 
 // capturemisetools_test.go pins FP-D19 (docs/design/forked-programs-as-packs.md, OQ-FP10 ruled
-// 2026-10-05; seal.go's jailMiseTools) from Run's own entry point: the user config's `mise_tools`
-// reach no capture jail — a sealed build's (a fork's, a patched extension tree's) and an installer
+// 2026-10-05; seal.go's jailMiseTools) from Run's own entry point: project `install.mise` values
+// reach an ordinary jail, but not a sealed build's (a fork's, a patched extension tree's) or an installer
 // program's `yolo capture` jail alike — while the pack's own toolchain, the base's `node_floor`,
 // still does.
 //
@@ -31,10 +31,14 @@ import (
 // captureMiseFloor is the base pack's declared node_floor, the toolchain a pack declares.
 const captureMiseFloor = "22.19"
 
-// captureMiseHome writes a user config selecting a base pack whose npm program declares a
-// node_floor and a fork of it, and declaring two mise_tools of the user's own: a neovim nightly,
-// the maintainer's case, and a bare pnpm, the key that moves MISE_DISABLE_TOOLS.
-func captureMiseHome(t *testing.T) {
+// captureMiseHome writes a legacy JSONC user config selecting a base pack whose npm program declares a
+// node_floor and a fork of it. When includeTools is true, it also preserves the original user-scope
+// mise_tools fixture used by the capture-jail cases.
+func captureMiseHome(t *testing.T) { captureMiseHomeWithTools(t, true) }
+
+func captureMisePacksOnlyHome(t *testing.T) { captureMiseHomeWithTools(t, false) }
+
+func captureMiseHomeWithTools(t *testing.T, includeTools bool) {
 	t.Helper()
 	home := packHome(t)
 	t.Setenv("YOLO_VERSION", "")
@@ -53,15 +57,18 @@ func captureMiseHome(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeUserConfig(t, home, `{
-  "packs": [{"source": "file://`+filepath.Join(packs, "basepack")+`", "name": "basepack"},
-            {"source": "file://`+filepath.Join(packs, "forkpack")+`", "name": "forkpack"}],
-  "mise_tools": {"neovim": "nightly", "pnpm": "9.12.0"}
-}
-`)
+	userConfig := `{
+  "packs": [{"source": "file://` + filepath.Join(packs, "basepack") + `", "name": "basepack"},
+            {"source": "file://` + filepath.Join(packs, "forkpack") + `", "name": "forkpack"}]`
+	if includeTools {
+		userConfig += `,
+  "mise_tools": {"neovim": "nightly", "pnpm": "9.12.0"}`
+	}
+	userConfig += "\n}\n"
+	writeUserConfig(t, home, userConfig)
 }
 
-// captureMiseUserTools are the fixture's own mise_tools keys.
+// captureMiseUserTools are the fixture's own install.mise keys.
 var captureMiseUserTools = []string{"neovim", "pnpm"}
 
 // jailMiseView is what the jail renders from a launch's argv: its global mise config, whether it
@@ -154,21 +161,97 @@ func captureMiseLaunch(t *testing.T, kind string) (jailMiseView, string) {
 		}
 	})
 	if argv == nil {
+		t.Fatalf("the %s launch never reached the runtime:\\n%s", kind, printed)
+	}
+	return renderJailMise(t, argv, snap), printed
+}
+
+func captureMiseLaunchFormat(t *testing.T, kind string, readableTOML bool) (jailMiseView, string) {
+	t.Helper()
+	captureMisePacksOnlyHome(t)
+	workspace := t.TempDir()
+	var configPath, body string
+	if readableTOML {
+		configPath = filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
+		body = "[install.mise]\nneovim = 'nightly'\npnpm = '9.12.0'\n"
+	} else {
+		configPath = filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName)
+		body = `{"mise_tools":{"neovim":"nightly","pnpm":"9.12.0"}}`
+	}
+	if err := os.WriteFile(configPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap := filepath.Join(t.TempDir(), "agents")
+	onRun := "cp -a " + shquote.Quote(paths.AgentsDir()) + " " + shquote.Quote(snap)
+	argv, printed := fakePodmanLaunchIn(t, workspace, onRun, func(o *Options) {
+		o.NeverAttach, o.AcceptConfigChanges = true, true
+		switch kind {
+		case "sealed":
+			o.Sealed, o.OnlyPacks = true, []string{"forkpack", "basepack"}
+			o.CapturesDir = func() string { return "" }
+		case "capture":
+			o.CapturesDir = func() string { return "" }
+		}
+	})
+	if argv == nil {
 		t.Fatalf("the %s launch never reached the runtime:\n%s", kind, printed)
 	}
 	return renderJailMise(t, argv, snap), printed
+}
+
+// THE CONTROL: an ordinary launch with readable TOML must deliver its project mise tools to the jail.
+func TestProjectTOMLInstallMiseFlowsThroughAnOrdinaryLaunch(t *testing.T) {
+	v, _ := captureMiseLaunchFormat(t, "ordinary", true)
+	assertMisePins(t, v.miseConfig, map[string]string{"neovim": "nightly", "pnpm": "9.12.0"})
+}
+
+func captureMiseLaunchWithLocal(t *testing.T) jailMiseView {
+	t.Helper()
+	captureMisePacksOnlyHome(t)
+	workspace := t.TempDir()
+	project := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
+	if err := os.WriteFile(project, []byte("[install.mise]\nneovim = 'nightly'\npnpm = '9.12.0'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	local := filepath.Join(workspace, paths.WorkspaceLocalConfigTOMLName)
+	if err := os.WriteFile(local, []byte("[install.mise]\nneovim = 'stable'\npython = '3.12'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap := filepath.Join(t.TempDir(), "agents")
+	onRun := "cp -a " + shquote.Quote(paths.AgentsDir()) + " " + shquote.Quote(snap)
+	argv, printed := fakePodmanLaunchIn(t, workspace, onRun, func(o *Options) {
+		o.NeverAttach, o.AcceptConfigChanges = true, true
+	})
+	if argv == nil {
+		t.Fatalf("the local TOML launch never reached the runtime:\\n%s", printed)
+	}
+	return renderJailMise(t, argv, snap)
+}
+
+func assertMisePins(t *testing.T, body string, pins map[string]string) {
+	t.Helper()
+	for tool, version := range pins {
+		if !strings.Contains(body, tool+` = "`+version+`"`) {
+			t.Errorf("mise config lacks exact %s pin %q:\\n%s", tool, version, body)
+		}
+	}
+}
+
+func TestLocalTOMLInstallMiseOverridesProjectLaunchValues(t *testing.T) {
+	v := captureMiseLaunchWithLocal(t)
+	assertMisePins(t, v.miseConfig, map[string]string{"neovim": "stable", "pnpm": "9.12.0", "python": "3.12"})
+}
+
+func TestLegacyJSONCMiseToolsRemainAnOrdinaryLaunchControl(t *testing.T) {
+	v, _ := captureMiseLaunchFormat(t, "ordinary", false)
+	assertMisePins(t, v.miseConfig, map[string]string{"neovim": "nightly", "pnpm": "9.12.0"})
 }
 
 // THE CONTROL: an ordinary launch of the fixture hands its jail every mise tool, mise lists them,
 // and mise rather than yolo delivers the declared pnpm. So each withholding below is the rule's.
 func TestAnOrdinaryLaunchHandsItsJailTheUsersMiseTools(t *testing.T) {
 	v, printed := captureMiseLaunch(t, "ordinary")
-	for _, tool := range captureMiseUserTools {
-		if !strings.Contains(v.miseConfig, tool+" = ") {
-			t.Errorf("an ordinary launch's jail mise config does not list %s, so the site is unexercised:\n%s",
-				tool, v.miseConfig)
-		}
-	}
+	assertMisePins(t, v.miseConfig, map[string]string{"neovim": "nightly", "pnpm": "9.12.0"})
 	if v.pnpmLauncher || slices.Contains(v.miseHides, "pnpm") {
 		t.Errorf("an ordinary launch with a declared mise pnpm: yolo launcher %v, MISE_DISABLE_TOOLS %v; "+
 			"mise should deliver it", v.pnpmLauncher, v.miseHides)

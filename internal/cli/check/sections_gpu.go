@@ -79,16 +79,12 @@ func (o *Options) checkPodmanMachineResources(r *reporter, config *jsonx.Ordered
 	// Compare against the workspace's requested resources.memory if set.
 	workspaceFloorMB := int64(-1)
 	requestedStr := ""
-	if config != nil {
-		if resV, _ := config.Get("resources"); resV != nil {
-			if resources, ok := resV.(*jsonx.OrderedMap); ok {
-				if reqV, _ := resources.Get("memory"); reqV != nil {
-					if s, ok := reqV.(string); ok {
-						requestedStr = s
-						if parsed, ok := cgd.ParseMemoryValue(s); ok {
-							workspaceFloorMB = parsed / (1024 * 1024)
-						}
-					}
+	if resources := readableCheckResources(config); resources != nil {
+		if reqV, _ := resources.Get("memory"); reqV != nil {
+			if s, ok := reqV.(string); ok {
+				requestedStr = s
+				if parsed, ok := cgd.ParseMemoryValue(s); ok {
+					workspaceFloorMB = parsed / (1024 * 1024)
 				}
 			}
 		}

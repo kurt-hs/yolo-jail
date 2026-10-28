@@ -14,14 +14,11 @@ import (
 // gpuConfig extracts config.machine.gpu as a map (or empty), plus enabled/vendor.
 func gpuConfig(merged *jsonx.OrderedMap) (enabled bool, vendor string, gpu *jsonx.OrderedMap, mode string) {
 	gpu = jsonx.NewOrderedMap()
-	machineValue, _ := merged.Get("machine")
-	if machine, ok := machineValue.(*jsonx.OrderedMap); ok {
-		if v, _ := machine.Get("gpu"); v != nil {
-			if b, ok := v.(bool); ok {
-				enabled = b
-			} else if m, ok := v.(*jsonx.OrderedMap); ok {
-				gpu = m
-			}
+	if value, present := readableCheckMachineValue(merged, "gpu", "gpu"); present {
+		if b, ok := value.(bool); ok {
+			enabled = b
+		} else if m, ok := value.(*jsonx.OrderedMap); ok {
+			gpu = m
 		}
 	}
 	if ev, _ := gpu.Get("enabled"); ev != nil {
