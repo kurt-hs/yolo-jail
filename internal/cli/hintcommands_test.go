@@ -50,12 +50,12 @@ package cli
 //
 // What it does not read: a command at the start of an unindented line or literal (a field holding
 // "yolo prune --apply"), which has the shape of a sentence or an error beginning with yolo ("yolo
-// could not create it", "yolo config render: unknown flag"); one after a colon and one space ("in
+// could not create it", "yolo surface render: unknown flag"); one after a colon and one space ("in
 // a new terminal: yolo check"), the shape of prose about yolo ("it is empty: yolo was started with
 // no PATH"); an indented one that ends anywhere but at a two-space gap or its line's end, such as
 // at a period, a comma or a pipe ("  yolo audit --json | jq .argv"); a usage line's synopsis
 // ("Usage: yolo audit [flags]"); one after any other word, a quote or a parenthesis ("use yolo
-// host", "'yolo config-ref'", "(yolo config diff claude)"); a word after the verb (`yolo pack lint
+// host", "'yolo config-ref'", "(yolo surface diff claude)"); a word after the verb (`yolo pack lint
 // <dir>`, `yolo broker restart <name>`), which a command takes as an argument; the word a
 // placeholder stands in for; and short flags. A flag the command parses before picking its verb
 // and then refuses for one verb (`yolo loopholes enable --format json`), or a removed flag a
@@ -203,7 +203,7 @@ func TestTheHintCheckRefusesWhatIsNotACommand(t *testing.T) {
 		"yolo internal bogus",
 		"yolo openai-auth bogus",
 		"yolo config bogus",
-		"yolo config bogus --bogus",
+		"yolo surface ls --bogus",
 		// A flag with no verb before it is read against what the command parses outside its
 		// verbs' branches, not against every verb's flags at once.
 		"yolo host --assert -- codex",
@@ -248,13 +248,11 @@ func TestTheHintCheckRefusesWhatIsNotACommand(t *testing.T) {
 		"yolo pack ls/status",
 		"yolo loopholes list --format json",
 		"yolo config dump",
-		// Every old composition spelling takes the exact refusal branch before parsing args.
-		"yolo config ls --bogus",
-		"yolo config reset claude/settings",
-		// config picks these verbs from a map of functions, so a verb's flags are read from the
+		"yolo surface reset claude/settings",
+		"yolo surface ls --all",
+		"yolo surface promote <agent> --plan",
+		// surface picks these verbs from a map of functions, so a verb's flags are read from the
 		// function the map names.
-		"yolo config ls --all",
-		"yolo config promote <agent> --plan",
 		"yolo loopholes --format json",
 		"yolo openai-auth import --from <auth.json>",
 		"yolo broker restart",
@@ -333,7 +331,7 @@ func TestTheHintScanReadsACommandWrittenWithoutBackticks(t *testing.T) {
 		// place nothing in the text marks as one.
 		{"yolo could not create it", nil},
 		{"yolo prune --apply", nil},
-		{"yolo config render: unknown flag %q", nil},
+		{"yolo surface render: unknown flag %q", nil},
 		{"yolo pack — author and inspect agent config packs", nil},
 		{"  yolo could not get this host's network stack to forward it", nil},
 		// An indented line that carries on the paragraph above it at the same indent, with no
@@ -666,11 +664,6 @@ func (c *commandTree) check(text string) string {
 	}
 	verb := ""
 	if verbs := c.verbs(k); verbs != nil && len(rest) > 0 && bareWord(rest[0]) {
-		if k == "config" && c.retiredSurfaceVerb(rest[0]) {
-			// configRunW's explicit six-case switch refuses these legacy spellings with their
-			// `yolo surface` replacement. It is a recognized actionable refusal, not an alias.
-			return ""
-		}
 		for _, alt := range strings.Split(rest[0], "/") {
 			if _, ok := verbs[alt]; !ok {
 				return fmt.Sprintf("names `yolo %s %s`, and yolo %s has no verb %q (it has %s)", k, alt, k, alt,
@@ -680,32 +673,6 @@ func (c *commandTree) check(text string) string {
 		verb, rest = strings.Split(rest[0], "/")[0], rest[1:]
 	}
 	return c.checkFlags(k, verb, rest)
-}
-
-func (c *commandTree) retiredSurfaceVerb(verb string) bool {
-	branch := c.verbs("config")[verb]
-	if branch == nil {
-		return false
-	}
-	const refusal = "yolo config %s has moved to yolo surface %s; use `yolo surface %s` instead.\n"
-	for _, source := range branch.nodes {
-		found := false
-		ast.Inspect(source.n, func(n ast.Node) bool {
-			lit, ok := n.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				return true
-			}
-			value, err := strconv.Unquote(lit.Value)
-			if err == nil && value == refusal {
-				found = true
-			}
-			return true
-		})
-		if found {
-			return true
-		}
-	}
-	return false
 }
 
 // checkFlags checks every long flag in args, up to a `--`, against what k (after verb, when one

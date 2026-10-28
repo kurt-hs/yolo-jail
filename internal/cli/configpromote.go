@@ -297,13 +297,13 @@ func refuseInJailPromote(t configTarget, errw io.Writer) bool {
 	if !t.local && !config.InJail() {
 		return false
 	}
-	fmt.Fprintf(errw, "yolo config promote: refusing — promote is a HOST-side verb. Its "+
+	fmt.Fprintf(errw, "yolo surface promote: refusing — promote is a HOST-side verb. Its "+
 		"destinations live under the host's ~/.config/yolo-jail/, which no jail may write: a "+
 		"pack manifest is an input to composition, so a jail that could edit one could grant "+
 		"itself a host file on the next boot.\n"+
 		"  Run it on the host, against this workspace:\n"+
-		"    yolo config promote <agent> --plan\n"+
-		"  `yolo config diff <agent>` in here shows the same captured keys.\n")
+		"    yolo surface promote <agent> --plan\n"+
+		"  `yolo surface diff <agent>` in here shows the same captured keys.\n")
 	return true
 }
 

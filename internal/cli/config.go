@@ -220,7 +220,7 @@ func writeCLIUsage(out io.Writer, color bool, usage string) {
 		}
 		token := line[start:end]
 		trimmedToken := strings.TrimSuffix(token, ",")
-		if !cliHelpToken(token) && !cliHelpToken(trimmedToken) {
+		if !configHelpToken(token) && !configHelpToken(trimmedToken) {
 			continue
 		}
 		if trimmedToken != token {
@@ -232,7 +232,7 @@ func writeCLIUsage(out io.Writer, color bool, usage string) {
 			for aliasEnd < len(line) && line[aliasEnd] != ' ' && line[aliasEnd] != '\t' {
 				aliasEnd++
 			}
-			if aliasStart < aliasEnd && cliHelpToken(line[aliasStart:aliasEnd]) {
+			if aliasStart < aliasEnd && configHelpToken(line[aliasStart:aliasEnd]) {
 				end = aliasEnd
 			}
 		}
@@ -241,7 +241,7 @@ func writeCLIUsage(out io.Writer, color bool, usage string) {
 	io.WriteString(out, richtext.Render(strings.Join(lines, "\n")+"\n", color))
 }
 
-func cliHelpToken(token string) bool {
+func configHelpToken(token string) bool {
 	switch token {
 	case "ls", "render", "diff", "reset", "promote", "capture", "drift", "dump", "apply",
 		"--help", "-h", "--all", "--explain", "--at", "--force", "--keys", "--to",
