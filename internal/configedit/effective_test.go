@@ -16,6 +16,69 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+func TestApplyEffectivePhysicallyRemovesAuthoredScalar(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+	before := []byte("[machine.resources]\ncpus = 2 # keep this comment\n")
+	writeEditFixture(t, path, string(before))
+	mutation := Mutation{Action: Remove, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}}
+	plan, err := applyEffectiveTest(t, workspace, path, configdoc.TOML, mutation, config.ExplicitEditProject, ApplyOptions{})
+	if err != nil {
+		t.Fatalf("direct effective Remove: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(got, []byte("cpus = 2")) || !bytes.Contains(got, []byte("# keep this comment")) || !bytes.Equal(got, plan.Updated) {
+		t.Fatalf("direct effective Remove did not splice only the scalar: got=%q plan=%q", got, plan.Updated)
+	}
+}
+
+func TestApplyEffectiveRefusesInvalidOriginalScalarMaskedByLocal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	user := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
+	project := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+	local := filepath.Join(workspace, paths.WorkspaceLocalConfigTOMLName)
+	writeEditFixture(t, user, "[machine.resources]\ncpus = 1\n")
+	before := []byte("[machine.resources]\ncpus = -1\n")
+	writeEditFixture(t, project, string(before))
+	writeEditFixture(t, local, "[machine.resources]\ncpus = 3\n")
+	mutation := Mutation{Action: Remove, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}}
+	if _, err := applyEffectiveTest(t, workspace, project, configdoc.TOML, mutation, config.ExplicitEditProject, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "cpus") {
+		t.Fatalf("direct effective Remove accepted masked invalid authored scalar: %v", err)
+	}
+	if got, err := os.ReadFile(project); err != nil || !bytes.Equal(got, before) {
+		t.Fatalf("invalid original scalar changed bytes: got=%q want=%q err=%v", got, before, err)
+	}
+}
+
+func TestApplyEffectiveValidatesMappedLegacyJSONCScalarBeforeRemoval(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	user := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+	project := filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName)
+	local := filepath.Join(workspace, paths.WorkspaceLocalConfigLegacyJSONCName)
+	writeEditFixture(t, user, `{"mise_tools":{"python":"3.11"}}`)
+	before := []byte(`{"mise_tools":{"python":312}}`)
+	writeEditFixture(t, project, string(before))
+	writeEditFixture(t, local, `{"mise_tools":{"python":"3.13"}}`)
+	mutation := Mutation{Action: Remove, Path: []configdoc.Step{{Key: "mise_tools"}, {Key: "python"}}}
+	if validate, typeErr := validatesOriginalScalarRemoval(configdoc.JSONC, mutation.Path, before); !validate || typeErr == nil {
+		t.Fatalf("mapped legacy version should be recognized and rejected by its canonical schema type: validate=%v err=%v", validate, typeErr)
+	}
+	if _, err := applyEffectiveTest(t, workspace, project, configdoc.JSONC, mutation, config.ExplicitEditProject, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "python") {
+		t.Fatalf("direct effective Remove accepted invalid legacy version masked by Local: %v", err)
+	}
+	if got, err := os.ReadFile(project); err != nil || !bytes.Equal(got, before) {
+		t.Fatalf("invalid original legacy version changed bytes: got=%q want=%q err=%v", got, before, err)
+	}
+}
+
 func TestApplyEffectiveRefusesInvalidExistingResourceSemanticsBeforeWrite(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
