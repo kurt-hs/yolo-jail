@@ -389,6 +389,9 @@ sharing host credentials. Keep [storage relocation](shared-tool-store-relocation
     the last task of [its plan](../design/pack-buildable-programs-plan.md): macos-user's run-as-you mode fails a
     pack-tree build at the capture bootstrap, and Apple Container and a Mac's `yolo host` have not run it yet.
 
+53. [Make store cleanup automatic even after the last launch](../design/automatic-store-gc.md) — the owner wants no routine manual pruning; settle safe idle coverage before automating the current capture sweep.
+    Its [companion seed](../design/automatic-store-gc-plan.md) parks surfaced implementation material; the [independent advice and audit](../research/automatic-store-gc-advisory-20261028.md) preserve the evidence behind the choice.
+
 ## External waits
 
 38. One session at a Mac, with `sudo`'s password and the runner stopped, completes [the benchmark](../research/macos-backend-performance.md#8-results)
