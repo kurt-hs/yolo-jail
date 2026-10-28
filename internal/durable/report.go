@@ -275,10 +275,13 @@ func ScanDir(o ScanOptions) Scan {
 	}
 
 	durableDir := HostPath(o.Workspace)
-	aliases := make(map[string]string, len(o.Aliases)+1)
+	aliases := make(map[string]string, len(o.Aliases)+2)
 	for k, v := range o.Aliases {
 		aliases[k] = v
 	}
+	// An already-local registration must beat a broader jail-path alias (for example,
+	// a durable fixture or checkout beneath /workspace).
+	aliases[o.Workspace] = o.Workspace
 	// The workspace is not jail-writable ABOVE its own directory, so resolving its links is
 	// safe in every frame; `.yolo` and below are never resolved.
 	if real, err := filepath.EvalSymlinks(o.Workspace); err == nil && real != o.Workspace {
