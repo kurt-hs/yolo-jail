@@ -6,23 +6,50 @@ import (
 )
 
 func TestVersionCompatibilitySurvivesDecodeAndInstallProjection(t *testing.T) {
-	const manifest = `{"name":"copilot","contributes":[{
-	  "kind":"program","bin":"copilot","via":"installer","url":"https://example.test/install",
-	  "probe_args":["--version"],"version_compatibility":{
-	    "refuse_at_or_above":"1.0.93","message":"Use a container; don't use self mode."
-	  }
-	}]}`
-	m, problems := Decode([]byte(manifest))
-	if len(problems) != 0 {
-		t.Fatalf("compatibility declaration should validate: %v", problems)
+	readers := []struct {
+		name     string
+		manifest string
+		decode   func([]byte) (*Manifest, []string)
+	}{
+		{
+			name: "JSON",
+			manifest: `{"name":"copilot","contributes":[{
+			  "kind":"program","bin":"copilot","via":"installer","url":"https://example.test/install",
+			  "probe_args":["--version"],"version_compatibility":{
+			    "refuse_at_or_above":"1.0.93","message":"Use a container; don't use self mode."
+			  }
+			}]}`,
+			decode: Decode,
+		},
+		{
+			name: "canonical TOML",
+			manifest: `name = "copilot"
+
+[[program]]
+bin = "copilot"
+via = "installer"
+url = "https://example.test/install"
+probe_args = ["--version"]
+version_compatibility = { refuse_at_or_above = "1.0.93", message = "Use a container; don't use self mode." }
+`,
+			decode: DecodeTOML,
+		},
 	}
-	installs := m.InstallContributions()
-	if len(installs) != 1 || installs[0].VersionCompatibility == nil {
-		t.Fatalf("compatibility did not reach InstallContributions: %+v", installs)
-	}
-	got := installs[0].VersionCompatibility
-	if got.RefuseAtOrAbove != "1.0.93" || got.Message != "Use a container; don't use self mode." {
-		t.Errorf("projected compatibility = %+v", got)
+	for _, reader := range readers {
+		t.Run(reader.name, func(t *testing.T) {
+			m, problems := reader.decode([]byte(reader.manifest))
+			if len(problems) != 0 {
+				t.Fatalf("compatibility declaration should validate: %v", problems)
+			}
+			installs := m.InstallContributions()
+			if len(installs) != 1 || installs[0].VersionCompatibility == nil {
+				t.Fatalf("compatibility did not reach InstallContributions: %+v", installs)
+			}
+			got := installs[0].VersionCompatibility
+			if got.RefuseAtOrAbove != "1.0.93" || got.Message != "Use a container; don't use self mode." {
+				t.Errorf("projected compatibility = %+v", got)
+			}
+		})
 	}
 }
 
