@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -155,9 +156,17 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		fmt.Fprintf(errw, "cannot edit config: %v\n", err)
 		return 1
 	}
-	mutation, err = configEditUnsetMutation(target.Format, target.AuthoredPath())
+	if config.InJail() && target.Role == config.ExplicitEditUser {
+		printConfigEditHostRun(errw, workspace, args)
+		return 1
+	}
+	mutation, err = configEditUnsetMutation(target.Format, key, target.AuthoredPath(), target.ExpectedBytes())
 	if err != nil {
-		fmt.Fprintf(errw, "cannot unset config key: %v\n", err)
+		fmt.Fprintf(errw, "cannot unset config key %q in selected file %q: %v; edit the value manually in that file, then run `yolo check` in this workspace", positionals[0], target.LogicalPath, err)
+		if target.Role != config.ExplicitEditUser {
+			fmt.Fprint(errw, "; run `yolo config apply` on the host to approve workspace changes")
+		}
+		fmt.Fprintln(errw)
 		return 1
 	}
 	mutation.Path = append([]configdoc.Step(nil), key...)
@@ -318,12 +327,21 @@ func configEditValuePresent(root any, path []configdoc.Step) bool {
 	return true
 }
 
-func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step) (configedit.Mutation, error) {
-	rule, ok := configEditSchemaRule(path, format)
+func configEditUnsetMutation(format configdoc.Format, canonicalPath, authoredPath []configdoc.Step, data []byte) (configedit.Mutation, error) {
+	rule, ok := configEditSchemaRule(authoredPath, format)
+	if !ok && format == configdoc.JSONC {
+		rule, ok = configEditSchemaRule(canonicalPath, configdoc.TOML)
+	}
 	if !ok {
 		return configedit.Mutation{}, fmt.Errorf("key has no removal policy in the selected config schema")
 	}
-	mutation := configedit.Mutation{Action: configedit.Set, Path: append([]configdoc.Step(nil), path...)}
+	// Removal spelling follows the authored schema; scalar shape follows the canonical key.
+	if rule.Removal == config.RemovalUnspecified {
+		if canonicalRule, canonicalOK := configEditSchemaRule(canonicalPath, configdoc.TOML); canonicalOK {
+			rule.Type = canonicalRule.Type
+		}
+	}
+	mutation := configedit.Mutation{Action: configedit.Set, Path: append([]configdoc.Step(nil), authoredPath...)}
 	switch rule.Removal {
 	case config.RemovalNull, config.RemovalTombstone:
 		if format != configdoc.JSONC {
@@ -347,10 +365,67 @@ func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step) (co
 		mutation.Value = "native"
 	case config.RemovalUnsetList:
 		return configedit.Mutation{}, fmt.Errorf("this key's removal requires updating both env.set and env.unset; no multi-key edit is available")
+	case config.RemovalUnspecified:
+		if rule.Type == config.SchemaTypeAny || rule.Type == config.SchemaTypeObject ||
+			rule.Type == config.SchemaTypeList || rule.Type == config.SchemaTypeObjectOrList {
+			return configedit.Mutation{}, fmt.Errorf("this key has no scalar removal policy in the selected config schema")
+		}
+		value, present, err := configEditAuthoredValue(data, format, authoredPath)
+		if err != nil {
+			return configedit.Mutation{}, err
+		}
+		if present && !configEditIsScalar(value) {
+			return configedit.Mutation{}, fmt.Errorf("this key's authored value is not an ordinary scalar and has no removal policy")
+		}
+		mutation.Action = configedit.Remove
 	default:
 		return configedit.Mutation{}, fmt.Errorf("the selected config schema does not define a removal for this key")
 	}
 	return mutation, nil
+}
+
+func configEditAuthoredValue(data []byte, format configdoc.Format, path []configdoc.Step) (any, bool, error) {
+	doc, err := configdoc.Parse(data, format)
+	if err != nil {
+		return nil, false, fmt.Errorf("cannot inspect authored config value: %w", err)
+	}
+	var value any = doc.Values
+	for _, step := range path {
+		if step.IsIndex {
+			items, ok := value.([]any)
+			if !ok || step.Index < 0 || step.Index >= len(items) {
+				return nil, false, nil
+			}
+			value = items[step.Index]
+			continue
+		}
+		object, ok := value.(*jsonx.OrderedMap)
+		if !ok {
+			return nil, false, nil
+		}
+		var present bool
+		value, present = object.Get(step.Key)
+		if !present {
+			return nil, false, nil
+		}
+	}
+	return value, true, nil
+}
+
+func configEditIsScalar(value any) bool {
+	if value == nil {
+		return false
+	}
+	kind := reflect.ValueOf(value).Kind()
+	switch kind {
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseConfigEditValue(raw string, path []configdoc.Step) (any, error) {

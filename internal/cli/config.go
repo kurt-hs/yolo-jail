@@ -67,7 +67,7 @@ const configEditUsage = `Usage:
   yolo config add <key> <value> [target] [--dry-run]
   yolo config unset <key> [target] [--dry-run]
 
-set and add require one typed value; unset removes a key only where the schema defines a removal policy, and otherwise refuses without writing. Edits target an existing config file only.
+set and add require one typed value; unset physically removes an ordinary recognized scalar from the named file, so a lower layer or default may reappear. Table, list, native, and null removals keep their schema-specific forms; unsupported removals refuse without writing. Edits target an existing config file only.
 The default target is Project when it exists, even if User or Local currently wins. No config file is created.
 
 Flags:

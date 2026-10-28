@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -140,6 +141,13 @@ func (r ResolvedEditTarget) MatchesMutation(intent EditMutationIntent) bool {
 // ResolveEditTarget selects one already-existing file consumed by the normal readable config
 // graph. Schema scope supplies only the default; ApplyEffective remains the write authority.
 func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditTargetChoice) (ResolvedEditTarget, error) {
+	return resolveEditTarget(workspace, intent, choice, os.ReadFile)
+}
+
+func resolveEditTarget(workspace string, intent EditMutationIntent, choice EditTargetChoice, readPreimage func(string) ([]byte, error)) (ResolvedEditTarget, error) {
+	if readPreimage == nil {
+		return ResolvedEditTarget{}, fmt.Errorf("config edit target requires a preimage reader")
+	}
 	key := intent.Key
 	if intent.Kind < EditMutationSet || intent.Kind > EditMutationRemove {
 		return ResolvedEditTarget{}, fmt.Errorf("config edit target requires a supported mutation intent")
@@ -335,9 +343,18 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		if _, err := os.Stat(selected.physical); err != nil {
 			return ResolvedEditTarget{}, fmt.Errorf("config target %s does not exist; create that config file first, then retry (no file was written): %w", selected.logical, err)
 		}
-		preimage, err = os.ReadFile(selected.physical)
+		preimage, err = readPreimage(selected.physical)
 		if err != nil {
 			return ResolvedEditTarget{}, fmt.Errorf("read config target %s: %w", selected.logical, err)
+		}
+		if intent.Kind == EditMutationRemove && format == configdoc.JSONC {
+			mapped, found, mapErr := editTargetJSONCRemovalPath(node, key, selected, role, preimage)
+			if mapErr != nil {
+				return ResolvedEditTarget{}, mapErr
+			}
+			if found {
+				authored = mapped
+			}
 		}
 		target, err = NewExplicitEditTarget(resolvedWorkspace, selected.physical, role, format)
 		if err != nil {
@@ -347,6 +364,114 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target,
 		expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent), authored: append([]configdoc.Step(nil), authored...),
 		prospective: copyProspectiveSelection(prospective)}, nil
+}
+
+func editTargetJSONCRemovalPath(root *srcNode, key []configdoc.Step, selected editTargetFile, role ExplicitEditScope, preimage []byte) ([]configdoc.Step, bool, error) {
+	if err := rejectChangedSelectedJSONCConsumedSource(sourcesOf(root), selected, role, preimage); err != nil {
+		return nil, false, err
+	}
+	node := root
+	for _, step := range key {
+		if step.IsIndex {
+			node = node.elem(step.Index)
+		} else {
+			node = node.key(step.Key)
+		}
+		if node == nil {
+			return nil, false, nil
+		}
+	}
+	wantedRole := readRoleForScope(role)
+	var authored []configdoc.Step
+	for _, origin := range node.writerList() {
+		f := origin.file
+		if f == nil || origin.host != "" || f.role != wantedRole || f.format != configdoc.JSONC {
+			continue
+		}
+		physical, err := filepath.EvalSymlinks(f.path)
+		if err != nil {
+			return nil, false, fmt.Errorf("resolve JSONC removal source %s: %w", f.path, err)
+		}
+		physical, err = filepath.Abs(physical)
+		if err != nil {
+			return nil, false, err
+		}
+		if filepath.Clean(physical) != selected.physical {
+			continue
+		}
+		if !bytes.Equal(f.data, preimage) {
+			return nil, false, fmt.Errorf("config target %s changed between source discovery and target binding; reread the config and retry (no file was written)", selected.logical)
+		}
+		if _, present := f.locate(origin.steps, origin.documentSteps); !present {
+			return nil, false, fmt.Errorf("selected JSONC removal source %s has no unique authored value at %s", selected.logical, strings.Join(stepPathNames(origin.documentSteps), "."))
+		}
+		candidate := append([]configdoc.Step(nil), origin.documentSteps...)
+		if authored != nil && !sameEditTargetPath(authored, candidate) {
+			return nil, false, fmt.Errorf("selected JSONC removal source %s has ambiguous authored paths for %s", selected.logical, strings.Join(stepPathNames(key), "."))
+		}
+		authored = candidate
+	}
+	if authored == nil {
+		return nil, false, nil
+	}
+	return authored, true, nil
+}
+
+func rejectChangedSelectedJSONCConsumedSource(sources *Sources, selected editTargetFile, role ExplicitEditScope, preimage []byte) error {
+	if sources == nil || sources.root == nil {
+		return fmt.Errorf("config target %s has no consumed source bytes; reread the config and retry (no file was written)", selected.logical)
+	}
+	wantedRole := readRoleForScope(role)
+	seenNodes := map[*srcNode]bool{}
+	seenFiles := map[*srcFile]bool{}
+	found := false
+	var walk func(*srcNode) error
+	walk = func(node *srcNode) error {
+		if node == nil || seenNodes[node] {
+			return nil
+		}
+		seenNodes[node] = true
+		for _, origin := range node.writers {
+			f := origin.file
+			if f == nil || origin.host != "" || f.role != wantedRole || f.format != configdoc.JSONC || seenFiles[f] {
+				continue
+			}
+			seenFiles[f] = true
+			physical, err := filepath.EvalSymlinks(f.path)
+			if err != nil {
+				return fmt.Errorf("resolve JSONC removal source %s: %w", f.path, err)
+			}
+			physical, err = filepath.Abs(physical)
+			if err != nil {
+				return err
+			}
+			if filepath.Clean(physical) != selected.physical {
+				continue
+			}
+			found = true
+			if !bytes.Equal(f.data, preimage) {
+				return fmt.Errorf("config target %s changed between source discovery and target binding; reread the config and retry (no file was written)", selected.logical)
+			}
+		}
+		for _, child := range node.keys {
+			if err := walk(child); err != nil {
+				return err
+			}
+		}
+		for _, child := range node.elems {
+			if err := walk(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(sources.root); err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("config target %s has no matching consumed JSONC source bytes; reread the config and retry (no file was written)", selected.logical)
+	}
+	return nil
 }
 
 func readableEditTargetRule(path []string) (SchemaKey, bool) {
