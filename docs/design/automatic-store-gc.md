@@ -1,6 +1,12 @@
 ---
+title: "Automatic store maintenance must outlive the last launch"
+date: 2026-10-28
+tags: [storage, retention, design]
+summary: "Proposed automatic retention of recoverable environment artifacts with family-specific safety authority and qualified idle-time scheduling."
 status: in-review
 stage: DESIGN
+depends-on:
+  - ../research/automatic-store-gc-advisory-20261028.md
 next: "Rule OQ-GC1–OQ-GC3; do not implement until the safety contracts are resolved and the seed becomes a grounded plan"
 ---
 
@@ -30,7 +36,7 @@ next: "Rule OQ-GC1–OQ-GC3; do not implement until the safety contracts are res
 
 This proposal covers yolo-owned recoverable installations, build artifacts and generations. Capture here means an installation or fork build, **not a conversation**. It does not authorize deleting credentials, agent state, workspace worktrees, adoption archives, non-owned tool caches or arbitrary host Nix closures. It promises neither a disk-full impossibility nor a physical-reclaim quantity. No measured 12 GB claim exists.
 
-My recommendation is the combined-trigger architecture below. It records Root's synthesis of two independent opinions, **not a joint ruling or a third paid design pass**. Numerical policies and availability choices remain proposals.
+The recommendation is the combined-trigger architecture below. It records a synthesis of two independent opinions, **not a joint ruling or a third paid design pass**. Numerical policies and availability choices remain proposals.
 
 ## Current evidence and promises to amend
 
@@ -136,7 +142,7 @@ A 24-hour attribution grace or an acquirable lock cannot prove absence of a publ
 | Conservative legacy retention | May prevent immediate recovery of reported disk growth; no numerical result is promised. |
 | Scheduler/protection complexity | Adds lifecycle and correctness metadata; rollout begins with classification, then protocol-compliant cleanup, then provable legacy backfill. |
 
-Astra's defaults and lifecycle contracts are conceptual, not verified software. Fable's winner-protection versus winner-eviction contradiction and timer/publication/compatibility/rename/convergence gaps remain explicitly unresolved in the [comparison](../research/automatic-store-gc-advisory-20261028.md#root-comparison-and-unresolved-advice). They are not evidence of consensus safety. The next planner must validate engineering feasibility against the then-current tree, not build from these opinions.
+Astra's defaults and lifecycle contracts are conceptual, not verified software. Fable's winner-protection versus winner-eviction contradiction and timer/publication/compatibility/rename/convergence gaps remain explicitly unresolved in the [comparison](../research/automatic-store-gc-advisory-20261028.md#synthesis-comparison-and-unresolved-advice). They are not evidence of consensus safety. The next planner must validate engineering feasibility against the then-current tree, not build from these opinions.
 
 ## Observable acceptance, not current results
 
@@ -190,10 +196,10 @@ No tests or runtime measurements for this proposal exist in this docs-only close
 
 3. 💬 **OQ-GC3: Should lasting exact-key availability require an explicit pin?**
 
-   Priya's launch retains a specific capture key; weeks later its generated launcher runs `yolo internal capture-materialize --key` for that build. Today keyed access exists without a global retention limit. Keeping every historical key forever conflicts with automatic bounded caching; legacy readers also need safe exclusion before migration.
+   Priya's running jail has a lazy launcher holding a capture key; its later invocation is always automatically protected, without a pin. After all live and handed obligations release, Priya deliberately requests that old key for historical reuse. Today keyed access exists without a global retention limit; keeping every historical key forever conflicts with bounded caching.
 
-   - **A — Explicit durable pins preserve lasting access.** Unpinned regenerable keys may expire; unresolved legacy/local-only obligations remain protected and visible.
-   - **B — Preserve historical exact-key availability by default.** More old keys remain available, but their unbounded retained bytes constrain new admissions.
+   - **A — Explicit pins preserve historical access after live obligations release.** Unpinned regenerable history may expire; live/lazy/handed and unresolved obligations remain automatically protected.
+   - **B — Preserve historical exact-key availability by default.** More released old keys remain available, but their unbounded retained bytes constrain new admissions.
 
    <!-- vantage: question id=OQ-GC3 leaning="Explicit durable pins — lasting availability should be an intentional storage obligation, with conservative legacy migration and no forced eviction." -->
 

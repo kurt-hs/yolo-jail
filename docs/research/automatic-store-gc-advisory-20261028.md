@@ -1,4 +1,8 @@
 ---
+title: "Automatic store GC — independent advice, evidence and custody"
+date: 2026-10-28
+tags: [storage, retention, advisory, accounting]
+summary: "Frozen evidence and verbatim independent opinions, with qualified capability/context audit, attributable usage and separate synthesis."
 status: in-review
 next: "Read the canonical design and rule its routed choices; advice is not accepted behavior"
 ---
@@ -35,18 +39,20 @@ Per-assistant-message provider usage was deduplicated by message ID. Artifact me
 | Fable, message `e316e94c` | 4 | 9,761 | 0 | 14,868 | 24,633 | 0.7854500 |
 | Author pair, those two messages only | 6 | 15,657 | 0 | 23,368 | 39,031 | 1.1865200 |
 | Collector, its assistant messages only | 44 | 12,418 | 1,674,347 | 109,847 | 1,796,656 | 0.5663202 |
-| Root, workflow-launch message `3d9826aa` only | 2 | 4,299 | 144,211 | 430 | 148,942 | 0.0584901 |
+| Parent/coordinating session, workflow-launch message `3d9826aa` only | 2 | 4,299 | 144,211 | 430 | 148,942 | 0.0584901 |
 | Docs/custody worker, current run | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
 
-These costs are recorded configured estimates, **not invoices** or independently verified pricing. Root coverage excludes collection, reading, synthesis and later custody; no end-to-end mission total is claimed. The worker's final provider usage was unavailable at audit time and is not folded into author totals.
+These costs are recorded configured estimates, **not invoices** or independently verified pricing. Parent/coordinating-session coverage excludes collection, reading, synthesis and later custody; no end-to-end mission total is claimed. The worker's final provider usage was unavailable at audit time and is not folded into author totals.
+
+The parent/coordinating session is the orchestration/accounting role, distinct from the proposed GC coordinator component.
 
 Raw per-call evidence retains provider raw usage, reasoning/diagnostic fields where present and cost components separately in private durable custody. No separate reasoning-token count appeared in the two author usage objects; HIGH is an effort setting, not a missing counter to invent. Astra cost components: input 0.0000200, output 0.2948000, cache read 0, cache write 0.1062500. Fable: input 0.0000400, output 0.4880500, cache read 0, cache write 0.2973600; Fable reports 14,868 one-hour cache-write tokens. Run token aggregates omit cache counters and therefore differ from normalized provider totals. Private session paths, ambient memory and credential material are intentionally not reproduced in tracked documentation.
 
-## Root comparison and unresolved advice
+## Synthesis comparison and unresolved advice
 
 Both authors recommend producer events, quiet launch housekeeping, host recurrence and per-family authority. Both propose 8 GiB captures and a 30-day unused baseline, but neither measured the workload, capacity or reclaimability. Agreement is advice, not acceptance evidence.
 
-| Topic | Astra | Fable | Root synthesis, not owner ruling |
+| Topic | Astra | Fable | Synthesis, not owner ruling |
 | :--- | :--- | :--- | :--- |
 | Idle scheduling | Hourly user task plus paced backlog continuation | Debt-armed one-shot, removed when known work clears | Prefer hourly: future age eligibility, crash-before-arming and last-consumer release can otherwise be missed. User-session/scheduler limits remain explicit. |
 | Capture limits | 8/6 GiB high/target, 1,000/750 keys, 64 MiB GC state | 8 GiB, winner protection floor; removal ledger 90 days or 500 records | Proposed 8/6 baseline and global count/metadata bounds, not measured quotas; preserve canonical receipts/drift evidence. |
@@ -57,7 +63,7 @@ Both authors recommend producer events, quiet launch housekeeping, host recurren
 
 **Fable's complete opinion below remains verbatim advice. The following contradictions are unresolved, not silently repaired or called consensus:**
 
-1. **Winner protection versus eviction:** K=1 winner-as-protection prevents the proposed winner eviction and global cardinality bound. Root recommends protecting real obligations, not every historical computed winner.
+1. **Winner protection versus eviction:** K=1 winner-as-protection prevents the proposed winner eviction and global cardinality bound. The synthesis recommends protecting real obligations, not every historical computed winner.
 2. **Timer arming gap:** future eligibility, consumer release or a crash can occur after zero debt or before debt is recorded. A later launch is not no-launch recovery.
 3. **Publication/legacy gap:** 24 hours or an acquirable lock cannot prove no publication obligation or old reader remains.
 4. **Mixed-version gap:** a version marker cannot make incompatible callers observe new protections; actual exclusion or isolation is required.
@@ -66,7 +72,7 @@ Both authors recommend producer events, quiet launch housekeeping, host recurren
 7. **Convergence gap:** deletion count does not bound arbitrary tree sizes; the proposed overage/32 launch formula is not a valid byte bound.
 8. **Evidence/lock gap:** truncating canonical drift evidence or unlinking an acquirable lock can destroy obligations or create a second lock inode. Bound disposable GC state, not canonical evidence; exclude old lockers or use stable bounded lock infrastructure.
 
-Astra likewise supplies unmeasured defaults and conceptual lifecycle contracts, **not verified software**. Root's proposed safety shape uses family-specific known-gone/cooperative lease authority, immutable publication obligations and one guarded manual/writer/automatic retirement path; current/live/materializing/lazy/exact/handed/good-build references remain protected. Unknown retains; resumable markerless recovery and paced retries count staging/deleting/metadata. Neither opinion is a code review; no new vote panel or model critique was run.
+Astra likewise supplies unmeasured defaults and conceptual lifecycle contracts, **not verified software**. The proposed safety shape uses family-specific known-gone/cooperative lease authority, immutable publication obligations and one guarded manual/writer/automatic retirement path; current/live/materializing/lazy/exact/handed/good-build references remain protected. Unknown retains; resumable markerless recovery and paced retries count staging/deleting/metadata. Neither opinion is a code review; no new vote panel or model critique was run.
 
 ## Frozen source packet
 

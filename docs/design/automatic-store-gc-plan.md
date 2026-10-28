@@ -1,4 +1,8 @@
 ---
+title: "Automatic store GC — implementation material surfaced during design"
+date: 2026-10-28
+tags: [storage, retention, implementation-seed]
+summary: "Uncompleted companion seed recording only seams surfaced during automatic-store-GC design; not build permission."
 status: draft
 stage: SKETCH
 next: "After the design is accepted with no open questions, a planner completes this seed against the then-current tree"
