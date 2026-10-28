@@ -599,8 +599,28 @@ func planPackFilesMounts(packs []*packload.Pack, trees map[string]string, agents
 // Multiple contributions targeting the same directory or nesting inside a directory
 // merge into a single staged directory mount, avoiding runc EROFS and duplicate mount
 // destination errors.
+// plannedPackFilesBindArgs returns the bind arguments the emitter will use for an already
+// built plan, without materializing its single-file Apple Container copies. Assembly uses this
+// same plan for destination preflight and final emission.
+func plannedPackFilesBindArgs(plan *packFilesPlan, rt string) []string {
+	if plan == nil {
+		return nil
+	}
+	var args []string
+	for _, mount := range plan.Mounts {
+		if mount.IsDir || rt != "container" {
+			args = append(args, "-v", mount.Src+":/home/agent/"+mount.Dest+":ro")
+		}
+	}
+	return args
+}
+
 func (o *Options) packFilesMountArgs(in *assembleInput) []string {
-	plan := planPackFilesMounts(in.packs, in.treeDirs, in.agentsPath)
+	plan := in.packFilesPlan
+	if plan == nil {
+		plan = planPackFilesMounts(in.packs, in.treeDirs, in.agentsPath)
+		in.packFilesPlan = plan
+	}
 	for _, t := range plan.Skipped {
 		o.pr(o.Stderr).print("[yellow]" + packFilesSkipWarning(t) + "[/yellow]")
 	}

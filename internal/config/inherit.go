@@ -45,6 +45,7 @@ package config
 // render.JailFields()/HostFields() gives contribution kinds.
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -628,10 +629,18 @@ func RenderFilteredForDelivery(filtered *jsonx.OrderedMap, src *Sources, scope I
 		node = src.node()
 	}
 	values, node = projectLegacyB2Config(values, node)
-	encoded, err := configdoc.Encode(values, configdoc.TOML)
+	tomlValues := jsonx.DeepCopyMap(values)
+	err := normalizeInheritedTOMLIntegers(tomlValues)
+	var encoded []byte
+	if err == nil {
+		encoded, err = configdoc.Encode(tomlValues, configdoc.TOML)
+	}
 	if err == nil {
 		var doc *configdoc.Document
 		doc, err = configdoc.Parse(encoded, configdoc.TOML)
+		if err == nil {
+			err = normalizeTOMLNumbers(doc.Values)
+		}
 		if err == nil {
 			err = validateReadableTOML(doc.Values, SchemaScopeUserOnly, "inherited user scope", doc.Index)
 		}
@@ -653,6 +662,46 @@ func RenderFilteredForDelivery(filtered *jsonx.OrderedMap, src *Sources, scope I
 		reason += ": " + err.Error()
 	}
 	return legacy, configdoc.JSONC, reason, nil
+}
+
+func normalizeInheritedTOMLIntegers(value any) error {
+	switch current := value.(type) {
+	case *jsonx.OrderedMap:
+		for _, key := range current.Keys() {
+			item, _ := current.Get(key)
+			normalized, err := inheritedTOMLInteger(item)
+			if err != nil {
+				return fmt.Errorf("%s: %w", key, err)
+			}
+			current.Set(key, normalized)
+		}
+	case []any:
+		for i, item := range current {
+			normalized, err := inheritedTOMLInteger(item)
+			if err != nil {
+				return fmt.Errorf("[%d]: %w", i, err)
+			}
+			current[i] = normalized
+		}
+	}
+	return nil
+}
+
+func inheritedTOMLInteger(value any) (any, error) {
+	if jsonx.IsInt(value) {
+		integer, ok := jsonx.AsInt(value)
+		if !ok {
+			return nil, fmt.Errorf("integer is outside TOML's signed 64-bit range")
+		}
+		return integer, nil
+	}
+	switch value.(type) {
+	case *jsonx.OrderedMap, []any:
+		if err := normalizeInheritedTOMLIntegers(value); err != nil {
+			return nil, err
+		}
+	}
+	return value, nil
 }
 
 // RenderInherit filters and renders in one step — the whole-file form, for callers with no

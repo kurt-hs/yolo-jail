@@ -147,7 +147,7 @@ func inheritScopeFilesWithSelector(effective *jsonx.OrderedMap, src *config.Sour
 					return rerr
 				}
 				format = configdoc.JSONC
-				fallbackReason = "a regular legacy JSONC sibling already occupies the in-jail destination"
+				fallbackReason = "a regular legacy JSON or JSONC sibling already occupies the in-jail destination family"
 			}
 		}
 		rel := inheritScopeRel(scope, format)
@@ -215,31 +215,40 @@ func (o *Options) inheritedScopeWithSelector(rt string, stamped bool, selectLega
 
 func selectInheritedJSONCRoute(wsState string, mapDestination func(string) (string, error), scope config.InheritScope, format configdoc.Format) (bool, error) {
 	legacyRel, tomlRel := inheritScopeFamily(scope)
-	legacyStorageRel, err := mapDestination(legacyRel)
-	if err != nil {
-		return false, err
+	legacyJSONRel := strings.TrimSuffix(legacyRel, ".jsonc") + ".json"
+	legacyPaths := []string{legacyRel, legacyJSONRel}
+	var existingLegacy []string
+	for _, rel := range legacyPaths {
+		storageRel, err := mapDestination(rel)
+		if err != nil {
+			return false, err
+		}
+		path := filepath.Join(wsState, storageRel)
+		_, exists, err := lstatHomeFile(wsState, storageRel)
+		if err != nil {
+			return false, fmt.Errorf("cannot establish inherited %s user-config destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", scope, path, err)
+		}
+		if exists {
+			existingLegacy = append(existingLegacy, path)
+		}
 	}
 	tomlStorageRel, err := mapDestination(tomlRel)
 	if err != nil {
 		return false, err
 	}
-	legacyPath := filepath.Join(wsState, legacyStorageRel)
 	tomlPath := filepath.Join(wsState, tomlStorageRel)
-	_, legacyExists, err := lstatHomeFile(wsState, legacyStorageRel)
-	if err != nil {
-		return false, fmt.Errorf("cannot establish inherited %s user-config destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", scope, legacyPath, err)
-	}
 	_, tomlExists, err := lstatHomeFile(wsState, tomlStorageRel)
 	if err != nil {
 		return false, fmt.Errorf("cannot establish inherited %s user-config destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", scope, tomlPath, err)
 	}
-	if legacyExists && tomlExists {
-		return false, fmt.Errorf("refusing inherited %s user config: both %s and %s exist in the jail's writable home; preserve both, move one to a backup outside this directory, then relaunch", scope, legacyPath, tomlPath)
+	if len(existingLegacy) > 0 && tomlExists {
+		return false, fmt.Errorf("refusing inherited %s user config: legacy files %s and TOML %s exist in the jail's writable home; preserve both families, move one aside only after review, then relaunch", scope, strings.Join(existingLegacy, " and "), tomlPath)
 	}
-	if legacyExists {
+	if len(existingLegacy) > 0 {
 		return true, nil
 	}
 	if tomlExists && format != configdoc.TOML {
+		legacyPath := filepath.Join(wsState, legacyRel)
 		return false, fmt.Errorf("refusing inherited %s user config: its legacy JSONC payload needs %s, but the jail already has %s; preserve both, convert or back up one file, then relaunch", scope, legacyPath, tomlPath)
 	}
 	return false, nil
@@ -254,33 +263,27 @@ func inheritScopeFamily(scope config.InheritScope) (legacy, toml string) {
 
 func refuseExistingScopeDestination(wsState string, mapDestination func(string) (string, error), scope config.InheritScope, backend, overwriteRisk string) (bool, error) {
 	legacyRel, tomlRel := inheritScopeFamily(scope)
-	legacyStorageRel, err := mapDestination(legacyRel)
-	if err != nil {
-		return false, err
-	}
-	tomlStorageRel, err := mapDestination(tomlRel)
-	if err != nil {
-		return false, err
-	}
-	legacyPath := filepath.Join(wsState, legacyStorageRel)
-	tomlPath := filepath.Join(wsState, tomlStorageRel)
-	_, legacyExists, err := lstatHomeFile(wsState, legacyStorageRel)
-	if err != nil {
-		return false, fmt.Errorf("cannot establish %s inherited %s destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", backend, scope, legacyPath, err)
-	}
-	_, tomlExists, err := lstatHomeFile(wsState, tomlStorageRel)
-	if err != nil {
-		return false, fmt.Errorf("cannot establish %s inherited %s destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", backend, scope, tomlPath, err)
-	}
-	if legacyExists && tomlExists {
-		return false, fmt.Errorf("refusing %s inherited %s scope: existing user files occupy both %s and %s; preserve them, choose one only after reviewing their contents, then relaunch", backend, scope, legacyPath, tomlPath)
-	}
-	if legacyExists || tomlExists {
-		path := legacyPath
-		if tomlExists {
-			path = tomlPath
+	legacyPaths := []string{legacyRel, strings.TrimSuffix(legacyRel, ".jsonc") + ".json", tomlRel}
+	var existing []string
+	for _, rel := range legacyPaths {
+		storageRel, err := mapDestination(rel)
+		if err != nil {
+			return false, err
 		}
-		return false, fmt.Errorf("refusing %s inherited %s scope: %s could overwrite existing user file %s; preserve its contents and mode, move it aside only after review, then relaunch", backend, scope, overwriteRisk, path)
+		path := filepath.Join(wsState, storageRel)
+		_, exists, err := lstatHomeFile(wsState, storageRel)
+		if err != nil {
+			return false, fmt.Errorf("cannot establish %s inherited %s destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", backend, scope, path, err)
+		}
+		if exists {
+			existing = append(existing, path)
+		}
+	}
+	if len(existing) > 1 {
+		return false, fmt.Errorf("refusing %s inherited %s scope: existing user files occupy %s; preserve them, choose one only after reviewing their contents, then relaunch", backend, scope, strings.Join(existing, " and "))
+	}
+	if len(existing) == 1 {
+		return false, fmt.Errorf("refusing %s inherited %s scope: %s could overwrite existing user file %s; preserve its contents and mode, move it aside only after review, then relaunch", backend, scope, overwriteRisk, existing[0])
 	}
 	return false, nil
 }
@@ -433,9 +436,14 @@ func (o *Options) userConfigMountArgsForAssembly(in *assembleInput, assembled []
 	if in == nil {
 		return nil, fmt.Errorf("cannot establish the inherited user config destination without assemble input")
 	}
+	if in.packFilesPlan == nil {
+		in.packFilesPlan = planPackFilesMounts(in.packs, in.treeDirs, in.agentsPath)
+	}
+	homeBinds := append([]string(nil), assembled...)
+	homeBinds = append(homeBinds, plannedPackFilesBindArgs(in.packFilesPlan, in.rt)...)
 	selectLegacy := func(scope config.InheritScope, format configdoc.Format) (bool, error) {
 		mapDestination := func(rel string) (string, error) {
-			return mappedHomePath(in.wsState, assembled, "/home/agent/"+rel)
+			return mappedHomePath(in.wsState, homeBinds, "/home/agent/"+rel)
 		}
 		if in.rt == "container" { // parity: Refused — Apple Container cannot cover an existing HOME file without overwriting it.
 			return refuseExistingScopeDestination(in.wsState, mapDestination, scope,

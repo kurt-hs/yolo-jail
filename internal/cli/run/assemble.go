@@ -81,7 +81,8 @@ type assembleInput struct {
 	// entrypoint renders from, so it sees the same declarations the host read. Delivered :ro
 	// at /ctx/packs on podman and as a per-launch COPY under ws_state on Apple Container,
 	// which ignored :ro below acROBindsFloor; either way the jail is TOLD where by YOLO_PACK_ROOT.
-	packStaging string
+	packStaging   string
+	packFilesPlan *packFilesPlan // the one assembly plan used for both destination checks and emitted files binds
 	// capturesDir is the machine-wide install-capture store (paths.CapturesDir), bound
 	// :ro so an in-jail launcher can materialize an entry instead of downloading it.
 	// EMPTY means "do not mount it" — the capture jail's own launch, which must not be

@@ -55,6 +55,7 @@ package config
 // R8 property doing its job.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -219,7 +220,10 @@ func loadReadableUserScopeWithInputUse(path string, strict bool, warn Warn, reco
 			return nil, nil, err
 		}
 	}
-	cfg, node = applyInheritedLaunchWithInputUse(cfg, node, record, true, strings.EqualFold(filepath.Ext(selectedPath), ".toml"), input, inputUsed)
+	cfg, node, err = applyInheritedLaunchWithStrictInputUse(cfg, node, record, true, strings.EqualFold(filepath.Ext(selectedPath), ".toml"), input, inputUsed, strict)
+	if err != nil {
+		return nil, nil, err
+	}
 	cfg, node, err = applyReadableUserLayerWithInputUse(cfg, node, record, input, inputUsed)
 	if err != nil {
 		return nil, nil, err
@@ -296,14 +300,57 @@ func applyInheritedLaunchWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode
 }
 
 func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode) {
-	path := InheritedLaunchPath()
-	if path == "" {
+	result, node, err := applyInheritedLaunchWithStrictInputUse(base, baseNode, record, readable, clearEmptyLists, input, inputUsed, false)
+	if err != nil {
 		return base, baseNode
 	}
+	return result, node
+}
+
+func inheritedLaunchPathForRead(strict bool) (string, error) {
+	if !strict {
+		return InheritedLaunchPath(), nil
+	}
+	if !inJail() {
+		return "", nil
+	}
+	dir := filepath.Dir(paths.UserConfigPath())
+	var found []string
+	for _, name := range []string{"inherited-launch.toml", "inherited-launch.jsonc", "inherited-launch.json"} {
+		path := filepath.Join(dir, name)
+		if _, err := os.Lstat(path); err == nil {
+			found = append(found, path)
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("cannot inspect inherited user config %s: %w; preserve the file and restore a readable config directory before continuing", path, err)
+		}
+	}
+	if len(found) > 1 {
+		return "", fmt.Errorf("inherited-launch siblings %s exist; these formats are never merged. Preserve their contents, choose exactly one file to keep active, then rerun the command", strings.Join(found, ", "))
+	}
+	if len(found) == 1 {
+		return found[0], nil
+	}
+	return filepath.Join(dir, "inherited-launch.jsonc"), nil
+}
+
+func applyInheritedLaunchWithStrictInputUse(base *jsonx.OrderedMap, baseNode *srcNode, record, readable, clearEmptyLists bool, input *ConfigReadInput, inputUsed *bool, strict bool) (*jsonx.OrderedMap, *srcNode, error) {
+	path, err := inheritedLaunchPathForRead(strict)
+	if err != nil {
+		return nil, nil, err
+	}
+	if path == "" {
+		return base, baseNode, nil
+	}
 	nestedReadable := strings.EqualFold(filepath.Ext(path), ".toml")
-	inherited, _, inheritedNode, err := loadConfigFile(path, "inherited launch config", false, func(string) {}, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleInherited, witness: currentEditWitness(input)})
-	if err != nil || inherited == nil || inherited.Len() == 0 {
-		return base, baseNode
+	inherited, _, inheritedNode, err := loadConfigFile(path, path, strict, func(string) {}, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleInherited, witness: currentEditWitness(input)})
+	if err != nil {
+		if strict {
+			return nil, nil, err
+		}
+		return base, baseNode, nil
+	}
+	if inherited == nil || inherited.Len() == 0 {
+		return base, baseNode, nil
 	}
 	// The inherited file is the one config read OUTSIDE LoadJSONCWithIncludes, so it
 	// anchors itself: its relative env files resolve beside it. Legacy JSONC inherits the
@@ -321,10 +368,12 @@ func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode,
 		AnchorEnvSources(inherited, filepath.Dir(path))
 	}
 	if base == nil {
-		return inherited, inheritedNode
+		return inherited, inheritedNode, nil
 	}
 	if readableMerge {
-		return mergeReadableConfigMode(inherited, base, inheritedNode, baseNode, nil, clearEmptyLists || nestedReadable)
+		merged, mergedNode := mergeReadableConfigMode(inherited, base, inheritedNode, baseNode, nil, clearEmptyLists || nestedReadable)
+		return merged, mergedNode, nil
 	}
-	return mergeConfig(inherited, base, inheritedNode, baseNode)
+	merged, mergedNode := mergeConfig(inherited, base, inheritedNode, baseNode)
+	return merged, mergedNode, nil
 }

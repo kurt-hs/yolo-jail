@@ -38,6 +38,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -138,10 +139,10 @@ func LaunchOriginsJSON(cfg *jsonx.OrderedMap, src *Sources) string {
 // launch-origins record t: every value keeps f and its place in f, and adds the host label of
 // each file the record says wrote it. A value the record says nothing about takes its parent's.
 func launchCopyTree(f *srcFile, v any, t *originTree) *srcNode {
-	return launchCopyTreeAt(f, v, nil, t, nil)
+	return launchCopyTreeAt(f, v, nil, nil, t, nil)
 }
 
-func launchCopyTreeAt(f *srcFile, v any, steps []json5.Step, t *originTree, parent []string) *srcNode {
+func launchCopyTreeAt(f *srcFile, v any, steps []json5.Step, documentSteps []configdoc.Step, t *originTree, parent []string) *srcNode {
 	labels := parent
 	if t != nil && len(t.W) > 0 {
 		labels = t.W
@@ -150,10 +151,10 @@ func launchCopyTreeAt(f *srcFile, v any, steps []json5.Step, t *originTree, pare
 	for _, l := range labels {
 		// Escaped again on the way in: the assembled copy's record sits in the workspace, which
 		// the jail can write, and every located message leads with or ends in this label.
-		n.writers = append(n.writers, srcOrigin{file: f, steps: steps, host: termsafe.Visible(l)})
+		n.writers = append(n.writers, srcOrigin{file: f, steps: steps, documentSteps: documentSteps, host: termsafe.Visible(l)})
 	}
 	if len(n.writers) == 0 {
-		n.writers = []srcOrigin{{file: f, steps: steps}}
+		n.writers = []srcOrigin{{file: f, steps: steps, documentSteps: documentSteps}}
 	}
 	switch x := v.(type) {
 	case *jsonx.OrderedMap:
@@ -164,7 +165,7 @@ func launchCopyTreeAt(f *srcFile, v any, steps []json5.Step, t *originTree, pare
 			if t != nil {
 				ct = t.K[k]
 			}
-			n.keys[k] = launchCopyTreeAt(f, cv, appendStep(steps, json5.Key(k)), ct, labels)
+			n.keys[k] = launchCopyTreeAt(f, cv, appendStep(steps, json5.Key(k)), appendDocumentStep(documentSteps, configdoc.Step{Key: k}), ct, labels)
 		}
 	case []any:
 		n.elems = make([]*srcNode, len(x))
@@ -173,7 +174,7 @@ func launchCopyTreeAt(f *srcFile, v any, steps []json5.Step, t *originTree, pare
 			if t != nil && i < len(t.E) {
 				ct = t.E[i]
 			}
-			n.elems[i] = launchCopyTreeAt(f, e, appendStep(steps, json5.Elem(i)), ct, labels)
+			n.elems[i] = launchCopyTreeAt(f, e, appendStep(steps, json5.Elem(i)), appendDocumentStep(documentSteps, configdoc.Step{Index: i, IsIndex: true}), ct, labels)
 		}
 	}
 	return n
