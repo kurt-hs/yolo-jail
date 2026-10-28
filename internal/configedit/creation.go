@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,24 +36,23 @@ func applyProspectiveTargeted(workspace string, target config.ResolvedEditTarget
 		return plan, nil
 	}
 
-	lock, err := pidlock.Acquire(target.PhysicalPath+".yolo-edit.lock", pidlock.Wait, nil)
-	if err != nil {
-		return nil, fmt.Errorf("lock prospective config target %s: %w", target.PhysicalPath, err)
-	}
-	defer lock.Release()
-	if options.onProspectiveLocked != nil {
-		options.onProspectiveLocked()
-	}
-	if err := target.VerifyProspectiveAbsence(); err != nil {
-		return nil, err
-	}
 	parentPath := filepath.Dir(target.PhysicalPath)
 	parent, err := os.Open(parentPath)
 	if err != nil {
 		return nil, fmt.Errorf("open prospective config parent %s: %w", parentPath, err)
 	}
 	defer parent.Close()
+	if err := lockParentDirectory(parent); err != nil {
+		return nil, fmt.Errorf("lock prospective config parent %s: %w", parentPath, err)
+	}
+	defer unlockParentDirectory(parent)
+	if options.onProspectiveLocked != nil {
+		options.onProspectiveLocked()
+	}
 	if err := verifyHeldParent(parent, parentPath, target); err != nil {
+		return nil, err
+	}
+	if err := target.VerifyProspectiveAbsence(); err != nil {
 		return nil, err
 	}
 	validatedSnapshot, err = validateProspectiveTarget(workspace, target, plan.Updated, false, options)
@@ -104,9 +103,9 @@ func applyProspectiveTargeted(workspace string, target config.ResolvedEditTarget
 	if err := verifyHeldParent(parent, parentPath, target); err != nil {
 		return nil, rollbackCreation(parent, parentPath, leaf, tempInfo, err)
 	}
-	actualBytes, err := os.ReadFile(target.PhysicalPath)
+	actualBytes, err := readOwnedRegularAt(parent, leaf, tempInfo)
 	if err != nil {
-		return nil, rollbackCreation(parent, parentPath, leaf, tempInfo, fmt.Errorf("read published config for actual validation: %w", err))
+		return nil, rollbackCreation(parent, parentPath, leaf, tempInfo, fmt.Errorf("read published config for actual validation without following replacements: %w", err))
 	}
 	if !bytes.Equal(actualBytes, plan.Updated) {
 		return nil, rollbackCreation(parent, parentPath, leaf, tempInfo, fmt.Errorf("published config bytes differ from the validated candidate"))
@@ -152,7 +151,7 @@ func applyProspectiveTargeted(workspace string, target config.ResolvedEditTarget
 		}
 		return nil, rollbackCreation(parent, parentPath, leaf, tempInfo, err)
 	}
-	finalBytes, err := os.ReadFile(target.PhysicalPath)
+	finalBytes, err := readOwnedRegularAt(parent, leaf, tempInfo)
 	if err != nil || !bytes.Equal(finalBytes, plan.Updated) {
 		if err == nil {
 			err = fmt.Errorf("published config bytes changed after actual verification")
@@ -187,13 +186,8 @@ func validateProspectiveTarget(workspace string, target config.ResolvedEditTarge
 }
 
 func verifyHeldParent(parent *os.File, parentPath string, target config.ResolvedEditTarget) error {
-	fdInfo, err := parent.Stat()
-	if err != nil {
-		return fmt.Errorf("stat held config parent: %w", err)
-	}
-	pathInfo, err := os.Stat(parentPath)
-	if err != nil || !pathInfo.IsDir() || !os.SameFile(fdInfo, pathInfo) {
-		return fmt.Errorf("config parent %s changed while the edit was being prepared; preserve it and retry", parentPath)
+	if err := verifyParentDirectory(parent, parentPath); err != nil {
+		return err
 	}
 	return target.VerifyProspectiveParent()
 }
@@ -241,6 +235,31 @@ func writeCreationTemp(parent *os.File, leaf string, data []byte) (string, os.Fi
 		return name, info, nil
 	}
 	return "", nil, fmt.Errorf("could not allocate a unique temporary config name")
+}
+
+// readOwnedRegularAt rejects links, special files, and replacement inodes before reading bytes.
+func readOwnedRegularAt(parent *os.File, name string, own os.FileInfo) ([]byte, error) {
+	fd, err := unix.Openat(int(parent.Fd()), name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), name)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("published config path is not a regular file")
+	}
+	if !os.SameFile(own, info) {
+		return nil, fmt.Errorf("published config path no longer names the owned inode")
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func statRegularAt(parent *os.File, name string) (os.FileInfo, error) {

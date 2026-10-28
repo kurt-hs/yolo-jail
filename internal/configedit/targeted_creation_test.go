@@ -13,8 +13,47 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 )
+
+func TestApplyTargetedCreationDoesNotFollowLockSidecarSymlink(t *testing.T) {
+	home, workspace, ownerDir := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	path := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
+	sidecar := path + ".yolo-edit.lock"
+	victim := filepath.Join(ownerDir, "owned-file")
+	const original = "separately owned bytes\n"
+	writeEditFixture(t, victim, original)
+	if err := os.Symlink(victim, sidecar); err != nil {
+		t.Fatal(err)
+	}
+	mutation := Mutation{Action: Add, Path: creationPath("machine", "resources", "cpus"), Value: 4}
+	target, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetAutomatic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !target.IsProspective() || target.PhysicalPath != path {
+		t.Fatalf("target = %#v; want absent selected Project TOML %s", target, path)
+	}
+	if _, err := ApplyTargeted(workspace, target, mutation, ApplyOptions{}); err != nil {
+		t.Fatalf("create Project TOML beside untrusted lock symlink: %v", err)
+	}
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Fatalf("preexisting lock-sidecar symlink modified separately owned victim: got %q, want %q", got, original)
+	}
+	info, err := os.Lstat(sidecar)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("lock sidecar changed: mode=%v err=%v", info, err)
+	}
+	resolved, err := os.Readlink(sidecar)
+	if err != nil || resolved != victim {
+		t.Fatalf("lock sidecar target changed: got %q err=%v, want %q", resolved, err, victim)
+	}
+}
 
 func TestApplyTargetedCreatesSelectedProjectTOMLFromAbsence(t *testing.T) {
 	home, workspace := t.TempDir(), t.TempDir()
@@ -81,6 +120,9 @@ func TestApplyTargetedCreatesSelectedProjectTOMLFromAbsence(t *testing.T) {
 		if strings.Contains(entry.Name(), "yolo-create-") || strings.Contains(entry.Name(), "yolo-rollback-") {
 			t.Fatalf("successful creation left temporary sibling %s", entry.Name())
 		}
+	}
+	if _, err := os.Lstat(path + ".yolo-edit.lock"); !os.IsNotExist(err) {
+		t.Fatalf("prospective creation left a PID sidecar: %v", err)
 	}
 }
 
@@ -246,7 +288,7 @@ func TestApplyTargetedProspectiveRefusesStaleTargetsAndParents(t *testing.T) {
 }
 
 func TestApplyTargetedProspectiveNoReplaceAndRollbackProtectExternalEntries(t *testing.T) {
-	for _, tc := range []string{"locked-target-race", "link-race", "postwrite-replacement"} {
+	for _, tc := range []string{"locked-target-race", "link-race", "postwrite-replacement", "postwrite-replacement-link"} {
 		t.Run(tc, func(t *testing.T) {
 			home, workspace := t.TempDir(), t.TempDir()
 			t.Setenv("HOME", home)
@@ -258,6 +300,7 @@ func TestApplyTargetedProspectiveNoReplaceAndRollbackProtectExternalEntries(t *t
 				t.Fatal(err)
 			}
 			competitor := "[machine.resources]\ncpus = 9\n"
+			victim := filepath.Join(t.TempDir(), "victim")
 			options := ApplyOptions{}
 			switch tc {
 			case "locked-target-race":
@@ -272,16 +315,39 @@ func TestApplyTargetedProspectiveNoReplaceAndRollbackProtectExternalEntries(t *t
 						t.Fatal(err)
 					}
 				}
+			case "postwrite-replacement-link":
+				writeEditFixture(t, victim, competitor)
+				options.onProspectivePublished = func() {
+					external := filepath.Join(workspace, "external-replacement")
+					if err := os.Symlink(victim, external); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Rename(external, path); err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			_, err = ApplyTargeted(workspace, target, mutation, options)
 			if err == nil {
 				t.Fatal("racing external file was not rejected")
 			}
-			got, readErr := os.ReadFile(path)
-			if readErr != nil || string(got) != competitor {
-				t.Fatalf("external replacement was not preserved: got=%q readErr=%v err=%v", got, readErr, err)
+			if tc == "postwrite-replacement-link" {
+				info, statErr := os.Lstat(path)
+				resolved, linkErr := os.Readlink(path)
+				if statErr != nil || info.Mode()&os.ModeSymlink == 0 || linkErr != nil || resolved != victim {
+					t.Fatalf("external replacement symlink was not preserved: info=%v target=%q statErr=%v linkErr=%v err=%v", info, resolved, statErr, linkErr, err)
+				}
+				got, readErr := os.ReadFile(victim)
+				if readErr != nil || string(got) != competitor {
+					t.Fatalf("external symlink victim changed: got=%q err=%v (apply error %v)", got, readErr, err)
+				}
+			} else {
+				got, readErr := os.ReadFile(path)
+				if readErr != nil || string(got) != competitor {
+					t.Fatalf("external replacement was not preserved: got=%q readErr=%v err=%v", got, readErr, err)
+				}
 			}
-			if tc == "postwrite-replacement" && !strings.Contains(err.Error(), "external replacement") {
+			if (tc == "postwrite-replacement" || tc == "postwrite-replacement-link") && !strings.Contains(err.Error(), "external replacement") {
 				t.Fatalf("replacement rollback did not disclose preserved external entry: %v", err)
 			}
 			for _, entry := range mustCreationEntries(t, workspace) {
@@ -322,15 +388,19 @@ func TestApplyTargetedProspectiveAnchorsEnvFilesAtSelectedBasefile(t *testing.T)
 }
 
 func TestProspectiveCreationLockHolder(t *testing.T) {
-	lockPath := os.Getenv("YOLO_TEST_CONFIGEDIT_CREATION_LOCK")
-	if lockPath == "" {
+	parentPath := os.Getenv("YOLO_TEST_CONFIGEDIT_CREATION_PARENT")
+	if parentPath == "" {
 		return
 	}
-	lock, err := pidlock.Acquire(lockPath, pidlock.Wait, nil)
+	parent, err := os.Open(parentPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Release()
+	defer parent.Close()
+	if err := lockParentDirectory(parent); err != nil {
+		t.Fatal(err)
+	}
+	defer unlockParentDirectory(parent)
 	ready, release := os.Getenv("YOLO_TEST_CONFIGEDIT_CREATION_READY"), os.Getenv("YOLO_TEST_CONFIGEDIT_CREATION_RELEASE")
 	writeEditFixture(t, ready, "ready\n")
 	deadline := time.Now().Add(10 * time.Second)
@@ -356,7 +426,7 @@ func TestApplyTargetedProspectiveWaitsForIndependentProcess(t *testing.T) {
 	dir := t.TempDir()
 	ready, release := filepath.Join(dir, "ready"), filepath.Join(dir, "release")
 	command := exec.Command(os.Args[0], "-test.run=^TestProspectiveCreationLockHolder$")
-	command.Env = append(os.Environ(), "YOLO_TEST_CONFIGEDIT_CREATION_LOCK="+path+".yolo-edit.lock",
+	command.Env = append(os.Environ(), "YOLO_TEST_CONFIGEDIT_CREATION_PARENT="+workspace,
 		"YOLO_TEST_CONFIGEDIT_CREATION_READY="+ready, "YOLO_TEST_CONFIGEDIT_CREATION_RELEASE="+release)
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
