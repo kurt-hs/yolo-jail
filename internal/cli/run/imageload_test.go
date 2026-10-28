@@ -76,7 +76,7 @@ func TestDecodedPackagePinsGateRecordedImageReuse(t *testing.T) {
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			cfg, err := config.LoadJSONCFile(path, "test configuration", true, nil)
+			cfg, err := config.LoadWorkspaceConfig(filepath.Dir(path), true, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
