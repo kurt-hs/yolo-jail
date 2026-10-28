@@ -24,8 +24,7 @@ The **workspace** is the folder you run `yolo` in, exactly: there is no search u
 file, and launching from a subfolder makes that subfolder its own workspace with its own jail.
 Inside the jail it appears at `/workspace`, as the same live files, not a copy.
 
-The files merge in the order above, later files winning. Lists are combined without duplicates;
-single values and objects in a later file replace earlier ones. Any file can also pull in other
+The files merge in the order above, later files winning. Legacy JSONC/JSON lists are combined without duplicates; TOML lists follow that behavior unless a schema-defined removable list is explicitly reset with `[]`. That reset is TOML-only: an empty list in JSONC/JSON keeps its legacy merge behavior. Single values and objects in a later file replace earlier ones. Any file can also pull in other
 files with `include_if_found`, which skips a file that is missing, handy for a gitignored overrides
 file.
 
