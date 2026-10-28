@@ -18,6 +18,9 @@ type ApplyOptions struct {
 	// Verify compares caller-defined effective meaning after the write. An error restores the
 	// exact preimage while the same physical-target lock is held.
 	Verify func(before, after []byte) error
+
+	validateTarget func(physical string, before, planned []byte) error
+	verifyTarget   func(physical string, before, after []byte) error
 }
 
 // Apply serializes edits on a lock beside the symlink-resolved target, re-reads under that lock,
@@ -59,6 +62,11 @@ func applyWithOps(path string, format configdoc.Format, mutation Mutation, optio
 	if err != nil {
 		return nil, fmt.Errorf("plan config edit: %w", err)
 	}
+	if options.validateTarget != nil {
+		if err := options.validateTarget(physical, before, plan.Updated); err != nil {
+			return nil, fmt.Errorf("planned effective-config validation failed: %w", err)
+		}
+	}
 	if options.DryRun || plan.Noop {
 		return plan, nil
 	}
@@ -80,6 +88,11 @@ func applyWithOps(path string, format configdoc.Format, mutation Mutation, optio
 	}
 	if !semanticEqual(parsed.Values, plan.Expected) {
 		return nil, restoreFailure(physical, before, fmt.Errorf("written document has unexpected effective values (expected %s; got %s)", describe(plan.Expected), describe(parsed.Values)), ops, mode)
+	}
+	if options.verifyTarget != nil {
+		if err := options.verifyTarget(physical, before, actual); err != nil {
+			return nil, restoreFailure(physical, before, fmt.Errorf("effective-config verification failed (before: %s; after: %s): %w", describe(before), describe(actual), err), ops, mode)
+		}
 	}
 	if options.Verify != nil {
 		if err := options.Verify(before, actual); err != nil {
