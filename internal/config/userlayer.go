@@ -209,7 +209,7 @@ func loadReadableUserScopeWithInputUse(path string, strict bool, warn Warn, reco
 		return nil, nil, err
 	}
 	seen := map[string]struct{}{}
-	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed})
+	cfg, node, err := loadWithIncludesScope(selectedPath, selectedLabel, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleUser, witness: currentEditWitness(input)})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -240,7 +240,7 @@ func applyReadableUserLayerWithInputUse(base *jsonx.OrderedMap, baseNode *srcNod
 	if path == "" {
 		return base, baseNode, nil
 	}
-	layer, layerNode, err := loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed})
+	layer, layerNode, err := loadWithIncludesScope(path, "--user-layer "+path, false, func(string) {}, nil, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleUser, witness: currentEditWitness(input)})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -295,7 +295,7 @@ func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode,
 	if path == "" {
 		return base, baseNode
 	}
-	inherited, _, inheritedNode, err := loadJSONCFile(path, "inherited launch config", false, func(string) {}, record, readAt{input: input, inputUsed: inputUsed})
+	inherited, _, inheritedNode, err := loadJSONCFile(path, "inherited launch config", false, func(string) {}, record, readAt{input: input, inputUsed: inputUsed, role: editRoleInherited, witness: currentEditWitness(input)})
 	if err != nil || inherited == nil || inherited.Len() == 0 {
 		return base, baseNode
 	}

@@ -53,7 +53,7 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 	if warn == nil {
 		warn = defaultWarn
 	}
-	data, rel, err := at.ws.readWithInput(path, at.input, at.inputUsed)
+	data, rel, err := at.ws.readWithInput(path, at.input, at.inputUsed, at.role, at.witness, configdoc.JSONC)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonx.NewOrderedMap(), nil, nil, nil
@@ -246,6 +246,7 @@ func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[s
 	}
 	resolved := resolvePathForSeen(path)
 	if _, ok := seen[resolved]; ok {
+		at.witness.observeSeenPath(path, at.input, at.role)
 		return jsonx.NewOrderedMap(), nil, nil
 	}
 	seen[resolved] = struct{}{}
@@ -331,10 +332,10 @@ func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[s
 		var incNode *srcNode
 		if readable {
 			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, true, scope,
-				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input, inputUsed: at.inputUsed})
+				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input, inputUsed: at.inputUsed, role: at.role, witness: at.witness})
 		} else {
 			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, false, scope,
-				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input, inputUsed: at.inputUsed})
+				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input, inputUsed: at.inputUsed, role: at.role, witness: at.witness})
 		}
 		if err != nil {
 			return nil, nil, err
@@ -431,7 +432,7 @@ func loadReadableWorkspaceConfigOverWithInputUse(workspace string, strict bool, 
 	if workspace == "" {
 		workspace = cwd()
 	}
-	at := readAt{input: input, inputUsed: inputUsed}
+	at := readAt{input: input, inputUsed: inputUsed, witness: currentEditWitness(input)}
 	if record {
 		at.ws = openWorkspaceRoot(workspace)
 		defer at.ws.close()
@@ -443,11 +444,17 @@ func loadReadableWorkspaceConfigOverWithInputUse(workspace string, strict bool, 
 	}
 	mergedNode := baseNode
 	for _, name := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
+		layerAt := at
+		if name == WorkspaceConfigName {
+			layerAt.role = editRoleProject
+		} else {
+			layerAt.role = editRoleLocal
+		}
 		path, label, err := resolveWorkspaceConfigPath(workspace, name)
 		if err != nil {
 			return nil, nil, err
 		}
-		layer, layerNode, err := loadWithIncludesScope(path, label, strict, warn, seen, record, SchemaScopeWorkspaceOnly, at)
+		layer, layerNode, err := loadWithIncludesScope(path, label, strict, warn, seen, record, SchemaScopeWorkspaceOnly, layerAt)
 		if err != nil {
 			return nil, nil, err
 		}

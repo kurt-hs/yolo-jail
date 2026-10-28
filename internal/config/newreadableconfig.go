@@ -22,8 +22,9 @@ const readableConfigFormat = 2
 // its normal scope checks to these bytes. Construct with NewConfigReadInput; the target must be an
 // absolute physical path, not a provenance label or an inferred source.
 type ConfigReadInput struct {
-	target string
-	bytes  []byte
+	target  string
+	bytes   []byte
+	witness *editReadWitness
 }
 
 // NewConfigReadInput makes an immutable invocation input. Both the physical path and bytes are copied
@@ -36,7 +37,7 @@ func NewConfigReadInput(physicalTarget string, data []byte) (ConfigReadInput, er
 }
 
 func (input ConfigReadInput) clone() *ConfigReadInput {
-	return &ConfigReadInput{target: input.target, bytes: append([]byte(nil), input.bytes...)}
+	return &ConfigReadInput{target: input.target, bytes: append([]byte(nil), input.bytes...), witness: input.witness}
 }
 
 // loadConfigFile dispatches by the selected filename. Legacy JSONC/JSON reads stay on their
@@ -52,7 +53,7 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 	if warn == nil {
 		warn = defaultWarn
 	}
-	data, rel, err := at.ws.readWithInput(path, at.input, at.inputUsed)
+	data, rel, err := at.ws.readWithInput(path, at.input, at.inputUsed, at.role, at.witness, configdoc.TOML)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonx.NewOrderedMap(), nil, nil, nil
@@ -253,7 +254,7 @@ func loadUserConfigFragmentsWithInputUse(base *jsonx.OrderedMap, baseNode *srcNo
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed})
+		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleUser, witness: currentEditWitness(input)})
 		if loadErr != nil {
 			return nil, nil, loadErr
 		}

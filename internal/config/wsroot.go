@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 )
 
 // wsroot.go confines a workspace config load's reads to the workspace, so the provenance record
@@ -49,6 +51,8 @@ type readAt struct {
 	via       string
 	input     *ConfigReadInput
 	inputUsed *bool
+	role      editReadRole
+	witness   *editReadWitness
 }
 
 // openWorkspaceRoot opens the root for a workspace load, nil when the workspace cannot be
@@ -96,10 +100,10 @@ func (w *wsRoot) rel(path string) (string, bool) {
 // workspace-relative name when the bytes came from inside, "" when they were read any other way.
 // On a nil receiver, or any refusal by the root, it is os.ReadFile, whose error is the caller's.
 func (w *wsRoot) read(path string) ([]byte, string, error) {
-	return w.readWithInput(path, nil, nil)
+	return w.readWithInput(path, nil, nil, editRoleUnspecified, nil, 0)
 }
 
-func (w *wsRoot) readWithInput(path string, input *ConfigReadInput, inputUsed *bool) (data []byte, rel string, err error) {
+func (w *wsRoot) readWithInput(path string, input *ConfigReadInput, inputUsed *bool, role editReadRole, witness *editReadWitness, format configdoc.Format) (data []byte, rel string, err error) {
 	if w != nil {
 		if r, ok := w.rel(path); ok {
 			if f, err := w.root.Open(r); err == nil {
@@ -112,15 +116,18 @@ func (w *wsRoot) readWithInput(path string, input *ConfigReadInput, inputUsed *b
 				} else {
 					info, statErr := f.Stat()
 					_ = f.Close()
-					if err == nil {
-						data, substituted := input.substitute(info, data)
-						if substituted && inputUsed != nil {
-							*inputUsed = true
-						}
-						return data, r, nil
-					}
 					if statErr != nil {
 						return nil, "", statErr
+					}
+					if err == nil {
+						data, substituted := input.substitute(info, data)
+						if substituted {
+							if inputUsed != nil {
+								*inputUsed = true
+							}
+							witness.record(role, format)
+						}
+						return data, r, nil
 					}
 				}
 			}
@@ -144,8 +151,11 @@ func (w *wsRoot) readWithInput(path string, input *ConfigReadInput, inputUsed *b
 		return nil, "", statErr
 	}
 	data, substituted := input.substitute(info, data)
-	if substituted && inputUsed != nil {
-		*inputUsed = true
+	if substituted {
+		if inputUsed != nil {
+			*inputUsed = true
+		}
+		witness.record(role, format)
 	}
 	return data, "", nil
 }

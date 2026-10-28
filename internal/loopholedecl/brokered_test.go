@@ -65,6 +65,61 @@ func TestBrokeredBlockAndTokenAreHeldTogether(t *testing.T) {
 	}
 }
 
+func TestBrokeredReadableCapabilityMetadata(t *testing.T) {
+	m, err := decodeBrokered(t, `
+		"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+		"brokered": {"source": "git", "remote_host": "*", "grants": ["create-branch", "branch"],
+			"read_capability": "fetch", "kind_capabilities": {"create-branch": "new_branches", "branch": "push"}, "pending_capabilities": []}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &Brokered{Source: "git", RemoteHost: "*", Grants: []string{"create-branch", "branch"},
+		ReadCapability: "fetch", KindCapabilities: map[string]string{"create-branch": "new_branches", "branch": "push"}}
+	if !reflect.DeepEqual(m.Brokered, want) {
+		t.Fatalf("brokered %+v, want %+v", m.Brokered, want)
+	}
+
+	pending, err := decodeBrokered(t, `
+		"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+		"brokered": {"source": "github", "remote_host": "github.com", "read_capability": "read",
+			"kind_capabilities": {"create-pr": "create_pr", "create-issue": "create_issue"},
+			"pending_capabilities": ["create_pr", "create_issue"]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.Brokered.ReadCapability != "read" || len(pending.Brokered.Grants) != 0 || !reflect.DeepEqual(pending.Brokered.PendingCapabilities, []string{"create_pr", "create_issue"}) {
+		t.Fatalf("pending-only metadata %+v", pending.Brokered)
+	}
+}
+
+func TestBrokeredReadableCapabilityMetadataRefusesPartialAndAmbiguous(t *testing.T) {
+	for name, brokered := range map[string]string{
+		"missing read":               `"kind_capabilities": {"create-branch": "new_branches"}`,
+		"missing grant mapping":      `"read_capability": "fetch", "kind_capabilities": {}`,
+		"unknown grant kind":         `"read_capability": "fetch", "kind_capabilities": {"push": "push"}`,
+		"reserved read name":         `"read_capability": "repos", "kind_capabilities": {}`,
+		"reserved capability":        `"read_capability": "fetch", "kind_capabilities": {"create-branch": "always"}`,
+		"collision":                  `"read_capability": "fetch", "kind_capabilities": {"create-branch": "fetch", "branch": "push"}`,
+		"duplicate capability":       `"read_capability": "fetch", "kind_capabilities": {"create-branch": "write", "branch": "write"}`,
+		"pending not mapped":         `"read_capability": "read", "kind_capabilities": {"create-pr": "create_pr"}, "pending_capabilities": ["missing"]`,
+		"unmarked pending-only kind": `"read_capability": "read", "kind_capabilities": {"create-pr": "create_pr"}`,
+		"non-string":                 `"read_capability": "fetch", "kind_capabilities": {"create-branch": 3, "branch": "push"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			grants := `"grants": ["create-branch", "branch"],`
+			if name == "pending not mapped" || name == "unmarked pending-only kind" {
+				grants = ""
+			}
+			_, err := decodeBrokered(t, `
+				"host_daemon": {"cmd": ["d", "{socket}", "{repository_scope}"], "publishes": "socket"},
+				"brokered": {"source": "git", "remote_host": "*", `+grants+brokered+`}`)
+			if err == nil || !strings.Contains(err.Error(), "brokered.") {
+				t.Fatalf("err %v, want brokered metadata refusal", err)
+			}
+		})
+	}
+}
+
 // An unknown key inside the block is refused by the TOLERANT decoder too: a fence key a
 // build does not know is a fence that does not exist.
 func TestBrokeredUnknownKeyRefusedTolerantly(t *testing.T) {
