@@ -102,3 +102,15 @@ func TestACheckOfARelativePatchBranchWithNoDirectoryRefuses(t *testing.T) {
 		t.Errorf("Inputs of a relative patch branch with no directory = %v, want a refusal", err)
 	}
 }
+
+// The filesystem root is read-only here: it has no parent checkout or authored fixture.
+func TestParseFromRefusesNoRepositoryAtFilesystemRoot(t *testing.T) {
+	root := string(filepath.Separator)
+	if top := gitTopLevel(root); top != "" {
+		t.Fatalf("filesystem root unexpectedly has a repository marker: %s", top)
+	}
+	addr, err := ParseFrom("../..?ref=mine", root)
+	if err == nil || addr != (Addr{}) || !strings.Contains(err.Error(), "is in no git repository") || !strings.Contains(err.Error(), "git+file:///abs/path/to/repo?ref=mine") {
+		t.Fatalf("no-repository public ParseFrom: addr=%+v err=%v", addr, err)
+	}
+}

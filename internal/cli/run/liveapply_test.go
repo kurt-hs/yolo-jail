@@ -225,8 +225,8 @@ func TestConfigApplyNetworkPortsWaitsForRestart(t *testing.T) {
 		t.Fatalf("rc = %d, want 3\n%s", rc, buf.String())
 	}
 	out := buf.String()
-	line := "network.ports: at next restart (yolo stop, then yolo)"
-	diff := strings.Index(out, `"2:2"`)
+	line := "machine.ports: at next restart (yolo stop, then yolo)"
+	diff := strings.Index(out, `+        "host": 2`)
 	first := strings.Index(out, line)
 	question := strings.Index(out, "[y/N]")
 	last := strings.LastIndex(out, line)

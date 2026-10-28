@@ -67,6 +67,7 @@ func TestAMacosUserSandboxsCheckExportsIntoThePackWhereItIs(t *testing.T) {
 		t.Errorf("the check in a macos-user sandbox does not export into the pack (%q):\n%s\n%s", export, out, errw)
 	}
 	jailMountsItsOwnFiles = func() bool { return true }
+	t.Setenv("YOLO_WORKSPACE", t.TempDir()) // The durable pack path is outside this explicit jail workspace.
 	_, out, errw = seriesVerb(t, "check", f.forkDir)
 	if !strings.Contains(out, "outside this jail's workspace, so it is not the host's own copy") {
 		t.Errorf("the check in a container jail does not say the export belongs on the host:\n%s\n%s", out, errw)

@@ -142,8 +142,22 @@ func TestAPathPackRegistersItsCloneForAnotherPacksPublishedURL(t *testing.T) {
 }
 
 // A plain-files pack in no repository registers nothing, and is no error.
+// nonRepositoryBoundary stops discovery into the parent checkout without initializing a repo.
+func nonRepositoryBoundary(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, ".git"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	top, err := gitRead(dir, "rev-parse", "--show-toplevel")
+	if err == nil || top != "" {
+		t.Fatalf("nonrepository fixture discovered %q: %v", top, err)
+	}
+	t.Logf("cleaned-environment nonrepository discovery: %v, no repository", err)
+}
+
 func TestAPlainFilesPackRegistersNothing(t *testing.T) {
 	plain := t.TempDir()
+	nonRepositoryBoundary(t, plain)
 	lcUserConfig(t, `{"packs": [{"source": "`+plain+`", "name": "plain"}]}`)
 	if got, err := LocalClones(); err != nil || len(got) != 0 {
 		t.Fatalf("a plain-files pack registered %+v (%v)", got, err)
@@ -193,6 +207,7 @@ func TestValidateConfigRefusesWorkspaceLocalClones(t *testing.T) {
 // entry and the next step.
 func TestValidateConfigRefusesALocalClonesEntryThatRegistersNothing(t *testing.T) {
 	notGit := t.TempDir()
+	nonRepositoryBoundary(t, notGit)
 	noRemote := t.TempDir()
 	lcGit(t, noRemote, "init", "-q")
 	missing := filepath.Join(t.TempDir(), "gone")

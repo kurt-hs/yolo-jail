@@ -8,6 +8,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -81,10 +82,47 @@ func TestARelativePatchBranchThatClimbsOutOfItsRepositoryIsRefusedNamingTheBound
 func TestARelativePatchBranchOfAPackInNoRepositoryIsRefused(t *testing.T) {
 	fx := newPatchBranchAdvanceFixture(t)
 	fx.writePatchBranchManifest(t, "../..?ref=mine") // the fixture's pack directory is in no repository
-	rc, out := lintPack(t, fx.forkDir)
-	if rc == 0 || !strings.Contains(out, "is in no git repository") || !strings.Contains(out, "git+file:///") {
-		t.Errorf("lint of a relative patch branch in no repository: rc=%d, want a refusal naming the absolute form\n%s", rc, out)
+	// Durable fixtures can live in the checkout. Preserve the original no-repository
+	// lint branch on hosts whose temporary roots have no marker ancestry.
+	markerAncestor := false
+	for dir := fx.forkDir; ; dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			markerAncestor = true
+			break
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
 	}
+	if !markerAncestor {
+		rc, out := lintPack(t, fx.forkDir)
+		if rc == 0 || !strings.Contains(out, "is in no git repository") || !strings.Contains(out, "git+file:///") {
+			t.Errorf("lint of a relative patch branch in no repository: rc=%d, want a refusal naming the absolute form\n%s", rc, out)
+		}
+		t.Log("public lint no-repository branch executed")
+		return
+	}
+	// This is a marker boundary, not a valid repository or a no-repository claim.
+	if err := os.WriteFile(filepath.Join(fx.forkDir, ".git"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("git", "-C", fx.forkDir, "rev-parse", "--show-toplevel")
+	cmd.Env = packsrc.CleanGitEnv(os.Environ())
+	if out, err := cmd.Output(); err == nil || len(out) != 0 {
+		t.Fatalf("invalid marker fixture discovered %q: %v", out, err)
+	}
+	top, err := filepath.EvalSymlinks(fx.forkDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, out := lintPack(t, fx.forkDir)
+	for _, want := range []string{"climbs to", "above the git repository the pack lives in", "bounded by " + top, "git+file:///"} {
+		if rc == 0 || !strings.Contains(out, want) {
+			t.Errorf("lint must enforce its actual marker bound: rc=%d want %q\n%s", rc, want, out)
+		}
+	}
+	t.Log("public lint marker-bound climb executed; public lint no-repository branch not executed in this checkout-contained fixture")
+
 }
 
 // A FILTERED pack entry is read from a copy (config.ResolvePack), so the launch resolves a relative patch

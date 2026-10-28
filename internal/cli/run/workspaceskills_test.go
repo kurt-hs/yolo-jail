@@ -198,8 +198,16 @@ func TestAnEscapingWorkspaceSymlinkIsRefusedAndNamedAtLaunch(t *testing.T) {
 	home := os.Getenv("HOME")
 	const secret = "Host *\n  IdentityFile ~/.ssh/the-key-that-must-not-cross\n"
 	wsWrite(t, home, ".ssh/config", secret)
-	wsLink(t, ws, ".agents/skills/x/SKILL.md", filepath.Join(home, ".ssh", "config"))
-	wsLink(t, ws, ".claude/skills", filepath.Join(home, ".ssh"))
+	secretTarget, err := filepath.Rel(filepath.Join(ws, ".agents", "skills", "x"), filepath.Join(home, ".ssh", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirTarget, err := filepath.Rel(filepath.Join(ws, ".claude"), filepath.Join(home, ".ssh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsLink(t, ws, ".agents/skills/x/SKILL.md", secretTarget)
+	wsLink(t, ws, ".claude/skills", dirTarget)
 
 	staging := stageWorkspaceSkills(t, o, "podman")
 
