@@ -30,7 +30,7 @@ Review provenance is preserved rather than rewritten: the independent HIGH revie
 
 The older negative evidence remains distinct and unresolved where it was unresolved. In particular, the bad-proxy/R-oracle receipt `SDW` is not the real-caller-gate-deletion receipt `SDWR`; neither substitutes for the other. The earlier `?ZAR?` natural failure and the preserved original timeout remain unclosed as to original cause. The focused green below is not causal closure, and does not establish Kitty, load, or historical kernel causality. See the retained [runtime/transport evidence archive](./runtime-transport-verification-20261027/README.md) for the original bounded evidence and its limitations; that archive is unchanged by this update.
 
-## Focused execution
+## Focused execution and combined-tree gate status
 
 On the combined source candidate, this uncached command passed:
 
@@ -38,10 +38,31 @@ On the combined source candidate, this uncached command passed:
 go test -count=1 -timeout 0 ./internal/ttyproxy
 ```
 
-The command directly exited `0`; the package reported `ok` in 48.793s (49.768s command duration). This executes the package suite, including the named resume-boundary controls. It is focused package evidence only: it does not replace the whole-tree check, full integration suite, bundle/nested-launch qualification, independent review, or Root's serial landing guard. No native macOS, Apple Container, real Kitty, real-agent/API, true-rootless, or reachability result is claimed.
+The command directly exited `0`; the package reported `ok` in 48.793s (49.768s command duration). This executes the package suite, including the named resume-boundary controls.
+
+One required broad gate was then run exactly once on this candidate:
+
+```sh
+just check-ci
+```
+
+It directly exited `1` after 288.892s. `go test -short ./...` reported eight failures in `internal/cli`: `TestPromoteRefusesToWriteIntoAPackWhoseManifestHasProblems`, `TestPromoteDryRunAndPlanSayAMalformedDestinationIsRefused`, `TestHostLaunchNamesTheMalformedPackDeclaringTheSelectedProfile`, `TestPackLintReportsStagingRefusalAndManifestTogether`, `TestPackLintValidatesManifest`, `TestPackLintNamesARenamedFieldOnce`, `TestPackLintRefusesTheBriefingDefaultsExceptions`, and `TestJailTreeFixturesRestoreTheStrictDecoder`. The last test explicitly reported that “the tolerant decoder was left on for every later test.” The other seven observed unexpected acceptance/omission of malformed or unknown manifest-field refusals. These outputs are consistent with a decoder-state leak, but this run does not establish which earlier test or caller caused it. Root independently observed the same red and is arranging a minimal test-owner repair outside this three-path change. The gate was not repeated, and no failure was skipped, masked, or “fixed” here.
+
+The required build and bounded nested launch probe passed on this candidate:
+
+```sh
+just build-dev-bundle
+go test -v -count=1 -timeout 0 -run '^(TestNestedMechanicsTracksAppliedLaunchAndLiveMounts|TestStopEndsTheWorkspaceJail)$' ./integration
+```
+
+`just build-dev-bundle` exited `0`; its absolute launcher and adjacent bundle were stamped with commit `376dd306c093`, snapshot identity `4a4948437e85774c653b0efb62977a59a951c954ccca352df820ac269d63528b`, and build kind `development`. The focused integration command directly exited `0` and visibly ran both named tests: `TestNestedMechanicsTracksAppliedLaunchAndLiveMounts` passed (fresh non-agent launch, attach, and applied fixture observation), and `TestStopEndsTheWorkspaceJail` passed (non-agent fresh launch and explicit stop). The integration harness invokes the matched launcher by absolute path, isolates user configuration to its empty/fixture setup, and adds `YOLO_NO_PROGRAM_READINESS=1` only to its launch commands. For this invocation only, `TMPDIR` pointed at a mode-0700 durable scratch directory so harness workspaces were minted there; the inherited `HOME` and shared caches were unchanged. These launch tests do not themselves exercise an interactive PTY resume or establish rootless/reachability behavior.
+
+**Capture limitation:** the saved command output came through parent-process pipes and was written to newly named mode-0600 files after each process exited. The bytes were fsynced/read back and direct exit codes retained, but this is not the requested exclusive direct-file capture established before launch; do not upgrade it to that claim or overwrite the retained records.
+
+The full `go test -count=1 -timeout 0 ./integration` was not started: the known, uncorrected `just check-ci` red is awaiting the separately authorized minimal test-owner repair. No full-slow pass, full-gate pass, or final combined-tree qualification is claimed. Re-run applicable broad gates only once on Root's stable repaired final tree; preserve any new real failures rather than applying environment hatches or changing this source scope.
 
 ## Scope and custody
 
 The only intended source inputs are the byte-preserved `79564` and `55ed` changes. This record is the sole new documentation path. The six producer-independent tests/proof documents and owner lab/tag were not edited; the runtime and Mac caller proof records remain as committed on the base tree. No item-2/TOML/library/dependency work, credentials, remote refs, protected tags, host source, native Mac execution, or process-ID ownership logic was changed.
 
-This document records the focused run, not combined-tree qualification completion. The required serial `just check-ci`, full `go test -count=1 -timeout 0 ./integration`, and build-dev-bundle/absolute-launcher nested verification must be recorded from their actual candidate runs before any landing claim. Container nesting cannot certify rootless-only or host-loopback reachability behavior. Root retains the landing decision and item acceptance.
+This document records focused package and nested launch evidence plus the actual broad-gate red, not combined-tree qualification completion. The full integration suite, whole-tree pass, and serial landing decision remain outstanding. Container nesting cannot certify rootless-only or host-loopback reachability behavior. Root retains the landing decision and item acceptance.
