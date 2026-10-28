@@ -181,11 +181,15 @@ func RunWithProxyHooked(cmd []string, onStarted func(*os.Process), onTerminate f
 // KeyCtrlC is the one control key Observer.Input names.
 const KeyCtrlC = "ctrl-c"
 
-// Observer is everything a caller may watch the proxy do. Every field is
-// optional, and none may block or panic its way into the pump (each call is
-// recover-wrapped).
+// Observer is everything a caller may watch the proxy do. Caller-supplied fields are
+// optional, and callbacks must not block or panic their way into the pump (each call is
+// recover-wrapped). The package-private resume-input seams below are test-only.
 type Observer struct {
-	Stage              StageHook
+	Stage StageHook
+	// resumeInputObserve records boundary receipts; resumeInputWrite injects transient
+	// write results for those receipts.
+	resumeInputObserve func(resumeInputObservation)
+	resumeInputWrite   func(int, []byte) (int, error)
 	suspendBoundary    func(uint64)
 	ownsTTY            func(int) bool
 	beforeSuspend      func()
@@ -487,6 +491,41 @@ func (h Handle) Terminate() bool { return h.s.terminate() }
 
 // Kill SIGKILLs the child at its pid.
 func (h Handle) Kill() { h.s.kill() }
+
+// resumeInputObservation reports boundary order and byte counts only; it never includes input contents.
+type resumeInputObservation struct {
+	Event                       string
+	CancellationOrExitPublished bool
+	PendingBytes                int
+	BytesAttempted              int
+	BytesWritten                int
+	BytesQueued                 int
+}
+
+func observeResumeInput(obs Observer, event string, attempted, written, queued int) {
+	if obs.resumeInputObserve == nil {
+		return
+	}
+	cancelOrExit := obs.run != nil && obs.run.cancellationOrExitPublished()
+	observeResumeInputState(obs, event, cancelOrExit, 0, attempted, written, queued)
+}
+
+func observeResumePendingInput(obs Observer, event string, pending int) {
+	if obs.resumeInputObserve == nil {
+		return
+	}
+	cancelOrExit := obs.run != nil && obs.run.cancellationOrExitPublished()
+	observeResumeInputState(obs, event, cancelOrExit, pending, 0, 0, 0)
+}
+
+func observeResumeInputState(obs Observer, event string, cancelOrExit bool, pending, attempted, written, queued int) {
+	if obs.resumeInputObserve == nil {
+		return
+	}
+	observation := resumeInputObservation{Event: event, CancellationOrExitPublished: cancelOrExit, PendingBytes: pending, BytesAttempted: attempted, BytesWritten: written, BytesQueued: queued}
+	defer func() { _ = recover() }()
+	obs.resumeInputObserve(observation)
+}
 
 // RunWithProxyObserved is RunWithProxy plus an Observer.
 func RunWithProxyObserved(cmd []string, onStarted func(*os.Process), onTerminate func(), obs Observer) (int, error) {
@@ -835,7 +874,16 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 	hook := obs.Stage
 	var pending []byte
 	var toMaster []byte
-	var enqueueToMaster func([]byte)
+	var enqueueToMaster func([]byte, bool) (attempted, written, queued int)
+	resumeInputTracked := false
+	resumeInputPrefix := 0
+	resumeInputRemaining := 0
+	writeMaster := func(data []byte, resumed bool) (int, error) {
+		if resumed && obs.resumeInputWrite != nil {
+			return obs.resumeInputWrite(master, data)
+		}
+		return unix.Write(master, data)
+	}
 	stdinClosed := false
 
 	// Set master to non-blocking so writes to the pty never hang proxyLoop in the
@@ -986,35 +1034,87 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		if len(toMaster) == 0 {
 			return
 		}
-		n, err := unix.Write(master, toMaster)
+		attempted, written, queued := 0, 0, 0
+		prefixBeforeWrite := resumeInputPrefix
+		if resumeInputTracked {
+			attempted = resumeInputRemaining
+		}
+		n, err := writeMaster(toMaster, resumeInputTracked)
 		if n > 0 {
 			toMaster = toMaster[n:]
 			if len(toMaster) == 0 {
 				toMaster = nil
 			}
 		}
-		if err != nil && !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
+		writeFailed := err != nil && !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR)
+		if writeFailed {
 			// Master write error (e.g. EIO if slave closed): discard remaining queue.
 			toMaster = nil
 		}
+		if resumeInputTracked {
+			writeCount := n
+			if writeCount < 0 {
+				writeCount = 0
+			}
+			written = writeCount - prefixBeforeWrite
+			if written < 0 {
+				written = 0
+			}
+			if written > resumeInputRemaining {
+				written = resumeInputRemaining
+			}
+			if writeFailed {
+				resumeInputRemaining = 0
+				resumeInputPrefix = 0
+			} else {
+				resumeInputPrefix = prefixBeforeWrite - writeCount
+				if resumeInputPrefix < 0 {
+					resumeInputPrefix = 0
+				}
+				resumeInputRemaining -= written
+			}
+			queued = resumeInputRemaining
+			observeResumeInput(obs, "resume-flush-result", attempted, written, queued)
+			resumeInputTracked = queued > 0
+		}
 	}
 
-	enqueueToMaster = func(data []byte) {
+	enqueueToMaster = func(data []byte, resumed bool) (attempted, written, queued int) {
+		attempted = len(data)
 		if len(data) == 0 {
-			return
+			return attempted, written, queued
 		}
-		if len(toMaster) == 0 {
-			n, err := unix.Write(master, data)
+		queuedBeforeWrite := len(toMaster)
+		if queuedBeforeWrite == 0 {
+			if resumed {
+				observeResumeInput(obs, "resume-write-attempt", len(data), 0, 0)
+			}
+			n, err := writeMaster(data, resumed)
+			written = n
+			if written < 0 {
+				written = 0
+			}
 			if n > 0 {
 				data = data[n:]
 			}
 			if err != nil && !errors.Is(err, unix.EAGAIN) && !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
-				return
+				if resumed {
+					observeResumeInput(obs, "resume-write-error", attempted, written, 0)
+				}
+				return attempted, written, 0
 			}
 		}
 		if len(data) > 0 {
 			toMaster = append(toMaster, data...)
 		}
+		queued = len(data)
+		if resumed && obs.resumeInputObserve != nil {
+			resumeInputPrefix = queuedBeforeWrite
+			resumeInputRemaining = queued
+			resumeInputTracked = queued > 0
+			observeResumeInput(obs, "resume-enqueue-result", attempted, written, queued)
+		}
+		return attempted, written, queued
 	}
 	resumeSuspendedInput = func() {
 		if obs.cancelWake != nil {
@@ -1035,13 +1135,17 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 		suspendResumePending = false
 		pendingSuspend = false
 		suspendResetQueued = false
+		observeResumePendingInput(obs, "resume-callback-entry", len(pending))
 		callStage(hook, StageResumed)
-		if obs.run != nil && obs.run.cancellationOrExitPublished() {
+		observeResumePendingInput(obs, "resume-callback-return", len(pending))
+		cancelOrExit := obs.run != nil && obs.run.cancellationOrExitPublished()
+		observeResumeInputState(obs, "resume-cancellation-check", cancelOrExit, len(pending), 0, 0, 0)
+		if cancelOrExit {
 			pending = nil
 			return
 		}
 		if len(pending) > 0 {
-			enqueueToMaster(pending)
+			_, _, _ = enqueueToMaster(pending, true)
 			pending = nil
 		}
 	}
@@ -1184,11 +1288,11 @@ func proxyLoop(inFd, master int, c *exec.Cmd, cooked *unix.Termios, obs Observer
 			// prevent (suspendkey.go, THE WEDGE OF 2026-09-10).
 			start, stop, found := findSuspendKey(data)
 			if !found {
-				enqueueToMaster(data)
+				_, _, _ = enqueueToMaster(data, false)
 				continue
 			}
 			if start > 0 {
-				enqueueToMaster(data[:start])
+				_, _, _ = enqueueToMaster(data[:start], false)
 			}
 			pending = append(pending, stripSuspendKeys(data[stop:])...)
 			if obs.suspendBoundary != nil {

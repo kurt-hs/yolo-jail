@@ -312,13 +312,39 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 					return err == nil && string(mode) == "foreground"
 				}
 			}
-			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" {
+			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" {
 				terminateSignals := make(chan os.Signal, 1)
 				signal.Notify(terminateSignals, syscall.SIGTERM)
 				observer.Arm = func(h Handle) {
 					resumeHandle = h
 					go func() {
 						for {
+							if os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" {
+								if _, err := os.Stat(fifo + ".resume-write-done"); err == nil {
+									deadline := time.Now().Add(childDeadline)
+									consumed := false
+									for time.Now().Before(deadline) {
+										if receipt, err := os.ReadFile(fifo); err == nil && bytes.Contains(receipt, []byte{'R'}) {
+											consumed = true
+											break
+										}
+										time.Sleep(time.Millisecond)
+									}
+									if consumed {
+										writeResumeObservation(fifo, resumeInputObservation{Event: "child-consumption-before-kill", CancellationOrExitPublished: true})
+									} else {
+										writeResumeObservation(fifo, resumeInputObservation{Event: "child-consumption-wait-failed"})
+									}
+									_ = os.WriteFile(fifo+".kill", []byte("observed"), 0600)
+									if consumed {
+										h.Kill()
+										os.Exit(128 + int(syscall.SIGTERM))
+									}
+									h.Terminate()
+									h.Kill()
+									os.Exit(2)
+								}
+							}
 							if _, err := os.Stat(fifo + ".kill"); err == nil {
 								h.Kill()
 								os.Exit(128 + int(syscall.SIGTERM))
@@ -347,6 +373,40 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 							return
 						}
 						time.Sleep(time.Millisecond)
+					}
+				}
+			}
+			if os.Getenv("YOLO_TTYPROXY_NEGATIVE_RESUME_WRITE") == "1" {
+				var writeCount atomic.Int32
+				observer.resumeInputWrite = func(fd int, data []byte) (int, error) {
+					call := writeCount.Add(1)
+					switch call {
+					case 1:
+						writeResumeWriteInjection(fifo, int(call), 0, unix.EAGAIN)
+						return 0, unix.EAGAIN
+					case 2:
+						writeResumeWriteInjection(fifo, int(call), -1, unix.EAGAIN)
+						return -1, unix.EAGAIN
+					case 3:
+						writeResumeWriteInjection(fifo, int(call), -1, syscall.EINTR)
+						return -1, syscall.EINTR
+					default:
+						n, err := unix.Write(fd, data)
+						writeResumeWriteInjection(fifo, int(call), n, err)
+						return n, err
+					}
+				}
+			}
+			if os.Getenv("YOLO_TTYPROXY_TRACE_RESUME") == "1" {
+				observer.resumeInputObserve = func(observation resumeInputObservation) {
+					writeResumeObservation(fifo, observation)
+					if os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" && observation.Event == "resume-cancellation-check" && !observation.CancellationOrExitPublished {
+						if resumeHandle.Terminate() {
+							_ = os.WriteFile(fifo+".cancel-published", []byte("terminated-after-check"), 0600)
+						}
+					}
+					if os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" && observation.BytesWritten > 0 && (observation.Event == "resume-enqueue-result" || observation.Event == "resume-flush-result") {
+						_ = os.WriteFile(fifo+".resume-write-done", []byte("written"), 0600)
 					}
 				}
 			}
@@ -827,13 +887,15 @@ func waitForTTYOutputPressure(t *testing.T, master int) bool {
 }
 
 func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
-	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false) })
-	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false, false) })
-	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true, false) })
-	t.Run("caller-cancel-published-during-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, true) })
+	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false) })
+	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false, false, false, false) })
+	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true, false, false, false) })
+	t.Run("caller-cancel-published-during-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, true, false, false) })
+	t.Run("caller-cancel-published-after-resume-check", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, true, false) })
+	t.Run("negative-write-count-retries-flush", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, true) })
 }
 
-func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume bool) {
+func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume, cancelAfterResumeCheck, negativeResumeWrite bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -857,6 +919,15 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	}
 	if cancelDuringResume {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_DURING_RESUME=1")
+	}
+	if cancelAfterResumeCheck {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK=1")
+	}
+	if negativeResumeWrite {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_NEGATIVE_RESUME_WRITE=1")
+	}
+	if terminateAfterStop || cancelDuringResume || cancelAfterResumeCheck || negativeResumeWrite {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_TRACE_RESUME=1")
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -1026,50 +1097,63 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if termios.Lflag&unix.ICANON == 0 || termios.Lflag&unix.ECHO == 0 || termios.Oflag&unix.OPOST == 0 {
 		t.Fatalf("host terminal was not cooked while the owned proxy was suspended: %+v", *termios)
 	}
+	var childPID int
 	if terminateAfterStop {
+		pidBytes, pidReadErr := os.ReadFile(control + ".pid")
+		var pidParseErr error
+		if pidReadErr == nil {
+			childPID, pidParseErr = strconv.Atoi(string(pidBytes))
+		}
+		preReleaseSnapshot := queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios)
+		preReleaseWriteErr := os.WriteFile(control+".pre-release-boundary", []byte(preReleaseSnapshot), 0600)
+		t.Logf("queued-SIGTERM pre-release boundary: pid-read-err=%v pid-parse-err=%v snapshot-write-err=%v %s", pidReadErr, pidParseErr, preReleaseWriteErr, preReleaseSnapshot)
+		if pidReadErr != nil || pidParseErr != nil {
+			t.Fatalf("owned child PID unavailable before queued SIGTERM: read=%v parse=%v; %s", pidReadErr, pidParseErr, preReleaseSnapshot)
+		}
 		if err := unix.Kill(cmd.Process.Pid, syscall.SIGTERM); err != nil {
-			t.Fatalf("queue owned cancellation while stopped: %v", err)
+			t.Fatalf("queue owned cancellation while stopped: %v; %s", err, queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios))
 		}
 		if err := waitForPendingSignal(cmd.Process.Pid, syscall.SIGTERM, time.Now().Add(time.Second)); err != nil {
-			t.Fatalf("owned controller did not observe queued SIGTERM before continuation: %v", err)
+			t.Fatalf("owned controller did not observe queued SIGTERM before continuation: %v; %s", err, queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios))
 		}
 		if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
-			t.Fatalf("foreground-continue the owned stopped proxy: %v", err)
+			t.Fatalf("foreground-continue the owned stopped proxy: %v; %s", err, queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios))
 		}
 		waitErr := error(nil)
 		select {
 		case waitErr = <-waitResult:
 		case <-time.After(3 * time.Second):
-			t.Fatal("queued cancellation was not honored after foreground continuation")
+			boundary := queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios)
+			t.Logf("queued-SIGTERM timeout boundary: %s", boundary)
+			t.Fatalf("queued cancellation was not honored after foreground continuation: %s", boundary)
 		}
 		<-waitDone
 		stopDrain()
 		stages, stagesErr := os.ReadFile(control + ".proxy")
 		input, inputErr := os.ReadFile(control)
 		resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
+		resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
+		postExitSnapshot := queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios)
+		t.Logf("queued-SIGTERM post-exit boundary: %s", postExitSnapshot)
+		preReleaseReceipt, preReleaseReadErr := os.ReadFile(control + ".pre-release-boundary")
+		if preReleaseWriteErr != nil || preReleaseReadErr != nil || !bytes.Equal(preReleaseReceipt, []byte(preReleaseSnapshot)) || !strings.Contains(preReleaseSnapshot, "child-status-err=<nil>") || !strings.Contains(preReleaseSnapshot, "proxy-status-err=<nil>") || !strings.Contains(preReleaseSnapshot, "termios-err=<nil>") {
+			t.Fatalf("pre-cleanup live boundary snapshot missing/incomplete (write=%v read=%v receipt=%q): before=%s after=%s", preReleaseWriteErr, preReleaseReadErr, preReleaseReceipt, preReleaseSnapshot, postExitSnapshot)
+		}
 		assertSignalExit(t, waitErr, syscall.SIGTERM)
 		if ownedProcessStopped(cmd.Process.Pid) {
-			t.Fatal("proxy remained stopped after queued cancellation and continuation")
+			t.Fatalf("proxy remained stopped after queued cancellation and continuation: %s", postExitSnapshot)
 		}
 		if after := mustGetTermios(t, modeFD); *after != *termios {
-			t.Fatalf("queued cancellation did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+			t.Fatalf("queued cancellation did not preserve cooked terminal state: before=%+v after=%+v; %s", *termios, *after, postExitSnapshot)
 		}
 		if inputErr != nil {
-			t.Fatalf("read owned child input receipt after queued cancellation: %v (proxy=%q mode=%q modeErr=%v)", inputErr, stages, resumedMode, modeErr)
+			t.Fatalf("read owned child input receipt after queued cancellation: %v; %s", inputErr, postExitSnapshot)
 		}
 		if bytes.Contains(input, []byte{'R'}) {
-			t.Fatalf("owned child consumed queued input before cancellation: child=%q proxy=%q proxyErr=%v resumed-mode=%q modeErr=%v", input, stages, stagesErr, resumedMode, modeErr)
-		}
-		pidBytes, err := os.ReadFile(control + ".pid")
-		if err != nil {
-			t.Fatal(err)
-		}
-		childPID, err := strconv.Atoi(string(pidBytes))
-		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("owned child consumed queued input before cancellation: child=%q proxy=%q proxyErr=%v resumed-mode=%q modeErr=%v trace=%q traceErr=%v; %s", input, stages, stagesErr, resumedMode, modeErr, resumeTrace, traceErr, postExitSnapshot)
 		}
 		if err := unix.Kill(childPID, 0); !errors.Is(err, unix.ESRCH) {
-			t.Fatalf("queued cancellation left owned child %d alive: %v", childPID, err)
+			t.Fatalf("queued cancellation left owned child %d alive: %v; %s", childPID, err, postExitSnapshot)
 		}
 		return
 	}
@@ -1146,11 +1230,16 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
 	}
-	if cancelDuringResume {
+	if cancelDuringResume || cancelAfterResumeCheck {
 		cancelWaitErr := waitForFile(control+".cancel-published", time.Now().Add(childDeadline))
 		resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
 		inputErr := waitPressureMarker(t, control, 'R', time.Now().Add(childDeadline))
-		killErr := os.WriteFile(control+".kill", []byte("observed"), 0600)
+		var killErr error
+		if cancelAfterResumeCheck {
+			killErr = waitForFile(control+".kill", time.Now().Add(childDeadline))
+		} else {
+			killErr = os.WriteFile(control+".kill", []byte("observed"), 0600)
+		}
 		var waitErr error
 		select {
 		case waitErr = <-waitResult:
@@ -1165,19 +1254,31 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		proxyStages, proxyErr := os.ReadFile(control + ".proxy")
 		childReceipt, childErr := os.ReadFile(control)
 		resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
-		published, publishedErr := os.ReadFile(control + ".cancel-published")
+		resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
 		assertSignalExit(t, waitErr, syscall.SIGTERM)
+		published, publishedErr := os.ReadFile(control + ".cancel-published")
 		if after := mustGetTermios(t, modeFD); *after != *termios {
-			t.Fatalf("caller cancellation did not preserve cooked terminal state: before=%+v after=%+v; proxy=%q child=%q resumed-mode=%q modeErr=%v", *termios, *after, proxyStages, childReceipt, resumedMode, modeErr)
+			t.Fatalf("caller cancellation did not preserve cooked terminal state: before=%+v after=%+v; trace=%q child=%q", *termios, *after, resumeTrace, childReceipt)
 		}
-		if cancelWaitErr != nil || resumeMarkerErr != nil || publishedErr != nil || string(published) != "terminated" || killErr != nil {
-			t.Fatalf("caller resume-boundary receipts incomplete: cancel-wait=%v resume-marker=%v published=%q publishedErr=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", cancelWaitErr, resumeMarkerErr, published, publishedErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
+		if cancelWaitErr != nil || resumeMarkerErr != nil || publishedErr != nil || killErr != nil {
+			t.Fatalf("caller resume-boundary receipts incomplete: cancel-wait=%v resume-marker=%v published=%q publishedErr=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v trace=%q traceErr=%v", cancelWaitErr, resumeMarkerErr, published, publishedErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr, resumeTrace, traceErr)
 		}
-		if inputErr == nil {
+		if cancelDuringResume && string(published) != "terminated" {
+			t.Fatalf("during-callback cancellation was not published: %q trace=%q", published, resumeTrace)
+		}
+		if cancelAfterResumeCheck && string(published) != "terminated-after-check" {
+			t.Fatalf("after-check cancellation was not published: %q trace=%q", published, resumeTrace)
+		}
+		if cancelDuringResume && inputErr == nil {
 			t.Fatalf("owned child consumed ordinary queued input after caller Handle.Terminate published cancellation: proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
 		}
-		if !strings.Contains(inputErr.Error(), "timed out waiting for marker") {
-			t.Fatalf("could not determine whether owned child consumed queued input: input-wait=%v proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", inputErr, proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
+		if cancelDuringResume && !strings.Contains(inputErr.Error(), "timed out waiting for marker") {
+			t.Fatalf("could not determine whether child consumed queued input: input-wait=%v trace=%q child=%q", inputErr, resumeTrace, childReceipt)
+		}
+		if cancelAfterResumeCheck {
+			if inputErr != nil || !bytes.Contains(childReceipt, []byte{'R'}) || !strings.Contains(string(resumeTrace), "event=resume-cancellation-check cancel-or-exit=false") || !strings.Contains(string(resumeTrace), "event=resume-write-attempt cancel-or-exit=true pending=0 attempted=1") || !strings.Contains(string(resumeTrace), "event=resume-enqueue-result cancel-or-exit=true pending=0 attempted=1 written=1 queued=0") || !strings.Contains(string(resumeTrace), "event=child-consumption-before-kill") {
+				t.Fatalf("controlled publication after the cancellation check did not record the permitted write and child consumption: input-wait=%v trace=%q child=%q", inputErr, resumeTrace, childReceipt)
+			}
 		}
 		if proxyErr != nil || childErr != nil {
 			t.Fatalf("read resume-boundary receipts: proxy=%q proxyErr=%v child=%q childErr=%v resumed-mode=%q modeErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumedMode, modeErr)
@@ -1185,8 +1286,11 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		if !bytes.Contains(proxyStages, []byte{'R'}) {
 			t.Fatalf("StageResumed callback completion was not observed after cancellation publication: proxy=%q child=%q resumed-mode=%q modeErr=%v", proxyStages, childReceipt, resumedMode, modeErr)
 		}
-		if bytes.Contains(childReceipt, []byte{'R'}) {
-			t.Fatalf("owned child consumed ordinary queued input after caller Handle.Terminate published cancellation: proxy=%q child=%q resumed-mode=%q modeErr=%v", proxyStages, childReceipt, resumedMode, modeErr)
+		if cancelDuringResume && bytes.Contains(childReceipt, []byte{'R'}) {
+			t.Fatalf("owned child consumed queued input after cancellation published during callback: proxy=%q child=%q trace=%q", proxyStages, childReceipt, resumeTrace)
+		}
+		if cancelDuringResume && !strings.Contains(string(resumeTrace), "event=resume-cancellation-check cancel-or-exit=true") {
+			t.Fatalf("post-callback cancellation check did not observe the publication: trace=%q", resumeTrace)
 		}
 		return
 	}
@@ -1245,6 +1349,14 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		resetAt := bytes.Index(got, []byte(termReset))
 		start, end := max(0, at-16), min(len(got), at+len(termReset)+16)
 		t.Fatalf("suspend/resume changed terminal output ordering or bytes: got=%d want=%d first-difference=%d queued-boundary=%d independent-ofd-pressure-bytes=%d reset-at=%d got-around-difference=%q want-around-difference=%q", len(got), len(want), at, boundary, pressureCount, resetAt, got[start:end], want[start:min(len(want), at+len(termReset)+16)])
+	}
+	if negativeResumeWrite {
+		trace, traceErr := os.ReadFile(control + ".resume-boundary")
+		injected, injectionErr := os.ReadFile(control + ".resume-write-injection")
+		childReceipt, childErr := os.ReadFile(control)
+		if traceErr != nil || injectionErr != nil || childErr != nil || !bytes.Contains(childReceipt, []byte{'R'}) || !strings.Contains(string(injected), "call=1 n=0") || !strings.Contains(string(injected), "call=2 n=-1") || !strings.Contains(string(injected), "call=3 n=-1") || !strings.Contains(string(injected), "call=4 n=1") || !strings.Contains(string(trace), "event=resume-enqueue-result cancel-or-exit=false pending=0 attempted=1 written=0 queued=1") || strings.Count(string(trace), "event=resume-flush-result cancel-or-exit=false pending=0 attempted=1 written=0 queued=1") != 2 || !strings.Contains(string(trace), "event=resume-flush-result cancel-or-exit=false pending=0 attempted=1 written=1 queued=0") {
+			t.Fatalf("negative transient write counts did not preserve retry accounting and child delivery: trace=%q traceErr=%v injected=%q injectionErr=%v child=%q childErr=%v", trace, traceErr, injected, injectionErr, childReceipt, childErr)
+		}
 	}
 }
 
@@ -2019,6 +2131,33 @@ func waitForOutputPressure(t *testing.T, pipeFD, pipeSize int) (bool, int) {
 	return false, maxBuffered
 }
 
+func queuedTerminationBoundarySnapshot(control string, childPID, proxyPID, modeFD int, before unix.Termios) string {
+	childReceipt, childReceiptErr := os.ReadFile(control)
+	childStatus, childStatusErr := os.ReadFile(fmt.Sprintf("/proc/%d/status", childPID))
+	proxyStatus, proxyStatusErr := os.ReadFile(fmt.Sprintf("/proc/%d/status", proxyPID))
+	resumeTrace, resumeTraceErr := os.ReadFile(control + ".resume-boundary")
+	after, termiosErr := unix.IoctlGetTermios(modeFD, unix.TCGETS)
+	return fmt.Sprintf("child-pid=%d child-receipt=%q child-receipt-err=%v child-status=%q child-status-err=%v proxy-pid=%d proxy-status=%q proxy-status-err=%v termios-before=%+v termios-current=%+v termios-err=%v resume-trace=%q resume-trace-err=%v", childPID, childReceipt, childReceiptErr, childStatus, childStatusErr, proxyPID, proxyStatus, proxyStatusErr, before, after, termiosErr, resumeTrace, resumeTraceErr)
+}
+
+func writeResumeWriteInjection(path string, call, n int, err error) {
+	f, openErr := os.OpenFile(path+".resume-write-injection", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if openErr != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "call=%d n=%d err=%v\n", call, n, err)
+}
+
+func writeResumeObservation(path string, observation resumeInputObservation) {
+	f, err := os.OpenFile(path+".resume-boundary", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "event=%s cancel-or-exit=%t pending=%d attempted=%d written=%d queued=%d\n", observation.Event, observation.CancellationOrExitPublished, observation.PendingBytes, observation.BytesAttempted, observation.BytesWritten, observation.BytesQueued)
+}
+
 func writePressureReceipt(path string, marker byte) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -2514,8 +2653,16 @@ func callerCancellationPublicationReadFollowsResumeReceipt(fn *ast.FuncDecl) boo
 		if !ok {
 			return true
 		}
-		condition, ok := branch.Cond.(*ast.Ident)
-		if !ok || condition.Name != "cancelDuringResume" {
+		conditionMatches := false
+		switch condition := branch.Cond.(type) {
+		case *ast.Ident:
+			conditionMatches = condition.Name == "cancelDuringResume"
+		case *ast.BinaryExpr:
+			left, leftOK := condition.X.(*ast.Ident)
+			right, rightOK := condition.Y.(*ast.Ident)
+			conditionMatches = condition.Op == token.LOR && leftOK && rightOK && left.Name == "cancelDuringResume" && right.Name == "cancelAfterResumeCheck"
+		}
+		if !conditionMatches {
 			return true
 		}
 
