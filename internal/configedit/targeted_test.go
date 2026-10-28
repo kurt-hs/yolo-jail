@@ -1,6 +1,7 @@
 package configedit
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,6 +127,17 @@ func TestApplyTargetedUsesProjectForBothScopeDespiteUserAndLocalOrigins(t *testi
 	}
 	if result.Path != project {
 		t.Fatalf("reported path = %s, want %s", result.Path, project)
+	}
+	projectAfter, err := os.ReadFile(project)
+	if err != nil || !strings.Contains(string(projectAfter), "cpus = 4") {
+		t.Fatalf("selected Project raw value = %q err=%v, want cpus = 4", projectAfter, err)
+	}
+	effective, err := config.LoadReadableConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := effectiveMap(t, effective, "machine", "resources").Get("cpus"); fmt.Sprint(got) != "3" {
+		t.Fatalf("effective Local winner = %#v, want 3", got)
 	}
 	for _, path := range []string{user, local} {
 		got, readErr := os.ReadFile(path)
