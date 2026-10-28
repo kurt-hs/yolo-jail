@@ -87,6 +87,23 @@ func TestSurfaceNamespaceIsRegisteredAndDispatches(t *testing.T) {
 	}
 }
 
+func TestSurfaceMissingAgentAdviceNamesRegisteredCommands(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	withWorkspaceCwd(t)
+	for _, verb := range []string{"diff", "reset", "capture"} {
+		t.Run(verb, func(t *testing.T) {
+			var rc int
+			out, stderr := captureBoth(t, func() {
+				rc = dispatchNative("surface", []string{"surface", verb, "--at", "jail"})
+			})
+			want := "yolo surface " + verb + " claude"
+			if rc != 2 || out != "" || !strings.Contains(stderr, want) || strings.Contains(stderr, "yolo config "+verb) {
+				t.Fatalf("registered `yolo surface %s` missing-agent advice: rc=%d stdout=%q stderr=%q; want %q", verb, rc, out, stderr, want)
+			}
+		})
+	}
+}
+
 func TestRetiredConfigCompositionVerbsRefuseWithSurfaceReplacement(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)

@@ -850,6 +850,77 @@ func ProjectReadableLegacyPack(mapping ReadableLegacyPackMapping, values []Reada
 // ReadableConcreteTarget associates each granted repository identity with its origin and source.
 type ReadableConcreteTarget struct{ Repository ReadableRepository }
 
+// BrokeredGrantKindsUsingReadablePolicy reads the current user scope and returns the grant kinds
+// authorized by its selected broker declaration. A canonical `allow.<source>` table is authority
+// even when empty; it suppresses the legacy grant_kinds fallback. The shared readable resolver
+// validates the declaration and capability mapping before this adapter projects capabilities back
+// to the broker's grant kinds. Callers use the returned canonical flag to distinguish a valid
+// empty authority from legacy mode, and treat every error as no write authority.
+func BrokeredGrantKindsUsingReadablePolicy(source string) (kinds []string, canonical bool, err error) {
+	user, err := UserScopeConfig(false, func(string) {})
+	if err != nil {
+		return nil, true, err
+	}
+	allowValue, hasAllow := user.Get("allow")
+	if hasAllow {
+		allow, ok := asMap(allowValue)
+		if !ok {
+			return nil, true, fmt.Errorf("allow: expected a table")
+		}
+		if _, canonical = allow.Get(source); canonical {
+			packs, complete := UserScopeSelectedPacks()
+			if !complete {
+				return nil, true, fmt.Errorf("selected user pack declarations are incomplete")
+			}
+			declarations, settings, err := ReadableDeclarationsForPacks(packs)
+			if err != nil {
+				return nil, true, err
+			}
+			selected := make([]string, 0, len(packs))
+			for _, pack := range packs {
+				if pack == nil || pack.Name == "" {
+					return nil, true, fmt.Errorf("selected user pack declaration has no identity")
+				}
+				selected = append(selected, pack.Name)
+			}
+			plan, err := ResolveReadableAllowance(ReadableAllowanceInput{
+				User: user, SelectedPacks: selected, Declarations: declarations, PackSettings: settings,
+			})
+			if err != nil {
+				return nil, true, err
+			}
+			var policy *ReadableBrokerPolicy
+			for i := range plan.Sources {
+				if plan.Sources[i].Source == source {
+					policy = &plan.Sources[i]
+					break
+				}
+			}
+			if policy == nil {
+				// A valid `off` tombstone carries canonical authority but no allowance.
+				return nil, true, nil
+			}
+			for _, declaration := range declarations {
+				if declaration.Pack != policy.Pack || declaration.Brokered.Source != source {
+					continue
+				}
+				for _, kind := range declaration.Brokered.Grants {
+					capability := policy.KindCapabilities[kind]
+					if capability != "" && !slices.Contains(policy.PendingCapabilities, capability) &&
+						(slices.Contains(policy.Always, capability) || slices.Contains(policy.OnRequest, capability)) {
+						kinds = append(kinds, kind)
+					}
+				}
+				return kinds, true, nil
+			}
+			return nil, true, fmt.Errorf("selected broker declaration for %q is missing", source)
+		}
+	}
+	return grantKindsOf(user, source), false, nil
+}
+
+// readableDeclarations validates the selected broker and pack declarations and resolves their
+// ownership before any canonical authority can reach a broker.
 func readableDeclarations(input ReadableAllowanceInput) (map[string][]loopholedecl.Setting, map[string]ReadableBrokerPolicy, error) {
 	settings := map[string][]loopholedecl.Setting{}
 	brokers := map[string]ReadableBrokerPolicy{}

@@ -65,7 +65,7 @@ func surfaceArgs(cmd string, args []string, out, errw io.Writer) (agent, surface
 		}
 	}
 	if agent == "" {
-		fmt.Fprintf(errw, "yolo config %s: needs an agent (e.g. 'yolo config %s claude')\n\n%s\n",
+		fmt.Fprintf(errw, "yolo surface %s: needs an agent (e.g. 'yolo surface %s claude')\n\n%s\n",
 			cmd, cmd, surfaceUsage)
 		return "", "", false, 2
 	}

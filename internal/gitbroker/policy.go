@@ -72,17 +72,24 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 	if b.cover != nil {
 		return b.cover
 	}
-	kinds := config.BrokeredGrantKinds(Source)
+	kinds, canonical, authorityErr := config.BrokeredGrantKindsUsingReadablePolicy(Source)
 	granted := grantCovers(f.Grants, repo)
-	canCreate := granted && slices.Contains(kinds, grantCreateBranch)
-	branchAllowed := slices.Contains(kinds, grantBranch)
+	canCreate := authorityErr == nil && granted && slices.Contains(kinds, grantCreateBranch)
+	branchAllowed := authorityErr == nil && slices.Contains(kinds, grantBranch)
 	kindWarned := map[string]bool{}
 	kindMissing := func(kind, what string) {
 		if !kindWarned[kind] {
 			kindWarned[kind] = true
-			say("this workspace's " + kind + " grant on " + repo + " is not in effect: your user config does not " +
-				"list " + kind + " under `brokered.git.grant_kinds`. Add it there on the host to let the broker " +
-				what + " (the next push reads it), or push from the host.")
+			switch {
+			case authorityErr != nil:
+				say("this workspace's " + kind + " grant on " + repo + " is not in effect: the host user config's canonical `allow.git` write authority could not be validated, so the broker covers no such write. Repair `allow.git.always` or `allow.git.on_request` on the host, then push again; the broker rereads that config on each push, or push from the host.")
+			case canonical:
+				say("this workspace's " + kind + " grant on " + repo + " is not in effect: the host user config's canonical `allow.git` does not authorize it under the selected broker's declared capabilities. Add the required capability to `allow.git.always` or `allow.git.on_request` on the host, then push again; the broker rereads that config on each push, or push from the host.")
+			default:
+				say("this workspace's " + kind + " grant on " + repo + " is not in effect: your user config does not " +
+					"list " + kind + " under `brokered.git.grant_kinds`. Add it there on the host to let the broker " +
+					what + " (the next push reads it), or push from the host.")
+			}
 		}
 	}
 	warned := false
