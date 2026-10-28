@@ -51,8 +51,9 @@ func TestConfigRunWDispatchesGenericEditsToExistingTargets(t *testing.T) {
 				{[]string{"add", "env.unset", `"NEW"`, "--project"}, "NEW"},
 			} {
 				var out, errw bytes.Buffer
-				if rc := configRunW(tcEdit.args, &out, &errw); rc != 0 || errw.Len() != 0 ||
-					!strings.Contains(out.String(), workspace.Path) || !strings.Contains(out.String(), "@@") ||
+				rc := configRunW(tcEdit.args, &out, &errw)
+				assertPublicPostWriteCheck(t, rc, out.String(), errw.String())
+				if !strings.Contains(out.String(), workspace.Path) || !strings.Contains(out.String(), "@@") ||
 					!strings.Contains(out.String(), tcEdit.want) {
 					t.Fatalf("configRunW(%q) rc=%d stdout=%q stderr=%q", tcEdit.args, rc, out.String(), errw.String())
 				}
@@ -69,7 +70,9 @@ func TestConfigRunWDispatchesGenericEditsToExistingTargets(t *testing.T) {
 			}
 
 			var out, errw bytes.Buffer
-			if rc := configRunW([]string{"set", "machine.resources.cpus", "5", "--local"}, &out, &errw); rc != 0 || errw.Len() != 0 || !strings.Contains(out.String(), localPath) {
+			rc := configRunW([]string{"set", "machine.resources.cpus", "5", "--local"}, &out, &errw)
+			assertPublicPostWriteCheck(t, rc, out.String(), errw.String())
+			if !strings.Contains(out.String(), localPath) {
 				t.Fatalf("public Local edit rc=%d stdout=%q stderr=%q", rc, out.String(), errw.String())
 			}
 			gotLocal, _ := os.ReadFile(localPath)
@@ -95,7 +98,9 @@ func TestConfigRunWGenericEditDefaultsToProjectAndUnsetWrites(t *testing.T) {
 	withConfigEditCWD(t, workspace.Root)
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"set", "machine.resources.cpus", "4"}, &out, &errw); rc != 0 || errw.Len() != 0 || !strings.Contains(out.String(), workspace.Path) {
+	rc := configRunW([]string{"set", "machine.resources.cpus", "4"}, &out, &errw)
+	assertPublicPostWriteCheck(t, rc, out.String(), errw.String())
+	if !strings.Contains(out.String(), workspace.Path) {
 		t.Fatalf("automatic public edit rc=%d stdout=%q stderr=%q", rc, out.String(), errw.String())
 	}
 	if got, _ := os.ReadFile(user.Path); !bytes.Contains(got, []byte("cpus = 1")) {
@@ -107,7 +112,9 @@ func TestConfigRunWGenericEditDefaultsToProjectAndUnsetWrites(t *testing.T) {
 
 	out.Reset()
 	errw.Reset()
-	if rc := configRunW([]string{"unset", "mcp_servers.tavily", "--project"}, &out, &errw); rc != 0 || errw.Len() != 0 || !strings.Contains(out.String(), workspace.Path) {
+	rc = configRunW([]string{"unset", "mcp_servers.tavily", "--project"}, &out, &errw)
+	assertPublicPostWriteCheck(t, rc, out.String(), errw.String())
+	if !strings.Contains(out.String(), workspace.Path) {
 		t.Fatalf("public unset rc=%d stdout=%q stderr=%q", rc, out.String(), errw.String())
 	}
 	if got, _ := os.ReadFile(workspace.Path); !bytes.Contains(got, []byte(`tavily = "off"`)) {
@@ -121,7 +128,8 @@ func TestConfigRegistryDispatchesGenericEdit(t *testing.T) {
 	t.Setenv("HOME", user.Root)
 	t.Setenv("YOLO_VERSION", "")
 	withConfigEditCWD(t, workspace.Root)
-	out, errw := dispatchConfigCapture(t, []string{"set", "machine.resources.cpus", "6", "--project"})
+	rc, out, errw := dispatchConfigCapture(t, []string{"set", "machine.resources.cpus", "6", "--project"})
+	assertPublicPostWriteCheck(t, rc, out, errw)
 	if !strings.Contains(out, workspace.Path) || !strings.Contains(out, "@@") || !strings.Contains(out, "+6") {
 		t.Fatalf("registered public config dispatch stdout=%q stderr=%q", out, errw)
 	}
@@ -130,7 +138,7 @@ func TestConfigRegistryDispatchesGenericEdit(t *testing.T) {
 	}
 }
 
-func dispatchConfigCapture(t *testing.T, args []string) (string, string) {
+func dispatchConfigCapture(t *testing.T, args []string) (int, string, string) {
 	t.Helper()
 	outR, outW, err := os.Pipe()
 	if err != nil {
@@ -159,10 +167,7 @@ func dispatchConfigCapture(t *testing.T, args []string) (string, string) {
 	if readErr != nil || errReadErr != nil {
 		t.Fatalf("read public dispatch output: stdout=%v stderr=%v", readErr, errReadErr)
 	}
-	if rc != 0 {
-		t.Fatalf("dispatchNative(config) exit=%d stdout=%q stderr=%q", rc, out, stderr)
-	}
-	return string(out), string(stderr)
+	return rc, string(out), string(stderr)
 }
 
 func TestConfigRunWGenericEditPreservesQuotedLiteralMembers(t *testing.T) {
@@ -182,7 +187,9 @@ command = ["star-old"]
 	} {
 		value := strings.TrimSpace(tc.value)
 		var out, errw bytes.Buffer
-		if rc := configRunW([]string{"set", tc.key, value, "--project"}, &out, &errw); rc != 0 || errw.Len() != 0 || !strings.Contains(out.String(), workspace.Path) {
+		rc := configRunW([]string{"set", tc.key, value, "--project"}, &out, &errw)
+		assertPublicPostWriteCheck(t, rc, out.String(), errw.String())
+		if !strings.Contains(out.String(), workspace.Path) {
 			t.Fatalf("public quoted-member edit %s rc=%d stdout=%q stderr=%q", tc.key, rc, out.String(), errw.String())
 		}
 		got, err := os.ReadFile(workspace.Path)
@@ -204,6 +211,7 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 		{"set", "machine.resources.cpus", "4", "--unknown"},
 		{"set", "machine.resources.cpus", "true\nother = 3", "--project"},
 		{"set", "machine.resources.cpus", `"bad"`, "--project"},
+		{"unset", "machine.resources.cpus", "--project"},
 	} {
 		var out, errw bytes.Buffer
 		if rc := configRunW(args, &out, &errw); rc == 0 || out.Len() != 0 || errw.Len() == 0 {
@@ -211,6 +219,9 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 		}
 		if got, _ := os.ReadFile(workspace.Path); !bytes.Equal(got, before) {
 			t.Fatalf("invalid public edit %q changed bytes: %q", args, got)
+		}
+		if strings.Contains(out.String(), "Summary") {
+			t.Fatalf("invalid public edit %q unexpectedly ran the post-write check: %q", args, out.String())
 		}
 	}
 	for _, args := range [][]string{
@@ -223,6 +234,9 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 		}
 		if got, _ := os.ReadFile(workspace.Path); !bytes.Equal(got, before) {
 			t.Fatalf("dry-run/no-op public edit %q changed bytes: %q", args, got)
+		}
+		if strings.Contains(out.String(), "Summary") {
+			t.Fatalf("dry-run/no-op public edit %q unexpectedly ran the post-write check: %q", args, out.String())
 		}
 	}
 	for _, verb := range []string{"set", "add", "unset"} {
@@ -316,6 +330,17 @@ func TestConfigRunWJailedBothScopeExplicitCanonicalUserFileRefusesBeforeRead(t *
 		if got, _ := os.ReadFile(user.Path); !bytes.Equal(got, before) {
 			t.Fatalf("jailed explicit canonical User edit %q changed target: %q", args, got)
 		}
+	}
+}
+
+func assertPublicPostWriteCheck(t *testing.T, rc int, out, errw string) {
+	t.Helper()
+	if !strings.Contains(out, "YOLO Jail Check") || !strings.Contains(out, "Summary") {
+		t.Fatalf("public write did not emit the production post-write check report: rc=%d stdout=%q stderr=%q", rc, out, errw)
+	}
+	failed := strings.Contains(errw, "post-write check did not pass")
+	if (rc == 0 && failed) || (rc != 0 && !failed) {
+		t.Fatalf("public write rc=%d disagrees with its post-write check result: stdout=%q stderr=%q", rc, out, errw)
 	}
 }
 

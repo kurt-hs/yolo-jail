@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/check"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/configedit"
@@ -19,7 +20,7 @@ import (
 // runConfigEdit implements the generic readable-config edit verbs. Public dispatch and help are
 // owned by the serial CLI integration; callers pass the selected subcommand as args[0].
 func runConfigEdit(args []string) int {
-	return runConfigEditWith(args, os.Stdout, os.Stderr, configEditWorkspace())
+	return runConfigEditWithPostWriteCheck(args, os.Stdout, os.Stderr, configEditWorkspace())
 }
 
 func configEditWorkspace() string {
@@ -37,6 +38,14 @@ func configEditWorkspace() string {
 }
 
 func runConfigEditWith(args []string, out, errw io.Writer, workspace string) int {
+	return runConfigEditWithMode(args, out, errw, workspace, false)
+}
+
+func runConfigEditWithPostWriteCheck(args []string, out, errw io.Writer, workspace string) int {
+	return runConfigEditWithMode(args, out, errw, workspace, true)
+}
+
+func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string, postWriteCheck bool) int {
 	if len(args) == 0 {
 		fmt.Fprintln(errw, "usage: yolo config set|add|unset <key> [value] [--user|--project|--local|--file PATH] [--dry-run]")
 		return 2
@@ -134,7 +143,7 @@ func runConfigEditWith(args []string, out, errw io.Writer, workspace string) int
 			return 1
 		}
 		mutation.Value = value
-		return applyConfigEdit(workspace, target, mutation, dryRun, out, errw)
+		return applyConfigEdit(workspace, target, mutation, dryRun, out, errw, postWriteCheck)
 	}
 
 	if config.InJail() && choice.Kind == config.EditTargetUser {
@@ -173,10 +182,10 @@ func runConfigEditWith(args []string, out, errw io.Writer, workspace string) int
 		printConfigEditHostRun(errw, workspace, args)
 		return 1
 	}
-	return applyConfigEdit(workspace, resolved, mutation, dryRun, out, errw)
+	return applyConfigEdit(workspace, resolved, mutation, dryRun, out, errw, postWriteCheck)
 }
 
-func applyConfigEdit(workspace string, target config.ResolvedEditTarget, mutation configedit.Mutation, dryRun bool, out, errw io.Writer) int {
+func applyConfigEdit(workspace string, target config.ResolvedEditTarget, mutation configedit.Mutation, dryRun bool, out, errw io.Writer, postWriteCheck bool) int {
 	result, err := configedit.ApplyTargeted(workspace, target, mutation, configedit.ApplyOptions{DryRun: dryRun})
 	if err != nil {
 		fmt.Fprintf(errw, "config edit refused: %v\n", err)
@@ -199,7 +208,26 @@ func applyConfigEdit(workspace string, target config.ResolvedEditTarget, mutatio
 	} else {
 		fmt.Fprintln(out, "Written. Run `yolo check` in this workspace; the host must run `yolo apply` to approve the workspace change.")
 	}
+	if postWriteCheck {
+		checkRC := runConfigPostWriteCheck(workspace, out, errw)
+		if checkRC != 0 {
+			fmt.Fprintln(errw, "The config file was written, but the post-write check did not pass; follow its findings before continuing.")
+			return checkRC
+		}
+	}
 	return 0
+}
+
+func runConfigPostWriteCheck(workspace string, out, errw io.Writer) int {
+	opts, ok := checkOptions([]string{"check", "--no-build"}, errw)
+	if !ok {
+		return 2
+	}
+	opts.Workspace = workspace
+	opts.Stdout = out
+	opts.Stderr = errw
+	opts.Color = colorForWriter(out)
+	return check.Check(opts)
 }
 
 func writeConfigEditHunks(out io.Writer, hunks []configedit.Hunk) {

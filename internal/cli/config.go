@@ -67,7 +67,7 @@ const configEditUsage = `Usage:
   yolo config add <key> <value> [target] [--dry-run]
   yolo config unset <key> [target] [--dry-run]
 
-set and add require one typed value; unset removes a key. Edits target an existing config file only.
+set and add require one typed value; unset removes a key only where the schema defines a removal policy, and otherwise refuses without writing. Edits target an existing config file only.
 The default target is Project when it exists, even if User or Local currently wins. No config file is created.
 
 Flags:
@@ -119,7 +119,7 @@ func configRunW(args []string, out, errw io.Writer) int {
 			writeCLIUsage(out, colorForWriter(out), configEditUsage)
 			return 0
 		}
-		return runConfigEditWith(args, out, errw, configEditWorkspace())
+		return runConfigEditWithPostWriteCheck(args, out, errw, configEditWorkspace())
 	}
 	rest, at, rc := extractAtFlag(verb, args[1:], errw)
 	if rc != 0 {
