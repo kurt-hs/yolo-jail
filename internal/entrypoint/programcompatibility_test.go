@@ -51,6 +51,107 @@ func TestShippedCopilotCompatibilityRefusesOnlyMacosUserSelf(t *testing.T) {
 	}
 }
 
+func TestShippedCopilotInvalidGenerationMetadataRefuses(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+
+	for _, tc := range []struct {
+		name, context string
+	}{
+		{name: "missing", context: ""},
+		{name: "malformed", context: `{`},
+		{name: "missing-mode", context: `{"workspace":"/w","home":"/h"}`},
+		{name: "null-mode", context: `{"mode":null,"workspace":"/w","home":"/h"}`},
+		{name: "unknown-mode", context: `{"mode":2,"workspace":"/w","home":"/h"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newCopilotCompatibilityProbe(t, tc.context, true, "true", "1.0.92")
+			out, err := p.run(t, "")
+			if err == nil || !strings.Contains(out, "invalid macos-user launch context") || strings.Contains(p.log(t), "UPDATE") || strings.Contains(p.log(t), "EXEC") {
+				t.Fatalf("invalid native metadata did not refuse before update/execution (err=%v, log=%q):\n%s", err, p.log(t), out)
+			}
+		})
+	}
+}
+
+func TestShippedCopilotCompatibilityRefusalNamesIssueAndRemedy(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+	p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", "1.0.103")
+	out, err := p.run(t, "1")
+	if err == nil || !strings.Contains(out, "https://github.com/github/copilot-cli/issues/5085") ||
+		!strings.Contains(out, "Use a container backend (podman or container)") ||
+		!strings.Contains(out, "only after the upstream TLS implementation no longer reproduces the incompatibility") {
+		t.Fatalf("compatibility refusal lacks the tracked issue and workable remedy (err=%v):\n%s", err, out)
+	}
+}
+
+func TestShippedCopilotMalformedVersionTokensFailClosed(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+
+	for _, version := range []string{"1.0.92.103", "1.0.", "1234567890.0.1"} {
+		t.Run(version, func(t *testing.T) {
+			p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", version)
+			out, err := p.run(t, "")
+			if err == nil || strings.Contains(p.log(t), "EXEC") ||
+				(!strings.Contains(out, "cannot parse copilot's declared version probe") && !strings.Contains(out, "outside the supported numeric comparison bound")) {
+				t.Fatalf("malformed version token did not fail closed (err=%v, log=%q):\n%s", err, p.log(t), out)
+			}
+		})
+	}
+}
+
+func TestShippedCopilotVersionProbeAcceptsVendorLabelAndNumericComparison(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+	for _, tc := range []struct {
+		name, version string
+		wantRefuse    bool
+	}{
+		{name: "affected", version: "Copilot CLI v1.0.103 (stable)", wantRefuse: true},
+		{name: "compatible", version: "Copilot CLI v1.0.92 (stable)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", tc.version)
+			out, err := p.run(t, "")
+			refused := strings.Contains(out, "macos-user self's required SecurityServer deny")
+			if refused != tc.wantRefuse || strings.Contains(out, "cannot parse copilot's declared version probe") ||
+				(err == nil) == tc.wantRefuse || (tc.wantRefuse && strings.Contains(p.log(t), "EXEC")) ||
+				(!tc.wantRefuse && !strings.Contains(p.log(t), "EXEC")) {
+				t.Fatalf("vendor-labeled version was not compared numerically (refused=%v, err=%v, log=%q):\n%s", refused, err, p.log(t), out)
+			}
+		})
+	}
+}
+
+func TestShippedCopilotVersionCompatibilityTriesProbeAlternatives(t *testing.T) {
+	orig := imageProbeBase
+	imageProbeBase = t.TempDir()
+	t.Cleanup(func() { imageProbeBase = orig })
+	p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", "1.0.92", "--version", "-v")
+	binary := filepath.Join(p.home, ".local", "bin", "copilot")
+	body := `#!/bin/sh
+case "$*" in
+  --version) printf '%s\n' '--version' >> "$HOME/probes.log"; exit 2 ;;
+  -v) printf '%s\n' '-v' >> "$HOME/probes.log"; echo 1.0.92; exit 0 ;;
+  *) printf 'EXEC %s\n' "$*" >> "$HOME/calls.log"; exit 0 ;;
+esac
+`
+	if err := os.WriteFile(binary, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := p.run(t, "")
+	probes, readErr := os.ReadFile(filepath.Join(p.home, "probes.log"))
+	if err != nil || readErr != nil || !strings.HasPrefix(string(probes), "--version\n-v\n") || !strings.Contains(p.log(t), "EXEC --yolo chat") {
+		t.Fatalf("version check did not try declared alternatives separately (err=%v, readErr=%v, probes=%q, log=%q):\n%s", err, readErr, probes, p.log(t), out)
+	}
+}
+
 func TestShippedCopilotUnaffectedVersionRunsInMacosUserSelf(t *testing.T) {
 	orig := imageProbeBase
 	imageProbeBase = t.TempDir()
@@ -152,10 +253,31 @@ type copilotCompatibilityProbe struct {
 	path     string
 }
 
-func newCopilotCompatibilityProbe(t *testing.T, context string, native bool, updates, version string) copilotCompatibilityProbe {
+func newCopilotCompatibilityProbe(t *testing.T, context string, native bool, updates, version string, probeArgs ...string) copilotCompatibilityProbe {
 	t.Helper()
 	home := t.TempDir()
-	vars := map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": stageShippedPacks(t), AgentUpdatesEnv: updates}
+	packRoot := stageShippedPacks(t)
+	if len(probeArgs) > 0 {
+		manifestPath := filepath.Join(packRoot, "_official", "copilot", "pack.json")
+		manifest, err := os.ReadFile(manifestPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldProbe := "\"probe_args\": [\n        \"--version\"\n      ]"
+		newProbe := `"probe_args": [`
+		for _, arg := range probeArgs {
+			newProbe += `"` + arg + `",`
+		}
+		newProbe = strings.TrimSuffix(newProbe, ",") + `]`
+		if !strings.Contains(string(manifest), oldProbe) {
+			t.Fatal("staged Copilot manifest did not contain its expected probe_args declaration")
+		}
+		manifest = []byte(strings.Replace(string(manifest), oldProbe, newProbe, 1))
+		if err := os.WriteFile(manifestPath, manifest, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vars := map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": packRoot, AgentUpdatesEnv: updates}
 	if native {
 		vars["YOLO_DARWIN_WORKSPACE"] = filepath.Join(home, "ws")
 		vars["YOLO_MACOS_USER_TMPDIR_CONTEXT"] = context
