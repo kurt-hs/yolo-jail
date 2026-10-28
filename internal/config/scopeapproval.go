@@ -448,11 +448,8 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 	for _, s := range check.Sources {
 		if s.Dormant {
 			out.approved[s.Label] = []ScopeRepo{}
-			// A source with no read authority has no usable approved scope. Do not carry stale
-			// source, repository, or grant records forward as though they were current authority.
-			delete(out.next, s.Source)
-			delete(out.next, grantsRecordKey(s.Source))
-			delete(out.nextSources, s.Source)
+			// BB-D110 preserves inert historical records while keeping them out of current
+			// launch authority. FirstRead still presents all scope and grants as added.
 			continue
 		}
 		cur := s.current()

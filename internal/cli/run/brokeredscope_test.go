@@ -1024,6 +1024,9 @@ func TestABrokerWithNoReadGrantStaysOutOfTheGate(t *testing.T) {
 		if got := config.ApprovedScope(o.Workspace, "gbsrc"); len(got) != 1 {
 			t.Errorf("the old record became %v, want it kept", got)
 		}
+		if repos, grants := o.approvedScopes["gb"], o.approvedGrants["gb"]; len(repos) != 0 || len(grants) != 0 {
+			t.Fatalf("inert historical rows reached current broker authority: repos=%v grants=%v", repos, grants)
+		}
 	})
 	// The same old record, then the user's read grant: the record was approved while the broker
 	// could do nothing, so the gate compares against no record and the remote shows as added
