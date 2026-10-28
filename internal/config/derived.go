@@ -18,8 +18,8 @@ const (
 	PlatformDarwin = "darwin"
 )
 
-// EffectivePackages returns config `packages` for `platform`, plus gpu.vaapi-implied
-// extras (mesa, libva-utils) when gpu is AMD + enabled + vaapi. Returns a copy; does
+// EffectivePackages returns config install.nix for `platform`, plus machine.gpu.vaapi-implied
+// extras (mesa, libva-utils) when GPU is AMD + enabled + vaapi. Returns a copy; does
 // not mutate config. Order is package order then the appended extras (skipping
 // any already present). Extras are strings and dedup compares against all
 // package entries; a string never equals a dict entry, so string-only
@@ -39,12 +39,20 @@ const (
 // `platform` is a GOOS value; an empty one disables filtering entirely, which is what
 // a caller that genuinely wants the declared list (a config dump, a diff) wants.
 func EffectivePackages(config *jsonx.OrderedMap, platform string) []any {
+	install, _ := asMap(getMapOrEmpty(config, "install"))
 	packages := filterPackagesForPlatform(
-		listCopy(getListOrNilFalsy(config, "packages")), platform)
+		listCopy(getListOrNilFalsy(install, "nix")), platform)
 
-	gpu, _ := asMap(getMapOrEmpty(config, "gpu"))
-	if gpu != nil && truthy(getOr(gpu, "enabled", nil)) &&
-		truthy(getOr(gpu, "vaapi", nil)) && strEq(getOr(gpu, "vendor", nil), "amd") {
+	machine, _ := asMap(getMapOrEmpty(config, "machine"))
+	gpuValue, _ := machine.Get("gpu")
+	gpu, _ := asMap(gpuValue)
+	gpuEnabled := false
+	if enabled, ok := gpuValue.(bool); ok {
+		gpuEnabled = enabled
+	} else if gpu != nil {
+		gpuEnabled = truthy(getOr(gpu, "enabled", nil))
+	}
+	if gpuEnabled && gpu != nil && truthy(getOr(gpu, "vaapi", nil)) && strEq(getOr(gpu, "vendor", nil), "amd") {
 		for _, pkg := range vaapiPackages {
 			if !containsAny(packages, pkg) {
 				packages = append(packages, pkg)

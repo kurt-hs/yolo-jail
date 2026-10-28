@@ -51,11 +51,7 @@ func linkGraphicsFixture(t *testing.T, root, path, target string) {
 
 func graphicsConfig(t *testing.T, text string) *jsonx.OrderedMap {
 	t.Helper()
-	value, err := jsonx.Decode([]byte(text))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value.(*jsonx.OrderedMap)
+	return loadLegacyCheckConfig(t, text)
 }
 
 func graphicsReport(t *testing.T, cfg *jsonx.OrderedMap, root, profiles string) (string, int) {

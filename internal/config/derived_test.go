@@ -22,7 +22,9 @@ func TestEffectivePackagesFiltersByPlatform(t *testing.T) {
 	pinned := jsonx.NewOrderedMap() // object form, no platforms → everywhere
 	pinned.Set("name", "freetype")
 	pinned.Set("nixpkgs", "abc123")
-	cfg.Set("packages", []any{"jq", linuxOnly, darwinOnly, pinned})
+	install := jsonx.NewOrderedMap()
+	install.Set("nix", []any{"jq", linuxOnly, darwinOnly, pinned})
+	cfg.Set("install", install)
 
 	names := func(entries []any) []string {
 		var out []string
