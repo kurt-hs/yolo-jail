@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/ioprio/iopriotest"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 func loadLaunchConsumerConfig(t *testing.T, body string, toml bool) (*Options, *jsonx.OrderedMap) {
@@ -31,7 +34,8 @@ func loadLaunchConsumerConfig(t *testing.T, body string, toml bool) (*Options, *
 }
 
 func TestReadableMachineSettingsReachFreshRunArgv(t *testing.T) {
-	packHome(t)
+	home := packHome(t)
+	writeUserPacks(t, home, `["claude"]`)
 	workspace := t.TempDir()
 	configPath := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
 	body := `[machine]
@@ -49,8 +53,11 @@ priority = "idle"
 	if err := os.WriteFile(configPath, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	argv, printed := fakePodmanLaunchIn(t, workspace, "", func(o *Options) {
+	snap := filepath.Join(t.TempDir(), "agents")
+	onRun := "cp -a " + shquote.Quote(paths.AgentsDir()) + " " + shquote.Quote(snap)
+	argv, printed := fakePodmanLaunchIn(t, workspace, onRun, func(o *Options) {
 		o.NeverAttach, o.AcceptConfigChanges = true, true
+		o.ioSysRoot = iopriotest.Kyber(t, workspace).Root
 	})
 	if argv == nil {
 		t.Fatalf("public Run did not reach the fake Podman runtime:\n%s", printed)
@@ -65,6 +72,26 @@ priority = "idle"
 	}
 	if !strings.Contains(printed, "GPU requested but") || !strings.Contains(printed, "starting without GPU passthrough") {
 		t.Errorf("public Run did not report the machine.gpu request when the host probe found no GPU:\n%s", printed)
+	}
+	for _, want := range []string{
+		"Resource limits: memory=2g, cpus=2, pids=4000",
+		`resources.io.priority "idle" has no effect`,
+	} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("public Run output lacks canonical resource effect %q:\n%s", want, printed)
+		}
+	}
+	briefingPath := filepath.Join(snap, yoloruntime.FromWorkspace(workspace), briefingStagingName(claudeBriefingDest))
+	briefingBytes, err := os.ReadFile(briefingPath)
+	if err != nil {
+		t.Fatalf("public Run did not stage its claude briefing: %v", err)
+	}
+	briefing := string(briefingBytes)
+	if !strings.Contains(resourceLine(briefing), "memory=2g") || !strings.Contains(resourceLine(briefing), "cpus=2") {
+		t.Errorf("public Run briefing omitted canonical resource limits: %q", resourceLine(briefing))
+	}
+	if !strings.Contains(ioPriorityBriefingLine(briefing), "`idle` (idle class)") {
+		t.Errorf("public Run briefing omitted canonical IO priority: %q", ioPriorityBriefingLine(briefing))
 	}
 	forwards := []any{"5432:15432"}
 	planned := (&Options{}).planPortForwards(forwards)

@@ -38,7 +38,7 @@ func (o *Options) mechanicsFactSheet(cname string, cfg *jsonx.OrderedMap, rt str
 	}
 	if rt == "macos-user" { // parity: HonoredBy — the workspace is already at its native host path, not mounted at /workspace
 		facts.WorkspacePath = o.Workspace
-		if _, ok := macosuser.CooperativeCPUs(cfgMap(cfg, "resources")); ok {
+		if _, ok := macosuser.CooperativeCPUs(readableResources(cfg)); ok {
 			facts.CooperativeCPUDefaults = append([]string(nil), macosuser.CooperativeCPUVars...)
 		}
 	}
@@ -293,7 +293,7 @@ func appliedWorkspaceMechanics(facts *jailcontent.FactSheet, extra string, skill
 // is true only when AMD VA-API actually adds an image package not already declared.
 func gpuAddsImagePackages(cfg *jsonx.OrderedMap) bool {
 	declared := map[string]bool{}
-	for _, value := range cfgList(cfg, "packages") {
+	for _, value := range declaredNixPackages(cfg) {
 		if name, ok := value.(string); ok {
 			declared[name] = true
 		}
@@ -304,6 +304,16 @@ func gpuAddsImagePackages(cfg *jsonx.OrderedMap) bool {
 		}
 	}
 	return false
+}
+
+func declaredNixPackages(cfg *jsonx.OrderedMap) []any {
+	if install := cfgMap(cfg, "install"); install != nil {
+		if value, present := install.Get("nix"); present {
+			packages, _ := value.([]any)
+			return packages
+		}
+	}
+	return cfgList(cfg, "packages")
 }
 
 func mechanicsPackNames(packs []*packload.Pack) []string {
