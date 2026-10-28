@@ -36,6 +36,31 @@ A missing device produces a warning but does not stop the jail. Adding a device 
 
 ---
 
+## Mesa Graphics Libraries
+
+For Linux applications that need the Mesa/OpenGL driver files inside a container, add `mesa` to the existing `packages` list. With `gpu.enabled: true`, container boot exposes the selected package's resolved `lib` and `share` outputs at `/run/opengl-driver` and, when supplied, `/run/opengl-driver-32`. This supplies userspace files; it does not pass through a GPU device or establish hardware support.
+
+```jsonc
+{
+  "gpu": { "enabled": true },
+  "packages": ["mesa"]
+}
+```
+
+For an explicit 32-bit package selection, nixpkgs also provides `pkgsi686Linux.mesa` where that attribute exists. Use the ordinary package pin form when a particular nixpkgs revision is needed:
+
+```jsonc
+{
+  "packages": [
+    { "name": "mesa", "nixpkgs": "fe13242281a67641c0102cdb1087f0ebe586c7df" }
+  ]
+}
+```
+
+That example is the nixpkgs revision in this checkout's `flake.lock`; inspect `.nodes.nixpkgs.locked.rev` there to discover the checkout's current pin. The package's resolved version is reported by `yolo check` inside the jail. A preexisting `/run/opengl-driver` tree is preserved as supplied rather than repaired, so the check distinguishes it from links made to the selected package.
+
+NVIDIA's driver-library layout is not covered by this Mesa package path; do not use this section as NVIDIA driver configuration guidance.
+
 ## GPU Passthrough (NVIDIA)
 
 Run CUDA workloads, such as training models, inside the jail on an NVIDIA GPU. It needs the NVIDIA

@@ -233,6 +233,8 @@ func Check(opts Options) int {
 	// (provisioner-sets.md §9 step 2). It prints nothing when the notch has an image.
 	o.sectionPackageProfile(r, merged, runtimeSel)
 
+	// --- GPU graphics-driver tree (Linux only) ---
+	o.sectionGPUGraphics(r, merged)
 	// --- GPU (NVIDIA) ---
 	o.sectionGPUNvidia(r, merged)
 	// --- GPU (AMD / ROCm) ---

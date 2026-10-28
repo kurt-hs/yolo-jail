@@ -599,6 +599,68 @@
           then [ drv ]
           else builtins.concatMap (o: expandSelected drv o) outs;
 
+        # Mesa's NixOS graphics tree is not the ordinary shared-library farm.
+        # Recognize only selected Mesa runtime outputs, and inspect the actual
+        # advertised outputs rather than guessing a `drivers` output exists.
+        graphicsDriverOutputNames = r:
+          let
+            advertised = r.drv.outputs or [ "out" ];
+            requested = if r.outputs == null then
+              [ "out" ] ++ pkgs.lib.optional (builtins.elem "drivers" advertised) "drivers"
+            else r.outputs;
+          in builtins.filter (o: builtins.elem o advertised && builtins.elem o [ "out" "drivers" ]) requested;
+        graphicsDriverCandidates = specs:
+          builtins.concatMap (r:
+            let outputs = graphicsDriverOutputNames r;
+                host = r.drv.stdenv.hostPlatform.system;
+            in if builtins.elem r.attr [ "mesa" "pkgsi686Linux.mesa" ] && outputs != [] then [ {
+              name = "mesa";
+              version = r.drv.version;
+              arch = if host == "i686-linux" then "32" else "64";
+              outputs = map (o: r.drv.${o}) outputs;
+            } ] else []
+          ) specs;
+        is32BitGraphicsSpec = r:
+          builtins.elem r.attr [ "mesa" "pkgsi686Linux.mesa" ]
+          && graphicsDriverOutputNames r != []
+          && r.drv.stdenv.hostPlatform.system == "i686-linux";
+        mkGraphicsDriverManifest = { name, destination, candidates }:
+          let
+            outputPaths = builtins.concatMap (candidate: candidate.outputs) candidates;
+            candidateScript = candidate: ''
+              graphics_lib=""
+              graphics_share=""
+              ${pkgs.lib.concatMapStringsSep "\n" (output: ''
+                if [ -z "$graphics_lib" ]; then
+                  for marker in ${output}/lib/libgallium*.so; do
+                    if [ -e "$marker" ]; then graphics_lib=${pkgs.lib.escapeShellArg "${output}/lib"}; break; fi
+                  done
+                fi
+                if [ -z "$graphics_share" ]; then
+                  for marker in ${output}/share/glvnd/egl_vendor.d/*.json; do
+                    if [ -e "$marker" ]; then graphics_share=${pkgs.lib.escapeShellArg "${output}/share"}; break; fi
+                  done
+                fi
+              '') candidate.outputs}
+              if [ -z "$graphics_lib" ] || [ -z "$graphics_share" ]; then
+                echo "yolo: selected Mesa ${candidate.version} (${candidate.arch}-bit) lacks a verified libgallium/glvnd output; choose a supported Mesa pin or remove this package" >&2
+                exit 1
+              fi
+              graphics_manifest=$(${pkgs.jq}/bin/jq -cn \
+                --arg name ${pkgs.lib.escapeShellArg candidate.name} \
+                --arg version ${pkgs.lib.escapeShellArg candidate.version} \
+                --arg arch ${pkgs.lib.escapeShellArg candidate.arch} \
+                --arg lib "$graphics_lib" --arg share "$graphics_share" \
+                --argjson prior "$graphics_manifest" \
+                '$prior | .drivers += [{name:$name,version:$version,arch:$arch,lib:$lib,share:$share}]')
+            '';
+          in pkgs.runCommand name { nativeBuildInputs = [ pkgs.jq ]; buildInputs = outputPaths; } ''
+            mkdir -p "$out/${builtins.dirOf destination}"
+            graphics_manifest='{"drivers":[]}'
+            ${pkgs.lib.concatMapStringsSep "\n" candidateScript candidates}
+            printf '%s\n' "$graphics_manifest" > "$out/${destination}"
+          '';
+
         # Resolve each package spec to its base derivation + requested
         # output names (null → default output).  extraPackages (image
         # contents) and extraLibPackages (the /lib symlink farm) both
@@ -612,7 +674,7 @@
         resolvedPackageSpecs = map (spec:
           if builtins.isString spec then
             let r = resolvePackageAttr imagePkgs spec;
-            in { inherit (r) drv outputs; }
+            in { inherit (r) drv outputs; attr = r.base; }
           else if spec ? nixpkgs then
             # Pinned to a specific nixpkgs commit
             let
@@ -620,7 +682,7 @@
                 url = "https://github.com/NixOS/nixpkgs/archive/${spec.nixpkgs}.tar.gz";
               }) { system = imageSystem; };
               r = resolvePackageAttr pinnedPkgs spec.name;
-            in { inherit (r) drv; outputs = objectOutputs spec r; }
+            in { inherit (r) drv; outputs = objectOutputs spec r; attr = r.base; }
           else if spec ? version && spec ? url && spec ? hash then
             # Version override: rebuild existing package with different source
             let r = resolvePackageAttr imagePkgs spec.name;
@@ -633,14 +695,28 @@
                 };
               });
               outputs = objectOutputs spec r;
+              attr = r.base;
             }
           else
             let r = resolvePackageAttr imagePkgs spec.name;
-            in { inherit (r) drv; outputs = objectOutputs spec r; }
+            in { inherit (r) drv; outputs = objectOutputs spec r; attr = r.base; }
         ) extraPackageSpecs;
 
         extraPackages = builtins.concatMap
           (r: selectOutputs r.drv r.outputs) resolvedPackageSpecs;
+        imageGraphicsCandidates = graphicsDriverCandidates resolvedPackageSpecs;
+        imageGraphicsManifest = mkGraphicsDriverManifest {
+          name = "yolo-image-graphics-drivers";
+          destination = "etc/yolo-jail/graphics-drivers.json";
+          candidates = imageGraphicsCandidates;
+        };
+        imageGraphics32Outputs = builtins.concatMap
+          (candidate: if candidate.arch == "32" then candidate.outputs else []) imageGraphicsCandidates;
+        # The 32-bit ABI tree is mounted at /run/opengl-driver-32 from the
+        # manifest's direct output references; do not flatten it into the
+        # image's native root or /lib farms.
+        imageExtraPackages = builtins.filter
+          (output: !(builtins.elem (toString output) (map toString imageGraphics32Outputs))) extraPackages;
 
         # ── Native NON-CONTAINER resolution (any notch with no image) ──────
         # Mirror resolvedPackageSpecs but resolve against `pkgs` (the flake's
@@ -772,6 +848,7 @@
             then throw (objectOutputsError spec split)
             else {
               inherit name floorName outputs drv skipReason;
+              attr = if present then split.base else entry;
               available = present && metaOK
                 && okAttempt.success && okAttempt.value;
             }
@@ -780,6 +857,25 @@
         noncontainerKept = builtins.filter (r: r.available) noncontainerResolved;
         noncontainerSkipped = builtins.filter (r: !r.available) noncontainerResolved;
         noncontainerSkippedNames = map (r: r.name) noncontainerSkipped;
+        noncontainerGraphicsCandidates = if pkgs.stdenv.hostPlatform.isLinux
+          then graphicsDriverCandidates noncontainerKept else [];
+        noncontainerGraphics32Outputs = builtins.concatMap
+          (candidate: if candidate.arch == "32" then candidate.outputs else []) noncontainerGraphicsCandidates;
+        noncontainerPackageOutputs = builtins.concatMap
+          (r: selectOutputs r.drv r.outputs) noncontainerKept;
+        # 32-bit Mesa outputs are carried by the manifest's direct references
+        # and exposed only at /run/opengl-driver-32; flattening them beside the
+        # native package tree can collide with the 64-bit Mesa tree.
+        noncontainerProfilePackageOutputs = if pkgs.stdenv.hostPlatform.isLinux then
+          builtins.filter (output: !(builtins.elem (toString output) (map toString noncontainerGraphics32Outputs))) noncontainerPackageOutputs
+          else noncontainerPackageOutputs;
+        noncontainerGraphicsManifest = if pkgs.stdenv.hostPlatform.isLinux then
+          mkGraphicsDriverManifest {
+            name = "yolo-noncontainer-graphics-drivers";
+            destination = "share/yolo-jail/graphics-drivers.json";
+            candidates = noncontainerGraphicsCandidates;
+          }
+          else null;
         # The warning rides on noncontainerPackages — the BUILD path — rather
         # than on the skip list alone: `nix build`'s stderr is streamed to the
         # user (internal/darwinpkg streamStderrTail), while the skip list is
@@ -791,7 +887,7 @@
             (acc: r: pkgs.lib.warn
               "yolo: skipping \"${r.name}\" from `packages` — ${r.skipReason}"
               acc)
-            (builtins.concatMap (r: selectOutputs r.drv r.outputs) noncontainerKept)
+            noncontainerProfilePackageOutputs
             noncontainerSkipped;
 
         # ── The non-container FLOOR (docs/reference/macos-user-provisioning.md) ──
@@ -982,7 +1078,7 @@
           in
             [ (imagePkgs.lib.getLib r.drv) ]
             ++ imagePkgs.lib.optionals devRequested propagatedLibs
-        ) resolvedPackageSpecs;
+        ) (builtins.filter (r: !is32BitGraphicsSpec r) resolvedPackageSpecs);
 
         # nix-ld as the FHS ELF interpreter (replaces the raw glibc ld.so at
         # /lib64).  Variant A of docs/reference/mise-node-dynamic-linking.md: a
@@ -1665,7 +1761,7 @@
         imageClosureRoot = pkgs.writeText "yolo-jail-image-closure-root"
           (builtins.concatStringsSep "\n"
             (map (p: "${p}")
-              (corePackagesFromNixpkgs ++ fullPackages ++ extraPackages)) + "\n");
+              (corePackagesFromNixpkgs ++ fullPackages ++ imageExtraPackages ++ [ imageGraphicsManifest ])) + "\n");
 
         # `withExtras = false` is C5 (docs/reference/image-staging-vs-baking.md §4 C5): the
         # same image with `fullPackages` and the chromium half of the /lib farm left out,
@@ -1756,12 +1852,12 @@
             # OMITTED below rather than emitted as a zero-path layer, which would
             # spend a layer slot and change every digest above it for no content.
             extrasTier = n2c.buildLayer {
-              deps = extraPackages ++ extraLibPackages;
+              deps = imageExtraPackages ++ extraLibPackages;
               layers = [ baseTier ];
               maxLayers = 1;
             };
             lowerTiers = [ baseTier ]
-              ++ pkgs.lib.optional (extraPackages != []) extrasTier;
+              ++ pkgs.lib.optional (imageExtraPackages != []) extrasTier;
 
             # TIER 3, THE TOP: everything of ours, as ONE derivation.
             #
@@ -1805,7 +1901,8 @@
                 [ variantBinPathLinks ]
                 ++ corePackages
                 ++ variantFullPackages
-                ++ extraPackages;
+                ++ imageExtraPackages
+                ++ [ imageGraphicsManifest ];
               # `fakeRootCommands` lived here until nix2container replaced the
               # generator; `buildImage` has no such hook, so the same directories
               # and /etc files are written into the joined tree instead.  Nothing
@@ -2190,7 +2287,7 @@
         # either one would be the same lie in a new spelling.
         packages.yoloNoncontainerPackages = pkgs.buildEnv {
           name = "yolo-noncontainer-packages";
-          paths = noncontainerPackages;
+          paths = noncontainerPackages ++ pkgs.lib.optional (noncontainerGraphicsManifest != null) noncontainerGraphicsManifest;
           # Merge pkg-config metadata so PKG_CONFIG_PATH can point at one dir.
           extraOutputsToInstall = [ "bin" "lib" "dev" ];
         };

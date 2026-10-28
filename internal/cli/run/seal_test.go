@@ -35,7 +35,7 @@ import (
 )
 
 // sealedEnvAllowlist is every -e NAME a sealed launch may hand its jail. Adding one is a decision
-// about what a fork's build may see; the test says which name was not on the list.
+// about what a fork's build may see; graphics is present only as an explicit disabled value.
 var sealedEnvAllowlist = map[string]bool{
 	"CARGO_HOME": true, "COPILOT_ALLOW_ALL": true, "EDITOR": true, "GIT_PAGER": true, "GOPATH": true,
 	"HOME": true, "IS_SANDBOX": true, "JAIL_HOME": true, "LD_LIBRARY_PATH": true, "MISE_CACHE_DIR": true,
@@ -47,7 +47,7 @@ var sealedEnvAllowlist = map[string]bool{
 	"VISUAL": true, "YOLO_AGENT_UPDATES": true, "YOLO_BLOCK_CONFIG": true, "YOLO_CONTEXT_DIR": true,
 	"YOLO_CONTRACT_TAGS": true, "YOLO_DURABLE_DIR": true, "YOLO_HOST_CA_FILE": true, "YOLO_HOST_DIR": true, "YOLO_HOST_LAYERS": true,
 	"YOLO_HOST_LOOPBACK": true, "YOLO_JAIL_BACKEND": true, "YOLO_JAIL_MAIN": true, "YOLO_LSP_SERVERS": true,
-	"YOLO_MCP_SERVERS": true, "YOLO_MISE_TOOLS": true, "YOLO_PACK_ROOT": true, "YOLO_RUNTIME": true,
+	"YOLO_MCP_SERVERS": true, "YOLO_MISE_TOOLS": true, "YOLO_PACK_ROOT": true, "YOLO_GPU_ENABLED": true, "YOLO_RUNTIME": true,
 	"YOLO_SEALED_BUILD": true, "YOLO_VERSION": true,
 }
 
@@ -343,6 +343,11 @@ func TestASealedLaunchHandsTheJailNoCrossing(t *testing.T) {
 		if !sealedEnvAllowlist[name] {
 			t.Errorf("a sealed launch hands the jail -e %s, which is not on the seal's allowlist", name)
 		}
+	}
+	// A sealed config projection cannot request GPU exposure; its explicit zero also
+	// prevents a value from any lower-priority image/runtime environment taking effect.
+	if got, ok := envValue(argv, "YOLO_GPU_ENABLED"); !ok || got != "0" {
+		t.Errorf("sealed launch graphics state = %q, present=%v; want explicit 0", got, ok)
 	}
 	// -v: every source is this launch's own — its workspace (the build's workspace, state and
 	// private stores), its staged trees under the agents dir, yolo's own binaries — or a named

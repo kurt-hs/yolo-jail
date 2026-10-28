@@ -553,6 +553,7 @@ func podmanLinuxGolden(home string) []string {
 		// ever read the variable. This golden is what pins the absence — re-adding the
 		// export fails here, which is the only place that would notice.
 		"-e", "YOLO_RUNTIME=podman",
+		"-e", "YOLO_GPU_ENABLED=0",
 	)
 	// The context dir, on every container launch whether or not a context mount was declared
 	// (context-mounts.md#CX-D4).
