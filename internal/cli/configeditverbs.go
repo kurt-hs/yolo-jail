@@ -335,6 +335,10 @@ func parseTOMLConfigValue(raw string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected a TOML value: %w", err)
 	}
+	keys := doc.Values.Keys()
+	if len(keys) != 1 || keys[0] != "value" {
+		return nil, fmt.Errorf("expected one TOML value; additional top-level keys are not accepted")
+	}
 	value, ok := doc.Values.Get("value")
 	if !ok {
 		return nil, fmt.Errorf("TOML value was not parsed")

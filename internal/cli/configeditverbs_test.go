@@ -190,7 +190,7 @@ func TestRunConfigEditUnsetAbsentAndInvalidEditDoNotWrite(t *testing.T) {
 	t.Setenv("HOME", user.Root)
 	t.Setenv("YOLO_VERSION", "")
 	localPath := filepath.Join(project.Root, paths.WorkspaceLocalConfigTOMLName)
-	before := []byte("[machine.resources]\ncpus = 3\n")
+	before := []byte("[machine.resources]\ncpus = 3\n\n[machine.gpu]\nenabled = false\n")
 	if err := os.WriteFile(localPath, before, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -209,6 +209,16 @@ func TestRunConfigEditUnsetAbsentAndInvalidEditDoNotWrite(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(localPath); !bytes.Equal(got, before) {
 		t.Fatalf("refused set changed bytes: %q", got)
+	}
+
+	rc, out, errw = runConfigEditCapture(t, project.Root,
+		[]string{"set", "machine.gpu.enabled", `true
+other = 3`, "--local"})
+	if rc == 0 || out != "" || !strings.Contains(errw, "invalid config value:") {
+		t.Fatalf("multiple TOML values rc=%d stdout=%q stderr=%q", rc, out, errw)
+	}
+	if got, _ := os.ReadFile(localPath); !bytes.Equal(got, before) {
+		t.Fatalf("invalid multi-value set changed bytes: %q", got)
 	}
 }
 
