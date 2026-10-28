@@ -3,12 +3,15 @@ package run
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // inheritHome sets up a scratch HOME with a user config, and returns (home, wsState).
@@ -80,9 +83,16 @@ func mountedBody(t *testing.T, args []string, containerPath string) (body, src s
 // reader actually evaluates, so keys are what to assert on.
 func mountedKeys(t *testing.T, args []string, containerPath string) ([]string, bool) {
 	t.Helper()
-	_, src, ok := mountedBody(t, args, containerPath)
+	body, src, ok := mountedBody(t, args, containerPath)
 	if !ok {
 		return nil, false
+	}
+	if filepath.Ext(src) == ".toml" {
+		doc, err := configdoc.Parse([]byte(body), configdoc.TOML)
+		if err != nil {
+			t.Fatalf("delivered TOML does not parse: %v", err)
+		}
+		return doc.Values.Keys(), true
 	}
 	parsed, err := config.LoadJSONCFile(src, containerPath, true, nil)
 	if err != nil {
@@ -102,12 +112,695 @@ func hasInheritKey(keys []string, want string) bool {
 	return false
 }
 
+func TestInheritedUserTOMLIsDeliveredByTheLaunchCaller(t *testing.T) {
+	for _, tc := range []struct {
+		name, filename, input string
+	}{
+		{"legacy JSONC", "config.jsonc", `{"packs": ["claude"]}`},
+		{"readable TOML", "config.toml", "packs = ['claude']\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, wsState := inheritHome(t, "")
+			userConfig := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", tc.filename)
+			if err := os.WriteFile(userConfig, []byte(tc.input), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			o := inheritOptions(t)
+			args := o.userConfigMountArgs("podman", wsState)
+
+			for _, dest := range []string{
+				"/home/agent/.config/yolo-jail/config.toml",
+				"/home/agent/.config/yolo-jail/inherited-launch.toml",
+			} {
+				body, source, found := mountedBody(t, args, dest)
+				if !found {
+					t.Fatalf("the launch caller did not deliver %s as TOML; argv=%v", dest, args)
+				}
+				info, err := os.Stat(source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := info.Mode().Perm(); got != 0o644 {
+					t.Errorf("staged %s mode = %04o, want 0644", source, got)
+				}
+				if filepath.Ext(source) != ".toml" {
+					t.Errorf("TOML destination %s was staged from %q", dest, source)
+				}
+				parsed, err := configdoc.Parse([]byte(body), configdoc.TOML)
+				if err != nil {
+					t.Errorf("the bytes mounted for %s are not TOML: %v\n%s", dest, err, body)
+					continue
+				}
+				if _, ok := parsed.Values.Get("packs"); !ok {
+					t.Errorf("delivered %s lost user packs: %s", dest, body)
+				}
+			}
+			for i := 0; i+1 < len(args); i++ {
+				if args[i] != "-v" || !strings.HasSuffix(args[i+1], ":ro") {
+					continue
+				}
+				parts := strings.Split(args[i+1], ":")
+				if len(parts) < 2 || parts[1] == "/home/agent/.config/yolo-jail" || parts[1] == "/home/agent/.config" {
+					t.Errorf("generated user scope must remain a single-file read-only bind: %q", args[i+1])
+				}
+			}
+		})
+	}
+}
+
+func TestRunAssemblesInheritedTOMLForLegacyAndReadableUserConfigs(t *testing.T) {
+	for _, tc := range []struct {
+		name, filename, input string
+	}{
+		{"legacy JSONC", "config.jsonc", `{"packs": ["claude"]}`},
+		{"readable TOML", "config.toml", "packs = ['claude']\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _ = inheritHome(t, "")
+			userConfig := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", tc.filename)
+			if err := os.WriteFile(userConfig, []byte(tc.input), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			workspace := t.TempDir()
+			argv, printed := fakePodmanLaunchIn(t, workspace, "", func(o *Options) {
+				o.AcceptConfigChanges = true
+			})
+			if len(argv) == 0 {
+				t.Fatalf("Run did not reach the mocked Podman launch; output:\n%s", printed)
+			}
+			var found bool
+			for i := 0; i+1 < len(argv); i++ {
+				if argv[i] == "-v" && strings.HasSuffix(argv[i+1], ":/home/agent/.config/yolo-jail/config.toml:ro") {
+					found = true
+					parts := strings.Split(argv[i+1], ":")
+					body, err := os.ReadFile(parts[0])
+					if err != nil {
+						t.Fatal(err)
+					}
+					parsed, err := configdoc.Parse(body, configdoc.TOML)
+					if err != nil {
+						t.Fatalf("Run mounted non-TOML inherited user bytes: %v\n%s", err, body)
+					}
+					if _, ok := parsed.Values.Get("packs"); !ok {
+						t.Errorf("Run's assembled preflight file lost packs: %s", body)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("Run reached Podman without assembling the inherited TOML user scope; argv=%v\n%s", argv, printed)
+			}
+		})
+	}
+}
+
 // THE FALSE-ERROR CLASS, at the delivery seam (OQ-LP9 R1). The old arrangement bound the
 // human's real config.jsonc into the jail verbatim, so every host-only key crossed. What a
 // jail sees now must carry `packs` and `loopholes` and must NOT carry the host-referent keys
 // — measured 2026-08-14 to make an in-jail `yolo check` report problems the user does not
 // have (gpu → four driver fails, cache_relocations → a missing target parent, mounts → a
 // warning per entry).
+func TestAssemblePreservesExistingLegacyUserConfigSibling(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"]}`)
+	workspace := t.TempDir()
+	wsState := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(wsState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Ground the destination in the actual Podman home bind, not the staging filename:
+	// podmanEarlyHomeBinds maps its config subtree at /home/agent/.config.
+	var configSubtree string
+	for _, bind := range podmanEarlyHomeBinds() {
+		if bind.HomeRel == ".config" {
+			configSubtree = bind.Subtree
+		}
+	}
+	if configSubtree == "" {
+		t.Fatal("Podman no longer declares the .config home bind; re-ground this test")
+	}
+	configDir := filepath.Join(wsState, configSubtree, "yolo-jail")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(configDir, "config.jsonc")
+	ownerBytes := []byte(`{"packs": ["copilot"]}` + "\n")
+	if err := os.WriteFile(legacy, ownerBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	o := goldenOptions(workspace, os.Getenv("HOME"))
+	in := relocationInput(t, "podman", wsState, nil)
+	argv := o.assembleRunCmd(in)
+	if in.assemblyErr != nil {
+		t.Fatalf("one regular legacy sibling should retain old JSONC delivery, not refuse: %v", in.assemblyErr)
+	}
+	var source string
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] != "-v" {
+			continue
+		}
+		spec := argv[i+1]
+		if strings.HasSuffix(spec, ":/home/agent/.config/yolo-jail/config.jsonc:ro") {
+			source = strings.Split(spec, ":")[0]
+		}
+		if strings.HasSuffix(spec, ":/home/agent/.config/yolo-jail/config.toml:ro") {
+			t.Errorf("assembly added a TOML sibling beside the owner's legacy JSONC: %q", spec)
+		}
+	}
+	if source == "" {
+		t.Fatalf("assembly did not retain the original JSONC destination; argv=%v", argv)
+	}
+	body, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.LoadJSONCFile(source, "/home/agent/.config/yolo-jail/config.jsonc", true, nil); err != nil {
+		t.Errorf("the legacy delivery route did not stage JSONC bytes: %v\n%s", err, body)
+	}
+	if !strings.Contains(string(body), `"claude"`) {
+		t.Errorf("the generated JSONC fallback lost the host scope:\n%s", body)
+	}
+	after, err := os.ReadFile(legacy)
+	if err != nil || string(after) != string(ownerBytes) {
+		t.Errorf("the owner file changed (err %v): %q", err, after)
+	}
+	if info, err := os.Stat(legacy); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("the owner mode changed (info=%v err=%v)", info, err)
+	}
+}
+
+func TestAssembleRefusesMixedLegacyAndTOMLUserConfigSiblings(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"]}`)
+	workspace := t.TempDir()
+	wsState := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(wsState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var configSubtree string
+	for _, bind := range podmanEarlyHomeBinds() {
+		if bind.HomeRel == ".config" {
+			configSubtree = bind.Subtree
+		}
+	}
+	if configSubtree == "" {
+		t.Fatal("Podman no longer declares the .config home bind; re-ground this test")
+	}
+	configDir := filepath.Join(wsState, configSubtree, "yolo-jail")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(configDir, "config.jsonc")
+	toml := filepath.Join(configDir, "config.toml")
+	legacyBytes, tomlBytes := []byte(`{"packs": ["copilot"]}`+"\n"), []byte("packs = [\"codex\"]\n")
+	if err := os.WriteFile(legacy, legacyBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(toml, tomlBytes, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	o := goldenOptions(workspace, os.Getenv("HOME"))
+	in := relocationInput(t, "podman", wsState, nil)
+	argv := o.assembleRunCmd(in)
+	if in.assemblyErr == nil {
+		t.Errorf("mixed sibling families were not refused before runtime execution; argv=%v", argv)
+	}
+	for _, spec := range inheritedScopeMounts(argv) {
+		t.Errorf("a user-scope file was staged or bound despite refusal: %q", spec)
+	}
+	assertNoInheritedScopeStages(t, wsState)
+	for path, want := range map[string][]byte{legacy: legacyBytes, toml: tomlBytes} {
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != string(want) {
+			t.Errorf("refusal changed owner file %s (err %v): %q", path, err, got)
+		}
+	}
+	for path, wantMode := range map[string]os.FileMode{legacy: 0o600, toml: 0o640} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != wantMode {
+			t.Errorf("refusal changed %s mode (info=%v err=%v), want %04o", path, info, err, wantMode)
+		}
+	}
+}
+
+func TestAssembleRefusesLegacyFallbackBesideExistingTOML(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"], "loopholes": {"acme": {"command": ["/bin/true"], "jail_endpoint": "/run/yolo-services/acme.sock"}}}`)
+	workspace := t.TempDir()
+	wsState := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(wsState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var configSubtree string
+	for _, bind := range podmanEarlyHomeBinds() {
+		if bind.HomeRel == ".config" {
+			configSubtree = bind.Subtree
+		}
+	}
+	if configSubtree == "" {
+		t.Fatal("Podman no longer declares the .config home bind; re-ground this test")
+	}
+	configDir := filepath.Join(wsState, configSubtree, "yolo-jail")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	toml := filepath.Join(configDir, "config.toml")
+	ownerBytes := []byte("packs = [\"copilot\"]\n")
+	if err := os.WriteFile(toml, ownerBytes, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	o := goldenOptions(workspace, os.Getenv("HOME"))
+	in := relocationInput(t, "podman", wsState, nil)
+	argv := o.assembleRunCmd(in)
+	if in.assemblyErr == nil || !strings.Contains(in.assemblyErr.Error(), toml) {
+		t.Fatalf("an unrepresentable legacy F/G scope beside TOML was not refused with its path: %v", in.assemblyErr)
+	}
+	for _, spec := range inheritedScopeMounts(argv) {
+		t.Errorf("a scope file was bound before refusing the mixed format family: %q", spec)
+	}
+	assertNoInheritedScopeStages(t, wsState)
+	got, err := os.ReadFile(toml)
+	if err != nil || string(got) != string(ownerBytes) {
+		t.Errorf("refusal changed the owner's TOML file (err %v): %q", err, got)
+	}
+	if info, err := os.Stat(toml); err != nil || info.Mode().Perm() != 0o640 {
+		t.Errorf("refusal changed the owner's TOML mode (info=%v err=%v)", info, err)
+	}
+}
+
+func TestAssembleRefusesLinkedLegacyUserConfigSibling(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"]}`)
+	workspace := t.TempDir()
+	wsState := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(wsState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var configSubtree string
+	for _, bind := range podmanEarlyHomeBinds() {
+		if bind.HomeRel == ".config" {
+			configSubtree = bind.Subtree
+		}
+	}
+	if configSubtree == "" {
+		t.Fatal("Podman no longer declares the .config home bind; re-ground this test")
+	}
+	configDir := filepath.Join(wsState, configSubtree, "yolo-jail")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(configDir, "config.jsonc")
+	target := filepath.Join(t.TempDir(), "owner.jsonc")
+	targetBytes := []byte(`{"packs": ["copilot"]}` + "\n")
+	if err := os.WriteFile(target, targetBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	o := goldenOptions(workspace, os.Getenv("HOME"))
+	in := relocationInput(t, "podman", wsState, nil)
+	argv := o.assembleRunCmd(in)
+	if in.assemblyErr == nil || !strings.Contains(in.assemblyErr.Error(), legacy) {
+		t.Fatalf("a linked legacy sibling was not refused with its path: %v", in.assemblyErr)
+	}
+	for _, spec := range inheritedScopeMounts(argv) {
+		t.Errorf("a scope file was mounted despite a linked destination: %q", spec)
+	}
+	assertNoInheritedScopeStages(t, wsState)
+	link, err := os.Readlink(legacy)
+	if err != nil || link != target {
+		t.Errorf("refusal changed the legacy link (got %q err %v), want %q", link, err, target)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != string(targetBytes) {
+		t.Errorf("refusal changed the link target (err %v): %q", err, got)
+	}
+}
+func inheritedScopeMounts(argv []string) []string {
+	var out []string
+	for _, spec := range mountSpecs(argv) {
+		if strings.Contains(spec, ":/home/agent/.config/yolo-jail/") && strings.HasSuffix(spec, ":ro") {
+			out = append(out, spec)
+		}
+	}
+	return out
+}
+
+func assertNoInheritedScopeStages(t *testing.T, wsState string) {
+	t.Helper()
+	for _, name := range []string{
+		"inherit-preflight.jsonc", "inherit-preflight.toml",
+		"inherit-nested.jsonc", "inherit-nested.toml",
+	} {
+		if _, err := os.Lstat(filepath.Join(wsState, name)); err == nil {
+			t.Errorf("refusal left staged inherited file %s", name)
+		}
+	}
+}
+
+func mountSpecs(argv []string) []string {
+	var specs []string
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] == "-v" {
+			specs = append(specs, argv[i+1])
+		}
+	}
+	return specs
+}
+
+func TestInheritedLegacyJSONCFallbackIsPerScope(t *testing.T) {
+	_, wsState := inheritHome(t, `{"packs": ["claude"], "env_sources": [".env"]}`)
+	o := inheritOptions(t)
+	args := o.userConfigMountArgs("podman", wsState)
+	preflight, _, hasTOMLPreflight := mountedBody(t, args, "/home/agent/"+inheritPreflightRel)
+	if !hasTOMLPreflight {
+		t.Fatalf("preflight did not retain its readable TOML projection; argv=%v", args)
+	}
+	if _, err := configdoc.Parse([]byte(preflight), configdoc.TOML); err != nil {
+		t.Fatalf("preflight output is not TOML: %v\n%s", err, preflight)
+	}
+	nested, nestedSource, hasJSONCNested := mountedBody(t, args, "/home/agent/"+inheritNestedLegacyRel)
+	if !hasJSONCNested {
+		t.Fatalf("nested-only legacy env_sources did not stay on its JSONC compatibility route; argv=%v", args)
+	}
+	parsed, err := config.LoadJSONCFile(nestedSource, inheritNestedLegacyRel, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := parsed.Get("env_sources"); !ok || !strings.Contains(nested, `"env_sources"`) {
+		t.Errorf("the nested JSONC fallback erased legacy env_sources:\n%s", nested)
+	}
+	if _, _, found := mountedBody(t, args, "/home/agent/"+inheritNestedRel); found {
+		t.Errorf("a global TOML fallback decision was made instead of a per-scope decision: %v", args)
+	}
+}
+
+func TestMappedHomePathUsesLongestComponentBoundaryBind(t *testing.T) {
+	wsState := t.TempDir()
+	parent := filepath.Join(wsState, "config")
+	deeper := filepath.Join(wsState, "override")
+	for _, dir := range []string{parent, deeper} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	containerPath := "/home/agent/.config/yolo-jail/config.jsonc"
+	argv := []string{
+		"-v", parent + ":/home/agent/.config:rw",
+		"-v", deeper + ":/home/agent/.config/yolo-jail:rw",
+	}
+	got, err := mappedHomePath(wsState, argv, containerPath)
+	if err != nil || got != filepath.Join("override", "config.jsonc") {
+		t.Fatalf("mappedHomePath() = %q, %v; want deepest actual bind override/config.jsonc", got, err)
+	}
+	if _, err := mappedHomePath(wsState, []string{"-v", parent + ":/home/agent/.config-other:rw"}, containerPath); err == nil {
+		t.Fatal("component-prefix-only bind incorrectly covered .config/yolo-jail")
+	}
+	if _, err := mappedHomePath(wsState, []string{
+		"-v", parent + ":/home/agent/.config:rw",
+		"-v", deeper + ":/home/agent/.config:rw",
+	}, containerPath); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("equal-specificity destination binds were not refused: %v", err)
+	}
+}
+
+func TestAppleContainerAssemblyRefusesExistingScopeDestinationsBeforeStaging(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		legacy    []byte
+		toml      []byte
+		link      bool
+		wantNames []string
+	}{
+		{name: "owner TOML", toml: []byte("# operator comment\npacks = [\"copilot\"]\n"), wantNames: []string{"config.toml"}},
+		{name: "both owner formats", legacy: []byte(`{"packs": ["copilot"]}` + "\n"), toml: []byte("packs = [\"codex\"]\n"), wantNames: []string{"config.jsonc", "config.toml"}},
+		{name: "linked owner", link: true, wantNames: []string{"config.jsonc"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _ = inheritHome(t, `{"packs": ["claude"]}`)
+			workspace := t.TempDir()
+			wsState := filepath.Join(t.TempDir(), "home")
+			configDir := filepath.Join(wsState, ".config", "yolo-jail")
+			if err := os.MkdirAll(configDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			legacy := filepath.Join(configDir, "config.jsonc")
+			toml := filepath.Join(configDir, "config.toml")
+			owners := map[string][]byte{}
+			if len(tc.legacy) > 0 {
+				owners[legacy] = tc.legacy
+				if err := os.WriteFile(legacy, tc.legacy, 0o640); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(tc.toml) > 0 {
+				owners[toml] = tc.toml
+				if err := os.WriteFile(toml, tc.toml, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var target string
+			if tc.link {
+				target = filepath.Join(t.TempDir(), "owner.jsonc")
+				owners[target] = []byte(`{"packs": ["codex"]}` + "\n")
+				if err := os.WriteFile(target, owners[target], 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, legacy); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			o := goldenOptions(workspace, os.Getenv("HOME"))
+			in := relocationInput(t, "container", wsState, nil)
+			argv := o.assembleRunCmd(in)
+			if in.assemblyErr == nil {
+				t.Fatal("Apple Container assembled a scope that would replace or follow an existing destination")
+			}
+			for _, name := range tc.wantNames {
+				if !strings.Contains(in.assemblyErr.Error(), filepath.Join(configDir, name)) {
+					t.Errorf("refusal does not name %s: %v", name, in.assemblyErr)
+				}
+			}
+			if !strings.Contains(in.assemblyErr.Error(), "preserv") {
+				t.Errorf("refusal has no safe preservation step: %v", in.assemblyErr)
+			}
+			if len(inheritedScopeMounts(argv)) != 0 {
+				t.Errorf("Apple Container emitted a single-file scope mount despite refusal: %v", inheritedScopeMounts(argv))
+			}
+			assertNoInheritedScopeStages(t, wsState)
+			for path, want := range owners {
+				got, err := os.ReadFile(path)
+				if err != nil || string(got) != string(want) {
+					t.Errorf("Apple Container refusal changed owner bytes at %s (err %v): %q", path, err, got)
+				}
+			}
+			for path, wantMode := range map[string]os.FileMode{toml: 0o600, legacy: 0o640} {
+				if _, exists := owners[path]; !exists {
+					continue
+				}
+				if info, err := os.Stat(path); err != nil || info.Mode().Perm() != wantMode {
+					t.Errorf("Apple Container refusal changed mode at %s (info=%v err=%v)", path, info, err)
+				}
+			}
+			if tc.link {
+				link, err := os.Readlink(legacy)
+				if err != nil || link != target {
+					t.Errorf("Apple Container refusal changed link %s (got %q err %v), want %q", legacy, link, err, target)
+				}
+			}
+		})
+	}
+}
+
+func TestAppleContainerAssemblesInheritedTOMLWhenDestinationIsAbsent(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"]}`)
+	workspace := t.TempDir()
+	wsState := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(wsState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	o := goldenOptions(workspace, os.Getenv("HOME"))
+	in := relocationInput(t, "container", wsState, nil)
+	_ = o.assembleRunCmd(in)
+	if in.assemblyErr != nil {
+		t.Fatalf("absent Apple Container destination should receive TOML: %v", in.assemblyErr)
+	}
+	path := filepath.Join(wsState, ".config", "yolo-jail", "config.toml")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Apple Container did not stage its absent TOML destination: %v", err)
+	}
+	if _, err := configdoc.Parse(body, configdoc.TOML); err != nil {
+		t.Fatalf("Apple Container staged invalid TOML: %v\n%s", err, body)
+	}
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(path), "config.jsonc")); err == nil {
+		t.Fatal("Apple Container unexpectedly created a legacy sibling for a representable scope")
+	}
+}
+
+func TestReadableInheritedTOMLFlowsThroughThePublicUserLoader(t *testing.T) {
+	_, wsState := inheritHome(t, `{"packs": ["claude"], "packages": ["postgresql"]}`)
+	o := inheritOptions(t)
+	args := o.userConfigMountArgs("podman", wsState)
+	preflight, _, foundPreflight := mountedBody(t, args, "/home/agent/"+inheritPreflightRel)
+	nested, _, foundNested := mountedBody(t, args, "/home/agent/"+inheritNestedRel)
+	if !foundPreflight || !foundNested {
+		t.Fatalf("caller did not produce both TOML user-scope files; args=%v", args)
+	}
+
+	jailHome := t.TempDir()
+	configDir := filepath.Join(jailHome, ".config", "yolo-jail")
+	for name, body := range map[string]string{
+		"config.toml":           preflight,
+		"inherited-launch.toml": nested,
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(configDir, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	layer := filepath.Join(jailHome, "local-layer.toml")
+	if err := os.WriteFile(layer, []byte("packs = [\"copilot\"]\ninstall.nix = [\"jq\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", jailHome)
+	t.Setenv("YOLO_VERSION", "nested-test")
+	t.Setenv(config.UserLayerEnv, layer)
+	merged, sources, err := config.UserScopeConfigWithSources(true, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packs, _ := merged.Get("packs")
+	packList, _ := packs.([]any)
+	var packNames []string
+	for _, pack := range packList {
+		if name, ok := pack.(string); ok {
+			packNames = append(packNames, name)
+		}
+	}
+	for _, want := range []string{"claude", "copilot"} {
+		if !slices.Contains(packNames, want) {
+			t.Errorf("public TOML user loader lost pack %q: %v", want, packNames)
+		}
+	}
+	install, _ := merged.Get("install")
+	installMap, _ := install.(*jsonx.OrderedMap)
+	nixValue, _ := installMap.Get("nix")
+	nixPackages, _ := nixValue.([]any)
+	var packages []string
+	for _, item := range nixPackages {
+		if name, ok := item.(string); ok {
+			packages = append(packages, name)
+		}
+	}
+	for _, want := range []string{"postgresql", "jq"} {
+		if !slices.Contains(packages, want) {
+			t.Errorf("nested and explicit TOML layers did not compose install.nix %q: %v", want, packages)
+		}
+	}
+	if got := sources.Locations("config.packs[1]"); !strings.Contains(strings.Join(got, " "), "local-layer.toml") {
+		t.Errorf("the explicit TOML layer lost its provenance: %v", got)
+	}
+}
+
+func TestRunPreservesLegacyFGPayloadAsJSONCFallback(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"], "loopholes": {"acme": {"command": ["/bin/true"], "jail_endpoint": "/run/yolo-services/acme.sock"}}}`)
+	workspace := t.TempDir()
+	argv, printed := fakePodmanLaunchIn(t, workspace, "", func(o *Options) {
+		o.AcceptConfigChanges = true
+	})
+	if len(argv) == 0 {
+		t.Fatalf("Run refused a valid legacy F/G user config instead of preserving it; output:\n%s", printed)
+	}
+	var preflight, nested string
+	for i := 0; i+1 < len(argv); i++ {
+		if argv[i] != "-v" {
+			continue
+		}
+		mount := argv[i+1]
+		switch {
+		case strings.HasSuffix(mount, ":/home/agent/.config/yolo-jail/config.jsonc:ro"):
+			preflight = strings.Split(mount, ":")[0]
+		case strings.HasSuffix(mount, ":/home/agent/.config/yolo-jail/inherited-launch.jsonc:ro"):
+			nested = strings.Split(mount, ":")[0]
+		}
+	}
+	for label, path := range map[string]string{"preflight": preflight, "nested": nested} {
+		if path == "" {
+			t.Fatalf("Run omitted the %s legacy JSONC fallback mount; argv=%v", label, argv)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := config.LoadJSONCFile(path, "/home/agent/.config/yolo-jail/config.jsonc", true, nil)
+		if err != nil {
+			t.Fatalf("the %s fallback is not loadable JSONC: %v\n%s", label, err, body)
+		}
+		if _, ok := parsed.Get("loopholes"); !ok {
+			t.Errorf("the %s fallback erased the legacy F/G root:\n%s", label, body)
+		}
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+			t.Errorf("the %s fallback mode is not 0644 (info=%v err=%v)", label, info, err)
+		}
+	}
+}
+
+func TestRunRefusesMixedInheritedUserConfigBeforeRuntime(t *testing.T) {
+	_, _ = inheritHome(t, `{"packs": ["claude"]}`)
+	workspace := t.TempDir()
+	wsState := paths.WorkspaceHomeState(workspace)
+	configDir := filepath.Join(wsState, "config", "yolo-jail")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(configDir, "config.jsonc")
+	toml := filepath.Join(configDir, "config.toml")
+	legacyBytes, tomlBytes := []byte(`{"packs": ["copilot"]}`+"\n"), []byte("packs = [\"codex\"]\n")
+	if err := os.WriteFile(legacy, legacyBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(toml, tomlBytes, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	argv, printed := fakePodmanLaunchIn(t, workspace, "", func(o *Options) {
+		o.AcceptConfigChanges = true
+	})
+	if len(argv) != 0 {
+		t.Fatalf("Run executed the mocked runtime despite an ambiguous inherited config family: %v", argv)
+	}
+	assertNoInheritedScopeStages(t, wsState)
+	if !strings.Contains(printed, legacy) || !strings.Contains(printed, toml) || !strings.Contains(printed, "preserve both") {
+		t.Errorf("the refusal did not name both files and a safe next step:\n%s", printed)
+	}
+	for path, want := range map[string][]byte{legacy: legacyBytes, toml: tomlBytes} {
+		got, err := os.ReadFile(path)
+		if err != nil || string(got) != string(want) {
+			t.Errorf("Run refusal changed %s (err %v): %q", path, err, got)
+		}
+	}
+}
+
+func TestRunRefusesMalformedReadableConfigBeforeExecutingRuntime(t *testing.T) {
+	_, _ = inheritHome(t, "")
+	userConfig := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "config.toml")
+	if err := os.WriteFile(userConfig, []byte("packs = [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	argv, printed := fakePodmanLaunchIn(t, workspace, "", func(o *Options) {
+		o.AcceptConfigChanges = true
+	})
+	if len(argv) != 0 {
+		t.Fatalf("malformed readable config reached the mocked runtime: %v", argv)
+	}
+	if !strings.Contains(printed, "config.toml") {
+		t.Errorf("the preflight refusal did not name the malformed config:\n%s", printed)
+	}
+}
+
 func TestInheritedPreflightFileDropsHostOnlyKeys(t *testing.T) {
 	_, wsState := inheritHome(t, `{
 	  "packs": ["claude"],
@@ -121,7 +814,7 @@ func TestInheritedPreflightFileDropsHostOnlyKeys(t *testing.T) {
 	o := inheritOptions(t)
 
 	args := o.userConfigMountArgs("podman", wsState)
-	keys, found := mountedKeys(t, args, "/home/agent/"+inheritPreflightRel)
+	keys, found := mountedKeys(t, args, "/home/agent/"+inheritPreflightLegacyRel)
 	if !found {
 		t.Fatalf("no preflight user config was mounted; args: %v", args)
 	}
@@ -156,7 +849,7 @@ func TestInheritedScopeLeavesOutThePerWorkspaceFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := o.userConfigMountArgs("podman", wsState)
-	for _, dest := range []string{inheritPreflightRel, inheritNestedRel} {
+	for _, dest := range []string{inheritPreflightLegacyRel, inheritNestedLegacyRel} {
 		_, src, found := mountedBody(t, args, "/home/agent/"+dest)
 		if !found {
 			t.Fatalf("no %s was mounted; args: %v", dest, args)
@@ -233,7 +926,7 @@ func TestNestedLaunchFileOnlyOnANestingBackend(t *testing.T) {
 
 		// On `container` nothing is bind-mounted (the whole wsState becomes /home/agent),
 		// so look for the materialized file in the tree instead of in the argv.
-		staged := filepath.Join(wsState, "inherit-nested.jsonc")
+		staged := filepath.Join(wsState, "inherit-nested.toml")
 		materialized := filepath.Join(wsState, inheritNestedRel)
 		_, stagedErr := os.Stat(staged)
 		_, matErr := os.Stat(materialized)
@@ -257,29 +950,39 @@ func TestTheTwoDeliveredFilesCarryDifferentKeys(t *testing.T) {
 	o := inheritOptions(t)
 	args := o.userConfigMountArgs("podman", wsState)
 
-	preKeys, okPre := mountedKeys(t, args, "/home/agent/"+inheritPreflightRel)
-	nestKeys, okNest := mountedKeys(t, args, "/home/agent/"+inheritNestedRel)
+	preBody, _, okPre := mountedBody(t, args, "/home/agent/"+inheritPreflightRel)
+	nestBody, _, okNest := mountedBody(t, args, "/home/agent/"+inheritNestedRel)
 	if !okPre || !okNest {
 		t.Fatalf("expected both files; preflight=%v nested=%v; args=%v", okPre, okNest, args)
 	}
-	if hasInheritKey(preKeys, "packages") {
-		t.Error("`packages` reached the PREFLIGHT file — nothing in-jail validates it, so it " +
-			"only invites a judgement about a host image")
+	preDoc, err := configdoc.Parse([]byte(preBody), configdoc.TOML)
+	if err != nil {
+		t.Fatalf("preflight TOML did not parse: %v", err)
 	}
-	if !hasInheritKey(nestKeys, "packages") {
-		t.Error("`packages` missing from the NESTED file — an inner launcher bakes its image from it")
+	if _, ok := preDoc.Values.Get("install"); ok {
+		t.Error("nested-only package input reached the PREFLIGHT TOML install section")
 	}
-	if hasInheritKey(nestKeys, "agents_md_extra") {
+	nestDoc, err := configdoc.Parse([]byte(nestBody), configdoc.TOML)
+	if err != nil {
+		t.Fatalf("nested TOML did not parse: %v", err)
+	}
+	installValue, ok := nestDoc.Values.Get("install")
+	install, valid := installValue.(*jsonx.OrderedMap)
+	if !ok || !valid {
+		t.Fatalf("nested output has no TOML install table: %#v", installValue)
+	}
+	nixValue, ok := install.Get("nix")
+	nixPackages, valid := nixValue.([]any)
+	if !ok || !valid || !slices.Contains(nixPackages, "postgresql") {
+		t.Errorf("nested TOML did not project legacy packages into install.nix: %#v", nixValue)
+	}
+	if hasInheritKey(nestDoc.Values.Keys(), "agents_md_extra") {
 		t.Error("`agents_md_extra` reached the NESTED file — it is prose for THIS jail's briefing")
 	}
-	// Both must be self-describing: a reader with no design doc has to be able to tell which
-	// consumer a file serves and why a key is missing.
-	pre, _, _ := mountedBody(t, args, "/home/agent/"+inheritPreflightRel)
-	nest, _, _ := mountedBody(t, args, "/home/agent/"+inheritNestedRel)
-	if !strings.Contains(pre, "yolo check") {
+	if !strings.Contains(preBody, "yolo check") {
 		t.Error("the preflight file does not name its readers")
 	}
-	if !strings.Contains(nest, "JAIL-IN-JAIL") {
+	if !strings.Contains(nestBody, "JAIL-IN-JAIL") {
 		t.Error("the nested file does not say it exists for nesting")
 	}
 }
@@ -339,16 +1042,30 @@ func TestInheritedScopeComposesAcrossTwoLevels(t *testing.T) {
 	}`)
 	o1 := inheritOptions(t)
 	args1 := o1.userConfigMountArgs("podman", wsState1)
-	level1, _, ok := mountedBody(t, args1, "/home/agent/"+inheritPreflightRel)
+	level1, _, ok := mountedBody(t, args1, "/home/agent/"+inheritPreflightLegacyRel)
 	if !ok {
 		t.Fatalf("level 1 produced no preflight file; args=%v", args1)
 	}
+	level1Nested, _, ok := mountedBody(t, args1, "/home/agent/"+inheritNestedLegacyRel)
+	if !ok {
+		t.Fatalf("level 1 produced no nested file; args=%v", args1)
+	}
 
-	// --- level 2: jail A's home IS that file → jail B's inherited file.
-	_, wsState2 := inheritHome(t, level1)
+	// --- level 2: jail A's two generated files become jail B's user-layer inputs.
+	_, wsState2 := inheritHome(t, "")
+	childConfigDir := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail")
+	for name, body := range map[string]string{
+		filepath.Base(inheritPreflightLegacyRel): level1,
+		filepath.Base(inheritNestedLegacyRel):    level1Nested,
+	} {
+		if err := os.WriteFile(filepath.Join(childConfigDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("YOLO_VERSION", "nested-test")
 	o2 := inheritOptions(t)
 	args2 := o2.userConfigMountArgs("podman", wsState2)
-	level2, _, ok := mountedBody(t, args2, "/home/agent/"+inheritPreflightRel)
+	level2, _, ok := mountedBody(t, args2, "/home/agent/"+inheritPreflightLegacyRel)
 	if !ok {
 		t.Fatalf("level 2 produced no preflight file; args=%v", args2)
 	}
@@ -359,7 +1076,7 @@ func TestInheritedScopeComposesAcrossTwoLevels(t *testing.T) {
 	}
 	// And the host-only keys are still gone at depth 2 — they were never re-introduced by
 	// the round trip. Keys, not substrings: the header names the filtered keys on purpose.
-	keys2, _ := mountedKeys(t, args2, "/home/agent/"+inheritPreflightRel)
+	keys2, _ := mountedKeys(t, args2, "/home/agent/"+inheritPreflightLegacyRel)
 	for _, banned := range []string{"gpu", "cache_relocations"} {
 		if hasInheritKey(keys2, banned) {
 			t.Errorf("%q reappeared at depth 2; keys=%v", banned, keys2)
@@ -432,18 +1149,17 @@ func TestCanNestOnlyPodman(t *testing.T) {
 	}
 }
 
-// The preflight file lands at paths.UserConfigPath()'s in-jail location, which is what makes
-// every existing in-jail reader find it with NO plumbing: config.LoadConfig, LoadPacks, the
-// loopholes commands and `yolo check` all resolve ~/.config/yolo-jail/config.jsonc already.
-// If this name drifted, the feature would silently stop being the inner user scope.
+// The preflight file is the new readable user config name; the legacy JSONC route remains
+// available only for an unrepresentable legacy payload during the dual-reader window.
 func TestPreflightFileIsTheInJailUserConfigPath(t *testing.T) {
-	if inheritPreflightRel != ".config/yolo-jail/config.jsonc" {
-		t.Errorf("inheritPreflightRel = %q — it must be the path every in-jail user-scope "+
-			"reader already resolves, or none of them will see the generated scope",
-			inheritPreflightRel)
+	if inheritPreflightRel != ".config/yolo-jail/config.toml" {
+		t.Errorf("TOML preflight path = %q, want the readable user config path", inheritPreflightRel)
 	}
-	if inheritNestedRel == inheritPreflightRel {
-		t.Error("the two files must not share a path")
+	if inheritPreflightLegacyRel != ".config/yolo-jail/config.jsonc" {
+		t.Errorf("legacy preflight path = %q, want the retained legacy filename", inheritPreflightLegacyRel)
+	}
+	if inheritNestedRel == inheritPreflightRel || inheritNestedLegacyRel == inheritPreflightLegacyRel {
+		t.Error("preflight and nested files must remain distinct")
 	}
 }
 
@@ -461,7 +1177,7 @@ func TestDeliveredBytesAreTheRendererOutput(t *testing.T) {
 		t.Fatal("no files rendered")
 	}
 	for _, f := range files {
-		want, _, err := config.RenderInherit(effective, f.scope, "2026-08-14T12:00:00Z")
+		want, _, _, err := config.RenderFilteredForDelivery(effective, nil, f.scope, "2026-08-14T12:00:00Z")
 		if err != nil {
 			t.Fatal(err)
 		}

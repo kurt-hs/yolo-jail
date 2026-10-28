@@ -132,7 +132,7 @@ func TestAMacosUserRelaunchLaterReusesTheHomeOverlay(t *testing.T) {
 		return got
 	}
 	first := launch()
-	if !slices.Contains(first.Dests, inheritPreflightRel) || !slices.Contains(first.Dests, treeInto) {
+	if !slices.Contains(first.Dests, inheritPreflightLegacyRel) || !slices.Contains(first.Dests, treeInto) {
 		t.Fatalf("the overlay delivers %v, want the generated user scope and the patched extension among them", first.Dests)
 	}
 	files := map[string]os.FileInfo{}

@@ -1126,8 +1126,16 @@ func Run(opts Options) (rc int) {
 		// (macosUserTreeCopyRoot), held by this process's lease until it ends.
 		// Content-keyed (buildMacosHomeOverlayTreeIDs): an overlay already built from the same
 		// inputs is returned as it is, each patched copy standing in by its store entry.
+		inheritedUserScope, scopeErr := o.macosUserInheritedScope(rt)
+		if scopeErr != nil {
+			if ctxDelivery.ctx.Tree != "" {
+				_ = os.RemoveAll(ctxDelivery.ctx.Tree)
+			}
+			o.pr(o.Stderr).printf("[bold red]%s[/bold red]", richtext.Escape(scopeErr.Error()))
+			return 1
+		}
 		homeOverlay, err = buildMacosHomeOverlayDelivering(staging, staged.packs, o.patchedTreeDirs(),
-			o.patchedTreeIdentities(), o.macosUserInheritedScope(rt), func(line string) {
+			o.patchedTreeIdentities(), inheritedUserScope, func(line string) {
 				o.pr(o.Stderr).print("[yellow]" + line + "[/yellow]")
 			})
 		sp.End()

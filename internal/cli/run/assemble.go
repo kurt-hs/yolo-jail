@@ -900,7 +900,13 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	// Not under the seal: the inherited copy of the user config is host config a fork build has
 	// no use for, and it carries inline env_sources (seal.go).
 	if !in.sealed {
-		runCmd = append(runCmd, o.userConfigMountArgs(rt, in.wsState)...)
+		if userScopeArgs, err := o.userConfigMountArgsForAssembly(in, runCmd); err != nil {
+			if in.assemblyErr == nil {
+				in.assemblyErr = err
+			}
+		} else {
+			runCmd = append(runCmd, userScopeArgs...)
+		}
 	}
 
 	// --- MISE_DISABLE_TOOLS env ---

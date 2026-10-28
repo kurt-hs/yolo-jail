@@ -255,8 +255,8 @@ func applyReadableUserLayerWithInputUse(base *jsonx.OrderedMap, baseNode *srcNod
 }
 
 // InheritedLaunchPath is the nested-launch file a jail's host wrote beside its user config:
-// $HOME/.config/yolo-jail/inherited-launch.jsonc. Empty outside a jail — the file only ever
-// exists inside one, and looking for it on the host would invent a config location.
+// inherited-launch.toml when the current launch can write readable TOML, otherwise the retained
+// legacy JSONC file. Empty outside a jail — the file only ever exists inside one.
 //
 // Kept beside the layer logic because the two are the same shape of thing: an ADDITIONAL
 // user-level input that the ordinary user-scope read has to fold in, or the readers that
@@ -265,7 +265,12 @@ func InheritedLaunchPath() string {
 	if !inJail() {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(paths.UserConfigPath()), "inherited-launch.jsonc")
+	dir := filepath.Dir(paths.UserConfigPath())
+	toml := filepath.Join(dir, "inherited-launch.toml")
+	if pathExists(toml) {
+		return toml
+	}
+	return filepath.Join(dir, "inherited-launch.jsonc")
 }
 
 // applyInheritedLaunch merges the inherited nested-launch file UNDER config.jsonc.
@@ -295,16 +300,22 @@ func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode,
 	if path == "" {
 		return base, baseNode
 	}
-	inherited, _, inheritedNode, err := loadJSONCFile(path, "inherited launch config", false, func(string) {}, record, readAt{input: input, inputUsed: inputUsed, role: editRoleInherited, witness: currentEditWitness(input)})
+	nestedReadable := strings.EqualFold(filepath.Ext(path), ".toml")
+	inherited, _, inheritedNode, err := loadConfigFile(path, "inherited launch config", false, func(string) {}, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed, role: editRoleInherited, witness: currentEditWitness(input)})
 	if err != nil || inherited == nil || inherited.Len() == 0 {
 		return base, baseNode
 	}
 	// The inherited file is the one config read OUTSIDE LoadJSONCWithIncludes, so it
-	// anchors itself: its relative env_sources entries resolve beside it, which is the
-	// same directory the user config's would have. (Entries usually arrive absolute
-	// already — the parent launch's loader anchored them before writing the file.)
-	if readable {
-		inherited, inheritedNode = projectLegacyB2Config(inherited, inheritedNode)
+	// anchors itself: its relative env files resolve beside it. Legacy JSONC inherits the
+	// ordinary anchors; TOML has already crossed through the readable projection.
+	readableMerge := readable || nestedReadable
+	if readableMerge {
+		if !nestedReadable {
+			inherited, inheritedNode = projectLegacyB2Config(inherited, inheritedNode)
+		}
+		if nestedReadable && base != nil {
+			base, baseNode = projectLegacyB2Config(base, baseNode)
+		}
 		anchorReadableEnvSources(inherited, filepath.Dir(path))
 	} else {
 		AnchorEnvSources(inherited, filepath.Dir(path))
@@ -312,8 +323,8 @@ func applyInheritedLaunchWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode,
 	if base == nil {
 		return inherited, inheritedNode
 	}
-	if readable {
-		return mergeReadableConfigMode(inherited, base, inheritedNode, baseNode, nil, clearEmptyLists)
+	if readableMerge {
+		return mergeReadableConfigMode(inherited, base, inheritedNode, baseNode, nil, clearEmptyLists || nestedReadable)
 	}
 	return mergeConfig(inherited, base, inheritedNode, baseNode)
 }

@@ -628,9 +628,9 @@ func podmanLinuxGolden(home string) []string {
 	return a
 }
 
-// A13: the user scope must actually REACH the jail. The entrypoint and the in-jail verbs
-// read $HOME/.config/yolo-jail/config.jsonc, and for the feature's first week nothing
-// mounted anything there — a documented input with no channel.
+// A13: the user scope must actually REACH the jail. The in-jail readable config loader selects
+// $HOME/.config/yolo-jail/config.toml when this generated scope is losslessly representable;
+// the legacy JSONC fallback is reserved for a per-scope unrepresentable payload.
 //
 // What it delivers is now GENERATED per consumer rather than bound off the human's disk
 // (OQ-LP9), and its CONTENT is asserted in inheritscope_test.go. This is the one assertion
@@ -642,7 +642,7 @@ func TestUserConfigMountDeliversTheGeneratedConfig(t *testing.T) {
 	_, wsState := inheritHome(t, `{"packs": ["claude"]}`)
 	o := inheritOptions(t)
 	joined := strings.Join(o.userConfigMountArgs("podman", wsState), " ")
-	if want := "/home/agent/.config/yolo-jail/config.jsonc"; !strings.Contains(joined, want) {
+	if want := "/home/agent/.config/yolo-jail/config.toml"; !strings.Contains(joined, want) {
 		t.Errorf("mount args missing %s:\n%s", want, joined)
 	}
 }
