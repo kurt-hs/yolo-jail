@@ -304,6 +304,7 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 		fifo := os.Getenv("YOLO_TTYPROXY_PRESSURE_FIFO")
 		outputBytes := os.Getenv("YOLO_TTYPROXY_PRESSURE_BYTES")
 		observer := Observer{Env: []string{"YOLO_TTYPROXY_PRESSURE_FIFO=" + fifo, "YOLO_TTYPROXY_PRESSURE_BYTES=" + outputBytes, "YOLO_TTYPROXY_OUTPUT_ACK=" + os.Getenv("YOLO_TTYPROXY_OUTPUT_ACK")}}
+		var cancelWake chan os.Signal
 		var resumeHandle Handle
 		if os.Getenv("YOLO_TTYPROXY_EXPECT_SUSPEND") == "1" {
 			if os.Getenv("YOLO_TTYPROXY_BG_FG") == "1" {
@@ -312,7 +313,11 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 					return err == nil && string(mode) == "foreground"
 				}
 			}
-			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" {
+			if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" {
+				cancelWake = make(chan os.Signal, 1)
+				observer.cancelWake = cancelWake
+			}
+			if os.Getenv("YOLO_TTYPROXY_CANCEL_DURING_RESUME") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" || os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" {
 				terminateSignals := make(chan os.Signal, 1)
 				signal.Notify(terminateSignals, syscall.SIGTERM)
 				observer.Arm = func(h Handle) {
@@ -346,6 +351,9 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 								}
 							}
 							if _, err := os.Stat(fifo + ".kill"); err == nil {
+								if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" {
+									h.Terminate()
+								}
 								h.Kill()
 								os.Exit(128 + int(syscall.SIGTERM))
 							} else if !errors.Is(err, os.ErrNotExist) {
@@ -400,6 +408,13 @@ func TestOutputPressureDoesNotStopInputForwarding(t *testing.T) {
 			if os.Getenv("YOLO_TTYPROXY_TRACE_RESUME") == "1" {
 				observer.resumeInputObserve = func(observation resumeInputObservation) {
 					writeResumeObservation(fifo, observation)
+					if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" && observation.Event == "resume-callback-return" {
+						cancelWake <- syscall.SIGTERM
+						_ = os.WriteFile(fifo+".cancel-wake-injected", []byte("SIGTERM"), 0600)
+					}
+					if os.Getenv("YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK") == "1" && observation.Event == "resume-cancellation-check" {
+						_ = os.WriteFile(fifo+".cancel-snapshot", []byte(strconv.FormatBool(observation.CancellationOrExitPublished)), 0600)
+					}
 					if os.Getenv("YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK") == "1" && observation.Event == "resume-cancellation-check" && !observation.CancellationOrExitPublished {
 						if resumeHandle.Terminate() {
 							_ = os.WriteFile(fifo+".cancel-published", []byte("terminated-after-check"), 0600)
@@ -887,15 +902,30 @@ func waitForTTYOutputPressure(t *testing.T, master int) bool {
 }
 
 func TestSuspendResumePreservesOutputQueueOrder(t *testing.T) {
-	t.Run("foreground-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false) })
-	t.Run("background-child-exit", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, true, false, false, false, false) })
-	t.Run("queued-termination-after-stop", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, true, false, false, false) })
-	t.Run("caller-cancel-published-during-resume", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, true, false, false) })
-	t.Run("caller-cancel-published-after-resume-check", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, true, false) })
-	t.Run("negative-write-count-retries-flush", func(t *testing.T) { runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, true) })
+	t.Run("foreground-resume", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false, false)
+	})
+	t.Run("background-child-exit", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, true, false, false, false, false, false)
+	})
+	t.Run("queued-termination-after-stop", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, true, false, false, false, false)
+	})
+	t.Run("caller-cancel-published-during-resume", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, true, false, false, false)
+	})
+	t.Run("caller-cancel-published-after-resume-check", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, true, false, false)
+	})
+	t.Run("cancel-wake-published-after-resume-callback", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, true, false)
+	})
+	t.Run("negative-write-count-retries-flush", func(t *testing.T) {
+		runSuspendResumePreservesOutputQueueOrder(t, false, false, false, false, false, true)
+	})
 }
 
-func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume, cancelAfterResumeCheck, negativeResumeWrite bool) {
+func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit, terminateAfterStop, cancelDuringResume, cancelAfterResumeCheck, cancelWakeAfterResumeCallback, negativeResumeWrite bool) {
 	master, slave, err := openPty()
 	if err != nil {
 		t.Skipf("cannot open pty: %v", err)
@@ -923,10 +953,13 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	if cancelAfterResumeCheck {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_AFTER_RESUME_CHECK=1")
 	}
+	if cancelWakeAfterResumeCallback {
+		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_CANCEL_WAKE_AFTER_RESUME_CALLBACK=1")
+	}
 	if negativeResumeWrite {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_NEGATIVE_RESUME_WRITE=1")
 	}
-	if terminateAfterStop || cancelDuringResume || cancelAfterResumeCheck || negativeResumeWrite {
+	if terminateAfterStop || cancelDuringResume || cancelAfterResumeCheck || cancelWakeAfterResumeCallback || negativeResumeWrite {
 		cmd.Env = append(cmd.Env, "YOLO_TTYPROXY_TRACE_RESUME=1")
 	}
 	var stderr bytes.Buffer
@@ -1131,7 +1164,6 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		stopDrain()
 		stages, stagesErr := os.ReadFile(control + ".proxy")
 		input, inputErr := os.ReadFile(control)
-		resumedMode, modeErr := os.ReadFile(control + ".resumed-mode")
 		resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
 		postExitSnapshot := queuedTerminationBoundarySnapshot(control, childPID, cmd.Process.Pid, modeFD, *termios)
 		t.Logf("queued-SIGTERM post-exit boundary: %s", postExitSnapshot)
@@ -1146,12 +1178,10 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		if after := mustGetTermios(t, modeFD); *after != *termios {
 			t.Fatalf("queued cancellation did not preserve cooked terminal state: before=%+v after=%+v; %s", *termios, *after, postExitSnapshot)
 		}
-		if inputErr != nil {
-			t.Fatalf("read owned child input receipt after queued cancellation: %v; %s", inputErr, postExitSnapshot)
+		if inputErr != nil || stagesErr != nil || traceErr != nil {
+			t.Fatalf("read queued termination receipts: child=%q childErr=%v stages=%q stagesErr=%v trace=%q traceErr=%v; %s", input, inputErr, stages, stagesErr, resumeTrace, traceErr, postExitSnapshot)
 		}
-		if bytes.Contains(input, []byte{'R'}) {
-			t.Fatalf("owned child consumed queued input before cancellation: child=%q proxy=%q proxyErr=%v resumed-mode=%q modeErr=%v trace=%q traceErr=%v; %s", input, stages, stagesErr, resumedMode, modeErr, resumeTrace, traceErr, postExitSnapshot)
-		}
+		assertQueuedTerminationResume(t, resumeTrace, input, stages)
 		if err := unix.Kill(childPID, 0); !errors.Is(err, unix.ESRCH) {
 			t.Fatalf("queued cancellation left owned child %d alive: %v; %s", childPID, err, postExitSnapshot)
 		}
@@ -1229,6 +1259,38 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 	}
 	if err := unix.Kill(cmd.Process.Pid, syscall.SIGCONT); err != nil {
 		t.Fatal(err)
+	}
+	if cancelWakeAfterResumeCallback {
+		cancelSnapshotErr := waitForFile(control+".cancel-snapshot", time.Now().Add(childDeadline))
+		resumeMarkerErr := waitPressureMarker(t, control+".proxy", 'R', time.Now().Add(childDeadline))
+		killErr := os.WriteFile(control+".kill", []byte("observed"), 0600)
+		var waitErr error
+		select {
+		case waitErr = <-waitResult:
+		case <-time.After(childDeadline):
+			proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+			childReceipt, childErr := os.ReadFile(control)
+			resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
+			t.Fatalf("late cancel-wake fixture did not terminate after checked resume: snapshot=%v resume=%v kill=%v proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", cancelSnapshotErr, resumeMarkerErr, killErr, proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
+		}
+		<-waitDone
+		stopDrain()
+		proxyStages, proxyErr := os.ReadFile(control + ".proxy")
+		childReceipt, childErr := os.ReadFile(control)
+		resumeTrace, traceErr := os.ReadFile(control + ".resume-boundary")
+		snapshot, snapshotErr := os.ReadFile(control + ".cancel-snapshot")
+		injected, injectedErr := os.ReadFile(control + ".cancel-wake-injected")
+		assertSignalExit(t, waitErr, syscall.SIGTERM)
+		if cancelSnapshotErr != nil || resumeMarkerErr != nil || killErr != nil || snapshotErr != nil || injectedErr != nil || string(injected) != "SIGTERM" || string(snapshot) != "true" {
+			t.Fatalf("late cancellation notification was not published before the controlling snapshot: injection=%q injectionErr=%v snapshot=%q snapshotErr=%v wait=%v resume=%v kill=%v trace=%q traceErr=%v", injected, injectedErr, snapshot, snapshotErr, waitErr, resumeMarkerErr, killErr, resumeTrace, traceErr)
+		}
+		if traceErr != nil || childErr != nil || bytes.Contains(childReceipt, []byte{'R'}) || !strings.Contains(string(resumeTrace), "event=resume-callback-return") || !strings.Contains(string(resumeTrace), "event=resume-cancellation-check cancel-or-exit=true pending=1") || strings.Contains(string(resumeTrace), "event=resume-write-attempt") || strings.Contains(string(resumeTrace), "event=resume-enqueue-result") {
+			t.Fatalf("late buffered notification did not prevent resumed forwarding: proxy=%q proxyErr=%v child=%q childErr=%v trace=%q traceErr=%v", proxyStages, proxyErr, childReceipt, childErr, resumeTrace, traceErr)
+		}
+		if after := mustGetTermios(t, modeFD); *after != *termios {
+			t.Fatalf("late cancel-wake cleanup did not preserve cooked terminal state: before=%+v after=%+v", *termios, *after)
+		}
+		return
 	}
 	if cancelDuringResume || cancelAfterResumeCheck {
 		cancelWaitErr := waitForFile(control+".cancel-published", time.Now().Add(childDeadline))
@@ -2129,6 +2191,219 @@ func waitForOutputPressure(t *testing.T, pipeFD, pipeSize int) (bool, int) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	return false, maxBuffered
+}
+
+func assertQueuedTerminationResume(t *testing.T, trace, childReceipt, stages []byte) {
+	t.Helper()
+	if err := queuedTerminationResumeTraceError(trace, childReceipt, stages); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func queuedTerminationResumeTraceError(trace, childReceipt, stages []byte) error {
+	text := strings.TrimSpace(string(trace))
+	if text == "" {
+		return fmt.Errorf("queued termination has no resume trace")
+	}
+	lines := strings.Split(text, "\n")
+	type event struct {
+		index int
+		line  string
+	}
+	events := func(name string) []event {
+		var found []event
+		for i, line := range lines {
+			if strings.HasPrefix(line, "event="+name+" ") || line == "event="+name {
+				found = append(found, event{index: i, line: line})
+			}
+		}
+		return found
+	}
+	field := func(line, key string) (string, bool) {
+		for _, part := range strings.Fields(line) {
+			name, value, ok := strings.Cut(part, "=")
+			if ok && name == key {
+				return value, true
+			}
+		}
+		return "", false
+	}
+	fieldValue := func(line, key string) string {
+		value, _ := field(line, key)
+		return value
+	}
+	published := func(event event) (bool, bool) {
+		value, ok := field(event.line, "cancel-or-exit")
+		if !ok || value != "true" && value != "false" {
+			return false, false
+		}
+		return value == "true", true
+	}
+	pendingOne := func(event event) bool {
+		pending, ok := field(event.line, "pending")
+		return ok && pending == "1"
+	}
+	entry := events("resume-callback-entry")
+	returned := events("resume-callback-return")
+	checks := events("resume-cancellation-check")
+	armCancel := events("resume-signal-cancellation-published")
+	writes := events("resume-write-attempt")
+	writeErrors := events("resume-write-error")
+	enqueues := events("resume-enqueue-result")
+	flushes := events("resume-flush-result")
+	if len(armCancel) == 1 && len(entry) == 0 && len(returned) == 0 && len(checks) == 0 {
+		armPublished, valid := published(armCancel[0])
+		if !valid || !armPublished || len(writes)+len(writeErrors)+len(enqueues)+len(flushes) != 0 || bytes.Contains(stages, []byte{'R'}) || bytes.Contains(childReceipt, []byte{'R'}) {
+			return fmt.Errorf("signal-arm cancellation before resume lacks a consistent no-forwarding trace: stages=%q trace=%q child=%q", stages, trace, childReceipt)
+		}
+		return nil
+	}
+	if len(entry) != 1 || len(returned) != 1 || len(checks) != 1 || len(armCancel) > 1 {
+		return fmt.Errorf("queued termination has missing or duplicate resume callback/snapshot events: trace=%q", trace)
+	}
+	if entry[0].index >= returned[0].index || returned[0].index >= checks[0].index || !pendingOne(entry[0]) || !pendingOne(returned[0]) || !pendingOne(checks[0]) {
+		return fmt.Errorf("resume callback and controlling snapshot are out of order or have inconsistent pending input: trace=%q", trace)
+	}
+	entryPublished, entryValid := published(entry[0])
+	returnPublished, returnValid := published(returned[0])
+	checkPublished, checkValid := published(checks[0])
+	if !entryValid || !returnValid || !checkValid || entryPublished && !returnPublished || returnPublished && !checkPublished {
+		return fmt.Errorf("resume callback/snapshot publication trace is malformed or contradictory: trace=%q", trace)
+	}
+	if len(armCancel) == 1 {
+		armPublished, valid := published(armCancel[0])
+		// The returned observation completes before the controlling atomic load; the
+		// controlling-snapshot row is written after that load. Only a signal row before
+		// the completed return row proves publication preceded the snapshot.
+		if !valid || !armPublished || armCancel[0].index < returned[0].index && !checkPublished {
+			return fmt.Errorf("signal-arm publication contradicts the controlling snapshot: trace=%q", trace)
+		}
+	}
+	if checkPublished {
+		if !bytes.Contains(stages, []byte{'R'}) || len(writes)+len(writeErrors)+len(enqueues)+len(flushes) != 0 || bytes.Contains(childReceipt, []byte{'R'}) {
+			return fmt.Errorf("true controlling cancellation snapshot was not followed by zero resumed writes/consumption: stages=%q trace=%q child=%q", stages, trace, childReceipt)
+		}
+		return nil
+	}
+	if len(writes) != 1 || len(writeErrors) != 0 || len(enqueues) != 1 || len(flushes) > 1 || !bytes.Contains(stages, []byte{'R'}) || !bytes.Contains(childReceipt, []byte{'R'}) {
+		return fmt.Errorf("false controlling snapshot lacks one complete write and verified child-consumption trace: stages=%q trace=%q child=%q", stages, trace, childReceipt)
+	}
+	write := writes[0]
+	if write.index <= checks[0].index || fieldValue(write.line, "pending") != "0" || fieldValue(write.line, "attempted") != "1" {
+		return fmt.Errorf("false snapshot has no causally subsequent one-byte write attempt: trace=%q", trace)
+	}
+	enqueue := enqueues[0]
+	if enqueue.index <= write.index || fieldValue(enqueue.line, "attempted") != "1" {
+		return fmt.Errorf("write outcome does not follow the one-byte attempt: trace=%q", trace)
+	}
+	written, queued := fieldValue(enqueue.line, "written"), fieldValue(enqueue.line, "queued")
+	if written == "1" && queued == "0" {
+		if len(flushes) != 0 {
+			return fmt.Errorf("direct enqueue success contradicts a later flush outcome: trace=%q", trace)
+		}
+		return nil
+	}
+	if written == "0" && queued == "1" && len(flushes) == 1 && flushes[0].index > enqueue.index && fieldValue(flushes[0].line, "written") == "1" && fieldValue(flushes[0].line, "queued") == "0" {
+		return nil
+	}
+	return fmt.Errorf("false snapshot lacks a complete one-byte write/flush outcome: trace=%q", trace)
+}
+
+func TestQueuedTerminationResumeTracePredicate(t *testing.T) {
+	entryFalse := "event=resume-callback-entry cancel-or-exit=false pending=1 attempted=0 written=0 queued=0"
+	entryTrue := "event=resume-callback-entry cancel-or-exit=true pending=1 attempted=0 written=0 queued=0"
+	returnFalse := "event=resume-callback-return cancel-or-exit=false pending=1 attempted=0 written=0 queued=0"
+	returnTrue := "event=resume-callback-return cancel-or-exit=true pending=1 attempted=0 written=0 queued=0"
+	checkFalse := "event=resume-cancellation-check cancel-or-exit=false pending=1 attempted=0 written=0 queued=0"
+	checkTrue := "event=resume-cancellation-check cancel-or-exit=true pending=1 attempted=0 written=0 queued=0"
+	writeFalse := "event=resume-write-attempt cancel-or-exit=false pending=0 attempted=1 written=0 queued=0"
+	writeTrue := "event=resume-write-attempt cancel-or-exit=true pending=0 attempted=1 written=0 queued=0"
+	enqueueDirect := "event=resume-enqueue-result cancel-or-exit=true pending=0 attempted=1 written=1 queued=0"
+	enqueueQueued := "event=resume-enqueue-result cancel-or-exit=false pending=0 attempted=1 written=0 queued=1"
+	flushWritten := "event=resume-flush-result cancel-or-exit=true pending=0 attempted=1 written=1 queued=0"
+	trace := func(lines ...string) []byte { return []byte(strings.Join(lines, "\n") + "\n") }
+
+	tests := []struct {
+		name      string
+		trace     []byte
+		child     []byte
+		stages    []byte
+		wantError bool
+	}{
+		{
+			name:   "publication-between-entry-and-return",
+			trace:  trace(entryFalse, returnTrue, checkTrue),
+			child:  []byte("SDW"),
+			stages: []byte("?ZR"),
+		},
+		{
+			name:   "publication-between-return-and-snapshot",
+			trace:  trace(entryFalse, returnFalse, checkTrue),
+			child:  []byte("SDW"),
+			stages: []byte("?ZR"),
+		},
+		{
+			name:   "already-published-at-entry",
+			trace:  trace(entryTrue, returnTrue, checkTrue),
+			child:  []byte("SDW"),
+			stages: []byte("?ZR"),
+		},
+		{
+			name:   "false-snapshot-allows-checked-write-even-if-later-published",
+			trace:  trace(entryFalse, returnFalse, checkFalse, writeTrue, enqueueDirect),
+			child:  []byte("SDWR"),
+			stages: []byte("?ZR"),
+		},
+		{
+			name:   "false-snapshot-queued-write-flushes-to-child",
+			trace:  trace(entryFalse, returnFalse, checkFalse, writeFalse, enqueueQueued, flushWritten),
+			child:  []byte("SDWR"),
+			stages: []byte("?ZR"),
+		},
+		{
+			name:   "signal-arm-cancels-before-resume-callback",
+			trace:  trace("event=resume-signal-cancellation-published cancel-or-exit=true pending=0 attempted=0 written=0 queued=0"),
+			child:  []byte("SDW"),
+			stages: []byte("?ZA?"),
+		},
+		{name: "missing-trace", child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "missing-entry", trace: trace(returnFalse, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "missing-return", trace: trace(entryFalse, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "missing-controlling-snapshot", trace: trace(entryFalse, returnFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "duplicate-snapshot", trace: trace(entryFalse, returnFalse, checkFalse, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "callback-order-reversed", trace: trace(returnFalse, entryFalse, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "snapshot-before-return", trace: trace(entryFalse, checkTrue, returnFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "cancellation-publication-reverses", trace: trace(entryTrue, returnFalse, checkTrue), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "return-publication-missing-at-snapshot", trace: trace(entryFalse, returnTrue, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "true-snapshot-with-write", trace: trace(entryFalse, returnTrue, checkTrue, writeTrue), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "true-snapshot-with-child-consumption", trace: trace(entryFalse, returnTrue, checkTrue), child: []byte("SDWR"), stages: []byte("?ZR"), wantError: true},
+		{name: "true-snapshot-without-resumed-callback", trace: trace(entryFalse, returnTrue, checkTrue), child: []byte("SDW"), stages: []byte("?Z"), wantError: true},
+		{name: "false-snapshot-without-write", trace: trace(entryFalse, returnFalse, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		{name: "false-snapshot-without-write-outcome", trace: trace(entryFalse, returnFalse, checkFalse, writeFalse), child: []byte("SDWR"), stages: []byte("?ZR"), wantError: true},
+		{name: "false-snapshot-without-child-receipt", trace: trace(entryFalse, returnFalse, checkFalse, writeFalse, enqueueDirect), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+		// Snapshot booleans are captured before their observer rows are appended. A signal
+		// marker logged between the returned row and false snapshot row may follow the
+		// controlling load, so this is a valid false-snapshot forwarding trace.
+		{
+			name:   "arm-marker-before-captured-false-snapshot-log",
+			trace:  trace(entryFalse, returnFalse, "event=resume-signal-cancellation-published cancel-or-exit=true pending=0 attempted=0 written=0 queued=0", checkFalse, writeFalse, enqueueDirect),
+			child:  []byte("SDWR"),
+			stages: []byte("?ZRA?"),
+		},
+		{name: "arm-marker-before-return-record-contradicts-false-snapshot", trace: trace(entryFalse, "event=resume-signal-cancellation-published cancel-or-exit=true pending=0 attempted=0 written=0 queued=0", returnFalse, checkFalse, writeFalse, enqueueDirect), child: []byte("SDWR"), stages: []byte("?ZRA?"), wantError: true},
+		{name: "malformed-cancellation-value", trace: trace(entryFalse, "event=resume-callback-return cancel-or-exit=unknown pending=1 attempted=0 written=0 queued=0", checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := queuedTerminationResumeTraceError(test.trace, test.child, test.stages)
+			if test.wantError && err == nil {
+				t.Fatal("malformed, missing, or contradictory trace was accepted")
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("valid cancellation/write interleaving was rejected: %v", err)
+			}
+		})
+	}
 }
 
 func queuedTerminationBoundarySnapshot(control string, childPID, proxyPID, modeFD int, before unix.Termios) string {
