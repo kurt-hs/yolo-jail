@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
+	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -226,6 +227,12 @@ func ValidateExplicitEdit(workspace string, target ExplicitEditTarget, input Con
 	if err := validateExplicitRawReadableScopes(ctx); err != nil {
 		return ValidatedExplicitEditResult{}, err
 	}
+	if err := validateExplicitResourceSources(ctx.userOrigins, "user"); err != nil {
+		return ValidatedExplicitEditResult{}, err
+	}
+	if err := validateExplicitResourceSources(ctx.workspaceOrigins, "workspace"); err != nil {
+		return ValidatedExplicitEditResult{}, err
+	}
 	ctx.packs, err = ctx.selectedPacks()
 	if err != nil {
 		return ValidatedExplicitEditResult{}, err
@@ -260,6 +267,107 @@ func ValidateExplicitEdit(workspace string, target ExplicitEditTarget, input Con
 		readableWarnings: append([]string(nil), ctx.semantic.AllowancePlan.Diagnostics...),
 		readableRequests: readableRequests, validated: true,
 	}, nil
+}
+
+// validateExplicitResourceSources validates each raw resource table before the effective graph
+// can mask one source's invalid values with another source's winner.
+func validateExplicitResourceSources(sources *Sources, scope string) error {
+	if sources == nil || sources.node() == nil {
+		return nil
+	}
+	machine := sources.node().key("machine")
+	if machine == nil {
+		return nil
+	}
+	resources := machine.key("resources")
+	if resources == nil {
+		return nil
+	}
+	var problems []string
+	seen := make(map[string]struct{})
+	for _, origin := range resources.writerList() {
+		if origin.file == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s\x00%s\x00%d\x00%d\x00%s", origin.file.path, origin.host, origin.file.role, origin.file.format, strings.Join(stepPathNames(origin.documentSteps), "."))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		value, err := explicitEditOriginValue(origin)
+		if err != nil {
+			return fmt.Errorf("read raw %s resource source %s: %w", scope, origin.String(), err)
+		}
+		sourceConfig := jsonx.NewOrderedMap()
+		sourceConfig.Set("resources", value)
+		var sourceProblems []string
+		validateResources(sourceConfig, &sourceProblems)
+		for _, problem := range sourceProblems {
+			problem = replaceReadableDiagnosticPrefix(problem, "config.resources", "config.machine.resources")
+			fieldOrigin := explicitEditResourceFieldOrigin(origin, problem)
+			problem = readableDiagnosticPathForOrigin(problem, fieldOrigin)
+			if fieldOrigin.host != "" {
+				problem += launchCopyNote([]srcOrigin{fieldOrigin})
+			} else {
+				problem = fieldOrigin.String() + ": " + problem
+			}
+			problems = append(problems, problem)
+		}
+	}
+	if len(problems) != 0 {
+		return fmt.Errorf("validate raw %s resource config: %s", scope, strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func explicitEditOriginValue(origin srcOrigin) (any, error) {
+	if origin.file == nil {
+		return nil, fmt.Errorf("resource source file is missing")
+	}
+	document := origin.file.document
+	if document == nil {
+		var err error
+		document, err = configdoc.Parse(origin.file.data, origin.file.format)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var value any = document.Values
+	for _, step := range origin.documentSteps {
+		if step.IsIndex {
+			list, ok := value.([]any)
+			if !ok || step.Index < 0 || step.Index >= len(list) {
+				return nil, fmt.Errorf("resource source path no longer matches its parsed document")
+			}
+			value = list[step.Index]
+			continue
+		}
+		object, ok := value.(*jsonx.OrderedMap)
+		if !ok {
+			return nil, fmt.Errorf("resource source path no longer matches its parsed document")
+		}
+		child, present := object.Get(step.Key)
+		if !present {
+			return nil, fmt.Errorf("resource source path %s no longer matches its parsed document", strings.Join(stepPathNames(origin.documentSteps), "."))
+		}
+		value = child
+	}
+	return value, nil
+}
+
+func explicitEditResourceFieldOrigin(origin srcOrigin, problem string) srcOrigin {
+	fieldPath, _, _ := strings.Cut(problem, ":")
+	fieldPath = strings.TrimPrefix(fieldPath, "config.resources")
+	fieldPath = strings.TrimPrefix(fieldPath, "config.machine.resources")
+	fieldPath = strings.TrimPrefix(fieldPath, ".")
+	for _, field := range strings.Split(fieldPath, ".") {
+		if field == "" {
+			continue
+		}
+		origin.steps = appendStep(origin.steps, json5.Key(field))
+		origin.documentSteps = appendDocumentStep(origin.documentSteps, configdoc.Step{Key: field})
+	}
+	return origin
 }
 
 func ReadExplicitEditConfig(workspace string, target ExplicitEditTarget, input ConfigReadInput) (ExplicitEditReadResult, error) {

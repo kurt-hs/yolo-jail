@@ -189,9 +189,9 @@ func TestApplyTargetedDefaultsBothScopeToProjectWhenUserWins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, _ := effectiveMap(t, effective, "machine", "resources").Get("cpus")
-			if fmt.Sprint(got) != "2" {
-				t.Fatalf("effective Project value = %#v, want 2", got)
+			got, present := effectiveMap(t, effective, "machine", "resources").Get("cpus")
+			if !present || !reflect.DeepEqual(got, matrixEffectiveResourceInteger(t, tc.format, 2)) {
+				t.Fatalf("effective Project value = %#v present=%v, want exact %v integer 2", got, present, tc.format)
 			}
 			assertNoTargetArtifacts(t, project)
 		})
@@ -640,9 +640,9 @@ func TestResolveTargetRefusesWrongScopeUnconsumedAliasAndAssembledWitness(t *tes
 			t.Fatal(err)
 		}
 		for label, cfg := range map[string]*jsonx.OrderedMap{"before": ordinaryBefore, "after": ordinaryAfter} {
-			cpus, ok := effectiveMap(t, cfg, "machine", "resources").Get("cpus")
-			if !ok || fmt.Sprint(cpus) != "2" {
-				t.Fatalf("ordinary assembled snapshot %s cpus=%#v present=%v, want delivered 2", label, cpus, ok)
+			cpus, present := effectiveMap(t, cfg, "machine", "resources").Get("cpus")
+			if !present || !reflect.DeepEqual(cpus, matrixEffectiveResourceInteger(t, configdoc.TOML, 2)) {
+				t.Fatalf("ordinary assembled snapshot %s cpus=%#v (%T) present=%v, want exact integer 2", label, cpus, cpus, present)
 			}
 		}
 		assertNoTargetArtifacts(t, project)
@@ -692,6 +692,309 @@ func TestApplyTargetedPrevalidatesRawScopeOrInvalidSemanticsBeforeDryRunAndNoopB
 				assertNoTargetArtifacts(t, path)
 			})
 		}
+	}
+}
+
+func TestApplyTargetedOwnJailRejectsInvalidAuthoredResourceAndScopeBeforeEveryModeBothFormats(t *testing.T) {
+	for _, format := range []struct {
+		name, userName, projectName, localName string
+		format                                 configdoc.Format
+		user, project, local                   string
+	}{
+		{"JSONC", paths.UserConfigLegacyJSONCName, paths.WorkspaceConfigLegacyJSONCName, paths.WorkspaceLocalConfigLegacyJSONCName, configdoc.JSONC,
+			`{"packs":["git"],"allow":{"git":{"always":["fetch"]}}}`, `{"machine":{"resources":{"cpus":2}}}`, `{"machine":{"resources":{"cpus":3}}}`},
+		{"TOML", paths.UserConfigTOMLName, paths.WorkspaceConfigTOMLName, paths.WorkspaceLocalConfigTOMLName, configdoc.TOML,
+			"packs=['git']\n[allow.git]\nalways=['fetch']\n", "[machine.resources]\ncpus=2\n", "[machine.resources]\ncpus=3\n"},
+	} {
+		for _, invalid := range []struct{ name, want string }{
+			{"negative masked cpus", "cpus"}, {"resource type", "memory"}, {"unknown resource", "mystery"}, {"user-only raw scope", "user-scope only"},
+		} {
+			for _, mode := range []string{"edit", "dry-run", "noop"} {
+				t.Run(format.name+"/"+invalid.name+"/"+mode, func(t *testing.T) {
+					home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
+					t.Setenv("HOME", home)
+					t.Setenv("YOLO_VERSION", "")
+					t.Setenv("YOLO_WORKSPACE", "")
+					user := filepath.Join(home, ".config", "yolo-jail", format.userName)
+					project := filepath.Join(workspace, format.projectName)
+					local := filepath.Join(workspace, format.localName)
+					neighbor := filepath.Join(workspace, "neighbor.txt")
+					writeEditFixture(t, user, format.user)
+					writeEditFixture(t, project, format.project)
+					writeEditFixture(t, local, format.local)
+					writeEditFixture(t, neighbor, "neighbor bytes\n")
+					if err := os.Chmod(project, 0640); err != nil {
+						t.Fatal(err)
+					}
+					wantDelivered := writeOwnJailDelivery(t, workspace)
+					value := int64(4)
+					if mode == "noop" {
+						value = 3
+					}
+					mutation := Mutation{Action: Set, Path: matrixPath("machine", "resources", "cpus"), Value: value}
+					target, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetLocal})
+					if err != nil || target.Role != config.ExplicitEditLocal || target.LogicalPath != local || target.Format != format.format {
+						t.Fatalf("ResolveTarget Local=(%#v,%v), want %s/%v", target, err, local, format.format)
+					}
+					beforeEffective, err := config.LoadConfig(workspace, true, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					beforeEffectiveJSON, err := config.SnapshotJSON(beforeEffective)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var badProject string
+					if format.format == configdoc.JSONC {
+						switch invalid.name {
+						case "negative masked cpus":
+							badProject = `{"machine":{"resources":{"cpus":-1}}}`
+						case "resource type":
+							badProject = `{"machine":{"resources":{"cpus":2,"memory":8}}}`
+						case "unknown resource":
+							badProject = `{"machine":{"resources":{"cpus":2,"mystery":true}}}`
+						case "user-only raw scope":
+							badProject = `{"machine":{"resources":{"cpus":2}},"allow":{"git":{"always":["fetch"]}}}`
+						}
+					} else {
+						switch invalid.name {
+						case "negative masked cpus":
+							badProject = "[machine.resources]\ncpus=-1\n"
+						case "resource type":
+							badProject = "[machine.resources]\ncpus=2\nmemory=8\n"
+						case "unknown resource":
+							badProject = "[machine.resources]\ncpus=2\nmystery=true\n"
+						case "user-only raw scope":
+							badProject = "[machine.resources]\ncpus=2\n[allow.git]\nalways=['fetch']\n"
+						}
+					}
+					writeEditFixture(t, project, badProject)
+					if err := os.Chmod(project, 0640); err != nil {
+						t.Fatal(err)
+					}
+					if invalid.name == "negative masked cpus" {
+						afterEffective, err := config.LoadConfig(workspace, true, nil)
+						if err != nil {
+							t.Fatal(err)
+						}
+						afterEffectiveJSON, err := config.SnapshotJSON(afterEffective)
+						if err != nil || afterEffectiveJSON != beforeEffectiveJSON {
+							t.Fatalf("invalid Project cpus ceased being masked by Local: equal=%v err=%v", afterEffectiveJSON == beforeEffectiveJSON, err)
+						}
+					}
+					t.Setenv("YOLO_VERSION", "test-jail")
+					t.Setenv("YOLO_WORKSPACE", workspace)
+					ordinary, err := config.LoadReadableConfig(workspace, true, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					delivered, err := config.SnapshotJSON(ordinary)
+					if err != nil || delivered != wantDelivered {
+						t.Fatalf("delivered snapshot did not mask invalid authored source: equal=%v err=%v", delivered == wantDelivered, err)
+					}
+					before, modes := map[string][]byte{}, map[string]os.FileMode{}
+					for _, path := range []string{user, project, local, neighbor} {
+						before[path], err = os.ReadFile(path)
+						if err != nil {
+							t.Fatal(err)
+						}
+						info, statErr := os.Stat(path)
+						if statErr != nil {
+							t.Fatal(statErr)
+						}
+						modes[path] = info.Mode().Perm()
+					}
+					writes := spySystemWrites(t)
+					_, err = ApplyTargeted(workspace, target, mutation, ApplyOptions{DryRun: mode == "dry-run"})
+					if err == nil || !strings.Contains(err.Error(), invalid.want) || *writes != 0 {
+						t.Fatalf("%s invalid graph not refused before %s write: err=%v writes=%d want=%q", invalid.name, mode, err, *writes, invalid.want)
+					}
+					for path, want := range before {
+						got, readErr := os.ReadFile(path)
+						info, statErr := os.Stat(path)
+						if readErr != nil || statErr != nil || !bytes.Equal(got, want) || info.Mode().Perm() != modes[path] {
+							t.Fatalf("refusal changed %s bytes/mode: %q info=%v errs=%v/%v", path, got, info, readErr, statErr)
+						}
+					}
+					assertNoTargetArtifacts(t, project)
+					assertNoTargetArtifacts(t, local)
+					ordinaryAfter, err := config.LoadReadableConfig(workspace, true, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					after, err := config.SnapshotJSON(ordinaryAfter)
+					if err != nil || after != wantDelivered {
+						t.Fatalf("refusal changed delivered snapshot: equal=%v err=%v", after == wantDelivered, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestApplyTargetedOwnJailPostwriteMaskedRawResourceRollbackBothFormats(t *testing.T) {
+	for _, format := range []struct {
+		name, userName, projectName, localName, fragmentName string
+		format                                               configdoc.Format
+		user, project, fragment, local, invalidFragment      string
+	}{
+		{"JSONC", paths.UserConfigLegacyJSONCName, paths.WorkspaceConfigLegacyJSONCName, paths.WorkspaceLocalConfigLegacyJSONCName, "parts/limits.jsonc", configdoc.JSONC,
+			`{"packs":["git"]}`, `{"include_if_found":["parts/limits.jsonc"],"machine":{"resources":{"memory":"8g"}}} // project`, `{"machine":{"resources":{"cpus":2}}}`, `{"machine":{"resources":{"cpus":3}}}`, `{"machine":{"resources":{"cpus":-1}}}`},
+		{"TOML", paths.UserConfigTOMLName, paths.WorkspaceConfigTOMLName, paths.WorkspaceLocalConfigTOMLName, "parts/limits.toml", configdoc.TOML,
+			"packs=['git']\n", "include_if_found=['parts/limits.toml']\n[machine.resources]\nmemory='8g' # project\n", "[machine.resources]\ncpus=2\n", "[machine.resources]\ncpus=3\n", "[machine.resources]\ncpus=-1\n"},
+	} {
+		t.Run(format.name, func(t *testing.T) {
+			home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			t.Setenv("YOLO_WORKSPACE", "")
+			user := filepath.Join(home, ".config", "yolo-jail", format.userName)
+			project := filepath.Join(workspace, format.projectName)
+			fragment := filepath.Join(workspace, format.fragmentName)
+			local := filepath.Join(workspace, format.localName)
+			neighbor := filepath.Join(workspace, "neighbor.txt")
+			projectBefore := []byte(format.project)
+			writeEditFixture(t, user, format.user)
+			writeEditFixture(t, project, string(projectBefore))
+			writeEditFixture(t, fragment, format.fragment)
+			writeEditFixture(t, local, format.local)
+			writeEditFixture(t, neighbor, "neighbor bytes\n")
+			userBefore, err := os.ReadFile(user)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fragmentBefore, err := os.ReadFile(fragment)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fragmentInfo, err := os.Stat(fragment)
+			if err != nil {
+				t.Fatal(err)
+			}
+			localBefore, err := os.ReadFile(local)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(project, 0640); err != nil {
+				t.Fatal(err)
+			}
+			wantDelivered := writeOwnJailDelivery(t, workspace)
+			projectInfo, err := os.Stat(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("YOLO_VERSION", "test-jail")
+			t.Setenv("YOLO_WORKSPACE", workspace)
+			beforeInput, err := config.NewConfigReadInput(project, projectBefore)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeEffective, err := config.LoadConfigWithReadInput(workspace, true, nil, beforeInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resources := effectiveMap(t, beforeEffective, "machine", "resources")
+			cpusBefore, present := resources.Get("cpus")
+			wantCPUs := matrixEffectiveResourceInteger(t, format.format, 3)
+			if !present || !reflect.DeepEqual(cpusBefore, wantCPUs) {
+				t.Fatalf("Local did not win before transaction: cpus=%#v (%T) present=%v, want %#v (%T)", cpusBefore, cpusBefore, present, wantCPUs, wantCPUs)
+			}
+			mutation := Mutation{Action: Set, Path: matrixPath("machine", "resources", "memory"), Value: "16g"}
+			target, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetAutomatic})
+			if err != nil || target.Role != config.ExplicitEditProject || target.LogicalPath != project || target.Format != format.format {
+				t.Fatalf("ResolveTarget=(%#v,%v), want %s/Project/%v", target, err, project, format.format)
+			}
+			ops := systemFileOps
+			writes := 0
+			canonicalSame, deliveredSame := false, false
+			ops.WriteAtomic = func(path string, data []byte, mode os.FileMode) error {
+				writes++
+				if err := writeAtomic(path, data, mode); err != nil {
+					return err
+				}
+				if writes == 1 {
+					plannedInput, err := config.NewConfigReadInput(project, data)
+					if err != nil {
+						return err
+					}
+					plannedEffective, err := config.LoadConfigWithReadInput(workspace, true, nil, plannedInput)
+					if err != nil {
+						return err
+					}
+					plannedSnapshot, err := config.SnapshotJSON(plannedEffective)
+					if err != nil {
+						return err
+					}
+					if err := os.WriteFile(fragment, []byte(format.invalidFragment), fragmentInfo.Mode().Perm()); err != nil {
+						return err
+					}
+					afterInput, err := config.NewConfigReadInput(project, data)
+					if err != nil {
+						return err
+					}
+					afterEffective, err := config.LoadConfigWithReadInput(workspace, true, nil, afterInput)
+					if err != nil {
+						return err
+					}
+					afterSnapshot, err := config.SnapshotJSON(afterEffective)
+					if err != nil {
+						return err
+					}
+					canonicalSame = plannedSnapshot == afterSnapshot
+					afterResources := effectiveMap(t, afterEffective, "machine", "resources")
+					cpus, present := afterResources.Get("cpus")
+					if !present || !reflect.DeepEqual(cpus, matrixEffectiveResourceInteger(t, format.format, 3)) {
+						return fmt.Errorf("Local ceased to mask invalid Project cpus: %#v", cpus)
+					}
+					ordinary, err := config.LoadReadableConfig(workspace, true, nil)
+					if err != nil {
+						return err
+					}
+					delivered, err := config.SnapshotJSON(ordinary)
+					if err != nil {
+						return err
+					}
+					deliveredSame = delivered == wantDelivered
+				}
+				if writes == 2 {
+					if err := os.WriteFile(fragment, fragmentBefore, fragmentInfo.Mode().Perm()); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			originalOps := systemFileOps
+			systemFileOps = ops
+			t.Cleanup(func() { systemFileOps = originalOps })
+			_, err = ApplyTargeted(workspace, target, mutation, ApplyOptions{})
+			if !canonicalSame || !deliveredSame {
+				t.Fatalf("postwrite invalid Project resource was not masked by Local while deliveries held: effective=%v delivered=%v", canonicalSame, deliveredSame)
+			}
+			if err == nil || !strings.Contains(err.Error(), "validate actual config") || !strings.Contains(err.Error(), "cpus") || !strings.Contains(err.Error(), "original bytes restored") {
+				t.Fatalf("public own-jail targeted caller did not reject postwrite raw resource invalidity and rollback: %v", err)
+			}
+			projectAfter, projectReadErr := os.ReadFile(project)
+			projectAfterInfo, projectStatErr := os.Stat(project)
+			if projectReadErr != nil || projectStatErr != nil || !bytes.Equal(projectAfter, projectBefore) || projectAfterInfo.Mode().Perm() != projectInfo.Mode().Perm() || writes != 2 {
+				t.Fatalf("rollback did not restore exact Project bytes/mode: bytes=%q info=%v writes=%d errs=%v/%v", projectAfter, projectAfterInfo, writes, projectReadErr, projectStatErr)
+			}
+			fragmentAfter, fragmentReadErr := os.ReadFile(fragment)
+			fragmentAfterInfo, fragmentStatErr := os.Stat(fragment)
+			if fragmentReadErr != nil || fragmentStatErr != nil || !bytes.Equal(fragmentAfter, fragmentBefore) || fragmentAfterInfo.Mode().Perm() != fragmentInfo.Mode().Perm() {
+				t.Fatalf("fragment was not restored after postwrite refusal: %q info=%v errs=%v/%v", fragmentAfter, fragmentAfterInfo, fragmentReadErr, fragmentStatErr)
+			}
+			if got, err := os.ReadFile(user); err != nil || !bytes.Equal(got, userBefore) {
+				t.Fatalf("User scope changed: %q err=%v", got, err)
+			}
+			if got, err := os.ReadFile(local); err != nil || !bytes.Equal(got, localBefore) {
+				t.Fatalf("Local changed: %q err=%v", got, err)
+			}
+			if got, err := os.ReadFile(neighbor); err != nil || string(got) != "neighbor bytes\n" {
+				t.Fatalf("sibling changed: %q err=%v", got, err)
+			}
+			assertNoTargetArtifacts(t, project)
+			assertNoTargetArtifacts(t, fragment)
+		})
 	}
 }
 
@@ -856,8 +1159,8 @@ func TestApplyTargetedCanonicalizesFixturesUnderLinkedTempParent(t *testing.T) {
 				t.Fatalf("read effective config: %v", err)
 			}
 			got, present := effectiveMap(t, effective, "machine", "resources").Get("cpus")
-			if !present || fmt.Sprint(got) != "3" {
-				t.Fatalf("effective Local winner = %#v present=%v, want 3", got, present)
+			if !present || !reflect.DeepEqual(got, matrixEffectiveResourceInteger(t, tc.format, 3)) {
+				t.Fatalf("effective Local winner = %#v (%T) present=%v, want exact 3", got, got, present)
 			}
 			if got, _ := os.ReadFile(user); !bytes.Equal(got, userBefore) {
 				t.Fatalf("non-target User file changed: %q", got)
@@ -897,6 +1200,15 @@ func matrixInteger(t *testing.T, format configdoc.Format, value int64) any {
 		return integer
 	}
 	return value
+}
+
+func matrixEffectiveResourceInteger(t *testing.T, format configdoc.Format, value int64) any {
+	t.Helper()
+	integer, ok := jsonx.NumberValue(fmt.Sprint(value))
+	if !ok {
+		t.Fatalf("parse effective resource integer expectation %d for %v", value, format)
+	}
+	return integer
 }
 
 func assertMatrixDocumentValue(t *testing.T, data []byte, format configdoc.Format, path []string, want any) {
