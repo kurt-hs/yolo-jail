@@ -143,16 +143,20 @@ func TestPrivateSocketDirIgnoresALongTMPDIR(t *testing.T) {
 	// at 4 failures in 160 concurrent runs; `go test` gives a package one process,
 	// so CI never saw it, but a fixed path under a world-writable /tmp is the same
 	// shared-global-state hazard this file's crossing recorders exist to avoid.
-	long, err := os.MkdirTemp("/tmp", "yj-svc-tmpdir-"+strings.Repeat("x", 50)+"-")
+	long, err := os.MkdirTemp("/tmp", "yj-svc-tmpdir-"+strings.Repeat("x", 80)+"-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(long) })
 	t.Setenv("TMPDIR", long)
 
-	// The control. Without it this test would still pass if sunPathMax were raised to
-	// something no path can exceed, proving nothing.
-	if p := filepath.Join(privateDir(t), "svc.sock"); len(p) <= sunPathMax {
+	// The control. Build it explicitly beneath TMPDIR: testing.T.TempDir is rooted in the
+	// process temp dir selected before this test changed TMPDIR, so its path can remain short.
+	control, err := os.MkdirTemp(long, "yj-ep-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := filepath.Join(control, "svc.sock"); len(p) <= sunPathMax {
 		t.Fatalf("the control did not reproduce the failure — %d bytes is under the limit, so "+
 			"the assertion below is vacuous: %s", len(p), p)
 	}
