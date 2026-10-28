@@ -857,7 +857,7 @@ type ReadableConcreteTarget struct{ Repository ReadableRepository }
 // to the broker's grant kinds. Callers use the returned canonical flag to distinguish a valid
 // empty authority from legacy mode, and treat every error as no write authority.
 func BrokeredGrantKindsUsingReadablePolicy(source string) (kinds []string, canonical bool, err error) {
-	user, err := UserScopeConfig(false, func(string) {})
+	user, sources, err := UserScopeConfigWithSources(true, func(string) {})
 	if err != nil {
 		return nil, true, err
 	}
@@ -868,20 +868,9 @@ func BrokeredGrantKindsUsingReadablePolicy(source string) (kinds []string, canon
 			return nil, true, fmt.Errorf("allow: expected a table")
 		}
 		if _, canonical = allow.Get(source); canonical {
-			packs, complete := UserScopeSelectedPacks()
-			if !complete {
-				return nil, true, fmt.Errorf("selected user pack declarations are incomplete")
-			}
-			declarations, settings, err := ReadableDeclarationsForPacks(packs)
+			selected, declarations, settings, err := readableBrokerSelection(user, sources)
 			if err != nil {
 				return nil, true, err
-			}
-			selected := make([]string, 0, len(packs))
-			for _, pack := range packs {
-				if pack == nil || pack.Name == "" {
-					return nil, true, fmt.Errorf("selected user pack declaration has no identity")
-				}
-				selected = append(selected, pack.Name)
 			}
 			plan, err := ResolveReadableAllowance(ReadableAllowanceInput{
 				User: user, SelectedPacks: selected, Declarations: declarations, PackSettings: settings,
