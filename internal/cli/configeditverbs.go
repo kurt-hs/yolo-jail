@@ -206,7 +206,7 @@ func applyConfigEdit(workspace string, target config.ResolvedEditTarget, mutatio
 	if target.Role == config.ExplicitEditUser {
 		fmt.Fprintln(out, "Written.")
 	} else {
-		fmt.Fprintln(out, "Written. Run `yolo check` in this workspace; the host must run `yolo apply` to approve the workspace change.")
+		fmt.Fprintln(out, "Written. Run `yolo check` in this workspace; the host must run `yolo config apply` to approve the workspace change.")
 	}
 	if postWriteCheck {
 		checkRC := runConfigPostWriteCheck(workspace, out, errw)

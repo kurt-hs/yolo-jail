@@ -130,7 +130,8 @@ func TestConfigRegistryDispatchesGenericEdit(t *testing.T) {
 	withConfigEditCWD(t, workspace.Root)
 	rc, out, errw := dispatchConfigCapture(t, []string{"set", "machine.resources.cpus", "6", "--project"})
 	assertPublicPostWriteCheck(t, rc, out, errw)
-	if !strings.Contains(out, workspace.Path) || !strings.Contains(out, "@@") || !strings.Contains(out, "+6") {
+	if !strings.Contains(out, workspace.Path) || !strings.Contains(out, "@@") || !strings.Contains(out, "+6") ||
+		!strings.Contains(out, "host must run `yolo config apply`") || strings.Contains(out, "host must run `yolo apply`") {
 		t.Fatalf("registered public config dispatch stdout=%q stderr=%q", out, errw)
 	}
 	if got, _ := os.ReadFile(workspace.Path); !bytes.Contains(got, []byte("cpus = 6")) {
