@@ -179,7 +179,8 @@ and a pi-subagents registry several extensions can share stays in item 28.
     [a project's file](../design/config-project.md), [editing commands and format](../design/config-commands.md),
     [migration](../design/config-migration.md) and [pack manifests](../design/pack-manifests.md).
 
-12. [Rule the computed-briefings design](../design/computed-briefings.md) — the maintainer, 2026-10-24:
+12. [Complete the computed-briefings plan](../design/computed-briefings-plan.md), from the
+    [computed-briefings design](../design/computed-briefings.md) — the maintainer, 2026-10-24:
     a pack's briefing should tell each workspace's agent exactly how to finish a change (commit
     only, push a named branch, or push a new branch) according to the grants that workspace was
     approved, now that push grants exist. It reads the grants by what the broker does, not by

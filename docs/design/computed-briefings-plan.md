@@ -3,7 +3,7 @@ title: "Computed briefings: current-tree implementation handoff"
 date: 2026-10-28
 status: in-review
 stage: DESIGN
-next: "Resolve the two recorded access-projection gaps and complete operation controls; proposed engineering APIs below are build work, not admission gates"
+next: "Resolve OQ-CBP1 and OQ-CBP2 and complete operation controls; proposed engineering APIs below are build work, not admission gates"
 depends-on:
   - computed-briefings.md
   - pack-manifests.md
@@ -59,7 +59,7 @@ name overlapping source/API work, not a universal wait for a green base:
 | Manifest reader/producer representation from [pack manifests](pack-manifests.md) | Unit A | Confirm the landed `Contribution` fields and grouped `[[briefing]]` lowering; reserve `derive` and `reads` without reusing a surface-producer DTO. Current base has neither field. |
 | Approved carrier from [readable config plan](readable-config-plan.md) | Unit C | Transfer raw approved remote names, scope form, repositories, grants, and effective grant-kind eligibility without parsing display labels or rereading requested workspace config. Current predecessor is `ScopeCheck` → `Options.approvedScopes` / `approvedGrants`. |
 | Existing scope/keeper version contracts | Units C–E | Specify backward reads and keeper transport before adding remote-name facts; no credential, host path, or new grant may enter Lua. |
-| Verified red tests at actual callers | Every build unit | Materialize the tests below only in an authorized implementation lane; record actual red output before changing production. This planning lane did not do so. |
+| Verified red tests at actual callers | Every build unit | Three printed baseline probes were observed as described below; exact operation-level controls remain unfinished. Materialize permanent tests only in an authorized implementation lane and record actual red output before changing production. |
 
 Explicit historical lookup: `d8ed0c9dd` was inspected with `git show` only. Its
 `readablescope.go` introduces `readableScopeCheck` and `scopeCheckFromReadable`; it still
@@ -747,7 +747,7 @@ admission gates. All three original owner product rulings stay closed. Independe
 explicitly skipped for this planning change; neither that skip nor targeted render/link checks
 is equivalent to a HIGH code review or the separately requested whole-document review.
 
-Roadmap routing was inspected: its computed-briefings entry still says to rule the design,
-although the accepted design now points to this plan. The roadmap and accepted design are
-outside this writer's exclusive fence; the landing owner should update that next-step wording
-without copying readiness state or changing the independent config work's priority.
+The [roadmap's computed-briefings entry](../plans/roadmap.md#immediate-continuation) routes this
+plan's pending [remote projection](#OQ-CBP1) and [snapshot failure](#OQ-CBP2) questions at the
+existing priority position. The accepted design's three original owner rulings remain settled;
+this routing is not plan readiness or authorization to implement.
