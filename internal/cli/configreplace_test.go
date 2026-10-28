@@ -95,7 +95,7 @@ func TestConfigCaptureReplacesTheSidecarsItWrites(t *testing.T) {
 			writeFile(t, sidecar, tc.prior)
 			verify := pinSecondName(t, w.ws, sidecar)
 
-			rc, out, errw := runConfigVerb(t, "capture", "claude/settings", "--force")
+			rc, out, errw := runSurfaceVerb(t, "capture", "claude/settings", "--force")
 
 			if rc != 0 {
 				t.Fatalf("capture rc=%d:\n%s%s", rc, out, errw)
@@ -179,7 +179,7 @@ func TestConfigResetRewritesTheSurfaceInPlace(t *testing.T) {
 	}
 	verify := pinSameInode(t, w.ws, w.surface())
 
-	rc, out, errw := runConfigVerb(t, "reset", "claude/settings")
+	rc, out, errw := runSurfaceVerb(t, "reset", "claude/settings")
 
 	if rc != 0 {
 		t.Fatalf("reset rc=%d:\n%s%s", rc, out, errw)

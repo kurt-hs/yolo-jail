@@ -95,29 +95,46 @@ func TestConfigHelpStylesBothHelpFlagAliases(t *testing.T) {
 	}
 }
 
-// Each verb's own --help prints the same usage, so it goes through the same colorizer. A verb
-// may print its target disclosure on stderr first; only stdout is the help.
-func TestConfigVerbHelpIsColoredLikeTheTopLevel(t *testing.T) {
-	for _, verb := range []string{"render", "ls", "diff", "reset", "capture", "promote", "drift", "dump"} {
-		t.Run(verb, func(t *testing.T) {
+// Composition verbs now print the same detailed help in the surface namespace; retained config
+// runtime verbs keep the config help. Both dispatch paths share the original colorizer.
+func TestConfigAndSurfaceVerbHelpIsColoredLikeTheTopLevel(t *testing.T) {
+	for _, tc := range []struct{ namespace, verb, usage string }{
+		{"surface", "render", surfaceUsage}, {"surface", "ls", surfaceUsage},
+		{"surface", "diff", surfaceUsage}, {"surface", "reset", surfaceUsage},
+		{"surface", "capture", surfaceUsage}, {"surface", "promote", surfaceUsage},
+		{"config", "drift", configUsage}, {"config", "dump", configUsage},
+	} {
+		t.Run(tc.namespace+"/"+tc.verb, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
 			t.Chdir(t.TempDir())
 			standInTerminal(t)
 			t.Setenv("NO_COLOR", "")
 			var rc int
-			out, _ := captureBoth(t, func() { rc = runConfig([]string{"config", verb, "--help"}) })
+			out, _ := captureBoth(t, func() {
+				if tc.namespace == "surface" {
+					rc = runSurface([]string{"surface", tc.verb, "--help"})
+				} else {
+					rc = runConfig([]string{"config", tc.verb, "--help"})
+				}
+			})
 			if rc != 0 {
-				t.Fatalf("config %s --help = %d", verb, rc)
+				t.Fatalf("%s %s --help = %d", tc.namespace, tc.verb, rc)
 			}
 			if !strings.Contains(out, "\x1b[1m") || !strings.Contains(out, "\x1b[36m") {
-				t.Errorf("config %s --help was not colored on a terminal:\n%s", verb, out)
+				t.Errorf("%s %s --help was not colored on a terminal:\n%s", tc.namespace, tc.verb, out)
 			}
-			if plain := configHelpANSI.ReplaceAllString(out, ""); plain != configUsage+"\n" {
-				t.Errorf("config %s --help changed plain bytes: %q", verb, plain)
+			if plain := configHelpANSI.ReplaceAllString(out, ""); plain != tc.usage+"\n" {
+				t.Errorf("%s %s --help changed plain bytes: %q", tc.namespace, tc.verb, plain)
 			}
 			t.Setenv("NO_COLOR", "1")
-			if out, _ = captureBoth(t, func() { rc = runConfig([]string{"config", verb, "--help"}) }); out != configUsage+"\n" {
-				t.Errorf("config %s --help under NO_COLOR = %q, want plain usage", verb, out)
+			if out, _ = captureBoth(t, func() {
+				if tc.namespace == "surface" {
+					rc = runSurface([]string{"surface", tc.verb, "--help"})
+				} else {
+					rc = runConfig([]string{"config", tc.verb, "--help"})
+				}
+			}); out != tc.usage+"\n" {
+				t.Errorf("%s %s --help under NO_COLOR = %q, want plain usage", tc.namespace, tc.verb, out)
 			}
 		})
 	}

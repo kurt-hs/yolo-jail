@@ -146,7 +146,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 		}
 		switch {
 		case isHelpToken(a):
-			writeConfigUsage(out, colorForWriter(out))
+			writeSurfaceUsage(out, colorForWriter(out))
 			return o, 0
 		case a == "--surface" || strings.HasPrefix(a, "--surface="):
 			fmt.Fprintln(errw, "yolo config promote: --surface was removed; use the canonical positional identity <agent>/<surface> (for example, pi/settings)")
@@ -189,7 +189,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 		case a == promoteFlagAccept:
 			o.accept = true
 		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(errw, "yolo config promote: unknown flag %q\n\n%s\n", a, configUsage)
+			fmt.Fprintf(errw, "yolo config promote: unknown flag %q\n\n%s\n", a, surfaceUsage)
 			return o, 2
 		default:
 			if o.agent != "" {
@@ -202,7 +202,7 @@ func parsePromoteArgs(args []string, out, errw io.Writer) (promoteOptions, int) 
 	}
 	if o.agent == "" {
 		fmt.Fprintf(errw, "yolo config promote: needs an agent (e.g. 'yolo config promote claude')\n\n%s\n",
-			configUsage)
+			surfaceUsage)
 		return o, 2
 	}
 	var identityRC int

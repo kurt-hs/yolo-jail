@@ -66,7 +66,8 @@ var commandHelp = []struct{ name, blurb string }{
 	{"host-run", "Run one command on the host for this workspace's agent, and deliver its output to the jail ('wait', 'show' in the jail)"},
 	{"init", "Scaffold yolo-jail.jsonc in the current workspace"},
 	{"init-user-config", "Write user-level defaults at ~/.config/yolo-jail/config.jsonc"},
-	{"config", "Inspect generated config: 'config ls' (every composed file), 'render', 'diff', 'reset'"},
+	{"config", "Edit and inspect yolo's own configuration: 'config apply', 'config drift', 'config dump'"},
+	{"surface", "Inspect and manage composed agent-config surfaces: 'surface ls', 'render', 'diff', 'reset'"},
 	{"describe", "Print the resolved environment description (--json, --hash)"},
 	// At the jail notch the verb IS the launch `yolo -- true` performs (JR-D1, apply.go), which
 	// installs every program a selected pack declares before it exits (OQ-JR1).

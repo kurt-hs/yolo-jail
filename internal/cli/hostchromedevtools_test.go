@@ -161,7 +161,7 @@ func TestHostApplyNamesTheRetiredMCPPresetsKey(t *testing.T) {
 // `yolo config render --at host` previews the entry the apply writes.
 func TestConfigRenderAtHostShowsThePacksMCPEntry(t *testing.T) {
 	home := hostComputedHome(t, chromeHostConfig(""))
-	rc, out, errs := runConfigVerb(t, "render", "claude/config", "--at", "host")
+	rc, out, errs := runSurfaceVerb(t, "render", "claude/config", "--at", "host")
 	if rc != 0 {
 		t.Fatalf("config render --at host rc=%d\n%s%s", rc, out, errs)
 	}

@@ -23,6 +23,7 @@ var registry = map[string]func(args []string) int{
 	"ps":               runPs,
 	"loopholes":        runLoopholes,
 	"config":           runConfig,
+	"surface":          runSurface,
 	"describe":         runDescribe,
 	"apply":            runApply,
 	"host":             runHost,

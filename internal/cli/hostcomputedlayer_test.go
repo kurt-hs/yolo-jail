@@ -138,18 +138,18 @@ func TestTheWrapperAutoApplyWritesTheComputedLayer(t *testing.T) {
 // would write, derive included — and `yolo config ls --at host` lists the layer.
 func TestConfigRenderAndLsAtHostShowTheComputedLayer(t *testing.T) {
 	hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own","mcp_servers":{"tavily":{"command":"npx"}}}`)
-	rc, out, errs := runConfigVerb(t, "render", "pi/mcp", "--at", "host")
+	rc, out, errs := runSurfaceVerb(t, "render", "pi/mcp", "--at", "host")
 	if rc != 0 {
 		t.Fatalf("config render --at host rc=%d\n%s%s", rc, out, errs)
 	}
 	if !strings.Contains(previewBody(t, out), `"tavily"`) {
 		t.Errorf("the host preview of pi/mcp does not show your server:\n%s", out)
 	}
-	rc, out, errs = runConfigVerb(t, "render", "pi/codex-models", "--at", "host")
+	rc, out, errs = runSurfaceVerb(t, "render", "pi/codex-models", "--at", "host")
 	if rc != 0 || !strings.Contains(out, `"models"`) {
 		t.Errorf("the host preview of pi/codex-models shows no list (rc=%d):\n%s%s", rc, out, errs)
 	}
-	rc, out, errs = runConfigVerb(t, "ls", "--at", "host", "--all")
+	rc, out, errs = runSurfaceVerb(t, "ls", "--at", "host", "--all")
 	if rc != 0 {
 		t.Fatalf("config ls --at host rc=%d\n%s%s", rc, out, errs)
 	}

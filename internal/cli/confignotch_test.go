@@ -43,7 +43,7 @@ func TestConfigRenderPreviewsTheJailsWorkspaceNotTheHosts(t *testing.T) {
 	t.Setenv("YOLO_RUNTIME", "podman")
 
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"render", "codex/config"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"render", "codex/config"}, &out, &errw); rc != 0 {
 		t.Fatalf("rc=%d, stderr=%s", rc, errw.String())
 	}
 	got := out.String()

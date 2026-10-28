@@ -66,7 +66,7 @@ func (w *promoteWorld) pack(name, manifest string) string {
 func (w *promoteWorld) run(args ...string) (string, string, int) {
 	w.t.Helper()
 	var out, errw bytes.Buffer
-	rc := configRunW(append([]string{"promote"}, args...), &out, &errw)
+	rc := surfaceRunW(append([]string{"promote"}, args...), &out, &errw)
 	return out.String(), errw.String(), rc
 }
 

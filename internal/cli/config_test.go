@@ -115,8 +115,7 @@ func TestConfigRenderMergesThenEnforces(t *testing.T) {
 	}
 }
 
-// TestConfigHelpExitsZero: `config`, `config --help`, `config help` all print
-// help to stdout with rc 0 (a self-documenting request, not an error).
+// TestConfigHelpExitsZero: `config`, `config --help`, `config help` answer with config help.
 func TestConfigHelpExitsZero(t *testing.T) {
 	for _, args := range [][]string{{}, {"--help"}, {"-h"}, {"help"}} {
 		var out, errw bytes.Buffer
@@ -124,15 +123,15 @@ func TestConfigHelpExitsZero(t *testing.T) {
 		if rc != 0 {
 			t.Errorf("config %v: rc=%d, want 0", args, rc)
 		}
-		if !strings.Contains(out.String(), "render <agent[/surface]>") {
-			t.Errorf("config %v: help missing 'render <agent[/surface]>':\n%s", args, out.String())
+		if !strings.Contains(out.String(), "Usage: yolo config") || !strings.Contains(out.String(), "apply") || strings.Contains(out.String(), "render <agent[/surface]>") {
+			t.Errorf("config %v: wrong config help:\n%s", args, out.String())
 		}
 	}
 }
 
-// TestConfigRenderMisuse: unknown subcommand and missing agent are machine-
+// TestSurfaceRenderMisuse: unknown subcommand and missing agent are machine-
 // detectable errors (non-zero, message on stderr).
-func TestConfigRenderMisuse(t *testing.T) {
+func TestSurfaceRenderMisuse(t *testing.T) {
 	cases := []struct {
 		args    []string
 		wantRC  int
@@ -146,7 +145,7 @@ func TestConfigRenderMisuse(t *testing.T) {
 	}
 	for _, c := range cases {
 		var out, errw bytes.Buffer
-		rc := configRunW(c.args, &out, &errw)
+		rc := surfaceRunW(c.args, &out, &errw)
 		if rc != c.wantRC {
 			t.Errorf("config %v: rc=%d, want %d", c.args, rc, c.wantRC)
 		}
@@ -156,9 +155,9 @@ func TestConfigRenderMisuse(t *testing.T) {
 	}
 }
 
-func TestConfigCanonicalSurfaceIdentityThroughDispatch(t *testing.T) {
+func TestSurfaceCanonicalIdentityThroughDispatch(t *testing.T) {
 	var out, errw bytes.Buffer
-	if rc := configRunW([]string{"render", "pi/settings"}, &out, &errw); rc != 0 {
+	if rc := surfaceRunW([]string{"render", "pi/settings"}, &out, &errw); rc != 0 {
 		t.Fatalf("config render pi/settings: rc=%d, stderr=%s", rc, errw.String())
 	}
 	if !strings.Contains(out.String(), "pi/settings") {
@@ -166,7 +165,7 @@ func TestConfigCanonicalSurfaceIdentityThroughDispatch(t *testing.T) {
 	}
 }
 
-func TestConfigSurfaceIdentityValidationThroughDispatch(t *testing.T) {
+func TestSurfaceIdentityValidationThroughDispatch(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -180,7 +179,7 @@ func TestConfigSurfaceIdentityValidationThroughDispatch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errw bytes.Buffer
-			if rc := configRunW(tc.args, &out, &errw); rc != 2 {
+			if rc := surfaceRunW(tc.args, &out, &errw); rc != 2 {
 				t.Fatalf("config %v: rc=%d, want 2; stderr=%s", tc.args, rc, errw.String())
 			}
 			if !strings.Contains(errw.String(), tc.want) {
@@ -190,11 +189,11 @@ func TestConfigSurfaceIdentityValidationThroughDispatch(t *testing.T) {
 	}
 }
 
-func TestConfigRemovedSurfaceFlagHasMigrationHintThroughDispatch(t *testing.T) {
+func TestSurfaceRemovedFlagHasMigrationHintThroughDispatch(t *testing.T) {
 	for _, cmd := range []string{"render", "diff", "reset", "capture", "promote"} {
 		t.Run(cmd, func(t *testing.T) {
 			var out, errw bytes.Buffer
-			if rc := configRunW([]string{cmd, "pi", "--surface", "settings"}, &out, &errw); rc != 2 {
+			if rc := surfaceRunW([]string{cmd, "pi", "--surface", "settings"}, &out, &errw); rc != 2 {
 				t.Fatalf("config %s: rc=%d, want 2; stderr=%s", cmd, rc, errw.String())
 			}
 			if got := errw.String(); !strings.Contains(got, "--surface was removed") || !strings.Contains(got, "pi/settings") {

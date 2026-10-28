@@ -83,9 +83,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
-// verbDispatcher names the function whose switch picks a command's verb: its package (a
-// directory under the module root), the function, the expression the switch reads the verb from,
-// and, for config, the map of further verbs.
+// verbDispatcher names the function that picks a command's verb: its package (a directory under
+// the module root), the function, the expression it dispatches, and, for config and surface, the
+// map whose function values add the rest of the verbs.
 type verbDispatcher struct {
 	pkg, fn, on, verbMap string
 }
@@ -97,6 +97,7 @@ var verbDispatchers = map[string]verbDispatcher{
 	"host":        {"internal/cli", "hostMain", "args[0]", ""},
 	"programs":    {"internal/cli", "programsMain", "args[0]", ""},
 	"config":      {"internal/cli", "configRunW", "verb", "configColorVerbs"},
+	"surface":     {"internal/cli", "surfaceRunW", "verb", "surfaceColorVerbs"},
 	"loopholes":   {"internal/cli", "runLoopholes", "sub", ""},
 	"broker":      {"internal/cli", "hostDaemonDispatch", "sub", ""},
 	"host-daemon": {"internal/cli", "hostDaemonDispatch", "sub", ""},
@@ -202,7 +203,7 @@ func TestTheHintCheckRefusesWhatIsNotACommand(t *testing.T) {
 		"yolo internal bogus",
 		"yolo openai-auth bogus",
 		"yolo config bogus",
-		"yolo config ls --bogus",
+		"yolo config bogus --bogus",
 		// A flag with no verb before it is read against what the command parses outside its
 		// verbs' branches, not against every verb's flags at once.
 		"yolo host --assert -- codex",
@@ -247,6 +248,8 @@ func TestTheHintCheckRefusesWhatIsNotACommand(t *testing.T) {
 		"yolo pack ls/status",
 		"yolo loopholes list --format json",
 		"yolo config dump",
+		// Every old composition spelling takes the exact refusal branch before parsing args.
+		"yolo config ls --bogus",
 		"yolo config reset claude/settings",
 		// config picks these verbs from a map of functions, so a verb's flags are read from the
 		// function the map names.
@@ -663,6 +666,11 @@ func (c *commandTree) check(text string) string {
 	}
 	verb := ""
 	if verbs := c.verbs(k); verbs != nil && len(rest) > 0 && bareWord(rest[0]) {
+		if k == "config" && c.retiredSurfaceVerb(rest[0]) {
+			// configRunW's explicit six-case switch refuses these legacy spellings with their
+			// `yolo surface` replacement. It is a recognized actionable refusal, not an alias.
+			return ""
+		}
 		for _, alt := range strings.Split(rest[0], "/") {
 			if _, ok := verbs[alt]; !ok {
 				return fmt.Sprintf("names `yolo %s %s`, and yolo %s has no verb %q (it has %s)", k, alt, k, alt,
@@ -672,6 +680,32 @@ func (c *commandTree) check(text string) string {
 		verb, rest = strings.Split(rest[0], "/")[0], rest[1:]
 	}
 	return c.checkFlags(k, verb, rest)
+}
+
+func (c *commandTree) retiredSurfaceVerb(verb string) bool {
+	branch := c.verbs("config")[verb]
+	if branch == nil {
+		return false
+	}
+	const refusal = "yolo config %s has moved to yolo surface %s; use `yolo surface %s` instead.\n"
+	for _, source := range branch.nodes {
+		found := false
+		ast.Inspect(source.n, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(lit.Value)
+			if err == nil && value == refusal {
+				found = true
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }
 
 // checkFlags checks every long flag in args, up to a `--`, against what k (after verb, when one

@@ -147,7 +147,7 @@ func TestConfigRenderAtHostPreviewsASourceLessHostFile(t *testing.T) {
 	hostComputedHome(t, `{"packs":[],"host_management":"own",
 		"host_files":[{"path":"~/`+userFileRel+`","content":"{\"theme\": \"dark\"}",
 		               "managed":{"telemetry": false}}]}`)
-	rc, out, errs := runConfigVerb(t, "render", "user", "--at", "host")
+	rc, out, errs := runSurfaceVerb(t, "render", "user", "--at", "host")
 	if rc != 0 || !strings.Contains(out, `"theme": "dark"`) || !strings.Contains(out, `"telemetry": false`) {
 		t.Fatalf("config render user --at host rc=%d does not preview the entry:\n%s%s", rc, out, errs)
 	}

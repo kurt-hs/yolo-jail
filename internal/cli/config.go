@@ -32,156 +32,26 @@ import (
 // configUsage is the `yolo config` help, printed on `--help`, `help`, or misuse.
 const configUsage = `Usage: yolo config <subcommand>
 
-Inspect the generated-config composition pipeline (the layered regeneration of
-agent settings/MCP/LSP/mise config). See 'yolo config-ref' and
-docs/reference/pack-system.md.
+Edit and inspect yolo's own configuration. Generated config surfaces are
+managed separately by 'yolo surface'.
 
 Subcommands:
-  ls [--all]               List every composed surface — path, codec, mode,
-                           contributing layers, and whether captured in-jail
-                           edits are outranking every layer but computed
-                           and managed. Then, per key, which pack contributed it
-                           via config-overlay and whether that contribution won,
-                           and per array which packs appended entries to it via
-                           config-list and whether a higher layer replaces it.
-  render <agent[/surface]> [flags]
-                           Run the composition pipeline and print what it would
-                           write, for every surface of <agent> (no writes). The
-                           'host' layer is the copy a LAUNCH stages under /ctx —
-                           the bytes the boot render composes — so a preview run
-                           outside the jail that staged it reports that layer as
-                           unavailable rather than substituting your own file,
-                           and a copy the launch labelled yolo's own render is a
-                           baseline rather than a layer. At the HOST notch it
-                           prints exactly the file 'yolo host apply --assert'
-                           writes into your real home, from your configured
-                           packs, and --explain the per-key record it keeps.
-  diff <agent[/surface]> [flags]
-                           Show the captured in-jail edits (the capture overlay)
-                           for <agent>, key by key, versus yolo's last render.
-                           That is what survives deleting these surfaces and
-                           regenerating them, and it is all this verb reports;
-                           per-key layer provenance is 'config ls'.
-  reset <agent[/surface]> [flags]
-                           Discard those captured edits, so the surface returns
-                           to what its layers produce on the next launch. It
-                           runs HOST-SIDE for a workspace too — it acts on that
-                           jail's own home overlay, never on your real home —
-                           and refuses while a jail for that workspace is
-                           running, naming the in-jail command, which is
-                           available exactly then. At the host under
-                           host_management "own" it re-renders the surface as
-                           'yolo host apply --assert' would, so your profile,
-                           servers and the packs' overlays stay in it.
-  promote <agent[/surface]> [flags]
-                           Turn captured in-jail edits into DECLARED ones: write them
-                           into a pack (the conventional local pack by default, which
-                           renders in every jail and on the host) and clear them from
-                           the capture overlay, so the value is declared in one place.
-                           HOST-SIDE ONLY — the destinations are under the host's
-                           ~/.config/yolo-jail/, which no jail may write.
-  capture <agent[/surface]> [flags]
-                           Record the CURRENT on-disk edits into the overlay now,
-                           without waiting. Nothing is lost without it — a jail
-                           captures on TERMINATE, and the next boot captures again
-                           — so this is for reading 'diff' mid-session, while the
-                           jail that made the edits is still running. At the host
-                           under host_management "own" it records the edits in
-                           your real home as 'yolo host apply --assert' would
-                           record them, into the host's capture store, so
-                           'diff --at host' shows them before the next apply.
-  drift                    Show whether the WORKSPACE config (yolo-jail.jsonc) on
-                           disk differs from the config this jail has (what it
-                           started with, plus what 'config apply' applied since) —
-                           i.e. whether an edit is still pending. Exit
-                           0 in sync, 3 drifted (prints the diff), 4 no baseline.
-                           WORKSPACE ONLY: the user-level config reaches a jail as a
-                           generated snapshot taken at launch, so an edit to it is
-                           not visible in here and not detectable as drift. In a jail
-                           the output says so rather than implying both were checked.
   apply [--record-only] [--accept-config-changes]
                            HOST ONLY. Approve this workspace's config changes and
                            apply to its RUNNING jail what it can take without a
-                           restart: the same diff and y/N a fresh launch asks,
-                           then one line per change — applied now, from your next
-                           yolo session, or at next restart (yolo stop, then
-                           yolo). It never restarts the jail. --record-only
-                           approves and touches no jail. Exit 0 nothing pending,
-                           3 a restart still owed, 1 declined or refused.
-  dump                     Print the full COMPUTED config as canonical JSON (sorted
-                           keys) — the effective merged config this jail runs under,
-                           the same form the startup config-change diff validates.
+                           restart. It never restarts the jail.
+  drift                    Show whether the WORKSPACE config on disk differs from
+                           the config this jail has (what it started with, plus
+                           what 'config apply' applied since).
+  dump                     Print the full COMPUTED config as canonical JSON.
 
-Surface selection:
-  Use the canonical identity printed by 'yolo config ls', such as pi/settings.
-  A bare agent name selects all of that agent's surfaces. The removed --surface
-  flag is rejected with a migration hint.
-
-render flags:
-  --explain          Print, per config key, which layer set it
-                     (defaults<host<workspace<config-overlay<config-list
-                     <overlay<managed), instead of the rendered file — and,
-                     per array a config-list appends to, its entries in
-                     order with the pack each came from, or the layer that
-                     replaced the assembled array.
-  --help, -h         Show this help.
-
-ls flags:
-  --all              Include surfaces whose file does not exist (the manifest
-                     declares every agent's surfaces; a jail composes only the
-                     selected agents').
-
-ls, render, diff, reset and capture also take:
-  --at <notch>       Ask about a different notch than the cwd selected: jail (the
-                     workspace you are standing in) or host (your real home). The
-                     same flag, the same three names and the same refusals as
-                     'yolo apply --at'. 'guest' is refused by name — it is unbuilt —
-                     and '--at jail' outside a workspace is refused rather than
-                     silently answered about the host. There is no --workspace flag:
-                     cd into the project you meant.
-
-reset/capture also take:
-  --force            reset and capture WRITE files. At the HOST notch they resolve
-                     against your REAL home and could clobber your own config, so
-                     they refuse there unless --force. 'own' exempts both: yolo
-                     composes those files and keeps their capture store. Under
-                     'none' and 'assert' there is no store, so capture refuses
-                     even with --force. A host-side reset of a WORKSPACE needs no
-                     --force — those files are that jail's, not yours — but it
-                     refuses while that jail is running, or while the container
-                     runtime cannot be asked whether it is; --force reaches both.
-
-promote flags:
-  --keys a,b         Promote only these captured keys (default: all of them).
-  --to <dest>        local (default unless promotion_target is set in user config),
-                     or pack:<name>. "local" is
-                     ~/.config/yolo-jail/local — no packs entry needed, folds after
-                     every other pack, and renders at every notch.
-  --plan             Classify and print; write nothing. Add --json for the document.
-  --force <keys>     Promote these keys despite the credential-name refusal. Per key,
-                     by name — there is no blanket form.
-  --accept-promotion Write. Without it promote prints the plan and writes nothing.
-
-A promotion is refused for a key that is redundant (the layers already produce it),
-dead (an owning layer overrides it where it sits), environment-bound (it holds a jail
-path), credential-named, or outranked by a later pack's config-overlay at the chosen
-destination. Each refusal names the key and the reason.
-
-Only a 'capture'-mode surface accumulates in-jail edits; 'readonly', 'once' and
-'copy' surfaces write no sidecar, so diff/reset do not apply to them. Use
-'user' as the agent for files declared via the host_files config key.
-
-Every verb prints one line on stderr first naming what it is about: the
-workspace-or-home, the notch, what selected it, and the capture store it reads.
-The cwd selects that target — a directory that resolves a workspace means that
-workspace's jail, one that resolves none means your real home — and the line is
-not suppressible.
+Flags:
+  --help, -h               Show this help.
 
 Examples:
-  yolo config ls                      # every composed file, and what mode it is in
-  yolo config render claude           # what a launch would write for claude
-  yolo config diff claude/settings    # edits captured for one listed surface
-  yolo config reset claude/settings   # discard that surface's captured edits`
+  yolo config apply
+  yolo config drift
+  yolo config dump`
 
 // runConfig dispatches `yolo config <subcommand>`. Registered in dispatch.go.
 // Per the dispatch convention (see runBroker), args[0] is the command name
@@ -215,6 +85,11 @@ func configRunW(args []string, out, errw io.Writer) int {
 		return 0
 	}
 	verb := args[0]
+	switch verb {
+	case "ls", "render", "diff", "reset", "promote", "capture":
+		fmt.Fprintf(errw, "yolo config %s has moved to yolo surface %s; use `yolo surface %s` instead.\n", verb, verb, verb)
+		return 2
+	}
 	rest, at, rc := extractAtFlag(verb, args[1:], errw)
 	if rc != 0 {
 		return rc
@@ -245,14 +120,8 @@ func configRunW(args []string, out, errw io.Writer) int {
 //
 // Stdout-only verbs receive colorForWriter(out); apply receives an ungated request so the
 // launch and payload printers can independently gate stderr and stdout. This table keeps every
-// dispatch explicit; TestEveryConfigVerbTakesTheOneColorDecision pins it.
+// dispatch explicit; TestConfigAndSurfaceVerbTakesTheOneColorDecision pins it.
 var configColorVerbs = map[string]func(t configTarget, args []string, out, errw io.Writer, color bool) int{
-	"render":  configRender,
-	"ls":      configLs,
-	"diff":    configDiff,
-	"reset":   configReset,
-	"capture": configCapture,
-	"promote": configPromote,
 	// drift compares this workspace against its own boot baseline, so it takes no target.
 	"drift": func(_ configTarget, args []string, out, errw io.Writer, color bool) int {
 		return configDrift(args, out, errw, color)
@@ -320,7 +189,15 @@ func extractAtFlag(verb string, args []string, errw io.Writer) (rest []string, a
 }
 
 func writeConfigUsage(out io.Writer, color bool) {
-	lines := strings.Split(configUsage, "\n")
+	writeCLIUsage(out, color, configUsage)
+}
+
+func writeSurfaceUsage(out io.Writer, color bool) {
+	writeCLIUsage(out, color, surfaceUsage)
+}
+
+func writeCLIUsage(out io.Writer, color bool, usage string) {
+	lines := strings.Split(usage, "\n")
 	for i, line := range lines {
 		if strings.HasPrefix(line, "Usage:") {
 			lines[i] = "[bold]Usage:[/bold]" + strings.TrimPrefix(line, "Usage:")
@@ -343,7 +220,7 @@ func writeConfigUsage(out io.Writer, color bool) {
 		}
 		token := line[start:end]
 		trimmedToken := strings.TrimSuffix(token, ",")
-		if !configHelpToken(token) && !configHelpToken(trimmedToken) {
+		if !cliHelpToken(token) && !cliHelpToken(trimmedToken) {
 			continue
 		}
 		if trimmedToken != token {
@@ -355,7 +232,7 @@ func writeConfigUsage(out io.Writer, color bool) {
 			for aliasEnd < len(line) && line[aliasEnd] != ' ' && line[aliasEnd] != '\t' {
 				aliasEnd++
 			}
-			if aliasStart < aliasEnd && configHelpToken(line[aliasStart:aliasEnd]) {
+			if aliasStart < aliasEnd && cliHelpToken(line[aliasStart:aliasEnd]) {
 				end = aliasEnd
 			}
 		}
@@ -364,7 +241,7 @@ func writeConfigUsage(out io.Writer, color bool) {
 	io.WriteString(out, richtext.Render(strings.Join(lines, "\n")+"\n", color))
 }
 
-func configHelpToken(token string) bool {
+func cliHelpToken(token string) bool {
 	switch token {
 	case "ls", "render", "diff", "reset", "promote", "capture", "drift", "dump", "apply",
 		"--help", "-h", "--all", "--explain", "--at", "--force", "--keys", "--to",
@@ -408,7 +285,7 @@ func configRender(t configTarget, args []string, out, errw io.Writer, color bool
 		a := args[i]
 		switch {
 		case isHelpToken(a):
-			writeConfigUsage(out, color)
+			writeSurfaceUsage(out, color)
 			return 0
 		case a == "--explain":
 			explain = true
@@ -416,7 +293,7 @@ func configRender(t configTarget, args []string, out, errw io.Writer, color bool
 			fmt.Fprintln(errw, "yolo config render: --surface was removed; use the canonical positional identity <agent>/<surface> (for example, pi/settings)")
 			return 2
 		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(errw, "yolo config render: unknown flag %q\n\n%s\n", a, configUsage)
+			fmt.Fprintf(errw, "yolo config render: unknown flag %q\n\n%s\n", a, surfaceUsage)
 			return 2
 		default:
 			if identity != "" {
@@ -427,7 +304,7 @@ func configRender(t configTarget, args []string, out, errw io.Writer, color bool
 		}
 	}
 	if identity == "" {
-		fmt.Fprintf(errw, "yolo config render: needs an agent (e.g. 'yolo config render pi')\n\n%s\n", configUsage)
+		fmt.Fprintf(errw, "yolo config render: needs an agent (e.g. 'yolo config render pi')\n\n%s\n", surfaceUsage)
 		return 2
 	}
 	agent, surface, rc := parseSurfaceIdentity("render", identity, errw)

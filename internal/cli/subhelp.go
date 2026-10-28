@@ -67,9 +67,10 @@ var subcommandUsage = map[string]subUsage{
 	// runHelpRequested, next to the parse it mirrors.
 	"run": {text: runUsage},
 	// Answer inside their own testable bodies (case isHelpToken(a): ...).
-	"config": {text: configUsage},
-	"pack":   {text: packUsage},
-	"apply":  {text: applyUsage},
+	"config":  {text: configUsage},
+	"surface": {text: surfaceUsage},
+	"pack":    {text: packUsage},
+	"apply":   {text: applyUsage},
 	// `host` answers inside hostMain, like pack/config/apply. valueFlags carries the
 	// exec half's -p/--profile so `yolo host -p bedrock --help` is read as help rather
 	// than as a profile named "--help".

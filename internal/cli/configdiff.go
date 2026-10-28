@@ -43,7 +43,7 @@ func surfaceArgs(cmd string, args []string, out, errw io.Writer) (agent, surface
 		a := args[i]
 		switch {
 		case isHelpToken(a):
-			writeConfigUsage(out, colorForWriter(out))
+			writeSurfaceUsage(out, colorForWriter(out))
 			return "", "", false, 0
 		case a == "--surface" || strings.HasPrefix(a, "--surface="):
 			fmt.Fprintf(errw, "yolo config %s: --surface was removed; use the canonical positional identity <agent>/<surface> (for example, %s/settings)\n", cmd, firstNonFlag(args))
@@ -54,7 +54,7 @@ func surfaceArgs(cmd string, args []string, out, errw io.Writer) (agent, surface
 			// harmless otherwise.
 			force = true
 		case strings.HasPrefix(a, "-"):
-			fmt.Fprintf(errw, "yolo config %s: unknown flag %q\n\n%s\n", cmd, a, configUsage)
+			fmt.Fprintf(errw, "yolo config %s: unknown flag %q\n\n%s\n", cmd, a, surfaceUsage)
 			return "", "", false, 2
 		default:
 			if agent != "" {
@@ -66,7 +66,7 @@ func surfaceArgs(cmd string, args []string, out, errw io.Writer) (agent, surface
 	}
 	if agent == "" {
 		fmt.Fprintf(errw, "yolo config %s: needs an agent (e.g. 'yolo config %s claude')\n\n%s\n",
-			cmd, cmd, configUsage)
+			cmd, cmd, surfaceUsage)
 		return "", "", false, 2
 	}
 	agent, surface, rc = parseSurfaceIdentity(cmd, agent, errw)

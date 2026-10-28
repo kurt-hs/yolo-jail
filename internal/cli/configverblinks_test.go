@@ -162,7 +162,7 @@ func TestConfigDiffNeverReadsThroughALink(t *testing.T) {
 				link := w.sidecar(tc.suffix)
 				verify := shape.plant(t, link, tc.host)
 
-				rc, out, errw := runConfigVerb(t, "diff", "claude/settings")
+				rc, out, errw := runSurfaceVerb(t, "diff", "claude/settings")
 
 				verify(t)
 				if strings.Contains(out+errw, "leaked") {
@@ -184,7 +184,7 @@ func TestConfigDiffNeverFollowsALinkedDirectory(t *testing.T) {
 			w.seed(t, `{"model":"base"}`, `{"model":"base"}`, `{"hostOnlySecret":"leaked"}`, "")
 			hostDir, before := linkDirToHost(t, w.ws, linked, `{"hostOnlySecret":"leaked"}`)
 
-			rc, out, errw := runConfigVerb(t, "diff", "claude/settings")
+			rc, out, errw := runSurfaceVerb(t, "diff", "claude/settings")
 
 			if after := treeListing(t, hostDir); after != before {
 				t.Errorf("diff wrote into the host directory behind %s:\n%s", linked, after)
@@ -237,7 +237,7 @@ func TestConfigLsNeverReadsThroughALink(t *testing.T) {
 				link := filepath.Join(w.store, tc.file)
 				verify := shape.plant(t, link, tc.host)
 
-				rc, out, errw := runConfigVerb(t, "ls")
+				rc, out, errw := runSurfaceVerb(t, "ls")
 
 				verify(t)
 				if strings.Contains(out+errw, tc.leak) {
@@ -261,7 +261,7 @@ func TestConfigLsNeverFollowsALinkedDirectory(t *testing.T) {
 				`{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7}`, "")
 			hostDir, before := linkDirToHost(t, w.ws, linked, `{"hostOnlySecret":"leaked"}`)
 
-			rc, out, errw := runConfigVerb(t, "ls")
+			rc, out, errw := runSurfaceVerb(t, "ls")
 
 			if after := treeListing(t, hostDir); after != before {
 				t.Errorf("ls wrote into the host directory behind %s:\n%s", linked, after)
@@ -290,7 +290,7 @@ func TestConfigResetNeverWritesASurfaceThroughALink(t *testing.T) {
 			w.seed(t, "", `{"theme":"yolos"}`, `{"theme":"the agents edit"}`, "")
 			verify := shape.plant(t, w.surface(), `{"theme":"the agents edit","hostOnlySecret":"kept"}`)
 
-			rc, out, errw := runConfigVerb(t, "reset", "claude/settings")
+			rc, out, errw := runSurfaceVerb(t, "reset", "claude/settings")
 
 			verify(t)
 			if rc == 0 {
@@ -320,7 +320,7 @@ func TestConfigResetNeverReadsASidecarThroughALink(t *testing.T) {
 				link := w.sidecar(tc.suffix)
 				verify := shape.plant(t, link, tc.host)
 
-				_, out, errw := runConfigVerb(t, "reset", "claude/settings")
+				_, out, errw := runSurfaceVerb(t, "reset", "claude/settings")
 
 				verify(t)
 				if strings.Contains(out, tc.leak) {
@@ -344,7 +344,7 @@ func TestConfigResetNeverWritesTheBaselineThroughALink(t *testing.T) {
 			w.seed(t, `{"theme":"the agents edit"}`, "", `{"theme":"the agents edit"}`, "")
 			verify := shape.plant(t, w.sidecar(".last_render"), `{"hostOnlySecret":"kept"}`)
 
-			runConfigVerb(t, "reset", "claude/settings")
+			runSurfaceVerb(t, "reset", "claude/settings")
 
 			verify(t)
 			if fi, err := os.Lstat(w.sidecar(".last_render")); err == nil && !fi.Mode().IsRegular() {
@@ -362,7 +362,7 @@ func TestConfigResetNeverFollowsALinkedDirectory(t *testing.T) {
 				`{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7}`, "")
 			hostDir, before := linkDirToHost(t, w.ws, linked, `{"theme":"yours","hostOnlySecret":"kept"}`)
 
-			rc, out, errw := runConfigVerb(t, "reset", "claude/settings")
+			rc, out, errw := runSurfaceVerb(t, "reset", "claude/settings")
 
 			if after := treeListing(t, hostDir); after != before {
 				t.Errorf("reset changed the host directory behind %s:\nbefore:\n%s\nafter:\n%s",
@@ -404,7 +404,7 @@ func TestConfigCaptureNeverFollowsALink(t *testing.T) {
 				}
 				verify := shape.plant(t, link, tc.host)
 
-				_, out, errw := runConfigVerb(t, "capture", "claude/settings", "--force")
+				_, out, errw := runSurfaceVerb(t, "capture", "claude/settings", "--force")
 
 				verify(t)
 				if got := readOverlayNoFollow(t, w.ws, "claude-settings"); strings.Contains(got, "hostOnlySecret") {
@@ -426,7 +426,7 @@ func TestConfigCaptureNeverListsALinkedStore(t *testing.T) {
 	linked := filepath.Join(".yolo", "prism")
 	hostDir, before := linkDirToHost(t, w.ws, linked, "")
 
-	_, out, errw := runConfigVerb(t, "capture", "user", "--force")
+	_, out, errw := runSurfaceVerb(t, "capture", "user", "--force")
 
 	if after := treeListing(t, hostDir); after != before {
 		t.Errorf("capture changed the host directory behind %s:\n%s", linked, after)
@@ -444,7 +444,7 @@ func TestConfigCaptureNeverFollowsALinkedDirectory(t *testing.T) {
 			w.seed(t, `{"model":"base","myEdit":"present"}`, `{"model":"base"}`, "", "")
 			hostDir, before := linkDirToHost(t, w.ws, linked, `{"model":"base","hostOnlySecret":"leaked"}`)
 
-			_, _, errw := runConfigVerb(t, "capture", "claude/settings", "--force")
+			_, _, errw := runSurfaceVerb(t, "capture", "claude/settings", "--force")
 
 			if after := treeListing(t, hostDir); after != before {
 				t.Errorf("capture wrote into the host directory behind %s:\nbefore:\n%s\nafter:\n%s",
@@ -502,7 +502,7 @@ func TestConfigPromoteNeverReadsThroughALink(t *testing.T) {
 				link := w.sidecar(tc.suffix)
 				verify := shape.plant(t, link, tc.host)
 
-				rc, out, errw := runConfigVerb(t, "promote", "claude/settings", "--accept-promotion")
+				rc, out, errw := runSurfaceVerb(t, "promote", "claude/settings", "--accept-promotion")
 
 				verify(t)
 				if strings.Contains(out+errw, tc.leak) {
@@ -530,7 +530,7 @@ func TestConfigPromoteNeverFollowsALinkedDirectory(t *testing.T) {
 			w.seed(t, `{"model":"base"}`, `{"model":"base"}`, `{"hostOnlyPref":"leaked"}`, "")
 			hostDir, before := linkDirToHost(t, w.ws, linked, `{"hostOnlyPref":"leaked"}`)
 
-			rc, out, errw := runConfigVerb(t, "promote", "claude/settings", "--accept-promotion")
+			rc, out, errw := runSurfaceVerb(t, "promote", "claude/settings", "--accept-promotion")
 
 			if after := treeListing(t, hostDir); after != before {
 				t.Errorf("promote wrote into the host directory behind %s:\nbefore:\n%s\nafter:\n%s",
@@ -622,7 +622,7 @@ func TestConfigPromoteNeverWritesTheOverlayThroughALink(t *testing.T) {
 			}
 			t.Cleanup(func() { promoteWriteFile = real })
 
-			rc, out, errw := runConfigVerb(t, "promote", "claude/settings", "--keys", "autoMemoryEnabled",
+			rc, out, errw := runSurfaceVerb(t, "promote", "claude/settings", "--keys", "autoMemoryEnabled",
 				"--accept-promotion")
 			if verify == nil {
 				t.Fatalf("promote never wrote the overlay (rc=%d):\n%s%s", rc, out, errw)
