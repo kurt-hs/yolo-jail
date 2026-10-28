@@ -261,8 +261,9 @@ func TestApplyTargetedRemovesSingletonAuthoredUserListElement(t *testing.T) {
 	if strings.Contains(string(fragmentAfter), "messages") || !strings.Contains(string(fragmentAfter), "# keep fragment note") || !strings.Contains(string(fragmentAfter), "# keep model note") || string(mainAfter) != string(mainBefore) || string(neighborAfter) != string(neighborBefore) || modeAfter.Mode().Perm() != modeBefore.Mode().Perm() {
 		t.Fatalf("singleton removal changed wrong source or neighbor: fragment=%q main=%q neighbor=%q", fragmentAfter, mainAfter, neighborAfter)
 	}
-	if got := userVariantCapabilities(t, home); len(got) != 1 || got[0] != "web_search" {
-		t.Fatalf("singleton removal did not remove only fragment message: effective capabilities=%#v", got)
+	// TOML [] is an explicit reset of inherited capabilities, unlike legacy JSONC [] union.
+	if got := userVariantCapabilities(t, home); len(got) != 0 {
+		t.Fatalf("singleton removal must retain the authored TOML empty-list reset: effective capabilities=%#v", got)
 	}
 	assertNoTargetArtifacts(t, fragmentPath)
 }

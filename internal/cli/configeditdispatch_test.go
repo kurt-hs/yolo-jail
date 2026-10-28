@@ -212,7 +212,6 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 		{"set", "machine.resources.cpus", "4", "--unknown"},
 		{"set", "machine.resources.cpus", "true\nother = 3", "--project"},
 		{"set", "machine.resources.cpus", `"bad"`, "--project"},
-		{"unset", "machine.resources.cpus", "--project"},
 	} {
 		var out, errw bytes.Buffer
 		if rc := configRunW(args, &out, &errw); rc == 0 || out.Len() != 0 || errw.Len() == 0 {
@@ -227,6 +226,7 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"set", "machine.resources.cpus", "4", "--project", "--dry-run"},
+		{"unset", "machine.resources.cpus", "--project", "--dry-run"},
 		{"set", "machine.resources.cpus", "2", "--project"},
 	} {
 		var out, errw bytes.Buffer
@@ -240,6 +240,21 @@ func TestConfigRunWGenericEditValidationDryRunNoopAndHelp(t *testing.T) {
 			t.Fatalf("dry-run/no-op public edit %q unexpectedly ran the post-write check: %q", args, out.String())
 		}
 	}
+	var unsetOut, unsetErr bytes.Buffer
+	rc := configRunW([]string{"unset", "machine.resources.cpus", "--project"}, &unsetOut, &unsetErr)
+	assertPublicPostWriteCheck(t, rc, unsetOut.String(), unsetErr.String())
+	after, readErr := os.ReadFile(workspace.Path)
+	if readErr != nil || bytes.Contains(after, []byte("cpus")) || !bytes.Contains(after, []byte("[machine.resources]")) {
+		t.Fatalf("valid scalar unset did not remove only the authored leaf: %q, %v", after, readErr)
+	}
+	var noopOut, noopErr bytes.Buffer
+	if rc := configRunW([]string{"unset", "machine.resources.cpus", "--project"}, &noopOut, &noopErr); rc != 0 || noopErr.Len() != 0 || strings.Contains(noopOut.String(), "Summary") {
+		t.Fatalf("absent scalar unset must be a no-op without postcheck: rc=%d out=%q err=%q", rc, noopOut.String(), noopErr.String())
+	}
+	if again, err := os.ReadFile(workspace.Path); err != nil || !bytes.Equal(again, after) {
+		t.Fatalf("absent scalar unset changed bytes: %q, %v", again, err)
+	}
+
 	for _, verb := range []string{"set", "add", "unset"} {
 		for _, flag := range []string{"--help", "-h"} {
 			var out, errw bytes.Buffer

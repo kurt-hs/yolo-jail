@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
@@ -59,9 +60,13 @@ func readJSONAt(t *testing.T, home, rel string) map[string]any {
 func TestYoloHostApplyAssertWritesTheComputedLayer(t *testing.T) {
 	home := hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own",
 		"mcp_servers":{"tavily":{"command":"npx","args":["-y","tavily-mcp"]},
-		               "jailed":{"command":"/workspace/bin/mcp"}},
+		               "jailed":{"command":"/ctx/bin/mcp"}},
 		"mcp_presets":["sequential-thinking"],
 		"profile":{"pi":"codex"}}`)
+	if len(entrypoint.JailPathsIn("/ctx/bin/mcp", home)) == 0 {
+		t.Fatal("fixture command must be outside rendered HOME and classified jail-only")
+	}
+
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"apply", "--assert"}, &out, &errw, false, strings.NewReader("y\n")); rc != 0 {
 		t.Fatalf("yolo host apply --assert rc=%d\n%s%s", rc, out.String(), errw.String())
@@ -86,7 +91,7 @@ func TestYoloHostApplyAssertWritesTheComputedLayer(t *testing.T) {
 			t.Errorf("%s reached a real home: %v", absent, servers)
 		}
 	}
-	if !strings.Contains(report, "mcp_servers jailed is not written at the host") ||
+	if countLines(report, "mcp_servers jailed is not written at the host") != 1 ||
 		!strings.Contains(report, "config.mcp_presets: REMOVED") {
 		t.Errorf("the omitted inputs are not named in the report:\n%s", report)
 	}

@@ -93,7 +93,9 @@ func TestHelpListsHostRun(t *testing.T) {
 }
 
 func TestHostRunJailFormsNeedAWorkspace(t *testing.T) {
-	t.Chdir(t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir(home)
 	for _, verb := range []string{"wait", "show"} {
 		rc, _, errOut := runMainCaptured(t, "host-run", verb)
 		if rc != 64 || !strings.Contains(errOut, "no yolo workspace") || !strings.Contains(errOut, "-C") {

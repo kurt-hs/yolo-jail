@@ -9,11 +9,13 @@ package cli
 // fixture does. The real $HOME is never read or written.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostskills"
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -230,7 +232,16 @@ func TestHostApplyWithNoPacksArchivesTheLSPPlugin(t *testing.T) {
 // the table is the composition's.
 func TestHostApplyLeavesAJailPathServerOutOfTheLSPPlugin(t *testing.T) {
 	home := lspHostFixture(t, `"claude"`,
-		`{"ws":{"command":"/workspace/bin/ws-lsp"},"gopls":{"command":"gopls"}}`)
+		`{"ws":{"command":"/ctx/bin/ws-lsp"},"gopls":{"command":"gopls"}}`)
+
+	if len(entrypoint.JailPathsIn("/ctx/bin/ws-lsp", home)) == 0 {
+		t.Fatal("fixture command must be outside rendered HOME and classified jail-only")
+	}
+	local := filepath.Join(home, "bin", "local-lsp")
+	if len(entrypoint.JailPathsIn(local, home)) != 0 {
+		t.Fatal("a command beneath the rendered HOME must remain host-valid")
+	}
+	writeLSPHostConfig(t, home, `"claude"`, fmt.Sprintf(`{"ws":{"command":"/ctx/bin/ws-lsp"},"gopls":{"command":"gopls"},"local":{"command":%q}}`, local))
 
 	rc, report := applyWith(t, true, strings.NewReader(""))
 	if rc != 0 {
@@ -240,8 +251,11 @@ func TestHostApplyLeavesAJailPathServerOutOfTheLSPPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no plugin: %v\n%s", err, report)
 	}
-	if strings.Contains(string(got), "/workspace") || !strings.Contains(string(got), "gopls") {
+	if strings.Contains(string(got), "/ctx/bin/ws-lsp") || !strings.Contains(string(got), "gopls") || !strings.Contains(string(got), local) {
 		t.Errorf("want gopls and not the jail-only server:\n%s", got)
+	}
+	if strings.Contains(report, "lsp_servers local is not written at the host") {
+		t.Errorf("HOME-local server must not be omitted: %s", report)
 	}
 	if n := countLines(report, "lsp_servers ws is not written at the host"); n != 1 {
 		t.Errorf("the left-out server must be named once, got %d:\n%s", n, report)
