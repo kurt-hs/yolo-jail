@@ -68,7 +68,7 @@ func TestApplyTargetedResolvesAndWritesExplicitRolesInBothFormats(t *testing.T) 
 			}
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
-					home, workspace := t.TempDir(), t.TempDir()
+					home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 					t.Setenv("HOME", home)
 					t.Setenv("YOLO_VERSION", "")
 					userPath := filepath.Join(home, ".config", "yolo-jail", format.userName)
@@ -123,15 +123,9 @@ func TestApplyTargetedResolvesAndWritesExplicitRolesInBothFormats(t *testing.T) 
 								t.Fatalf("selected target %s was not edited", path)
 							}
 							if tc.want == "user" {
-								if !bytes.Contains(got, []byte("glm-5.3-flash")) {
-									t.Fatalf("selected User file lacks requested model: %q", got)
-								}
-							} else if format.format == configdoc.JSONC {
-								if !bytes.Contains(got, []byte(`"cpus":4`)) {
-									t.Fatalf("selected %s file lacks requested cpus=4: %q", tc.want, got)
-								}
-							} else if !bytes.Contains(got, []byte("cpus=4")) {
-								t.Fatalf("selected %s file lacks requested cpus=4: %q", tc.want, got)
+								assertMatrixDocumentValue(t, got, format.format, []string{"providers", "zai", "variants", "fast", "model"}, "glm-5.3-flash")
+							} else {
+								assertMatrixDocumentValue(t, got, format.format, []string{"machine", "resources", "cpus"}, matrixInteger(t, format.format, 4))
 							}
 							if info.Mode().Perm() != modes[path] {
 								t.Fatalf("selected target mode = %v, want %v", info.Mode().Perm(), modes[path])
@@ -161,7 +155,7 @@ func TestApplyTargetedDefaultsBothScopeToProjectWhenUserWins(t *testing.T) {
 			"[machine.resources]\ncpus=1\n", "[machine.resources]\n", "", configdoc.TOML},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			home, workspace := t.TempDir(), t.TempDir()
+			home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 			t.Setenv("HOME", home)
 			t.Setenv("YOLO_VERSION", "")
 			user := filepath.Join(home, ".config", "yolo-jail", tc.userName)
@@ -187,12 +181,7 @@ func TestApplyTargetedDefaultsBothScopeToProjectWhenUserWins(t *testing.T) {
 				t.Fatalf("reported target = %s, want %s", result.Path, project)
 			}
 			projectAfter, _ := os.ReadFile(project)
-			if tc.format == configdoc.JSONC && !bytes.Contains(projectAfter, []byte(`"cpus": 2`)) && !bytes.Contains(projectAfter, []byte(`"cpus":2`)) {
-				t.Fatalf("Project raw value was not set to 2: %q", projectAfter)
-			}
-			if tc.format == configdoc.TOML && !bytes.Contains(projectAfter, []byte("cpus=2")) && !bytes.Contains(projectAfter, []byte("cpus = 2")) {
-				t.Fatalf("Project raw value was not set to 2: %q", projectAfter)
-			}
+			assertMatrixDocumentValue(t, projectAfter, tc.format, []string{"machine", "resources", "cpus"}, matrixInteger(t, tc.format, 2))
 			if got, _ := os.ReadFile(user); !bytes.Equal(got, userBefore) {
 				t.Fatalf("winning User source was modified: %q", got)
 			}
@@ -200,7 +189,8 @@ func TestApplyTargetedDefaultsBothScopeToProjectWhenUserWins(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got, _ := effectiveMap(t, effective, "machine", "resources").Get("cpus"); fmt.Sprint(got) != "2" {
+			got, _ := effectiveMap(t, effective, "machine", "resources").Get("cpus")
+			if fmt.Sprint(got) != "2" {
 				t.Fatalf("effective Project value = %#v, want 2", got)
 			}
 			assertNoTargetArtifacts(t, project)
@@ -218,7 +208,7 @@ func TestApplyTargetedDefaultsWorkspaceOnlyEditToProjectWhenLocalWins(t *testing
 		{"TOML", "packs=['git']\n[allow.git]\non_request=['new_branches']\n", "[requests.git]\nnew_branches=false\n", "[requests.git]\nnew_branches=true\n", configdoc.TOML, paths.UserConfigTOMLName, paths.WorkspaceConfigTOMLName, paths.WorkspaceLocalConfigTOMLName},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			home, workspace := t.TempDir(), t.TempDir()
+			home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 			t.Setenv("HOME", home)
 			t.Setenv("YOLO_VERSION", "")
 			user := filepath.Join(home, ".config", "yolo-jail", tc.userName)
@@ -252,9 +242,7 @@ func TestApplyTargetedDefaultsWorkspaceOnlyEditToProjectWhenLocalWins(t *testing
 				t.Fatalf("reported target = %s, want %s", result.Path, project)
 			}
 			projectAfter, _ := os.ReadFile(project)
-			if !bytes.Contains(projectAfter, []byte(`"new_branches":true`)) && !bytes.Contains(projectAfter, []byte("new_branches=true")) {
-				t.Fatalf("selected Project lacks requested new_branches=true: %q", projectAfter)
-			}
+			assertMatrixDocumentValue(t, projectAfter, tc.format, []string{"requests", "git", "new_branches"}, true)
 			effective, err := config.LoadReadableConfig(workspace, true, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -292,7 +280,7 @@ func TestApplyTargetedEmptyListRemovalUsesFormatSpecificMergeSemantics(t *testin
 			"[mcp_servers.demo]\ncommand=['user']\n", "[mcp_servers.demo]\ncommand=['project'] # keep TOML command comment\n", "", []any{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			home, workspace := t.TempDir(), t.TempDir()
+			home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 			t.Setenv("HOME", home)
 			t.Setenv("YOLO_VERSION", "")
 			user := filepath.Join(home, ".config", "yolo-jail", tc.userName)
@@ -419,7 +407,7 @@ func TestApplyTargetedAppliesAcceptedSchemaRemovalValuesThroughPublicConsumer(t 
 				}},
 			} {
 				t.Run(removal.name, func(t *testing.T) {
-					home, workspace := t.TempDir(), t.TempDir()
+					home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 					t.Setenv("HOME", home)
 					t.Setenv("YOLO_VERSION", "")
 					user := filepath.Join(home, ".config", "yolo-jail", format.userName)
@@ -472,7 +460,7 @@ func TestApplyTargetedPreservesNamedUserSymlinkAndPhysicalTargetBothFormats(t *t
 			"packs=['zai']\n", "[providers.zai.variants.fast]\nmodel='glm-5.3' # keep TOML value comment\n", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			home, workspace := t.TempDir(), t.TempDir()
+			home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 			t.Setenv("HOME", home)
 			t.Setenv("YOLO_VERSION", "")
 			userDir := filepath.Join(home, ".config", "yolo-jail")
@@ -526,9 +514,10 @@ func TestApplyTargetedPreservesNamedUserSymlinkAndPhysicalTargetBothFormats(t *t
 				t.Fatalf("reported path = %s, want logical symlink %s", result.Path, alias)
 			}
 			after, err := os.ReadFile(physical)
-			if err != nil || bytes.Equal(after, before) || !bytes.Contains(after, []byte("glm-5.3-flash")) {
+			if err != nil || bytes.Equal(after, before) {
 				t.Fatalf("physical target not edited: %q err=%v", after, err)
 			}
+			assertMatrixDocumentValue(t, after, tc.format, []string{"providers", "zai", "variants", "fast", "model"}, "glm-5.3-flash")
 			afterInfo, err := os.Stat(physical)
 			if err != nil || afterInfo.Mode().Perm() != info.Mode().Perm() {
 				t.Fatalf("physical target mode changed: %v err=%v", afterInfo, err)
@@ -556,7 +545,7 @@ func TestResolveTargetRefusesWrongScopeUnconsumedAliasAndAssembledWitness(t *tes
 		{"TOML", paths.UserConfigTOMLName, paths.WorkspaceConfigTOMLName, configdoc.TOML, configdoc.TOML, "packs=['git']\n[allow.git]\nalways=['fetch']\n", "[machine.resources]\ncpus=2\n"},
 	} {
 		t.Run(format.name, func(t *testing.T) {
-			home, workspace := t.TempDir(), t.TempDir()
+			home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 			t.Setenv("HOME", home)
 			t.Setenv("YOLO_VERSION", "")
 			user := filepath.Join(home, ".config", "yolo-jail", format.userName)
@@ -596,7 +585,7 @@ func TestResolveTargetRefusesWrongScopeUnconsumedAliasAndAssembledWitness(t *tes
 	}
 
 	t.Run("assembled jail snapshot is not a writable witness", func(t *testing.T) {
-		home, workspace := t.TempDir(), t.TempDir()
+		home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 		t.Setenv("HOME", home)
 		t.Setenv("YOLO_VERSION", "")
 		user := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
@@ -644,7 +633,7 @@ func TestApplyTargetedPrevalidatesRawScopeOrInvalidSemanticsBeforeDryRunAndNoopB
 	} {
 		for _, mode := range []string{"dry-run", "noop"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
-				home, workspace := t.TempDir(), t.TempDir()
+				home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 				t.Setenv("HOME", home)
 				t.Setenv("YOLO_VERSION", "")
 				path := filepath.Join(workspace, tc.filename)
@@ -681,7 +670,7 @@ func TestApplyTargetedPrevalidatesRawScopeOrInvalidSemanticsBeforeDryRunAndNoopB
 }
 
 func TestApplyTargetedRollsBackWhenConsumedIncludeDisappearsDespiteEqualEffectiveSnapshot(t *testing.T) {
-	home, workspace := t.TempDir(), t.TempDir()
+	home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 	t.Setenv("HOME", home)
 	t.Setenv("YOLO_VERSION", "")
 	base := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
@@ -754,6 +743,150 @@ func TestApplyTargetedRollsBackWhenConsumedIncludeDisappearsDespiteEqualEffectiv
 		t.Fatal(err)
 	}
 	assertNoTargetArtifacts(t, physical)
+}
+
+func TestApplyTargetedCanonicalizesFixturesUnderLinkedTempParent(t *testing.T) {
+	parent := matrixCanonicalTempDir(t)
+	physicalTemp := filepath.Join(parent, "physical-temp")
+	aliasedTemp := filepath.Join(parent, "aliased-temp")
+	if err := os.Mkdir(physicalTemp, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(physicalTemp, aliasedTemp); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name, userName, projectName, localName string
+		format                                 configdoc.Format
+		user, project, local                   string
+	}{
+		{"JSONC", paths.UserConfigLegacyJSONCName, paths.WorkspaceConfigLegacyJSONCName, paths.WorkspaceLocalConfigLegacyJSONCName, configdoc.JSONC,
+			`{"machine":{"resources":{"cpus":1}}}`, `{"machine":{"resources":{"cpus":2}}} // keep linked-temp comment`, `{"machine":{"resources":{"cpus":3}}}`},
+		{"TOML", paths.UserConfigTOMLName, paths.WorkspaceConfigTOMLName, paths.WorkspaceLocalConfigTOMLName, configdoc.TOML,
+			"[machine.resources]\ncpus=1\n", "[machine.resources]\ncpus=2 # keep linked-temp comment\n", "[machine.resources]\ncpus=3\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TMPDIR", aliasedTemp)
+			t.Setenv("GOTMPDIR", aliasedTemp)
+			homeLogical, workspaceLogical := t.TempDir(), t.TempDir()
+			home := matrixCanonicalizeFixturePath(t, homeLogical)
+			workspace := matrixCanonicalizeFixturePath(t, workspaceLogical)
+			if home == homeLogical || workspace == workspaceLogical {
+				t.Fatalf("linked TMPDIR did not distinguish fixture aliases: home=%q/%q workspace=%q/%q", homeLogical, home, workspaceLogical, workspace)
+			}
+			if !strings.HasPrefix(workspaceLogical, aliasedTemp+string(os.PathSeparator)) || !strings.HasPrefix(homeLogical, aliasedTemp+string(os.PathSeparator)) {
+				t.Fatalf("Go fixtures were not minted under linked TMPDIR %q: home=%q workspace=%q", aliasedTemp, homeLogical, workspaceLogical)
+			}
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+
+			user := filepath.Join(home, ".config", "yolo-jail", tc.userName)
+			project := filepath.Join(workspace, tc.projectName)
+			local := filepath.Join(workspace, tc.localName)
+			neighbor := filepath.Join(workspace, "neighbor.txt")
+			writeEditFixture(t, user, tc.user)
+			writeEditFixture(t, project, tc.project)
+			writeEditFixture(t, local, tc.local)
+			writeEditFixture(t, neighbor, "neighbor bytes\n")
+			userBefore, _ := os.ReadFile(user)
+			localBefore, _ := os.ReadFile(local)
+			neighborBefore, _ := os.ReadFile(neighbor)
+			projectInfo, err := os.Stat(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			mutation := Mutation{Action: Set, Path: matrixPath("machine", "resources", "cpus"), Value: 4}
+			target, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetAutomatic})
+			if err != nil {
+				t.Fatalf("ResolveTarget: %v", err)
+			}
+			if target.LogicalPath != project || target.PhysicalPath != project || target.Role != config.ExplicitEditProject {
+				t.Fatalf("linked-TMPDIR target = (%s,%s,%v), want canonical Project %s", target.LogicalPath, target.PhysicalPath, target.Role, project)
+			}
+			result, err := ApplyTargeted(workspace, target, mutation, ApplyOptions{})
+			if err != nil {
+				t.Fatalf("ApplyTargeted: %v", err)
+			}
+			if result.Path != project || result.Plan == nil || result.Plan.Noop {
+				t.Fatalf("result = %#v", result)
+			}
+			projectAfter, err := os.ReadFile(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertMatrixDocumentValue(t, projectAfter, tc.format, []string{"machine", "resources", "cpus"}, matrixInteger(t, tc.format, 4))
+			if !bytes.Contains(projectAfter, []byte("keep linked-temp comment")) {
+				t.Fatalf("selected Project comment changed: %q", projectAfter)
+			}
+			projectInfoAfter, err := os.Stat(project)
+			if err != nil || projectInfoAfter.Mode().Perm() != projectInfo.Mode().Perm() {
+				t.Fatalf("selected Project mode changed: before=%v after=%v err=%v", projectInfo.Mode().Perm(), projectInfoAfter, err)
+			}
+
+			effective, err := config.LoadReadableConfig(workspace, true, nil)
+			if err != nil {
+				t.Fatalf("read effective config: %v", err)
+			}
+			got, present := effectiveMap(t, effective, "machine", "resources").Get("cpus")
+			if !present || fmt.Sprint(got) != "3" {
+				t.Fatalf("effective Local winner = %#v present=%v, want 3", got, present)
+			}
+			if got, _ := os.ReadFile(user); !bytes.Equal(got, userBefore) {
+				t.Fatalf("non-target User file changed: %q", got)
+			}
+			if got, _ := os.ReadFile(local); !bytes.Equal(got, localBefore) {
+				t.Fatalf("effective Local winner was modified: %q", got)
+			}
+			if got, err := os.ReadFile(neighbor); err != nil || !bytes.Equal(got, neighborBefore) {
+				t.Fatalf("neighbor changed: %q err=%v", got, err)
+			}
+			assertNoTargetArtifacts(t, project)
+		})
+	}
+}
+
+func matrixCanonicalTempDir(t *testing.T) string {
+	t.Helper()
+	return matrixCanonicalizeFixturePath(t, t.TempDir())
+}
+
+func matrixCanonicalizeFixturePath(t *testing.T, path string) string {
+	t.Helper()
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("canonicalize minted test fixture %s: %v", path, err)
+	}
+	return canonical
+}
+
+func matrixInteger(t *testing.T, format configdoc.Format, value int64) any {
+	t.Helper()
+	if format == configdoc.JSONC {
+		integer, ok := jsonx.NumberValue(fmt.Sprint(value))
+		if !ok {
+			t.Fatalf("parse JSONC integer expectation %d", value)
+		}
+		return integer
+	}
+	return value
+}
+
+func assertMatrixDocumentValue(t *testing.T, data []byte, format configdoc.Format, path []string, want any) {
+	t.Helper()
+	if len(path) == 0 {
+		t.Fatal("document value assertion requires a path")
+	}
+	doc, err := configdoc.Parse(data, format)
+	if err != nil {
+		t.Fatalf("parse %v document: %v\n%s", format, err, data)
+	}
+	parent := effectiveMap(t, doc.Values, path[:len(path)-1]...)
+	got, present := parent.Get(path[len(path)-1])
+	if !present || !reflect.DeepEqual(got, want) {
+		t.Fatalf("parsed authored value at %v = %#v present=%v, want exact %#v", path, got, present, want)
+	}
 }
 
 func matrixPath(keys ...string) []configdoc.Step {

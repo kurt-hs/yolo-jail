@@ -104,7 +104,7 @@ func TestApplyTargetedPassesTOMLEmptyListResetThroughSchema(t *testing.T) {
 }
 
 func TestApplyTargetedUsesProjectForBothScopeDespiteUserAndLocalOrigins(t *testing.T) {
-	home, workspace := t.TempDir(), t.TempDir()
+	home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 	t.Setenv("HOME", home)
 	t.Setenv("YOLO_VERSION", "")
 	user := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
@@ -129,14 +129,13 @@ func TestApplyTargetedUsesProjectForBothScopeDespiteUserAndLocalOrigins(t *testi
 		t.Fatalf("reported path = %s, want %s", result.Path, project)
 	}
 	projectAfter, err := os.ReadFile(project)
-	if err != nil || !strings.Contains(string(projectAfter), "cpus = 4") {
-		t.Fatalf("selected Project raw value = %q err=%v, want cpus = 4", projectAfter, err)
-	}
+	assertMatrixDocumentValue(t, projectAfter, configdoc.TOML, []string{"machine", "resources", "cpus"}, int64(4))
 	effective, err := config.LoadReadableConfig(workspace, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := effectiveMap(t, effective, "machine", "resources").Get("cpus"); fmt.Sprint(got) != "3" {
+	got, _ := effectiveMap(t, effective, "machine", "resources").Get("cpus")
+	if fmt.Sprint(got) != "3" {
 		t.Fatalf("effective Local winner = %#v, want 3", got)
 	}
 	for _, path := range []string{user, local} {
