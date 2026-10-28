@@ -156,9 +156,17 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		fmt.Fprintf(errw, "cannot edit config: %v\n", err)
 		return 1
 	}
-	mutation, err = configEditUnsetMutation(target.Format, target.AuthoredPath(), target.ExpectedBytes())
+	if config.InJail() && target.Role == config.ExplicitEditUser {
+		printConfigEditHostRun(errw, workspace, args)
+		return 1
+	}
+	mutation, err = configEditUnsetMutation(target.Format, key, target.AuthoredPath(), target.ExpectedBytes())
 	if err != nil {
-		fmt.Fprintf(errw, "cannot unset config key: %v\n", err)
+		fmt.Fprintf(errw, "cannot unset config key %q in selected file %q: %v; edit the value manually in that file, then run `yolo check` in this workspace", positionals[0], target.LogicalPath, err)
+		if target.Role != config.ExplicitEditUser {
+			fmt.Fprint(errw, "; run `yolo config apply` on the host to approve workspace changes")
+		}
+		fmt.Fprintln(errw)
 		return 1
 	}
 	mutation.Path = append([]configdoc.Step(nil), key...)
@@ -319,18 +327,21 @@ func configEditValuePresent(root any, path []configdoc.Step) bool {
 	return true
 }
 
-func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step, data []byte) (configedit.Mutation, error) {
-	rule, ok := configEditSchemaRule(path, format)
+func configEditUnsetMutation(format configdoc.Format, canonicalPath, authoredPath []configdoc.Step, data []byte) (configedit.Mutation, error) {
+	rule, ok := configEditSchemaRule(authoredPath, format)
 	if !ok && format == configdoc.JSONC {
-		// JSONC supports the canonical readable spelling while legacy readers retain their
-		// own schema paths. When the selected key has no legacy policy, consult its canonical
-		// scalar shape; schema-specific legacy removals below remain unchanged.
-		rule, ok = configEditSchemaRule(path, configdoc.TOML)
+		rule, ok = configEditSchemaRule(canonicalPath, configdoc.TOML)
 	}
 	if !ok {
 		return configedit.Mutation{}, fmt.Errorf("key has no removal policy in the selected config schema")
 	}
-	mutation := configedit.Mutation{Action: configedit.Set, Path: append([]configdoc.Step(nil), path...)}
+	// Removal spelling follows the authored schema; scalar shape follows the canonical key.
+	if rule.Removal == config.RemovalUnspecified {
+		if canonicalRule, canonicalOK := configEditSchemaRule(canonicalPath, configdoc.TOML); canonicalOK {
+			rule.Type = canonicalRule.Type
+		}
+	}
+	mutation := configedit.Mutation{Action: configedit.Set, Path: append([]configdoc.Step(nil), authoredPath...)}
 	switch rule.Removal {
 	case config.RemovalNull, config.RemovalTombstone:
 		if format != configdoc.JSONC {
@@ -359,7 +370,7 @@ func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step, dat
 			rule.Type == config.SchemaTypeList || rule.Type == config.SchemaTypeObjectOrList {
 			return configedit.Mutation{}, fmt.Errorf("this key has no scalar removal policy in the selected config schema")
 		}
-		value, present, err := configEditAuthoredValue(data, format, path)
+		value, present, err := configEditAuthoredValue(data, format, authoredPath)
 		if err != nil {
 			return configedit.Mutation{}, err
 		}

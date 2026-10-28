@@ -65,6 +65,64 @@ func TestResolveEditTargetUsesSchemaDefaultsAndReaderRoles(t *testing.T) {
 	}
 }
 
+func TestResolveEditTargetRejectsJSONCSourceChangedBeforePreimageBinding(t *testing.T) {
+	for _, tc := range []struct {
+		name, before, fresh string
+	}{
+		{name: "legacy to canonical", before: `{"resources":{"cpus":3}}`, fresh: `{"machine":{"resources":{"cpus":7}}}`},
+		{name: "canonical to legacy", before: `{"machine":{"resources":{"cpus":3}}}`, fresh: `{"resources":{"cpus":7}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, workspace := t.TempDir(), t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			physical := filepath.Join(workspace, "project-real.jsonc")
+			logical := filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName)
+			writeTargetFixture(t, physical, tc.before)
+			if err := os.Symlink(physical, logical); err != nil {
+				t.Fatal(err)
+			}
+			modeBefore, err := os.Stat(physical)
+			if err != nil {
+				t.Fatal(err)
+			}
+			linkBefore, err := os.Readlink(logical)
+			if err != nil {
+				t.Fatal(err)
+			}
+			readCalls := 0
+			key := []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}
+			_, err = resolveEditTarget(workspace, EditMutationIntent{Key: key, Kind: EditMutationRemove}, EditTargetChoice{Kind: EditTargetProject}, func(path string) ([]byte, error) {
+				readCalls++
+				if path != physical {
+					t.Fatalf("preimage reader path=%q, want selected physical file %q", path, physical)
+				}
+				if err := os.WriteFile(path, []byte(tc.fresh), 0o600); err != nil {
+					return nil, err
+				}
+				return os.ReadFile(path)
+			})
+			if err == nil || !strings.Contains(err.Error(), "reread the config and retry") {
+				t.Fatalf("stale authored mapping was accepted: %v", err)
+			}
+			if readCalls != 1 {
+				t.Fatalf("preimage reader called %d times, want one fail-closed read", readCalls)
+			}
+			if got, err := os.ReadFile(physical); err != nil || string(got) != tc.fresh {
+				t.Fatalf("resolver altered hook-written postimage: got=%q want=%q err=%v", got, tc.fresh, err)
+			}
+			modeAfter, err := os.Stat(physical)
+			if err != nil || modeAfter.Mode().Perm() != modeBefore.Mode().Perm() {
+				t.Fatalf("resolver changed target mode: before=%v after=%v err=%v", modeBefore.Mode(), modeAfter.Mode(), err)
+			}
+			linkAfter, err := os.Readlink(logical)
+			if err != nil || linkAfter != linkBefore {
+				t.Fatalf("resolver changed target symlink: before=%q after=%q err=%v", linkBefore, linkAfter, err)
+			}
+		})
+	}
+}
+
 func TestResolveEditTargetUsesLiteralDottedKeyAndRejectsUnconsumedFile(t *testing.T) {
 	home, workspace := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)

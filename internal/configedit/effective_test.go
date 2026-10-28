@@ -56,6 +56,29 @@ func TestApplyEffectiveRefusesInvalidOriginalScalarMaskedByLocal(t *testing.T) {
 	}
 }
 
+func TestApplyEffectiveValidatesMappedLegacyJSONCScalarBeforeRemoval(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+	user := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigLegacyJSONCName)
+	project := filepath.Join(workspace, paths.WorkspaceConfigLegacyJSONCName)
+	local := filepath.Join(workspace, paths.WorkspaceLocalConfigLegacyJSONCName)
+	writeEditFixture(t, user, `{"mise_tools":{"python":"3.11"}}`)
+	before := []byte(`{"mise_tools":{"python":312}}`)
+	writeEditFixture(t, project, string(before))
+	writeEditFixture(t, local, `{"mise_tools":{"python":"3.13"}}`)
+	mutation := Mutation{Action: Remove, Path: []configdoc.Step{{Key: "mise_tools"}, {Key: "python"}}}
+	if validate, typeErr := validatesOriginalScalarRemoval(configdoc.JSONC, mutation.Path, before); !validate || typeErr == nil {
+		t.Fatalf("mapped legacy version should be recognized and rejected by its canonical schema type: validate=%v err=%v", validate, typeErr)
+	}
+	if _, err := applyEffectiveTest(t, workspace, project, configdoc.JSONC, mutation, config.ExplicitEditProject, ApplyOptions{}); err == nil || !strings.Contains(err.Error(), "python") {
+		t.Fatalf("direct effective Remove accepted invalid legacy version masked by Local: %v", err)
+	}
+	if got, err := os.ReadFile(project); err != nil || !bytes.Equal(got, before) {
+		t.Fatalf("invalid original legacy version changed bytes: got=%q want=%q err=%v", got, before, err)
+	}
+}
+
 func TestApplyEffectiveRefusesInvalidExistingResourceSemanticsBeforeWrite(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

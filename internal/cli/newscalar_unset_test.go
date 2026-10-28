@@ -96,6 +96,148 @@ func TestConfigRegistryUnsetScalarRemovesNamedLocalValueInBothFormats(t *testing
 	}
 }
 
+func TestConfigRegistryUnsetScalarUsesMostSpecificOriginalSchemaRule(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(map[bool]string{false: "write", true: "dry-run"}[dryRun], func(t *testing.T) {
+			workspace := testconfig.Workspace(t, "[machine.resources.io]\npriority = 'bogus'\n")
+			user := testconfig.User(t, "")
+			t.Setenv("HOME", user.Root)
+			t.Setenv("YOLO_VERSION", "")
+			localPath := filepath.Join(workspace.Root, paths.WorkspaceLocalConfigTOMLName)
+			localBefore := []byte("[machine.resources.io]\npriority = 'low'\n")
+			if err := os.WriteFile(localPath, localBefore, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(workspace.Path, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			before := mustReadScalarUnset(t, workspace.Path)
+			beforeInfo, err := os.Stat(workspace.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			withConfigEditCWD(t, workspace.Root)
+			args := []string{"unset", "machine.resources.io.priority", "--project"}
+			if dryRun {
+				args = append(args, "--dry-run")
+			}
+			rc, out, errw := dispatchConfigCapture(t, args)
+			if rc == 0 || out != "" || !strings.Contains(errw, "priority") || strings.Contains(errw, "Summary") {
+				t.Fatalf("masked invalid exact-string removal %q rc=%d stdout=%q stderr=%q", args, rc, out, errw)
+			}
+			if after := mustReadScalarUnset(t, workspace.Path); !bytes.Equal(after, before) {
+				t.Fatalf("refusal changed Project bytes: before=%q after=%q", before, after)
+			}
+			afterInfo, err := os.Stat(workspace.Path)
+			if err != nil || afterInfo.Mode().Perm() != beforeInfo.Mode().Perm() {
+				t.Fatalf("refusal changed Project mode: before=%v after=%v err=%v", beforeInfo.Mode(), afterInfo.Mode(), err)
+			}
+			if after := mustReadScalarUnset(t, localPath); !bytes.Equal(after, localBefore) {
+				t.Fatalf("refusal changed Local bytes: %q", after)
+			}
+		})
+	}
+}
+
+func TestConfigRegistryUnsetScalarUsesCanonicalSchemaForLegacyAuthoredMiseValue(t *testing.T) {
+	for _, tc := range []struct {
+		name, project, user string
+		format              configdoc.Format
+		projectPath         []configdoc.Step
+	}{
+		{
+			name: "TOML canonical", format: configdoc.TOML,
+			project:     "[install.mise]\npython = '3.12'\nnode = '20'\n",
+			user:        "[install.mise]\npython = '3.11'\n",
+			projectPath: []configdoc.Step{{Key: "install"}, {Key: "mise"}, {Key: "python"}},
+		},
+		{
+			name: "JSONC canonical", format: configdoc.JSONC,
+			project:     `{"install":{"mise":{"python":"3.12","node":"20"}}}`,
+			user:        `{"install":{"mise":{"python":"3.11"}}}`,
+			projectPath: []configdoc.Step{{Key: "install"}, {Key: "mise"}, {Key: "python"}},
+		},
+		{
+			name: "JSONC legacy-authored", format: configdoc.JSONC,
+			project:     `{"mise_tools":{"python":"3.12","node":"20"}}`,
+			user:        `{"mise_tools":{"python":"3.11"}}`,
+			projectPath: []configdoc.Step{{Key: "mise_tools"}, {Key: "python"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace := testconfig.WorkspaceFormat(t, tc.format, tc.project)
+			user := testconfig.UserFormat(t, tc.format, tc.user)
+			t.Setenv("HOME", user.Root)
+			t.Setenv("YOLO_VERSION", "")
+			withConfigEditCWD(t, workspace.Root)
+			before := mustReadScalarUnset(t, workspace.Path)
+			rc, out, errw := dispatchConfigCapture(t, []string{"unset", "install.mise.python", "--project"})
+			if !strings.Contains(out, workspace.Path) || !strings.Contains(out, "python") {
+				t.Fatalf("registered canonical mise unset rc=%d stdout=%q stderr=%q", rc, out, errw)
+			}
+			assertPublicPostWriteCheck(t, rc, out, errw)
+			after := mustReadScalarUnset(t, workspace.Path)
+			if bytes.Equal(after, before) || bytes.Contains(after, []byte("python")) || !bytes.Contains(after, []byte("node")) {
+				t.Fatalf("canonical mise unset did not remove only Project version: before=%q after=%q", before, after)
+			}
+			doc, err := configdoc.Parse(after, tc.format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, found, err := doc.Index.Value(tc.projectPath...); err != nil || found {
+				t.Fatalf("Project version remains at authored path: found=%v err=%v", found, err)
+			}
+			effective, err := config.LoadReadableConfig(workspace.Root, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := readableValue(t, effective, "install", "mise", "python"); got != "3.11" {
+				t.Fatalf("effective lower-layer Python version = %#v (%T), want string 3.11", got, got)
+			}
+		})
+	}
+}
+
+func TestConfigRegistryUnsetScalarPrevalidatesMaskedLegacyMiseVersion(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(map[bool]string{false: "write", true: "dry-run"}[dryRun], func(t *testing.T) {
+			workspace := testconfig.WorkspaceFormat(t, configdoc.JSONC, `{"mise_tools":{"python":312}}`)
+			user := testconfig.UserFormat(t, configdoc.JSONC, `{"mise_tools":{"python":"3.11"}}`)
+			t.Setenv("HOME", user.Root)
+			t.Setenv("YOLO_VERSION", "")
+			localPath := filepath.Join(workspace.Root, paths.WorkspaceLocalConfigLegacyJSONCName)
+			localBefore := []byte(`{"mise_tools":{"python":"3.13"}}`)
+			if err := os.WriteFile(localPath, localBefore, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before := mustReadScalarUnset(t, workspace.Path)
+			beforeInfo, err := os.Stat(workspace.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			withConfigEditCWD(t, workspace.Root)
+			args := []string{"unset", "install.mise.python", "--project"}
+			if dryRun {
+				args = append(args, "--dry-run")
+			}
+			rc, out, errw := dispatchConfigCapture(t, args)
+			if rc == 0 || out != "" || !strings.Contains(errw, "python") || strings.Contains(errw, "Summary") {
+				t.Fatalf("masked invalid legacy mise removal %q rc=%d stdout=%q stderr=%q", args, rc, out, errw)
+			}
+			if after := mustReadScalarUnset(t, workspace.Path); !bytes.Equal(after, before) {
+				t.Fatalf("refusal changed Project bytes: before=%q after=%q", before, after)
+			}
+			afterInfo, err := os.Stat(workspace.Path)
+			if err != nil || afterInfo.Mode().Perm() != beforeInfo.Mode().Perm() {
+				t.Fatalf("refusal changed Project mode: before=%v after=%v err=%v", beforeInfo.Mode(), afterInfo.Mode(), err)
+			}
+			if after := mustReadScalarUnset(t, localPath); !bytes.Equal(after, localBefore) {
+				t.Fatalf("refusal changed Local bytes: %q", after)
+			}
+		})
+	}
+}
+
 func TestConfigRegistryUnsetScalarExposesLowerLayerAndRemovesProjectBytesUnderLocalWinner(t *testing.T) {
 	for _, tc := range []struct {
 		name, project, user, local, localName, key      string
@@ -211,6 +353,11 @@ func TestConfigRegistryUnsetScalarDryRunInvalidInputAbsentAndNonScalarPreserveFi
 		if rc == 0 || out.Len() != 0 || errw.Len() == 0 {
 			t.Errorf("invalid/non-scalar unset %q rc=%d stdout=%q stderr=%q", args, rc, out.String(), errw.String())
 		}
+		if args[1] == "machine.gpu" && (!strings.Contains(errw.String(), workspace.Path) ||
+			!strings.Contains(errw.String(), "machine.gpu") || !strings.Contains(errw.String(), "edit the value manually") ||
+			!strings.Contains(errw.String(), "yolo check")) {
+			t.Errorf("non-scalar refusal lacks selected path, canonical key, or next step: %q", errw.String())
+		}
 		if got := mustReadScalarUnset(t, workspace.Path); !bytes.Equal(got, before) {
 			t.Fatalf("invalid/non-scalar unset %q changed bytes: %q", args, got)
 		}
@@ -227,6 +374,30 @@ func TestConfigRegistryUnsetScalarDryRunInvalidInputAbsentAndNonScalarPreserveFi
 	}
 	if got := mustReadScalarUnset(t, workspace.Path); !bytes.Equal(got, before) {
 		t.Fatalf("absent local noop changed project bytes: %q", got)
+	}
+}
+
+func TestConfigRegistryUnsetScalarRefusalQuotesSelectedFileAndGivesNextStep(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "workspace with spaces")
+	if err := os.Mkdir(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
+	if err := os.WriteFile(project, []byte("[machine.gpu]\nenabled = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("YOLO_VERSION", "")
+	withConfigEditCWD(t, workspace)
+
+	rc, out, errw := dispatchConfigCapture(t, []string{"unset", "machine.gpu", "--project"})
+	if rc == 0 || out != "" || !strings.Contains(errw, `"`+project+`"`) ||
+		!strings.Contains(errw, `"machine.gpu"`) || !strings.Contains(errw, "edit the value manually") ||
+		!strings.Contains(errw, "yolo check") || !strings.Contains(errw, "yolo config apply") {
+		t.Fatalf("non-scalar refusal is not quoted/actionable: rc=%d stdout=%q stderr=%q", rc, out, errw)
+	}
+	if got, err := os.ReadFile(project); err != nil || string(got) != "[machine.gpu]\nenabled = true\n" {
+		t.Fatalf("refusal changed selected Project file: got=%q err=%v", got, err)
 	}
 }
 
