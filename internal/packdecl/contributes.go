@@ -13,6 +13,7 @@ package packdecl
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"path"
 	"sort"
@@ -221,10 +222,6 @@ type Contribution struct {
 	// `--help` only after resolving every package and installing a missing one with no lock, so
 	// it declares `--version` and `-v` alone.
 	ProbeArgs []string `json:"probe_args,omitempty"`
-	// VersionCompatibility is a pack-owned threshold and refusal for a program whose native
-	// launcher cannot safely run in a specific trusted launch context. Read only by that
-	// program's native launcher and refused without the version probe needed to evaluate it.
-	VersionCompatibility *VersionCompatibility `json:"version_compatibility,omitempty"`
 	// TempCaches names directories the program keeps COMPILED CODE in under its temporary
 	// directory, Node's os.tmpdir() (`$TMPDIR`, else `$TMP`, `$TEMP`, `/tmp`): `"temp_caches":
 	// ["jiti"]` for pi, whose extension loader writes each extension it compiles to
@@ -1463,10 +1460,6 @@ func (m *Manifest) InstallContributions() []Install {
 		// delivered it. Copied, for Refresh's reason.
 		if len(c.ProbeArgs) > 0 {
 			in.ProbeArgs = append([]string(nil), c.ProbeArgs...)
-		}
-		if c.VersionCompatibility != nil {
-			compatibility := *c.VersionCompatibility
-			in.VersionCompatibility = &compatibility
 		}
 		if len(c.TempCaches) > 0 {
 			in.TempCaches = append([]string(nil), c.TempCaches...)
@@ -3659,36 +3652,65 @@ func onlyIfProblems(field string, o *RefreshOnlyIf) []string {
 	return problems
 }
 
-// versionCompatibilityProblems validates a program's version compatibility refusal. The
-// native launcher is its only reader, so it requires an installer-delivered program and
-// declared version probe; its text is one shell-quoted, single-line refusal message.
-func versionCompatibilityProblems(label string, c Contribution) []string {
-	if c.VersionCompatibility == nil {
-		return nil
+// DecodeVersionCompatibility reads the pack-owned data carried by a declared files
+// contribution. The data is deliberately separate from the program contribution so a
+// previously released reader can retain the program while ignoring this generic file effect.
+func DecodeVersionCompatibility(data []byte, probeArgs []string) (*VersionCompatibility, []string) {
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return nil, []string{"compatibility data: expected one JSON object"}
 	}
-	field := label + ".version_compatibility"
-	if c.Kind != KindProgram || c.Via != "installer" {
-		return []string{fmt.Sprintf(
-			"%s: only a native installer program takes version_compatibility — its native launcher is the only reader", field)}
+	values := map[string]string{}
+	for dec.More() {
+		tok, err = dec.Token()
+		key, ok := tok.(string)
+		if err != nil || !ok {
+			return nil, []string{"compatibility data: expected a JSON object key"}
+		}
+		if _, duplicate := values[key]; duplicate {
+			return nil, []string{"compatibility data: duplicate field " + strconv.Quote(key)}
+		}
+		if key != "refuse_at_or_above" && key != "message" {
+			return nil, []string{"compatibility data: unknown field " + strconv.Quote(key)}
+		}
+		var value string
+		if err := dec.Decode(&value); err != nil {
+			return nil, []string{"compatibility data: field " + strconv.Quote(key) + " must be a string"}
+		}
+		values[key] = value
+	}
+	closing, err := dec.Token()
+	if err != nil || closing != json.Delim('}') {
+		return nil, []string{"compatibility data: malformed JSON object"}
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, []string{"compatibility data: trailing or malformed data after JSON object"}
+	}
+	compatibility := &VersionCompatibility{
+		RefuseAtOrAbove: values["refuse_at_or_above"],
+		Message:         values["message"],
 	}
 	var problems []string
-	if !numericVersionTriplet(c.VersionCompatibility.RefuseAtOrAbove) {
-		problems = append(problems, field+`.refuse_at_or_above: must be a numeric major.minor.patch version with components of at most 9 digits`)
+	if !numericVersionTriplet(compatibility.RefuseAtOrAbove) {
+		problems = append(problems, "compatibility data.refuse_at_or_above: must be a numeric major.minor.patch version with components of at most 9 digits")
 	}
-	if len(c.ProbeArgs) == 0 {
-		problems = append(problems, field+`: requires the program's declared probe_args so the launcher can read its installed version`)
+	if len(probeArgs) == 0 {
+		problems = append(problems, "compatibility data requires the program's declared probe_args so the launcher can read its installed version")
 	}
-	message := c.VersionCompatibility.Message
-	if strings.TrimSpace(message) == "" || len(message) > 500 {
-		problems = append(problems, field+`.message: must be a non-empty refusal of at most 500 bytes`)
+	if strings.TrimSpace(compatibility.Message) == "" || len(compatibility.Message) > 500 {
+		problems = append(problems, "compatibility data.message: must be a non-empty refusal of at most 500 bytes")
 	}
-	for _, r := range message {
+	for _, r := range compatibility.Message {
 		if unicode.IsControl(r) {
-			problems = append(problems, field+`.message: must be one printable line`)
+			problems = append(problems, "compatibility data.message: must be one printable line")
 			break
 		}
 	}
-	return problems
+	if len(problems) > 0 {
+		return nil, problems
+	}
+	return compatibility, nil
 }
 
 func numericVersionTriplet(version string) bool {
@@ -4299,7 +4321,6 @@ func validateContribution(label string, c Contribution) []string {
 		problems = append(problems, refreshProblems(label+".refresh", c.Refresh)...)
 	}
 	problems = append(problems, probeArgsProblems(label, c)...)
-	problems = append(problems, versionCompatibilityProblems(label, c)...)
 	problems = append(problems, tempCachesProblems(label, c)...)
 	problems = append(problems, sandboxTmpdirEnvProblems(label, c)...)
 	problems = append(problems, versionsDirProblems(label, c)...)

@@ -32,10 +32,6 @@
       "probe_args": [
         "--version"
       ],
-      "version_compatibility": {
-        "refuse_at_or_above": "1.0.93",
-        "message": "Copilot CLI versions 1.0.93 and newer cannot make native HTTPS requests under macos-user self's required SecurityServer deny. See https://github.com/github/copilot-cli/issues/5085. Use a container backend (podman or container); YOLO_USE_INSTALLED does not bypass this refusal. Remove this pack constraint only after the upstream TLS implementation no longer reproduces the incompatibility."
-      },
       // copilot has no Bedrock catalog, and its BYOK refuses to start without a model, so on a
       // Bedrock provider no pack or config gives a list it starts on the list yolo fetches from
       // Bedrock, and a launch with neither stops and says why
@@ -53,6 +49,11 @@
       ],
       "url": "https://gh.io/copilot-install",
       "via": "installer"
+    },
+    {
+      "from": "compatibility.json",
+      "into": ".config/yolo-program-compatibility/copilot.json",
+      "kind": "files"
     },
     {
       "after": "host:.copilot/copilot-instructions.md",

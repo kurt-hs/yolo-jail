@@ -310,10 +310,9 @@ type Install struct {
 	// ProbeArgs are the first arguments that make an invocation a VERSION PROBE, nil when the
 	// program declares none. The Contribution field of the same name carries the reasoning.
 	ProbeArgs []string `json:"probe_args,omitempty"`
-	// VersionCompatibility carries a pack's native-launcher version refusal, nil when absent.
-	// The Contribution field carries its grammar; it is read only when trusted native launch
-	// metadata says the configured context applies.
-	VersionCompatibility *VersionCompatibility `json:"version_compatibility,omitempty"`
+	// VersionCompatibility is populated from pack-owned compatibility data when the selected
+	// program's launcher is generated. It is not a program manifest field.
+	VersionCompatibility *VersionCompatibility `json:"-"`
 	// TempCaches names the directories the program keeps compiled code in under its temporary
 	// directory, nil when it declares none. The Contribution field of the same name carries the
 	// reasoning.

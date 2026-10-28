@@ -1,0 +1,4 @@
+{
+  "refuse_at_or_above": "1.0.93",
+  "message": "Copilot CLI versions 1.0.93 and newer cannot make native HTTPS requests under macos-user self's required SecurityServer deny. See https://github.com/github/copilot-cli/issues/5085. Use a container backend (podman or container); YOLO_USE_INSTALLED does not bypass this refusal. Remove this pack constraint only after the upstream TLS implementation no longer reproduces the incompatibility."
+}

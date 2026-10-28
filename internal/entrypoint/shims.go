@@ -542,6 +542,10 @@ func GenerateAgentLaunchers(e *Env) error {
 				// this is defense-in-depth for a caller that bypasses the loader.
 				continue
 			}
+			inst.VersionCompatibility, err = selectedProgramCompatibility(p, inst)
+			if err != nil {
+				return err
+			}
 			// B2: no launcher for a name the image (or a declared mise tool) already
 			// provides. Under the pre-B2 PATH this was unrepresentable — the launch dir
 			// sat after /bin — and this check is what replaces that position with a

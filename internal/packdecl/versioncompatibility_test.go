@@ -5,48 +5,38 @@ import (
 	"testing"
 )
 
-func TestVersionCompatibilitySurvivesDecodeAndInstallProjection(t *testing.T) {
-	const manifest = `{"name":"copilot","contributes":[{
-	  "kind":"program","bin":"copilot","via":"installer","url":"https://example.test/install",
-	  "probe_args":["--version"],"version_compatibility":{
-	    "refuse_at_or_above":"1.0.93","message":"Use a container; don't use self mode."
-	  }
-	}]}`
-	m, problems := Decode([]byte(manifest))
-	if len(problems) != 0 {
-		t.Fatalf("compatibility declaration should validate: %v", problems)
-	}
-	installs := m.InstallContributions()
-	if len(installs) != 1 || installs[0].VersionCompatibility == nil {
-		t.Fatalf("compatibility did not reach InstallContributions: %+v", installs)
-	}
-	got := installs[0].VersionCompatibility
-	if got.RefuseAtOrAbove != "1.0.93" || got.Message != "Use a container; don't use self mode." {
-		t.Errorf("projected compatibility = %+v", got)
+func TestVersionCompatibilityDataDecodesAndValidates(t *testing.T) {
+	const valid = `{"refuse_at_or_above":"1.0.93","message":"Use a container."}`
+	got, problems := DecodeVersionCompatibility([]byte(valid), []string{"--version"})
+	if len(problems) != 0 || got == nil || got.RefuseAtOrAbove != "1.0.93" || got.Message != "Use a container." {
+		t.Fatalf("DecodeVersionCompatibility = %+v, %v", got, problems)
 	}
 }
 
-func TestVersionCompatibilityRejectsUnusableDeclarations(t *testing.T) {
+func TestVersionCompatibilityDataRejectsMalformedDeclarations(t *testing.T) {
 	for _, tc := range []struct {
-		name, declaration, want string
+		name, data, probe, want string
 	}{
-		{"bad numeric threshold", `"probe_args":["--version"],"version_compatibility":{"refuse_at_or_above":"1.0.9999999999","message":"use container"}`, "at most 9 digits"},
-		{"missing probe", `"version_compatibility":{"refuse_at_or_above":"1.0.93","message":"use container"}`, "requires the program's declared probe_args"},
-		{"shell multiline message", `"probe_args":["--version"],"version_compatibility":{"refuse_at_or_above":"1.0.93","message":"bad\nmessage"}`, "one printable line"},
-		{"not native installer", `"kind":"program","bin":"copilot","via":"npm","package":"x","probe_args":["--version"],"version_compatibility":{"refuse_at_or_above":"1.0.93","message":"use container"}`, `only a native installer program takes version_compatibility`},
+		{"malformed", `{`, "--version", "malformed JSON object"},
+		{"duplicate field", `{"refuse_at_or_above":"1.0.93","refuse_at_or_above":"1.0.92","message":"use container"}`, "--version", "duplicate field"},
+		{"unknown field", `{"refuse_at_or_above":"1.0.93","message":"use container","agent":"copilot"}`, "--version", "unknown field"},
+		{"bad numeric threshold", `{"refuse_at_or_above":"1.0.9999999999","message":"use container"}`, "--version", "at most 9 digits"},
+		{"missing probe", `{"refuse_at_or_above":"1.0.93","message":"use container"}`, "", "declared probe_args"},
+		{"shell multiline message", `{"refuse_at_or_above":"1.0.93","message":"bad\nmessage"}`, "--version", "one printable line"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var entry string
-			if strings.HasPrefix(tc.declaration, `"kind"`) {
-				entry = tc.declaration
-			} else {
-				entry = `"kind":"program","bin":"copilot","via":"installer","url":"https://example.test/install",` + tc.declaration
-			}
-			_, problems := Decode([]byte(`{"name":"p","contributes":[{` + entry + `}]}`))
-			joined := strings.Join(problems, "\n")
-			if !strings.Contains(joined, tc.want) {
-				t.Errorf("want problem containing %q, got %v", tc.want, problems)
+			got, problems := DecodeVersionCompatibility([]byte(tc.data), strings.Fields(tc.probe))
+			if got != nil || !strings.Contains(strings.Join(problems, "\n"), tc.want) {
+				t.Fatalf("DecodeVersionCompatibility = %+v, %v; want error containing %q", got, problems, tc.want)
 			}
 		})
+	}
+}
+
+func TestVersionCompatibilityIsNotAProgramManifestField(t *testing.T) {
+	const manifest = `{"name":"copilot","contributes":[{"kind":"program","bin":"copilot","via":"installer","url":"https://example.test/install","probe_args":["--version"],"version_compatibility":{"refuse_at_or_above":"1.0.93","message":"Use a container."}}]}`
+	_, problems := Decode([]byte(manifest))
+	if !strings.Contains(strings.Join(problems, "\n"), `unknown field "version_compatibility"`) {
+		t.Fatalf("program manifest field unexpectedly remains declared: %v", problems)
 	}
 }
