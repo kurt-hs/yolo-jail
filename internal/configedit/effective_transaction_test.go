@@ -408,7 +408,10 @@ func TestApplyEffectiveRestoresWhenIndependentPostWriteSemanticValidationFails(t
 		}
 		return nil
 	}
-	_, err = applyEffectiveWithOps(workspace, path, configdoc.JSONC, Mutation{Action: Set, Path: []configdoc.Step{{Key: "resources"}, {Key: "cpus"}}, Value: 4}, options, ops)
+	originalOps := systemFileOps
+	systemFileOps = ops
+	t.Cleanup(func() { systemFileOps = originalOps })
+	_, err = ApplyEffective(workspace, path, configdoc.JSONC, Mutation{Action: Set, Path: []configdoc.Step{{Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
 	if !canonicalSame {
 		t.Fatal("postwrite invalid project-scope adapter did not preserve the effective snapshot")
 	}
@@ -474,7 +477,10 @@ func TestApplyEffectiveRestoresWhenPostwriteTargetIsNoLongerConsumed(t *testing.
 		}
 		return nil
 	}
-	_, err = applyEffectiveWithOps(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options, ops)
+	originalOps := systemFileOps
+	systemFileOps = ops
+	t.Cleanup(func() { systemFileOps = originalOps })
+	_, err = ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
 	if !canonicalSame {
 		t.Fatal("removing the edited include changed the canonical graph despite local cpus override")
 	}
@@ -586,6 +592,42 @@ func TestApplyEffectiveRequiresExactProjectLocalAndUnambiguousPhysicalRole(t *te
 			t.Fatalf("project/local mismatch accepted: err=%v writes=%d", err, *writes)
 		}
 	})
+	t.Run("local target mislabeled project", func(t *testing.T) {
+		home, workspace := t.TempDir(), t.TempDir()
+		t.Setenv("HOME", home)
+		path := filepath.Join(workspace, config.WorkspaceLocalTOMLConfigName)
+		writeEditFixture(t, path, "[machine.resources]\ncpus = 2\n")
+		options := ApplyOptions{Target: mustEditTarget(t, workspace, path, configdoc.TOML, config.ExplicitEditProject)}
+		writes := spySystemWrites(t)
+		_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
+		if err == nil || !strings.Contains(err.Error(), "unauthorized config role local") || *writes != 0 {
+			t.Fatalf("local/project mismatch accepted: err=%v writes=%d", err, *writes)
+		}
+	})
+	t.Run("one physical target read as project and local", func(t *testing.T) {
+		home, workspace := t.TempDir(), t.TempDir()
+		t.Setenv("HOME", home)
+		physical := filepath.Join(t.TempDir(), "shared.toml")
+		writeEditFixture(t, physical, "[machine.resources]\ncpus = 2\n")
+		projectPath := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+		writeEditFixture(t, projectPath, "include_if_found = ['parts/shared.toml']\n")
+		projectInclude := filepath.Join(workspace, "parts", "shared.toml")
+		localPath := filepath.Join(workspace, config.WorkspaceLocalTOMLConfigName)
+		for _, alias := range []string{projectInclude, localPath} {
+			if err := os.MkdirAll(filepath.Dir(alias), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(physical, alias); err != nil {
+				t.Fatal(err)
+			}
+		}
+		options := ApplyOptions{Target: mustEditTarget(t, workspace, physical, configdoc.TOML, config.ExplicitEditProject)}
+		writes := spySystemWrites(t)
+		_, err := ApplyEffective(workspace, physical, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
+		if err == nil || !strings.Contains(err.Error(), "conflicting or unauthorized config role local") || *writes != 0 {
+			t.Fatalf("cross-role project/local target was not refused: err=%v writes=%d", err, *writes)
+		}
+	})
 	t.Run("one physical target read as user and project", func(t *testing.T) {
 		home, workspace := t.TempDir(), t.TempDir()
 		t.Setenv("HOME", home)
@@ -617,6 +659,7 @@ func TestApplyEffectiveRefusesJailedUserOnlyIncludeAndConfigDSymlink(t *testing.
 		baseName                              string
 	}{
 		{name: "JSONC include", base: `{"include_if_found":["allow.jsonc"]}`, body: `{"allow":{"git":{"always":["fetch"]}}}`, targetRel: "allow.jsonc", aliasRel: "allow.jsonc", format: configdoc.JSONC, baseName: paths.UserConfigLegacyJSONCName},
+		{name: "JSONC explicit config.d path via TOML include", base: "include_if_found = ['config.d/10-allow.jsonc']\n", body: `{"allow":{"git":{"always":["fetch"]}}}`, targetRel: "config.d/10-allow.jsonc", aliasRel: "config.d/10-allow.jsonc", format: configdoc.JSONC, baseName: paths.UserConfigTOMLName},
 		{name: "TOML config.d symlink", base: "[install]\nnix = ['base']\n", body: "[allow.git]\nalways = ['fetch']\n", targetRel: "parts/allow.toml", aliasRel: "config.d/10-allow.toml", format: configdoc.TOML, baseName: paths.UserConfigTOMLName},
 	}
 	for _, tc := range cases {
