@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -182,7 +183,7 @@ func leaveAnOlderCopyRunningUnder(t *testing.T, handler hostservice.Handler, hom
 	// it names the HOME the copy runs under, as a long-running copy's always does.
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
 		if raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", proc.Process.Pid)); err == nil &&
-			strings.Contains(string(raw), "HOME=") {
+			slices.Contains(strings.Split(string(raw), "\x00"), "HOME="+home) {
 			break
 		}
 		if time.Now().After(deadline) {
