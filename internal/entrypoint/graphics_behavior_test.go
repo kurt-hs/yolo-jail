@@ -178,6 +178,9 @@ func TestGenerateGraphicsDriversRollsBackBothArchitecturesOnFailure(t *testing.T
 	if err == nil {
 		t.Fatal("expected runtime provenance publication failure")
 	}
+	if !strings.Contains(err.Error(), paths.RuntimeManifest) || !graphicsErrorHasRemedy(err.Error()) {
+		t.Fatalf("provenance error lacks path/actionable remedy: %v", err)
+	}
 	for _, root := range []string{paths.Root64, paths.Root32} {
 		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("failed two-architecture attempt left new tree %s: %v", root, err)
@@ -197,10 +200,11 @@ func TestEnsureGraphicsTreesRollsBackPartialPublication(t *testing.T) {
 		{root: paths.Root64, driver: graphicsDriver{Name: "mesa", Version: "v", Arch: "64", Lib: lib64, Share: share64}},
 		{root: paths.Root32, driver: graphicsDriver{Name: "mesa", Version: "v", Arch: "32", Lib: lib32, Share: share32}},
 	}
+	injected := errors.New("injected publication failure")
 	renamed := 0
 	_, _, err := ensureGraphicsTreesWithRename(targets, func(old, new string) error {
 		if new == filepath.Join(paths.Root32, "share") {
-			return errors.New("injected publish failure")
+			return injected
 		}
 		renamed++
 		return os.Rename(old, new)
@@ -208,11 +212,96 @@ func TestEnsureGraphicsTreesRollsBackPartialPublication(t *testing.T) {
 	if err == nil || renamed == 0 {
 		t.Fatalf("partial publish result err=%v renamed=%d", err, renamed)
 	}
+	if !strings.Contains(err.Error(), paths.Root32) || !errors.Is(err, injected) || !graphicsErrorHasRemedy(err.Error()) {
+		t.Fatalf("publication error lacks path, cause or operational next step: %v", err)
+	}
 	for _, root := range []string{paths.Root64, paths.Root32} {
 		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("partial publish rollback left %s: %v", root, err)
 		}
 	}
+}
+
+func TestGraphicsDriverOperationalFailuresNamePathCauseAndRepair(t *testing.T) {
+	tmp := t.TempDir()
+	lib64, share64 := graphicsTestDirs(t, tmp, "mesa64")
+	lib32, share32 := graphicsTestDirs(t, tmp, "mesa32")
+	paths := graphicsTestPaths(tmp)
+	targets := []graphicsTreeTarget{
+		{root: paths.Root64, driver: graphicsDriver{Name: "mesa", Version: "v", Arch: "64", Lib: lib64, Share: share64}},
+		{root: paths.Root32, driver: graphicsDriver{Name: "mesa", Version: "v", Arch: "32", Lib: lib32, Share: share32}},
+	}
+	injected := errors.New("injected filesystem failure")
+
+	t.Run("inspection", func(t *testing.T) {
+		ops := systemGraphicsFSOps()
+		ops.lstat = func(path string) (os.FileInfo, error) {
+			if path == paths.Root32 {
+				return nil, injected
+			}
+			return os.Lstat(path)
+		}
+		_, _, err := ensureGraphicsTreesWithOps(targets, ops)
+		if err == nil || !strings.Contains(err.Error(), paths.Root32) || !errors.Is(err, injected) || !graphicsErrorHasRemedy(err.Error()) {
+			t.Fatalf("inspection error lacks path, cause or actionable remedy: %v", err)
+		}
+		if _, err := os.Lstat(paths.Root64); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("inspection failure left the earlier staged root: %v", err)
+		}
+	})
+	t.Run("staging", func(t *testing.T) {
+		ops := systemGraphicsFSOps()
+		attempts := 0
+		ops.mkdirTemp = func(dir, pattern string) (string, error) {
+			attempts++
+			if attempts == 2 {
+				return "", injected
+			}
+			return os.MkdirTemp(dir, pattern)
+		}
+		_, _, err := ensureGraphicsTreesWithOps(targets, ops)
+		if err == nil || !strings.Contains(err.Error(), paths.Root32) || !errors.Is(err, injected) || !graphicsErrorHasRemedy(err.Error()) {
+			t.Fatalf("staging error lacks path, cause or actionable remedy: %v", err)
+		}
+		for _, root := range []string{paths.Root64, paths.Root32} {
+			if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("staging failure created root %s: %v", root, err)
+			}
+		}
+	})
+	t.Run("symlink staging", func(t *testing.T) {
+		ops := systemGraphicsFSOps()
+		ops.symlink = func(_, _ string) error { return injected }
+		_, _, err := ensureGraphicsTreesWithOps(targets[:1], ops)
+		if err == nil || !strings.Contains(err.Error(), paths.Root64) || !errors.Is(err, injected) || !graphicsErrorHasRemedy(err.Error()) {
+			t.Fatalf("symlink staging error lacks path, cause or actionable remedy: %v", err)
+		}
+		if _, err := os.Lstat(paths.Root64); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("symlink staging failure created root: %v", err)
+		}
+	})
+	t.Run("claim root", func(t *testing.T) {
+		ops := systemGraphicsFSOps()
+		ops.mkdir = func(path string, mode os.FileMode) error {
+			if path == paths.Root32 {
+				return injected
+			}
+			return os.Mkdir(path, mode)
+		}
+		_, _, err := ensureGraphicsTreesWithOps(targets, ops)
+		if err == nil || !strings.Contains(err.Error(), paths.Root32) || !errors.Is(err, injected) || !graphicsErrorHasRemedy(err.Error()) {
+			t.Fatalf("root creation error lacks path, cause or actionable remedy: %v", err)
+		}
+		for _, root := range []string{paths.Root64, paths.Root32} {
+			if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("root creation rollback left %s: %v", root, err)
+			}
+		}
+	})
+}
+
+func graphicsErrorHasRemedy(message string) bool {
+	return strings.Contains(message, "writable") && strings.Contains(message, "relaunch")
 }
 
 func TestGenerateGraphicsDriversRejectsMalformedAndUnmaterializedMetadata(t *testing.T) {

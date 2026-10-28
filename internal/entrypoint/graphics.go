@@ -83,7 +83,7 @@ func generateGraphicsDriversIn(e *Env, paths graphicsPaths, bakedManifest string
 	}
 	if err := writeGraphicsManifest(paths.RuntimeManifest, provenance); err != nil {
 		rollbackGraphicsTrees(created)
-		return fmt.Errorf("write graphics driver boot provenance %s: %w; make /run/yolo writable and retry", paths.RuntimeManifest, err)
+		return fmt.Errorf("write graphics driver boot provenance %s: %w; check that %s is mounted writable and has free space/inodes, repair the mount or permissions, then relaunch", paths.RuntimeManifest, err, filepath.Dir(paths.RuntimeManifest))
 	}
 	return nil
 }
@@ -210,19 +210,42 @@ type graphicsRollbackTree struct {
 	share string
 }
 
+type graphicsFSOps struct {
+	lstat     func(string) (os.FileInfo, error)
+	mkdirAll  func(string, os.FileMode) error
+	mkdirTemp func(string, string) (string, error)
+	symlink   func(string, string) error
+	mkdir     func(string, os.FileMode) error
+	rename    func(string, string) error
+	removeAll func(string) error
+}
+
+func systemGraphicsFSOps() graphicsFSOps {
+	return graphicsFSOps{
+		lstat: os.Lstat, mkdirAll: os.MkdirAll, mkdirTemp: os.MkdirTemp,
+		symlink: os.Symlink, mkdir: os.Mkdir, rename: os.Rename, removeAll: os.RemoveAll,
+	}
+}
+
 // ensureGraphicsTrees validates and stages all absent architecture roots before
 // claiming any destination. A later failure rolls back only roots this attempt
 // created; pre-existing user paths are never repaired or removed.
 func ensureGraphicsTrees(targets []graphicsTreeTarget) (created []graphicsRollbackTree, preserved map[string]bool, err error) {
-	return ensureGraphicsTreesWithRename(targets, os.Rename)
+	return ensureGraphicsTreesWithOps(targets, systemGraphicsFSOps())
 }
 
 func ensureGraphicsTreesWithRename(targets []graphicsTreeTarget, rename func(string, string) error) (created []graphicsRollbackTree, preserved map[string]bool, err error) {
+	ops := systemGraphicsFSOps()
+	ops.rename = rename
+	return ensureGraphicsTreesWithOps(targets, ops)
+}
+
+func ensureGraphicsTreesWithOps(targets []graphicsTreeTarget, ops graphicsFSOps) (created []graphicsRollbackTree, preserved map[string]bool, err error) {
 	preserved = make(map[string]bool, len(targets))
 	staged := make([]*graphicsStagedTree, 0, len(targets))
 	defer func() {
 		for _, tree := range staged {
-			_ = os.RemoveAll(tree.staging)
+			_ = ops.removeAll(tree.staging)
 		}
 		if err != nil {
 			rollbackGraphicsTrees(created)
@@ -230,36 +253,36 @@ func ensureGraphicsTreesWithRename(targets []graphicsTreeTarget, rename func(str
 	}()
 
 	for _, target := range targets {
-		if _, statErr := os.Lstat(target.root); statErr == nil {
+		if _, statErr := ops.lstat(target.root); statErr == nil {
 			preserved[target.root] = true
 			continue
 		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return created, nil, fmt.Errorf("inspect %s for driver %s: %w", target.root, target.driver.Name, statErr)
+			return created, nil, fmt.Errorf("inspect %s for driver %s: %w; check that the mount at %s is writable and permissions allow inspection, confirm free space/inodes, repair the mount as needed, then relaunch", target.root, target.driver.Name, statErr, target.root)
 		}
 		parent := filepath.Dir(target.root)
-		if mkdirErr := os.MkdirAll(parent, 0o755); mkdirErr != nil {
-			return created, nil, fmt.Errorf("prepare parent of %s: %w", target.root, mkdirErr)
+		if mkdirErr := ops.mkdirAll(parent, 0o755); mkdirErr != nil {
+			return created, nil, fmt.Errorf("prepare parent %s for graphics driver %s: %w; ensure the mount is writable with free space/inodes, repair the mount or permissions, then relaunch", parent, target.driver.Name, mkdirErr)
 		}
-		tmp, tempErr := os.MkdirTemp(parent, ".opengl-driver-*")
+		tmp, tempErr := ops.mkdirTemp(parent, ".opengl-driver-*")
 		if tempErr != nil {
-			return created, nil, fmt.Errorf("stage driver %s at %s: %w", target.driver.Name, target.root, tempErr)
+			return created, nil, fmt.Errorf("stage driver %s for %s in %s: %w; ensure the mount is writable with free space/inodes, repair the mount or permissions, then relaunch", target.driver.Name, target.root, parent, tempErr)
 		}
 		tree := &graphicsStagedTree{root: target.root, staging: tmp, driver: target.driver}
 		staged = append(staged, tree)
 		for _, child := range []struct{ name, value string }{{"lib", target.driver.Lib}, {"share", target.driver.Share}} {
-			if linkErr := os.Symlink(child.value, filepath.Join(tmp, child.name)); linkErr != nil {
-				return created, nil, fmt.Errorf("stage %s link for %s: %w", child.name, target.root, linkErr)
+			if linkErr := ops.symlink(child.value, filepath.Join(tmp, child.name)); linkErr != nil {
+				return created, nil, fmt.Errorf("stage %s link for %s in %s: %w; ensure %s is readable and the staging mount is writable with free space/inodes, repair the mount or permissions, then relaunch", child.name, target.root, tmp, linkErr, child.value)
 			}
 		}
 	}
 
 	for _, tree := range staged {
-		if mkdirErr := os.Mkdir(tree.root, 0o755); mkdirErr != nil {
+		if mkdirErr := ops.mkdir(tree.root, 0o755); mkdirErr != nil {
 			if errors.Is(mkdirErr, os.ErrExist) {
 				preserved[tree.root] = true
 				continue
 			}
-			return created, nil, fmt.Errorf("create graphics root %s: %w; remove or repair that path and retry", tree.root, mkdirErr)
+			return created, nil, fmt.Errorf("create graphics root %s: %w; ensure its parent mount is writable with free space/inodes, repair the mount or permissions, then relaunch", tree.root, mkdirErr)
 		}
 		tree.created = true
 		created = append(created, graphicsRollbackTree{root: tree.root, lib: tree.driver.Lib, share: tree.driver.Share})
@@ -269,8 +292,8 @@ func ensureGraphicsTreesWithRename(targets []graphicsTreeTarget, rename func(str
 			continue
 		}
 		for _, child := range []string{"lib", "share"} {
-			if moveErr := rename(filepath.Join(tree.staging, child), filepath.Join(tree.root, child)); moveErr != nil {
-				return created, nil, fmt.Errorf("publish graphics %s link at %s: %w", child, tree.root, moveErr)
+			if moveErr := ops.rename(filepath.Join(tree.staging, child), filepath.Join(tree.root, child)); moveErr != nil {
+				return created, nil, fmt.Errorf("publish graphics %s link from %s to %s: %w; ensure both paths are on the same writable mount with free space/inodes, repair the mount or permissions, then relaunch", child, filepath.Join(tree.staging, child), filepath.Join(tree.root, child), moveErr)
 			}
 		}
 	}
