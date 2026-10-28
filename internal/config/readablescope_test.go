@@ -282,7 +282,7 @@ func TestReadableNamedRepositoryForRemoteURLBrokerFailsClosedWithTypedTargetNoti
 	}
 }
 
-func TestDormantReadableSourceDropsStaleUnusableScopeWithoutPrompt(t *testing.T) {
+func TestDormantReadableSourcePreservesHistoryWithoutLiveAuthorityOrPrompt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -295,6 +295,14 @@ func TestDormantReadableSourceDropsStaleUnusableScopeWithoutPrompt(t *testing.T)
 	if err := RecordApproval(workspace, decode(t, `{}`), stale); err != nil {
 		t.Fatal(err)
 	}
+	beforeScope, err := os.ReadFile(ApprovalScopePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeSources, err := os.ReadFile(ApprovalScopeSourcesPath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
 	read, err := ReadWorkspaceForGate(workspace)
 	if err != nil {
 		t.Fatal(err)
@@ -305,24 +313,23 @@ func TestDormantReadableSourceDropsStaleUnusableScopeWithoutPrompt(t *testing.T)
 		t.Fatalf("no-read source should be dormant: %#v", check)
 	}
 	prompter := &reportPrompter{accept: true}
-	ok, err := CheckConfigAndScopeChanges(workspace, decode(t, `{}`), check, true, false, prompter)
+	ok, approved, err := ApproveConfigAndScope(workspace, decode(t, `{}`), check, true, false, prompter)
 	if err != nil || !ok || prompter.got != nil {
-		t.Fatalf("dropping unusable stale scope prompted: ok=%v err=%v report=%#v", ok, err, prompter.got)
+		t.Fatalf("preserving inert scope history prompted: ok=%v err=%v report=%#v", ok, err, prompter.got)
 	}
-	record, _, err := readScopeRecord(ApprovalScopePath(workspace))
-	if err != nil {
-		t.Fatal(err)
+	// BB-D110 keeps old records inert, not deleted or lent to a current launch.
+	afterScope, err := os.ReadFile(ApprovalScopePath(workspace))
+	if err != nil || string(afterScope) != string(beforeScope) {
+		t.Fatalf("dormant scope history changed: %q, %v", afterScope, err)
 	}
-	if len(record) != 0 {
-		t.Fatalf("dormant source preserved stale scope/grants: %#v", record)
+	afterSources, err := os.ReadFile(ApprovalScopeSourcesPath(workspace))
+	if err != nil || string(afterSources) != string(beforeSources) {
+		t.Fatalf("dormant source history changed: %q, %v", afterSources, err)
 	}
-	sources, err := readSourcesRecord(ApprovalScopeSourcesPath(workspace))
-	if err != nil {
-		t.Fatal(err)
+	if len(approved[broker.Label]) != 0 || len(check.ApprovedGrants()[broker.Label]) != 0 {
+		t.Fatalf("dormant history reached live authority: %v, %v", approved, check.ApprovedGrants())
 	}
-	if _, exists := sources["github"]; exists {
-		t.Fatalf("dormant source preserved stale provenance: %#v", sources)
-	}
+
 }
 
 func TestReadableScopeVacuousStateHasNoPhantomRecordAndRealRemovalPromptsOnce(t *testing.T) {
