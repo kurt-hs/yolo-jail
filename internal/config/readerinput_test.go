@@ -34,6 +34,10 @@ func TestLoadConfigWithReadInputOverridesThePhysicalWorkspaceFileInTheRealGraph(
 	}
 	planned[0] = 'x' // The invocation owns a defensive copy.
 
+	_, used, err := LoadConfigWithReadInputResult(ws, true, nil, input)
+	if err != nil || !used {
+		t.Fatalf("explicit physical target consumption = %v, err=%v; want consumed", used, err)
+	}
 	got, src, err := LoadConfigWithReadInputAndSources(ws, true, nil, input)
 	if err != nil {
 		t.Fatal(err)
@@ -96,9 +100,9 @@ func TestLoadConfigWithReadInputReachesUserFragmentsAndNestedIncludes(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := LoadConfigWithReadInput(ws, true, nil, input)
-			if err != nil {
-				t.Fatal(err)
+			got, used, err := LoadConfigWithReadInputResult(ws, true, nil, input)
+			if err != nil || !used {
+				t.Fatalf("%s target consumption = %v, err=%v; want consumed", tc.name, used, err)
 			}
 			value := configPathValue(t, got, tc.path)
 			if value != tc.want {
@@ -136,9 +140,9 @@ func TestLoadConfigWithReadInputUsesTheLegacyJSONCReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadConfigWithReadInput(ws, true, nil, input)
-	if err != nil {
-		t.Fatal(err)
+	got, used, err := LoadConfigWithReadInputResult(ws, true, nil, input)
+	if err != nil || !used {
+		t.Fatalf("legacy JSONC target consumption = %v, err=%v; want consumed", used, err)
 	}
 	if value := configPathValue(t, got, "env.set.READER_INPUT_JSONC"); value != "after" {
 		t.Fatalf("legacy JSONC included value = %#v, want after", value)
@@ -156,9 +160,9 @@ func TestLoadConfigWithReadInputDoesNotIntroduceAnUnreadTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := LoadConfigWithReadInput(ws, true, nil, input)
-	if err != nil {
-		t.Fatal(err)
+	got, used, err := LoadConfigWithReadInputResult(ws, true, nil, input)
+	if err != nil || used {
+		t.Fatalf("unreferenced target consumption = %v, err=%v; want not consumed", used, err)
 	}
 	if _, exists := got.Get("install"); exists {
 		t.Fatalf("explicit target bypassed the normal reader graph: %#v", got)
@@ -181,8 +185,9 @@ func TestLoadConfigWithReadInputRetainsWorkspaceScopeChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadConfigWithReadInput(ws, true, nil, input); err == nil || !strings.Contains(err.Error(), "user-scope only") {
-		t.Fatalf("substitution bypassed workspace TOML scope check: %v", err)
+	_, used, err := LoadConfigWithReadInputResult(ws, true, nil, input)
+	if err == nil || !strings.Contains(err.Error(), "user-scope only") || !used {
+		t.Fatalf("substitution/scope result = (consumed=%v, err=%v); want consumed bytes then normal scope refusal", used, err)
 	}
 }
 
@@ -217,6 +222,13 @@ func TestLoadConfigWithReadInputBypassesOnlyTheOwnWorkspaceSnapshotShortcut(t *t
 	install := nestedValue(t, edited, "install")
 	if value, _ := install.Get("nix"); !hasString(value, "edited") {
 		t.Fatalf("explicit read-input invocation did not recompose the file: %#v", value)
+	}
+	unsupported, err := NewConfigReadInput(WorkspaceAssembledConfigPath(ws), []byte(`{"install":{"nix":["not-a-reader-input"]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, used, err := LoadConfigWithReadInputResult(ws, true, nil, unsupported); err != nil || used {
+		t.Fatalf("assembled-artifact input consumption = %v, err=%v; want unsupported/not consumed", used, err)
 	}
 }
 

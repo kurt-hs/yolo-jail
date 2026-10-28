@@ -52,7 +52,7 @@ func loadTOMLConfigFile(path, label string, strict bool, warn Warn, record bool,
 	if warn == nil {
 		warn = defaultWarn
 	}
-	data, rel, err := at.ws.readWithInput(path, at.input)
+	data, rel, err := at.ws.readWithInput(path, at.input, at.inputUsed)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonx.NewOrderedMap(), nil, nil, nil
@@ -206,6 +206,10 @@ func loadUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir stri
 }
 
 func loadUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadUserConfigFragmentsWithInputUse(base, baseNode, dir, strict, warn, seen, record, input, nil)
+}
+
+func loadUserConfigFragmentsWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	fragmentDir := filepath.Join(dir, "config.d")
 	entries, err := os.ReadDir(fragmentDir)
 	if err != nil {
@@ -249,7 +253,7 @@ func loadUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcN
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input})
+		fragment, node, loadErr := loadWithIncludesScope(path, path, strict, warn, seen, record, SchemaScopeUserOnly, readAt{input: input, inputUsed: inputUsed})
 		if loadErr != nil {
 			return nil, nil, loadErr
 		}
@@ -263,7 +267,11 @@ func mergeUserConfigFragments(base *jsonx.OrderedMap, baseNode *srcNode, dir str
 }
 
 func mergeUserConfigFragmentsWithReadInput(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
-	fragments, fragmentNode, err := loadUserConfigFragmentsWithReadInput(base, baseNode, dir, strict, warn, seen, record, input)
+	return mergeUserConfigFragmentsWithInputUse(base, baseNode, dir, strict, warn, seen, record, input, nil)
+}
+
+func mergeUserConfigFragmentsWithInputUse(base *jsonx.OrderedMap, baseNode *srcNode, dir string, strict bool, warn Warn, seen map[string]struct{}, record bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
+	fragments, fragmentNode, err := loadUserConfigFragmentsWithInputUse(base, baseNode, dir, strict, warn, seen, record, input, inputUsed)
 	if err != nil {
 		return nil, nil, err
 	}

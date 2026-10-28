@@ -53,7 +53,7 @@ func loadJSONCFile(path, label string, strict bool, warn Warn, record bool, at r
 	if warn == nil {
 		warn = defaultWarn
 	}
-	data, rel, err := at.ws.readWithInput(path, at.input)
+	data, rel, err := at.ws.readWithInput(path, at.input, at.inputUsed)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonx.NewOrderedMap(), nil, nil, nil
@@ -331,10 +331,10 @@ func loadWithIncludesMode(path, label string, strict bool, warn Warn, seen map[s
 		var incNode *srcNode
 		if readable {
 			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, true, scope,
-				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input})
+				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input, inputUsed: at.inputUsed})
 		} else {
 			included, incNode, err = loadWithIncludesMode(incPath, incPath, strict, warn, seen, record, false, scope,
-				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input})
+				readAt{ws: at.ws, via: entryLabel + " in " + label, input: at.input, inputUsed: at.inputUsed})
 		}
 		if err != nil {
 			return nil, nil, err
@@ -424,10 +424,14 @@ func loadReadableWorkspaceConfigOver(workspace string, strict bool, warn Warn, r
 }
 
 func loadReadableWorkspaceConfigOverWithReadInput(workspace string, strict bool, warn Warn, record bool, base *jsonx.OrderedMap, baseNode *srcNode, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	return loadReadableWorkspaceConfigOverWithInputUse(workspace, strict, warn, record, base, baseNode, input, nil)
+}
+
+func loadReadableWorkspaceConfigOverWithInputUse(workspace string, strict bool, warn Warn, record bool, base *jsonx.OrderedMap, baseNode *srcNode, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	if workspace == "" {
 		workspace = cwd()
 	}
-	at := readAt{input: input}
+	at := readAt{input: input, inputUsed: inputUsed}
 	if record {
 		at.ws = openWorkspaceRoot(workspace)
 		defer at.ws.close()
@@ -518,6 +522,10 @@ func composeReadableConfig(workspace string, strict bool, warn Warn, record, wit
 }
 
 func composeReadableConfigWithReadInput(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool, input *ConfigReadInput) (*jsonx.OrderedMap, *srcNode, error) {
+	return composeReadableConfigWithInputUse(workspace, strict, warn, record, withWorkspaceFile, input, nil)
+}
+
+func composeReadableConfigWithInputUse(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool, input *ConfigReadInput, inputUsed *bool) (*jsonx.OrderedMap, *srcNode, error) {
 	if input == nil && inJail() && jailOwnWorkspace(workspace) && UserLayerPath() == "" {
 		if snapshot, ok := loadAssembledSnapshot(workspace); ok {
 			if !record {
@@ -528,7 +536,7 @@ func composeReadableConfigWithReadInput(workspace string, strict bool, warn Warn
 			return snapshot, origins, nil
 		}
 	}
-	userCfg, userNode, err := loadReadableUserScopeWithReadInput(paths.UserConfigPath(), strict, warn, record, input)
+	userCfg, userNode, err := loadReadableUserScopeWithInputUse(paths.UserConfigPath(), strict, warn, record, input, inputUsed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -536,7 +544,7 @@ func composeReadableConfigWithReadInput(workspace string, strict bool, warn Warn
 	if ws == "" {
 		ws = cwd()
 	}
-	merged, mergedNode, err := loadReadableWorkspaceConfigOverWithReadInput(ws, strict, warn, record, userCfg, userNode, input)
+	merged, mergedNode, err := loadReadableWorkspaceConfigOverWithInputUse(ws, strict, warn, record, userCfg, userNode, input, inputUsed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -550,11 +558,20 @@ func composeReadableConfigWithReadInput(workspace string, strict bool, warn Warn
 // input. It preserves normal scope, containment, file identity, and include handling; the target
 // is never treated as authorized merely because it appears in ConfigReadInput.
 func LoadConfigWithReadInput(workspace string, strict bool, warn Warn, input ConfigReadInput) (*jsonx.OrderedMap, error) {
-	if input.target == "" || !filepath.IsAbs(input.target) {
-		return nil, fmt.Errorf("config read input requires an absolute physical target")
-	}
-	cfg, _, err := composeReadableConfigWithReadInput(workspace, strict, warn, false, true, input.clone())
+	cfg, _, err := LoadConfigWithReadInputResult(workspace, strict, warn, input)
 	return cfg, err
+}
+
+// LoadConfigWithReadInputResult returns whether this invocation actually substituted bytes at an
+// authorized reader call for the input's physical target. A false result means the normal graph did
+// not consume the target; provenance labels are not used to determine it.
+func LoadConfigWithReadInputResult(workspace string, strict bool, warn Warn, input ConfigReadInput) (*jsonx.OrderedMap, bool, error) {
+	if input.target == "" || !filepath.IsAbs(input.target) {
+		return nil, false, fmt.Errorf("config read input requires an absolute physical target")
+	}
+	consumed := false
+	cfg, _, err := composeReadableConfigWithInputUse(workspace, strict, warn, false, true, input.clone(), &consumed)
+	return cfg, consumed, err
 }
 
 // LoadConfigWithReadInputAndSources is LoadConfigWithReadInput with the standard reader provenance.

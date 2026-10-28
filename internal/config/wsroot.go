@@ -45,9 +45,10 @@ func (w *wsRoot) nextSeq() int {
 // readAt is where one config file is read: beneath ws (nil for a plain read), and via is the
 // include that reached it, "" for a top-level file.
 type readAt struct {
-	ws    *wsRoot
-	via   string
-	input *ConfigReadInput
+	ws        *wsRoot
+	via       string
+	input     *ConfigReadInput
+	inputUsed *bool
 }
 
 // openWorkspaceRoot opens the root for a workspace load, nil when the workspace cannot be
@@ -95,10 +96,10 @@ func (w *wsRoot) rel(path string) (string, bool) {
 // workspace-relative name when the bytes came from inside, "" when they were read any other way.
 // On a nil receiver, or any refusal by the root, it is os.ReadFile, whose error is the caller's.
 func (w *wsRoot) read(path string) ([]byte, string, error) {
-	return w.readWithInput(path, nil)
+	return w.readWithInput(path, nil, nil)
 }
 
-func (w *wsRoot) readWithInput(path string, input *ConfigReadInput) (data []byte, rel string, err error) {
+func (w *wsRoot) readWithInput(path string, input *ConfigReadInput, inputUsed *bool) (data []byte, rel string, err error) {
 	if w != nil {
 		if r, ok := w.rel(path); ok {
 			if f, err := w.root.Open(r); err == nil {
@@ -112,7 +113,11 @@ func (w *wsRoot) readWithInput(path string, input *ConfigReadInput) (data []byte
 					info, statErr := f.Stat()
 					_ = f.Close()
 					if err == nil {
-						return input.substitute(path, info, data), r, nil
+						data, substituted := input.substitute(info, data)
+						if substituted && inputUsed != nil {
+							*inputUsed = true
+						}
+						return data, r, nil
 					}
 					if statErr != nil {
 						return nil, "", statErr
@@ -138,19 +143,23 @@ func (w *wsRoot) readWithInput(path string, input *ConfigReadInput) (data []byte
 	if statErr != nil {
 		return nil, "", statErr
 	}
-	return input.substitute(path, info, data), "", nil
+	data, substituted := input.substitute(info, data)
+	if substituted && inputUsed != nil {
+		*inputUsed = true
+	}
+	return data, "", nil
 }
 
 // substitute is deliberately called only after the standard path successfully opened and read
 // the file. It never makes an otherwise unreadable path readable; file identity, not provenance
 // labels, decides whether the caller's explicit physical target matches this read.
-func (input *ConfigReadInput) substitute(path string, opened os.FileInfo, original []byte) []byte {
+func (input *ConfigReadInput) substitute(opened os.FileInfo, original []byte) ([]byte, bool) {
 	if input == nil || opened == nil || input.target == "" {
-		return original
+		return original, false
 	}
 	target, err := os.Stat(input.target)
 	if err != nil || !os.SameFile(opened, target) {
-		return original
+		return original, false
 	}
-	return append([]byte(nil), input.bytes...)
+	return append([]byte(nil), input.bytes...), true
 }
