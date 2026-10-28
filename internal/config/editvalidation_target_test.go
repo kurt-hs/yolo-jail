@@ -122,8 +122,15 @@ func TestResolveEditTargetKeepsUserFragmentSymlinkPathAndPhysicalFile(t *testing
 	}
 }
 
-func TestResolveEditTargetRefusesAssembledSnapshotAsWritableOrigin(t *testing.T) {
-	home, workspace := t.TempDir(), t.TempDir()
+func TestResolveEditTargetUsesAuthoredFilesBehindAssembledSnapshot(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("YOLO_WORKSPACE", workspace)
@@ -145,20 +152,41 @@ func TestResolveEditTargetRefusesAssembledSnapshotAsWritableOrigin(t *testing.T)
 		t.Fatal(err)
 	}
 	t.Setenv("YOLO_VERSION", "test-jail")
-	for _, tc := range []struct {
-		intent EditMutationIntent
-		choice EditTargetChoice
-	}{
-		{targetIntent([]configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}), EditTargetChoice{Kind: EditTargetAutomatic}},
-		{targetIntent([]configdoc.Step{{Key: "allow"}, {Key: "git"}, {Key: "always"}}), EditTargetChoice{Kind: EditTargetAutomatic}},
-		{targetIntent([]configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}), EditTargetChoice{Kind: EditTargetFile, File: project}},
-	} {
-		if _, err := ResolveEditTarget(workspace, tc.intent, tc.choice); err == nil || !strings.Contains(err.Error(), "not consumed") {
-			t.Fatalf("assembled snapshot supplied writable origin: %v", err)
-		}
+	cpus := targetIntent([]configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}})
+	got, err := ResolveEditTarget(workspace, cpus, EditTargetChoice{Kind: EditTargetAutomatic})
+	if err != nil {
+		t.Fatalf("authored Project was not discovered behind assembled snapshot: %v", err)
+	}
+	if got.Role != ExplicitEditProject || got.LogicalPath != project || got.Format != configdoc.TOML {
+		t.Fatalf("authored Project target = (%s,%v,%v), want %s/TOML", got.LogicalPath, got.Role, got.Format, project)
+	}
+	userTarget, err := ResolveEditTarget(workspace, targetIntent([]configdoc.Step{{Key: "allow"}, {Key: "git"}, {Key: "always"}}), EditTargetChoice{Kind: EditTargetAutomatic})
+	if err != nil || userTarget.LogicalPath != user || userTarget.Role != ExplicitEditUser {
+		t.Fatalf("authored User target = (%#v, %v), want %s/User", userTarget, err, user)
+	}
+	if _, err := ResolveEditTarget(workspace, cpus, EditTargetChoice{Kind: EditTargetFile, File: WorkspaceAssembledConfigPath(workspace)}); err == nil || !strings.Contains(err.Error(), "not consumed") {
+		t.Fatalf("delivered assembled copy was accepted as a named writable file: %v", err)
+	}
+	if err := os.Remove(project); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveEditTarget(workspace, cpus, EditTargetChoice{Kind: EditTargetAutomatic}); err == nil {
+		t.Fatal("snapshot-only Project value supplied a writable target after authored file disappeared")
+	}
+	stillAssembled, err := LoadReadableConfig(workspace, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stillAssembledJSON, err := SnapshotJSON(stillAssembled)
+	wantSnapshot, wantErr := SnapshotJSON(assembled)
+	if err != nil || wantErr != nil || stillAssembledJSON != wantSnapshot {
+		t.Fatalf("ordinary own-jail reader did not retain delivered snapshot: got=%q want=%q errs=%v/%v", stillAssembledJSON, wantSnapshot, err, wantErr)
 	}
 	for path, before := range map[string]string{user: "[allow.git]\nalways = ['fetch']\n", project: "[machine.resources]\ncpus = 2\n"} {
 		got, err := os.ReadFile(path)
+		if os.IsNotExist(err) && path == project {
+			continue
+		}
 		if err != nil || string(got) != before {
 			t.Fatalf("snapshot refusal changed %s: %q err=%v", path, got, err)
 		}

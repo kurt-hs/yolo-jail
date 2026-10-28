@@ -584,14 +584,14 @@ func TestResolveTargetRefusesWrongScopeUnconsumedAliasAndAssembledWitness(t *tes
 		})
 	}
 
-	t.Run("assembled jail snapshot is not a writable witness", func(t *testing.T) {
+	t.Run("assembled jail snapshot remains ordinary view, authored Project is writable", func(t *testing.T) {
 		home, workspace := matrixCanonicalTempDir(t), matrixCanonicalTempDir(t)
 		t.Setenv("HOME", home)
 		t.Setenv("YOLO_VERSION", "")
 		user := filepath.Join(home, ".config", "yolo-jail", paths.UserConfigTOMLName)
 		project := filepath.Join(workspace, paths.WorkspaceConfigTOMLName)
-		writeEditFixture(t, user, "[allow.git]\nalways=['fetch']\n")
-		writeEditFixture(t, project, "[machine.resources]\ncpus=2\n")
+		writeEditFixture(t, user, "packs=['git']\n[allow.git]\nalways=['fetch']\n")
+		writeEditFixture(t, project, "[machine.resources]\ncpus=2 # authored project\n")
 		assembled, sources, err := config.LoadReadableConfigWithSources(workspace, true, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -612,12 +612,38 @@ func TestResolveTargetRefusesWrongScopeUnconsumedAliasAndAssembledWitness(t *tes
 		projectBefore, _ := os.ReadFile(project)
 		t.Setenv("YOLO_VERSION", "test-jail")
 		t.Setenv("YOLO_WORKSPACE", workspace)
-		mutation := Mutation{Action: Set, Path: matrixPath("machine", "resources", "cpus"), Value: 4}
-		if _, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetAutomatic}); err == nil || !strings.Contains(err.Error(), "not consumed") {
-			t.Fatalf("assembled snapshot supplied authored write authority: %v", err)
+		ordinaryBefore, err := config.LoadReadableConfig(workspace, true, nil)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if got, err := os.ReadFile(project); err != nil || !bytes.Equal(got, projectBefore) {
-			t.Fatalf("assembled refusal changed authored Project bytes: %q err=%v", got, err)
+		mutation := Mutation{Action: Set, Path: matrixPath("machine", "resources", "cpus"), Value: 4}
+		target, err := ResolveTarget(workspace, mutation, config.EditTargetChoice{Kind: config.EditTargetAutomatic})
+		if err != nil {
+			t.Fatalf("authored Project was not discovered: %v", err)
+		}
+		if target.Role != config.ExplicitEditProject || target.LogicalPath != project {
+			t.Fatalf("authored target=(%s,%v), want Project %s", target.LogicalPath, target.Role, project)
+		}
+		result, err := ApplyTargeted(workspace, target, mutation, ApplyOptions{})
+		if err != nil || result.Path != project {
+			t.Fatalf("ApplyTargeted authored Project=(%#v,%v)", result, err)
+		}
+		projectAfter, err := os.ReadFile(project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(projectAfter, projectBefore) || !bytes.Contains(projectAfter, []byte("# authored project")) {
+			t.Fatalf("authored Project bytes did not change with comment preserved: %q", projectAfter)
+		}
+		ordinaryAfter, err := config.LoadReadableConfig(workspace, true, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for label, cfg := range map[string]*jsonx.OrderedMap{"before": ordinaryBefore, "after": ordinaryAfter} {
+			cpus, ok := effectiveMap(t, cfg, "machine", "resources").Get("cpus")
+			if !ok || fmt.Sprint(cpus) != "2" {
+				t.Fatalf("ordinary assembled snapshot %s cpus=%#v present=%v, want delivered 2", label, cpus, ok)
+			}
 		}
 		assertNoTargetArtifacts(t, project)
 	})

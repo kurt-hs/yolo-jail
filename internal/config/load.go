@@ -550,6 +550,12 @@ func composeReadableConfigWithInputUseAudit(workspace string, strict bool, warn 
 			return snapshot, origins, nil
 		}
 	}
+	return composeReadableAuthoredConfigWithInputUseAudit(workspace, strict, warn, record, withWorkspaceFile, input, inputUsed, roleAudit)
+}
+
+// composeReadableAuthoredConfigWithInputUseAudit composes actual User and workspace readers,
+// without substituting the own-jail assembled delivery copy used by ordinary reads.
+func composeReadableAuthoredConfigWithInputUseAudit(workspace string, strict bool, warn Warn, record, withWorkspaceFile bool, input *ConfigReadInput, inputUsed *bool, roleAudit *[]editTargetReadObservation) (*jsonx.OrderedMap, *srcNode, error) {
 	if input == nil && roleAudit != nil {
 		input = &ConfigReadInput{roleAudit: roleAudit}
 	}

@@ -125,7 +125,7 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		return ResolvedEditTarget{}, fmt.Errorf("resolve config edit workspace: %w", err)
 	}
 	var roleAudit []editTargetReadObservation
-	_, node, err := composeReadableConfigWithInputUseAudit(resolvedWorkspace, true, nil, true, true, nil, nil, &roleAudit)
+	_, node, err := composeReadableAuthoredConfigWithInputUseAudit(resolvedWorkspace, true, nil, true, true, nil, nil, &roleAudit)
 	if err != nil {
 		return ResolvedEditTarget{}, fmt.Errorf("read config graph for edit target: %w", err)
 	}
