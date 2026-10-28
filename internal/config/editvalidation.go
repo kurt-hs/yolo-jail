@@ -223,6 +223,9 @@ func ValidateExplicitEdit(workspace string, target ExplicitEditTarget, input Con
 	if err := ctx.readRawScopes(); err != nil {
 		return ValidatedExplicitEditResult{}, err
 	}
+	if err := validateExplicitRawReadableScopes(ctx); err != nil {
+		return ValidatedExplicitEditResult{}, err
+	}
 	ctx.packs, err = ctx.selectedPacks()
 	if err != nil {
 		return ValidatedExplicitEditResult{}, err

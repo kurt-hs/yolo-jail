@@ -1,11 +1,87 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
+
+type explicitRawScope struct {
+	value *jsonx.OrderedMap
+	scope SchemaScope
+}
+
+func validateExplicitRawReadableScopes(ctx *editValidationContext) error {
+	for _, source := range []explicitRawScope{
+		{value: ctx.rawUser, scope: SchemaScopeUserOnly},
+		{value: ctx.rawWorkspace, scope: SchemaScopeWorkspaceOnly},
+	} {
+		if source.value == nil {
+			continue
+		}
+		for _, root := range []string{"active_provider", "allow", "requests"} {
+			value, present := source.value.Get(root)
+			if present {
+				if err := validateRawReadableScopePath(value, []string{root}, source); err != nil {
+					return err
+				}
+			}
+		}
+		providersValue, present := source.value.Get(providersKey)
+		providers, ok := asMap(providersValue)
+		if !present || !ok {
+			continue
+		}
+		for _, name := range providers.Keys() {
+			entryValue, _ := providers.Get(name)
+			entry, ok := asMap(entryValue)
+			if !ok {
+				continue
+			}
+			for _, key := range entry.Keys() {
+				// These names belong to the recognized legacy providers table. Its
+				// historical scope and facts are validated by the legacy validator.
+				if _, legacy := knownProviderKeys[key]; legacy {
+					continue
+				}
+				fieldValue, _ := entry.Get(key)
+				if err := validateRawReadableScopePath(fieldValue, []string{providersKey, name, key}, source); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateRawReadableScopePath(value any, path []string, source explicitRawScope) error {
+	if rule, ok := readableSchemaRule(path); ok {
+		if source.scope == SchemaScopeWorkspaceOnly && rule.Scope == SchemaScopeUserOnly {
+			return fmt.Errorf("config.%s: user-scope only; move this key to the user config", strings.Join(path, "."))
+		}
+		if source.scope == SchemaScopeUserOnly && rule.Scope == SchemaScopeWorkspaceOnly {
+			return fmt.Errorf("config.%s: workspace-only key; this file is user scope", strings.Join(path, "."))
+		}
+	}
+	switch current := value.(type) {
+	case *jsonx.OrderedMap:
+		for _, key := range current.Keys() {
+			child, _ := current.Get(key)
+			if err := validateRawReadableScopePath(child, append(append([]string(nil), path...), key), source); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, child := range current {
+			if err := validateRawReadableScopePath(child, append(append([]string(nil), path...), "*"), source); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 func reportUnknownKeysWithReadableFG(config *jsonx.OrderedMap, errs *[]string) {
 	allowed := make(map[string]struct{}, len(knownTopLevelConfigKeys)+3)
