@@ -1241,6 +1241,12 @@ func (o *Options) servedDaemons(specs []loopholes.JailDaemonSpec) packload.Serve
 // content must not drift — yolo-entrypoint reads these exact vars).
 func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode string) []string {
 	cfg := in.cfg
+	graphicsEnabled := "0"
+	if !in.sealed {
+		if gpu := cfgMap(cfg, "gpu"); gpu != nil && mapBoolOr(gpu, "enabled", false) {
+			graphicsEnabled = "1"
+		}
+	}
 	// None under the seal (seal.go): a server's literal env is a credential, and a build runs no
 	// agent to start one.
 	lspServers, mcpServers := agentServerTables(cfg, in.sealed, in.packs)
@@ -1340,6 +1346,9 @@ func (o *Options) commonEnvBlock(in *assembleInput, blockedConfigJSON, netMode s
 		// (config/inherit.go), so an inner jail inherits the declaration in its config
 		// and re-runs the same gate over it.
 		"-e", "YOLO_RUNTIME=podman",
+		// Graphics exposure follows the user declaration, not whether this launch's
+		// host probe found a device. Always send 0 as well, so a host env cannot enable it.
+		"-e", entrypoint.GraphicsGPUEnabledEnv+"="+graphicsEnabled,
 	)
 	// programs.autoprune (OQ-PD4's third clause, program-delivery.md §10 step four) —
 	// EMITTED ONLY WHEN ON, which is the opposite of YOLO_HOST_LOOPBACK's always-emit rule
