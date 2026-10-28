@@ -29,6 +29,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -58,6 +59,33 @@ import (
 
 // hostScratchHomeName is the scratch home's name inside a launch's directory (SP-D22).
 const hostScratchHomeName = "home"
+
+// hostSessionManifestName is the LAUNCH MANIFEST's file name, beside the scratch home and outside
+// the declared directory: the launch's own record of what it rendered and where the real config
+// directory is (design §7, SHR-D3). The reaper classifies a retained home against THIS, never
+// against today's pack selection, so a pack edited after the session cannot make that session's
+// bytes look unaccounted for. A home with no manifest (built before this existed) falls back to
+// the baselines plus the current selection.
+const hostSessionManifestName = "session-home.json"
+
+// hostSessionManifest is one launch's record. One file per launch directory, one entry per
+// session-home declaration it built.
+type hostSessionManifest struct {
+	Version int                       `json:"version"`
+	Homes   []hostSessionManifestHome `json:"homes"`
+}
+
+type hostSessionManifestHome struct {
+	Pack string `json:"pack"`
+	Env  string `json:"env"`
+	// Rel is the declared directory relative to the scratch home; Shared is the real directory
+	// it stands in for.
+	Rel    string `json:"rel"`
+	Shared string `json:"shared"`
+	// Rendered are the paths the launch wrote as real files, relative to the declared directory
+	// and slash-separated. Everything else in there is a link, a lock, or a stray.
+	Rendered []string `json:"rendered"`
+}
 
 // hostSessionHomes is one launch's session homes: the directories it made, the leases that keep
 // them from being reaped while its program runs, and the variables it exports.
@@ -370,6 +398,11 @@ func prepareHostSessionHomes(launch *hostComposition, environ []string, errw io.
 			return captureSurfaces[i].Name < captureSurfaces[j].Name
 		})
 		homes.captures = append(homes.captures, hostSessionCapture{home: scratch, rel: d.rel, surfaces: captureSurfaces})
+		if err := writeHostSessionManifest(dir, hostSessionManifestHome{
+			Pack: d.pack, Env: d.env, Rel: d.rel, Shared: d.shared, Rendered: d.rendered,
+		}); err != nil {
+			return fail(d, sessionHome, err)
+		}
 		homes.vars = append(homes.vars, d.env+"="+sessionHome)
 		fmt.Fprintf(errw, "yolo host: yolo SET %s=%s for %s, from pack %s: this launch's own config "+
 			"directory, rendered for %s, with everything else linked to %s, which it leaves untouched; "+
@@ -405,22 +438,32 @@ func settleHostSessionHomes(h *hostSessionHomes, errw io.Writer) error {
 	type kept struct{ dir, reason string }
 	var captures []hostSessionCapture
 	var keptWhole []kept
+	type straySet struct {
+		dir, rel, shared string
+		strays           []string
+	}
+	var strays []straySet
 	for _, c := range h.captures {
 		dir := filepath.Dir(c.home)
-		strays, cannot := auditHostSessionHome(dir, c.rel, c.surfaces)
-		if cannot != "" {
+		audit := auditHostSessionHome(dir, c.rel, c.surfaces)
+		if audit.keep != "" {
 			// Capture would read this session's profile values as the user's edits (SP-D18).
-			keptWhole = append(keptWhole, kept{dir, cannot})
+			keptWhole = append(keptWhole, kept{dir, audit.keep})
 			continue
 		}
 		captures = append(captures, c)
-		if len(strays) > 0 {
-			sort.Strings(strays)
-			keptWhole = append(keptWhole, kept{dir, fmt.Sprintf("it held %s, which yolo neither rendered nor linked", strings.Join(strays, ", "))})
+		if len(audit.strays) > 0 {
+			strays = append(strays, straySet{dir, c.rel, audit.shared, audit.strays})
 		}
 	}
 	if err := captureHostSessionDirs(captures, errw); err != nil {
 		return err
+	}
+	for _, set := range strays {
+		sort.Strings(set.strays)
+		if reason := repatriateHostSessionStrays(set.dir, set.rel, set.shared, set.strays, errw); reason != "" {
+			keptWhole = append(keptWhole, kept{set.dir, reason})
+		}
 	}
 	for _, k := range keptWhole {
 		if _, _, err := setAsideHostSessionHome(k.dir, errw, k.reason); err != nil {
@@ -454,7 +497,11 @@ func captureHostSessionHomePath(dir string, errw io.Writer) (keptAt, why string,
 		return setAsideHostSessionHome(dir, errw, fmt.Sprintf("no selected pack in %s declares a session home whose directory name starts %q", paths.UserConfigPath(), name))
 	}
 	var captures []hostSessionCapture
-	var strays []string
+	type straySet struct {
+		rel, shared string
+		strays      []string
+	}
+	var strays []straySet
 	unaccounted := ""
 	for _, d := range decls {
 		if d.pack != packName {
@@ -470,29 +517,30 @@ func captureHostSessionHomePath(dir string, errw io.Writer) (keptAt, why string,
 			}
 			return surfaces[i].Name < surfaces[j].Name
 		})
-		found, cannot := auditHostSessionHome(dir, d.rel, surfaces)
-		if cannot != "" && unaccounted == "" {
-			unaccounted = cannot
+		audit := auditHostSessionHome(dir, d.rel, surfaces)
+		if audit.keep != "" && unaccounted == "" {
+			unaccounted = audit.keep
 		}
-		strays = append(strays, found...)
+		if len(audit.strays) > 0 {
+			strays = append(strays, straySet{d.rel, audit.shared, audit.strays})
+		}
 		captures = append(captures, hostSessionCapture{
 			home: filepath.Join(dir, hostScratchHomeName), rel: d.rel, surfaces: surfaces,
 		})
 	}
-	if unaccounted == "" {
-		if err := captureHostSessionDirs(captures, errw); err != nil {
-			return "", "", err
-		}
-	}
 	if unaccounted != "" {
 		return setAsideHostSessionHome(dir, errw, unaccounted)
 	}
-	if len(strays) == 0 {
-		return "", "", nil
+	if err := captureHostSessionDirs(captures, errw); err != nil {
+		return "", "", err
 	}
-	sort.Strings(strays)
-	return setAsideHostSessionHome(dir, errw,
-		fmt.Sprintf("it held %s, which yolo neither rendered nor linked", strings.Join(strays, ", ")))
+	for _, set := range strays {
+		sort.Strings(set.strays)
+		if reason := repatriateHostSessionStrays(dir, set.rel, set.shared, set.strays, errw); reason != "" {
+			return setAsideHostSessionHome(dir, errw, reason)
+		}
+	}
+	return "", "", nil
 }
 
 // setAsideHostSessionHome moves an ended home out of the swept root, under
@@ -527,78 +575,192 @@ func setAsideHostSessionHome(dir string, errw io.Writer, reason string) (string,
 	}
 }
 
-// auditHostSessionHome classifies one ended home against the CURRENT selection, which is all a
-// reaper that reads today's packs can honestly do: the retained baselines name the stateful
-// surfaces, so a baseline the current packs do not declare, a stateful surface with no baseline,
-// or a root that is gone or unreadable means capture cannot be trusted and the directory is kept
-// whole. Everything else is a stray — a regular file no surface renders — and is RETURNED rather
-// than refused: the program wrote it into what it was told is its config directory, so it is
-// normal, and the design's own rule is that strays are kept and named (SP-D3).
-func auditHostSessionHome(dir, rel string, surfaces []manifest.Surface) (strays []string, cannot string) {
+// writeHostSessionManifest records one launch's render beside its scratch home.
+func writeHostSessionManifest(dir string, home hostSessionManifestHome) error {
+	data, err := json.MarshalIndent(hostSessionManifest{Version: 1, Homes: []hostSessionManifestHome{home}}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("recording what this session rendered: %w", err)
+	}
+	path := filepath.Join(dir, hostSessionManifestName)
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("writing the launch manifest %s: %w", path, err)
+	}
+	return nil
+}
+
+// readHostSessionManifest is the launch manifest of a retained home, or false when it has none
+// (a home built before the manifest existed).
+func readHostSessionManifest(dir string) (hostSessionManifest, bool) {
+	data, err := os.ReadFile(filepath.Join(dir, hostSessionManifestName))
+	if err != nil {
+		return hostSessionManifest{}, false
+	}
+	var m hostSessionManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return hostSessionManifest{}, false
+	}
+	return m, true
+}
+
+// hostSessionAudit is what a retained home looks like to the reaper: what the program left in it,
+// where its real config directory is, and — when the home cannot be deleted — why.
+type hostSessionAudit struct {
+	// strays are regular files under the declared root that the launch did not render, as
+	// slash-separated paths relative to it.
+	strays []string
+	// shared is the real config directory the home stands in for.
+	shared string
+	// keep, when non-empty, is the reason this home cannot be deleted at all.
+	keep string
+}
+
+// auditHostSessionHome classifies one retained home against the LAUNCH that built it, from its own
+// manifest (SHR-D3), falling back to the retained baselines plus the current selection for a home
+// that predates the manifest.
+//
+// Two answers, because they need opposite treatment (design §2, SHR-D10):
+//
+//   - keep is set when the launch's own record cannot be honoured: it rendered a path the current
+//     packs no longer declare (so that file's edits cannot be captured), a stateful surface has no
+//     retained baseline (capture would read this session's profile values as the user's edits,
+//     SP-D18), or the declared root is gone or unreadable. Nothing is captured and the directory
+//     is preserved whole.
+//   - strays are the entries the program created in what it was told is its config directory. They
+//     are not an error and never a refusal: they are repatriated after capture (SHR-D4).
+func auditHostSessionHome(dir, rel string, surfaces []manifest.Surface) hostSessionAudit {
 	scratch := filepath.Join(dir, hostScratchHomeName)
 	target := render.Host(scratch, nil, render.OwnershipOwn)
-	known := make(map[string]manifest.Surface, len(surfaces))
-	for _, s := range surfaces {
-		known[s.Agent+"-"+s.Name+".last_render"] = s
+	out := hostSessionAudit{shared: filepath.Join(paths.Home(), rel)}
+	manifestHomes, _ := readHostSessionManifest(dir)
+	var declared hostSessionManifestHome
+	for _, h := range manifestHomes.Homes {
+		if h.Rel == rel {
+			declared = h
+			break
+		}
 	}
-	if sidecars, err := os.ReadDir(target.SidecarDir()); err == nil {
-		for _, entry := range sidecars {
-			if !strings.HasSuffix(entry.Name(), ".last_render") {
-				continue
-			}
-			if _, ok := known[entry.Name()]; !ok {
-				return nil, "the retained render has baseline " + entry.Name() + ", which the current selected packs no longer declare"
-			}
-			info, err := entry.Info()
-			if err != nil || !info.Mode().IsRegular() {
-				return nil, "the retained baseline " + entry.Name() + " is not a regular file"
+	if declared.Shared != "" {
+		out.shared = declared.Shared
+	}
+
+	// What the launch wrote, as paths relative to the declared root.
+	rendered := make(map[string]bool, len(declared.Rendered))
+	if declared.Rel != "" {
+		for _, p := range declared.Rendered {
+			rendered[filepath.FromSlash(p)] = true
+		}
+	} else {
+		for _, s := range surfaces {
+			if at, ok := strings.CutPrefix(target.SurfacePath(s), filepath.Join(scratch, rel)+string(filepath.Separator)); ok {
+				rendered[filepath.FromSlash(at)] = true
 			}
 		}
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Sprintf("its retained capture baselines cannot be read: %v", err)
 	}
+
+	// Capture needs a CURRENT surface to interpret each file the launch rendered. One the packs no
+	// longer declare cannot be captured, so its bytes stay where they are.
+	known := map[string]bool{}
+	for _, s := range surfaces {
+		if at, ok := strings.CutPrefix(target.SurfacePath(s), filepath.Join(scratch, rel)+string(filepath.Separator)); ok {
+			known[filepath.FromSlash(at)] = true
+		}
+	}
+	for relPath := range rendered {
+		if !known[relPath] {
+			out.keep = fmt.Sprintf("it rendered %s, which the current selected packs no longer declare, so its edits cannot be captured", filepath.ToSlash(relPath))
+			return out
+		}
+	}
+
+	if declared.Rel == "" {
+		// No launch record for this directory: the baselines are the only inventory, and one naming a surface the
+		// current packs no longer declare means the home predates a pack change.
+		baselines := map[string]bool{}
+		for _, s := range surfaces {
+			baselines[s.Agent+"-"+s.Name+".last_render"] = true
+		}
+		if sidecars, err := os.ReadDir(target.SidecarDir()); err == nil {
+			for _, entry := range sidecars {
+				if !strings.HasSuffix(entry.Name(), ".last_render") {
+					continue
+				}
+				if !baselines[entry.Name()] {
+					out.keep = "the retained render has baseline " + entry.Name() + ", which the current selected packs no longer declare"
+					return out
+				}
+				if info, err := entry.Info(); err != nil || !info.Mode().IsRegular() {
+					out.keep = "the retained baseline " + entry.Name() + " is not a regular file"
+					return out
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			out.keep = fmt.Sprintf("its retained capture baselines cannot be read: %v", err)
+			return out
+		}
+	}
+
 	for _, s := range surfaces {
 		if s.Mode != "" && s.Mode != manifest.ModeStateful {
 			continue
 		}
-		file := target.SurfacePath(s)
-		info, err := os.Lstat(file)
+		info, err := os.Lstat(target.SurfacePath(s))
 		if os.IsNotExist(err) {
 			continue // deleting the whole surface file is the capture engine's existing no-op.
 		}
 		if err != nil {
-			return nil, fmt.Sprintf("cannot inspect rendered surface %s/%s: %v", s.Agent, s.Name, err)
+			out.keep = fmt.Sprintf("cannot inspect rendered surface %s/%s: %v", s.Agent, s.Name, err)
+			return out
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
 		baseline, err := os.Lstat(target.LastRenderPath(s.Agent, s.Name))
 		if err != nil || !baseline.Mode().IsRegular() {
-			return nil, fmt.Sprintf("rendered stateful surface %s/%s has no retained baseline, so its edits cannot be told from this session's profile values", s.Agent, s.Name)
+			out.keep = fmt.Sprintf("rendered stateful surface %s/%s has no retained baseline, so its edits cannot be told from this session's profile values", s.Agent, s.Name)
+			return out
 		}
 	}
+
 	root := filepath.Join(scratch, rel)
 	rootInfo, err := os.Lstat(root)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Sprintf("the retained session-home root %s is missing", rel)
+			out.keep = fmt.Sprintf("the retained session-home root %s is missing", rel)
+		} else {
+			out.keep = fmt.Sprintf("cannot inspect retained session-home root %s: %v", rel, err)
 		}
-		return nil, fmt.Sprintf("cannot inspect retained session-home root %s: %v", rel, err)
+		return out
 	}
 	if !rootInfo.IsDir() {
-		return nil, fmt.Sprintf("the retained session-home root %s is not a real directory", rel)
+		out.keep = fmt.Sprintf("the retained session-home root %s is not a real directory", rel)
+		return out
 	}
-	expected := make(map[string]bool, len(surfaces))
-	for _, s := range surfaces {
-		if at, ok := strings.CutPrefix(target.SurfacePath(s), root+string(filepath.Separator)); ok {
-			expected[filepath.FromSlash(at)] = true
+	// Every directory on a rendered file's path is one yolo created (a MERGED directory); any
+	// other directory is the program's own, and is reported whole rather than file by file, since
+	// that is the entry a user or a repatriation acts on.
+	merged := map[string]bool{}
+	for relPath := range rendered {
+		parts := strings.Split(filepath.ToSlash(relPath), "/")
+		for i := 1; i < len(parts); i++ {
+			merged[strings.Join(parts[:i], "/")] = true
 		}
 	}
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+		relPath, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		if entry.IsDir() {
+			if relPath != "." && !merged[filepath.ToSlash(relPath)] {
+				out.strays = append(out.strays, filepath.ToSlash(relPath))
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
 		info, err := entry.Info()
@@ -613,18 +775,60 @@ func auditHostSessionHome(dir, rel string, surfaces []manifest.Surface) (strays 
 		if packdecl.SessionHomeNameProblem(entry.Name()) != "" {
 			return nil
 		}
-		relPath, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if !expected[relPath] {
-			strays = append(strays, filepath.ToSlash(relPath))
+		if !rendered[relPath] {
+			out.strays = append(out.strays, filepath.ToSlash(relPath))
 		}
 		return nil
 	}); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Sprintf("cannot read the retained session home: %v", err)
+		out.keep = fmt.Sprintf("cannot read the retained session home: %v", err)
+		return out
 	}
-	return strays, ""
+	return out
+}
+
+// repatriateHostSessionStrays moves what the program created in a session home into the real
+// config directory (design §3, SHR-D4). From the program's side the session home WAS that
+// directory, so that is where its own state belongs; the next launch links it and the name can
+// never become a stray again.
+//
+// It adopts a TOP-LEVEL DIRECTORY only. A file at the top level may be a mangled copy of a
+// rendered one (`settings.json.old`), and anything nested is inside a tree yolo rendered into, so
+// both keep the home aside instead (SHR-Q4: keep-aside is the safe default until measured). A name
+// the real directory already holds is a collision — two divergent copies — and is never merged.
+//
+// It returns a non-empty keep reason when the home must be preserved instead.
+func repatriateHostSessionStrays(dir, rel, shared string, strays []string, errw io.Writer) (keep string) {
+	root := filepath.Join(dir, hostScratchHomeName, rel)
+	var adopted []string
+	for _, stray := range strays {
+		name := filepath.FromSlash(stray)
+		if strings.Contains(stray, "/") {
+			return fmt.Sprintf("it held %s, inside a directory yolo rendered into, so the two trees cannot be reconciled automatically", stray)
+		}
+		info, err := os.Lstat(filepath.Join(root, name))
+		if err != nil {
+			return fmt.Sprintf("cannot inspect the entry %s the program created: %v", stray, err)
+		}
+		if !info.IsDir() {
+			return fmt.Sprintf("it held the file %s, which yolo neither rendered nor linked; a file may be a renamed copy of a rendered one, so it was kept with the home", stray)
+		}
+		to := filepath.Join(shared, name)
+		if _, err := os.Lstat(to); err == nil {
+			return fmt.Sprintf("the program created %s in its config directory, and your real %s already holds that name, so the two copies were kept apart", stray, shared)
+		} else if !os.IsNotExist(err) {
+			return fmt.Sprintf("cannot inspect %s: %v", to, err)
+		}
+		if err := os.Rename(filepath.Join(root, name), to); err != nil {
+			return fmt.Sprintf("cannot move %s into %s: %v", stray, shared, err)
+		}
+		adopted = append(adopted, stray+" → "+to)
+	}
+	if len(adopted) > 0 && errw != nil {
+		fmt.Fprintf(errw, "yolo host: an ended session home held %d entr%s yolo neither rendered nor linked, and moved %s into your config directory: %s.\n"+
+			"  From the program's side the session home was that directory, so that is where its state belongs; later launches link it, so that name cannot become a stray again.\n",
+			len(adopted), plural(len(adopted), "y", "ies"), plural(len(adopted), "it", "them"), strings.Join(adopted, ", "))
+	}
+	return ""
 }
 
 // captureHostSessionDirs captures each home under the ordinary host apply lock. The render reads

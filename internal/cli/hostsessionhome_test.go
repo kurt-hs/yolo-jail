@@ -739,8 +739,10 @@ func TestHostPiEndedSessionHomeIsCapturedBeforeReap(t *testing.T) {
 // THE LOCKOUT, as a regression: an ended home holding a directory the program created in its own
 // config dir (an extension's state, here `pi-web-access/last-seen-version.json`) used to refuse the
 // next launch, forever, over a file no surface ever claimed. It is a stray (design §3): its
-// surfaces are captured, the directory is kept whole and named, and the sweep succeeds.
-func TestHostPiEndedSessionHomeWithAStrayIsKeptWholeNotRefused(t *testing.T) {
+// surfaces are captured, the stray is repatriated into the real config directory, the home is
+// removed, and the sweep succeeds — and the NEXT launch links that name instead of creating it
+// again, which is what makes the recurrence impossible (SHR-D4).
+func TestHostPiEndedSessionHomeRepatriatesAStrayExtensionDir(t *testing.T) {
 	cfg := ownedSessionHomeConfig(piSubagentsCodexCfg)
 	home := hostGateHome(t, cfg, nil)
 	piSettingsFixture(t, home, `{"defaultProvider":"openrouter","theme":"system"}`)
@@ -753,6 +755,16 @@ func TestHostPiEndedSessionHomeWithAStrayIsKeptWholeNotRefused(t *testing.T) {
 	_, sessionHome, ok := strings.Cut(homes.vars[0], "=")
 	if !ok {
 		t.Fatalf("malformed session-home variable %q", homes.vars[0])
+	}
+	// the launch recorded what it rendered, so a later pack edit cannot make these bytes look lost
+	manifest, err := os.ReadFile(filepath.Join(dir, hostSessionManifestName))
+	if err != nil {
+		t.Fatalf("the launch wrote no manifest: %v", err)
+	}
+	for _, want := range []string{`"rel": ".pi/agent"`, `"settings.json"`, `"shared"`} {
+		if !strings.Contains(string(manifest), want) {
+			t.Errorf("the manifest omits %q:\n%s", want, manifest)
+		}
 	}
 	// the user's edit, which capture must still fold into the overlay
 	settings := filepath.Join(sessionHome, "settings.json")
@@ -790,16 +802,16 @@ func TestHostPiEndedSessionHomeWithAStrayIsKeptWholeNotRefused(t *testing.T) {
 	r := prune.ReapHostSessionHomes(filepath.Dir(dir), true, time.Now(), func(path string) (string, string, error) {
 		return captureHostSessionHomePath(path, &errw)
 	})
-	if len(r.Removed) != 0 || len(r.Aside) != 1 {
-		t.Fatalf("a stray must keep the home whole, not refuse it: removed=%+v aside=%+v errw=%s",
+	if len(r.Removed) != 1 || r.Removed[0].Err != nil || len(r.Aside) != 0 {
+		t.Fatalf("a repatriated stray must not refuse or keep the home: removed=%+v aside=%+v errw=%s",
 			r.Removed, r.Aside, errw.String())
 	}
-	kept := r.Aside[0].Aside
-	if kept == "" || existsHostPath(dir) {
-		t.Fatalf("the home was not moved out of the swept root: kept=%q source exists=%v", kept, existsHostPath(dir))
+	if existsHostPath(dir) {
+		t.Fatal("the captured home survived the sweep")
 	}
-	if got, err := os.ReadFile(filepath.Join(kept, "home", ".pi", "agent", "pi-web-access", "last-seen-version.json")); err != nil || string(got) != stamp {
-		t.Fatalf("the kept home lost the stray's bytes: %q (%v)", got, err)
+	real := filepath.Join(home, ".pi", "agent", "pi-web-access", "last-seen-version.json")
+	if got, err := os.ReadFile(real); err != nil || string(got) != stamp {
+		t.Fatalf("the stray was not repatriated into the real config directory: %q (%v)", got, err)
 	}
 	overlay, err := os.ReadFile(render.Host(home, nil, render.OwnershipOwn).OverlayPath("pi", "settings"))
 	if err != nil {
@@ -812,18 +824,41 @@ func TestHostPiEndedSessionHomeWithAStrayIsKeptWholeNotRefused(t *testing.T) {
 	if captured["customUserSetting"] != "saved-by-user" {
 		t.Errorf("capture lost the user edit: %s", overlay)
 	}
-	for _, want := range []string{"kept an ended session home whole", "pi-web-access/last-seen-version.json", kept} {
+	for _, want := range []string{"moved it into your config directory", "pi-web-access → " + filepath.Dir(real)} {
 		if !strings.Contains(errw.String(), want) {
 			t.Errorf("the launch line must name %q:\n%s", want, errw.String())
 		}
 	}
+	// The recurrence is gone: the next launch links the repatriated name instead of creating it.
+	next, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
+	if err != nil || next == nil || len(next.vars) != 1 {
+		t.Fatalf("second launch: homes=%+v err=%v", next, err)
+	}
+	defer next.remove()
+	_, nextHome, _ := strings.Cut(next.vars[0], "=")
+	link := filepath.Join(nextHome, "pi-web-access")
+	info, err := os.Lstat(link)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the next launch did not link the repatriated directory: %v (%v)", info, err)
+	}
 }
 
-// SP-D34 on the new classification: a lock the program takes in its config dir is its own, never
-// a stray, so a home holding one is still captured and removed normally.
-func TestHostPiEndedSessionHomeWithAProgramLockIsStillReaped(t *testing.T) {
-	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
+// A name the real config directory already holds is two divergent copies: never merged, never
+// overwritten. The home is kept whole and the user decides (SHR-D4). The fixture lays the real
+// directory BEFORE the launch, so the session home links it, and then replaces that link with a
+// real directory the way a program that renames over its target does.
+func TestHostPiEndedSessionHomeKeepsAStrayWhoseNameAlreadyExists(t *testing.T) {
+	cfg := ownedSessionHomeConfig(piSubagentsCodexCfg)
+	home := hostGateHome(t, cfg, nil)
 	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
+	realDir := filepath.Join(home, ".pi", "agent", "pi-web-access")
+	if err := os.MkdirAll(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const mine = "mine"
+	if err := os.WriteFile(filepath.Join(realDir, "last-seen-version.json"), []byte(mine), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	launch := composeHostLaunch("pi", "codex", nil, nil)
 	homes, _, err := prepareHostSessionHomes(launch, os.Environ(), io.Discard)
 	if err != nil || homes == nil || len(homes.dirs) != 1 {
@@ -831,7 +866,18 @@ func TestHostPiEndedSessionHomeWithAProgramLockIsStillReaped(t *testing.T) {
 	}
 	dir := homes.dirs[0]
 	_, sessionHome, _ := strings.Cut(homes.vars[0], "=")
-	if err := os.WriteFile(filepath.Join(sessionHome, "settings.json.lock"), []byte("held"), 0o600); err != nil {
+	linked := filepath.Join(sessionHome, "pi-web-access")
+	if info, err := os.Lstat(linked); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the fixture expected a link to the real directory: %v (%v)", info, err)
+	}
+	// The program replaces the link by renaming over it.
+	if err := os.Remove(linked); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(linked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(linked, "last-seen-version.json"), []byte(`{"version":"0.45.0"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	homes.preserveForRetry()
@@ -839,17 +885,56 @@ func TestHostPiEndedSessionHomeWithAProgramLockIsStillReaped(t *testing.T) {
 	if err := os.Chtimes(dir, old, old); err != nil {
 		t.Fatal(err)
 	}
+	var errw bytes.Buffer
 	r := prune.ReapHostSessionHomes(filepath.Dir(dir), true, time.Now(), func(path string) (string, string, error) {
-		return captureHostSessionHomePath(path, io.Discard)
+		return captureHostSessionHomePath(path, &errw)
 	})
-	if len(r.Removed) != 1 || r.Removed[0].Err != nil || len(r.Aside) != 0 || existsHostPath(dir) {
-		t.Fatalf("a *.lock made the home a stray: %+v aside=%+v exists=%v", r.Removed, r.Aside, existsHostPath(dir))
+	if len(r.Aside) != 1 || len(r.Removed) != 0 {
+		t.Fatalf("a colliding stray must keep the home whole: removed=%+v aside=%+v errw=%s", r.Removed, r.Aside, errw.String())
+	}
+	if got, err := os.ReadFile(filepath.Join(realDir, "last-seen-version.json")); err != nil || string(got) != mine {
+		t.Fatalf("repatriation overwrote the user's own directory: %q (%v)", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(r.Aside[0].Aside, "home", ".pi", "agent", "pi-web-access", "last-seen-version.json")); err != nil || !strings.Contains(string(got), "0.45.0") {
+		t.Fatalf("the kept home lost the session's copy: %q (%v)", got, err)
+	}
+	if !strings.Contains(errw.String(), "already holds that name") {
+		t.Errorf("the line must say why it was kept:\n%s", errw.String())
+	}
+}
+
+// A stray INSIDE a directory yolo rendered into is not adopted: the two trees cannot be
+// reconciled automatically, so the home is kept whole (SHR-Q4's safe default).
+func TestRepatriationKeepsANestedStray(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, hostScratchHomeName, ".pi", "agent")
+	if err := os.MkdirAll(filepath.Join(root, "extensions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stray := filepath.Join(root, "extensions", "brand-new.js")
+	if err := os.WriteFile(stray, []byte("// x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var errw bytes.Buffer
+	reason := repatriateHostSessionStrays(dir, ".pi/agent", filepath.Join(dir, "real"), []string{"extensions/brand-new.js"}, &errw)
+	if reason == "" {
+		t.Fatal("a nested stray must keep the home whole")
+	}
+	if !strings.Contains(reason, "extensions/brand-new.js") {
+		t.Errorf("the reason must name the entry: %s", reason)
+	}
+	if _, err := os.Stat(stray); err != nil {
+		t.Fatalf("the nested stray was moved: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "real", "extensions")); !os.IsNotExist(err) {
+		t.Errorf("the nested stray reached the real directory: %v", err)
 	}
 }
 
 // The resident path is the only path that could actually LOSE a byte: it used to delete the home,
-// strays included, with no check and no line. One rule on every path (design §5, SHR-D5).
-func TestHostPiResidentCloseKeepsAStrayHomeWhole(t *testing.T) {
+// strays included, with no check and no line. One rule on every path (design §5, SHR-D5) means it
+// repatriates them instead.
+func TestHostPiResidentCloseRepatriatesAStray(t *testing.T) {
 	home := hostGateHome(t, ownedSessionHomeConfig(piSubagentsCodexCfg), nil)
 	piSettingsFixture(t, home, `{"defaultProvider":"openrouter"}`)
 	launch := composeHostLaunch("pi", "codex", nil, nil)
@@ -865,19 +950,23 @@ func TestHostPiResidentCloseKeepsAStrayHomeWhole(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(sessionHome, "pi-web-access"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sessionHome, "pi-web-access", "last-seen-version.json"), []byte(`{"version":"0.45.0"}`), 0o600); err != nil {
+	const stamp = `{"version":"0.45.0"}`
+	if err := os.WriteFile(filepath.Join(sessionHome, "pi-web-access", "last-seen-version.json"), []byte(stamp), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var errw bytes.Buffer
 	if err := finishHostSessionHomes(homes, &errw); err != nil {
 		t.Fatalf("a stray must not fail the close: %v", err)
 	}
-	kept := filepath.Join(paths.GlobalStorage(), prune.HostSessionHomesKeptLeaf, filepath.Base(dir))
-	if _, err := os.Stat(filepath.Join(kept, "home", ".pi", "agent", "pi-web-access", "last-seen-version.json")); err != nil {
-		t.Fatalf("the close deleted a home holding a stray: %v", err)
+	if existsHostPath(dir) {
+		t.Error("the close left its own home behind")
 	}
-	if !strings.Contains(errw.String(), "kept an ended session home whole") {
-		t.Errorf("the close must say what it kept:\n%s", errw.String())
+	real := filepath.Join(home, ".pi", "agent", "pi-web-access", "last-seen-version.json")
+	if got, err := os.ReadFile(real); err != nil || string(got) != stamp {
+		t.Fatalf("the close did not repatriate the stray: %q (%v)", got, err)
+	}
+	if !strings.Contains(errw.String(), "moved it into your config directory") {
+		t.Errorf("the close must say what it moved:\n%s", errw.String())
 	}
 }
 
