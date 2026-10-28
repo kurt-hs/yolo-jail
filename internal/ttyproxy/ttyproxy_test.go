@@ -2272,7 +2272,10 @@ func queuedTerminationResumeTraceError(trace, childReceipt, stages []byte) error
 	}
 	if len(armCancel) == 1 {
 		armPublished, valid := published(armCancel[0])
-		if !valid || !armPublished || armCancel[0].index < checks[0].index && !checkPublished {
+		// The returned observation completes before the controlling atomic load; the
+		// controlling-snapshot row is written after that load. Only a signal row before
+		// the completed return row proves publication preceded the snapshot.
+		if !valid || !armPublished || armCancel[0].index < returned[0].index && !checkPublished {
 			return fmt.Errorf("signal-arm publication contradicts the controlling snapshot: trace=%q", trace)
 		}
 	}
@@ -2378,7 +2381,16 @@ func TestQueuedTerminationResumeTracePredicate(t *testing.T) {
 		{name: "false-snapshot-without-write", trace: trace(entryFalse, returnFalse, checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
 		{name: "false-snapshot-without-write-outcome", trace: trace(entryFalse, returnFalse, checkFalse, writeFalse), child: []byte("SDWR"), stages: []byte("?ZR"), wantError: true},
 		{name: "false-snapshot-without-child-receipt", trace: trace(entryFalse, returnFalse, checkFalse, writeFalse, enqueueDirect), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
-		{name: "signal-arm-publication-before-false-snapshot", trace: trace(entryFalse, returnFalse, "event=resume-signal-cancellation-published cancel-or-exit=true pending=0 attempted=0 written=0 queued=0", checkFalse, writeFalse, enqueueDirect), child: []byte("SDWR"), stages: []byte("?ZRA?"), wantError: true},
+		// Snapshot booleans are captured before their observer rows are appended. A signal
+		// marker logged between the returned row and false snapshot row may follow the
+		// controlling load, so this is a valid false-snapshot forwarding trace.
+		{
+			name:   "arm-marker-before-captured-false-snapshot-log",
+			trace:  trace(entryFalse, returnFalse, "event=resume-signal-cancellation-published cancel-or-exit=true pending=0 attempted=0 written=0 queued=0", checkFalse, writeFalse, enqueueDirect),
+			child:  []byte("SDWR"),
+			stages: []byte("?ZRA?"),
+		},
+		{name: "arm-marker-before-return-record-contradicts-false-snapshot", trace: trace(entryFalse, "event=resume-signal-cancellation-published cancel-or-exit=true pending=0 attempted=0 written=0 queued=0", returnFalse, checkFalse, writeFalse, enqueueDirect), child: []byte("SDWR"), stages: []byte("?ZRA?"), wantError: true},
 		{name: "malformed-cancellation-value", trace: trace(entryFalse, "event=resume-callback-return cancel-or-exit=unknown pending=1 attempted=0 written=0 queued=0", checkFalse), child: []byte("SDW"), stages: []byte("?ZR"), wantError: true},
 	}
 	for _, test := range tests {
