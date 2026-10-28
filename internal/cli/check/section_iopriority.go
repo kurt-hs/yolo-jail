@@ -24,11 +24,7 @@ import (
 // never changes the exit code, since Check() returns 1 on failures alone. A host fact a
 // podman jail cannot see is hostFact's [SKIP] (OQ-IO5, answered from reporter.go's rulings).
 func (o *Options) sectionIOPriority(r *reporter, merged *jsonx.OrderedMap, runtimeSel string) {
-	var res *jsonx.OrderedMap
-	if merged != nil {
-		v, _ := merged.Get("resources")
-		res, _ = v.(*jsonx.OrderedMap)
-	}
+	res := readableCheckResources(merged)
 	p := ioprio.FromResources(res)
 	if !p.Declared() {
 		return

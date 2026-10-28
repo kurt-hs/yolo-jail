@@ -101,5 +101,5 @@ func (o *Options) attachIOPriority(rt string, cfg *jsonx.OrderedMap, envLines []
 	if rt == "podman" && !o.IsMacOS { // parity: Honored — only podman on Linux passes the value, so only its frozen env holds one
 		return o.launchedIOPriority(rt, envLines)
 	}
-	return ioprio.FromResources(cfgMap(cfg, "resources"))
+	return ioprio.FromResources(readableResources(cfg))
 }

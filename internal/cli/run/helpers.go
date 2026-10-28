@@ -230,7 +230,7 @@ func (o *Options) gpuArgs(cfg *jsonx.OrderedMap, rt string, gpuEnabled bool, gpu
 		args = append(args, "--ulimit", "memlock="+strconv.FormatInt(hard, 10)+":"+strconv.FormatInt(hard, 10))
 	}
 
-	gpuSec := cfgMap(cfg, "gpu")
+	gpuSec := readableGPU(cfg).options
 	if gpuVendor == "nvidia" {
 		gpuDevices := mapStrOr(gpuSec, "devices", "all")
 		gpuCaps := mapStrOr(gpuSec, "capabilities", "compute,utility")

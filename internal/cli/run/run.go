@@ -2827,14 +2827,10 @@ func (o *Options) emitTimingReportLocked(rc int, cname, rt string) {
 // resolveNetMode and o.inContainer() rather than fresh copies of either, for the same
 // reason the assembler uses them.
 func (o *Options) hostForwardPorts(cfg *jsonx.OrderedMap, rt string) []any {
-	netSec := cfgMap(cfg, "network")
-	if netSec == nil {
-		return nil
-	}
 	if appliedNetMode(rt, o.resolveNetMode(cfg), o.inContainer()) != "bridge" {
 		return nil
 	}
-	return asAnyList(mapGet(netSec, "forward_host_ports"))
+	return readableForwardPorts(cfg)
 }
 
 // insertHostServiceEnv splices each host service's `-e VAR=<jailPath>` pair into
