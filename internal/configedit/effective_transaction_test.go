@@ -224,29 +224,45 @@ func TestApplyEffectiveRequiresMatchingTypedScopeAndWorkspace(t *testing.T) {
 		}
 	})
 	t.Run("workspace mismatch", func(t *testing.T) {
-		home, workspace := t.TempDir(), t.TempDir()
-		t.Setenv("HOME", home)
-		t.Setenv("YOLO_VERSION", "")
-		path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
-		writeEditFixture(t, path, "packs = []\n")
-		wrongWorkspace := t.TempDir()
-		options := ApplyOptions{Target: mustEditTarget(t, wrongWorkspace, path, configdoc.TOML, config.ExplicitEditProject)}
-		writes := spySystemWrites(t)
-		_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Append, Path: []configdoc.Step{{Key: "packs"}}, Value: "claude"}, options)
-		if err == nil || !strings.Contains(err.Error(), "does not match config graph workspace") || *writes != 0 {
-			t.Fatalf("wrong-workspace target result err=%v writes=%d", err, *writes)
+		for _, mode := range []string{"edit", "dry-run", "noop"} {
+			t.Run(mode, func(t *testing.T) {
+				home, workspace := t.TempDir(), t.TempDir()
+				t.Setenv("HOME", home)
+				t.Setenv("YOLO_VERSION", "")
+				path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+				before := "[machine.resources]\ncpus = 2\n"
+				if mode == "noop" {
+					before = "[machine.resources]\ncpus = 4\n"
+				}
+				writeEditFixture(t, path, before)
+				wrongWorkspace := t.TempDir()
+				options := ApplyOptions{DryRun: mode == "dry-run", Target: mustEditTarget(t, wrongWorkspace, path, configdoc.TOML, config.ExplicitEditProject)}
+				writes := spySystemWrites(t)
+				_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, options)
+				if err == nil || !strings.Contains(err.Error(), "does not match config graph workspace") || *writes != 0 {
+					t.Fatalf("wrong-workspace target result err=%v writes=%d", err, *writes)
+				}
+			})
 		}
 	})
 	t.Run("missing binding", func(t *testing.T) {
-		home, workspace := t.TempDir(), t.TempDir()
-		t.Setenv("HOME", home)
-		t.Setenv("YOLO_VERSION", "")
-		path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
-		writeEditFixture(t, path, "packs = []\n")
-		writes := spySystemWrites(t)
-		_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Append, Path: []configdoc.Step{{Key: "packs"}}, Value: "claude"}, ApplyOptions{})
-		if err == nil || !strings.Contains(err.Error(), "explicit edit target is incomplete") || *writes != 0 {
-			t.Fatalf("missing target binding result err=%v writes=%d", err, *writes)
+		for _, mode := range []string{"edit", "dry-run", "noop"} {
+			t.Run(mode, func(t *testing.T) {
+				home, workspace := t.TempDir(), t.TempDir()
+				t.Setenv("HOME", home)
+				t.Setenv("YOLO_VERSION", "")
+				path := filepath.Join(workspace, config.WorkspaceTOMLConfigName)
+				before := "[machine.resources]\ncpus = 2\n"
+				if mode == "noop" {
+					before = "[machine.resources]\ncpus = 4\n"
+				}
+				writeEditFixture(t, path, before)
+				writes := spySystemWrites(t)
+				_, err := ApplyEffective(workspace, path, configdoc.TOML, Mutation{Action: Set, Path: []configdoc.Step{{Key: "machine"}, {Key: "resources"}, {Key: "cpus"}}, Value: 4}, ApplyOptions{DryRun: mode == "dry-run"})
+				if err == nil || !strings.Contains(err.Error(), "explicit edit target is incomplete") || *writes != 0 {
+					t.Fatalf("missing target binding result err=%v writes=%d", err, *writes)
+				}
+			})
 		}
 	})
 }
