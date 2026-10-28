@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
@@ -103,6 +104,108 @@ func TestAssemblyAccountsForSupportedLegacyJSONDestinations(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestAssemblyRefusesNestedJSONDestinationThatStrictUserReaderCannotMerge(t *testing.T) {
+	for _, rt := range []string{"podman", "container"} {
+		t.Run(rt, func(t *testing.T) {
+			_, wsState := inheritHome(t, `{"packages":["strace"]}`)
+			configDir := filepath.Join(wsState, ".config")
+			if rt == "podman" {
+				for _, bind := range podmanEarlyHomeBinds() {
+					if bind.HomeRel == ".config" {
+						configDir = filepath.Join(wsState, bind.Subtree)
+					}
+				}
+			}
+			nestedDir := filepath.Join(configDir, "yolo-jail")
+			if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			owner := filepath.Join(nestedDir, "inherited-launch.json")
+			ownerBytes := []byte(`{"packages":["legacy-owner"]}` + "\n")
+			if err := os.WriteFile(owner, ownerBytes, 0o640); err != nil {
+				t.Fatal(err)
+			}
+
+			o := goldenOptions(t.TempDir(), os.Getenv("HOME"))
+			effective, _ := o.effectiveConfigForInherit()
+			nestedValues, _, err := config.FilterInheritErr(effective, config.InheritNested)
+			if err != nil || nestedValues.Len() == 0 {
+				t.Fatalf("fixture does not provide nonempty nested inheritance: values=%#v err=%v", nestedValues, err)
+			}
+			in := relocationInput(t, rt, wsState, nil)
+			argv := o.assembleRunCmd(in)
+			var generatedBody string
+			var nestedMounts []string
+			for _, spec := range mountSpecs(argv) {
+				if strings.Contains(spec, ":/home/agent/.config/yolo-jail/inherited-launch.") {
+					nestedMounts = append(nestedMounts, spec)
+					if strings.HasSuffix(spec, "/inherited-launch.jsonc:ro") {
+						body, err := os.ReadFile(strings.TrimSuffix(spec, ":/home/agent/.config/yolo-jail/inherited-launch.jsonc:ro"))
+						if err != nil {
+							t.Fatal(err)
+						}
+						generatedBody = string(body)
+					}
+				}
+			}
+
+			jailHome := t.TempDir()
+			jailDir := filepath.Join(jailHome, ".config", "yolo-jail")
+			if err := os.MkdirAll(jailDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(jailDir, paths.UserConfigLegacyJSONCName), []byte("{}\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(jailDir, "inherited-launch.json"), ownerBytes, 0o640); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("HOME", jailHome)
+			t.Setenv("YOLO_VERSION", "9.9.9-test")
+			t.Setenv(config.UserLayerEnv, "")
+			if rt == "podman" && in.assemblyErr == nil {
+				if generatedBody == "" || len(nestedMounts) == 0 {
+					t.Fatalf("Podman assembly did not produce the nested JSONC sibling: mounts=%v argv=%v", nestedMounts, argv)
+				}
+				if err := os.WriteFile(filepath.Join(jailDir, "inherited-launch.jsonc"), []byte(generatedBody), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := config.LoadReadableUserScopeConfig(true, func(string) {}); err == nil || !strings.Contains(err.Error(), "inherited-launch") {
+					t.Fatalf("the actual assembled User graph unexpectedly passed its strict reader: %v", err)
+				}
+				t.Fatalf("assembly reported success although the public strict User reader rejects its generated nested JSONC beside %s", owner)
+			}
+			if rt == "podman" {
+				if in.assemblyErr == nil || !strings.Contains(in.assemblyErr.Error(), owner) {
+					t.Fatalf("assembly did not refuse the owner JSON before staging: %v", in.assemblyErr)
+				}
+				if len(nestedMounts) != 0 {
+					t.Fatalf("refusal still emitted nested inherited mounts: %v", nestedMounts)
+				}
+				assertNoInheritedScopeStages(t, wsState)
+				for _, name := range []string{"inherited-launch.jsonc", "inherited-launch.toml"} {
+					if _, err := os.Lstat(filepath.Join(nestedDir, name)); !os.IsNotExist(err) {
+						t.Fatalf("refusal left generated nested destination %s: %v", name, err)
+					}
+				}
+			} else if in.assemblyErr != nil || len(nestedMounts) != 0 {
+				t.Fatalf("non-nesting backend unexpectedly delivered or refused a nested file: err=%v mounts=%v", in.assemblyErr, nestedMounts)
+			}
+
+			gotOwner, err := os.ReadFile(owner)
+			if err != nil || string(gotOwner) != string(ownerBytes) {
+				t.Fatalf("owner JSON bytes changed: got=%q err=%v", gotOwner, err)
+			}
+			if info, err := os.Stat(owner); err != nil || info.Mode().Perm() != 0o640 {
+				t.Fatalf("owner JSON mode changed: info=%v err=%v", info, err)
+			}
+			if _, err := config.LoadReadableUserScopeConfig(true, func(string) {}); err != nil {
+				t.Fatalf("the preserved single JSON owner file must remain readable by the public User reader: %v", err)
+			}
+		})
 	}
 }
 

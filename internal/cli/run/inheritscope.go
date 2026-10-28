@@ -229,6 +229,9 @@ func selectInheritedJSONCRoute(wsState string, mapDestination func(string) (stri
 			return false, fmt.Errorf("cannot establish inherited %s user-config destination %s: %w. Restore this jail-home path as a real directory tree, preserving its data, then relaunch", scope, path, err)
 		}
 		if exists {
+			if scope == config.InheritNested && filepath.Ext(path) == ".json" {
+				return false, fmt.Errorf("refusing inherited nested scope: existing legacy JSON file %s would remain beside generated JSONC; preserve its bytes and mode, review its contents, then move it aside only after review or arrange for one unambiguous inherited file before relaunch", path)
+			}
 			existingLegacy = append(existingLegacy, path)
 		}
 	}
