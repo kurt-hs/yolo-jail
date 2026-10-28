@@ -21,6 +21,7 @@ func ApplyTargeted(workspace string, target config.ResolvedEditTarget, mutation 
 	}
 	options.Target = target.Target
 	options.ExpectedBytes = target.ExpectedBytes()
+	mutation.Path = target.AuthoredPath()
 	plan, err := ApplyEffective(workspace, target.PhysicalPath, target.Format, mutation, options)
 	if err != nil {
 		return TargetedResult{}, err

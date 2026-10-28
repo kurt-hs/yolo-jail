@@ -54,11 +54,18 @@ type ResolvedEditTarget struct {
 	Target       ExplicitEditTarget
 	expected     []byte
 	intent       EditMutationIntent
+	authored     []configdoc.Step
 }
 
 // ExpectedBytes returns a detached copy of the selected preimage. A resolved empty file keeps
 // its non-nil empty sentinel; nil means no expectation was bound.
 func (r ResolvedEditTarget) ExpectedBytes() []byte { return cloneEditTargetBytes(r.expected) }
+
+// AuthoredPath returns a detached path bound from the consumed source selected for this target.
+// It never changes the original structured mutation intent checked by MatchesMutation.
+func (r ResolvedEditTarget) AuthoredPath() []configdoc.Step {
+	return append([]configdoc.Step(nil), r.authored...)
+}
 
 func cloneEditTargetBytes(source []byte) []byte {
 	if source == nil {
@@ -101,7 +108,7 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 			parts[i] = "*"
 			continue
 		}
-		if step.Key == "" || step.Key == "*" || step.Index != 0 {
+		if step.Key == "" || step.Index != 0 {
 			return ResolvedEditTarget{}, fmt.Errorf("config edit target contains a malformed object member")
 		}
 		parts[i] = step.Key
@@ -159,6 +166,7 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 	}
 
 	var selected editTargetFile
+	authored := append([]configdoc.Step(nil), key...)
 	if choice.Kind == EditTargetFile {
 		physical, resolveErr := filepath.EvalSymlinks(choice.File)
 		if resolveErr != nil {
@@ -197,7 +205,9 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 			return ResolvedEditTarget{}, fmt.Errorf("config.%s is workspace-only; move requests to the workspace config", strings.Join(parts, "."))
 		}
 	} else if role == ExplicitEditUser {
-		selected, err = userSectionTarget(sourcesOf(node), key, files)
+		var mapped bool
+		bindAuthoredPath := choice.Kind == EditTargetAutomatic && editTargetPathHasIndex(key)
+		selected, authored, mapped, err = userSectionTarget(sourcesOf(node), key, files, bindAuthoredPath)
 		if err != nil {
 			return ResolvedEditTarget{}, err
 		}
@@ -210,6 +220,10 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 			if err != nil {
 				return ResolvedEditTarget{}, err
 			}
+			authored = append([]configdoc.Step(nil), key...)
+		}
+		if choice.Kind == EditTargetAutomatic && !mapped && editTargetPathHasIndex(key) {
+			return ResolvedEditTarget{}, fmt.Errorf("User config key %s has no consumed authored source for its indexed target", strings.Join(parts, "."))
 		}
 	} else {
 		name := WorkspaceConfigName
@@ -240,7 +254,7 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 	if err != nil {
 		return ResolvedEditTarget{}, err
 	}
-	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target, expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent)}, nil
+	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target, expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent), authored: append([]configdoc.Step(nil), authored...)}, nil
 }
 
 func readableEditTargetRule(path []string) (SchemaKey, bool) {
@@ -384,10 +398,14 @@ func editTargetFiles(sources *Sources, audit []editTargetReadObservation) (map[s
 	return files, nil
 }
 
-func userSectionTarget(sources *Sources, key []configdoc.Step, files map[string]editTargetFile) (editTargetFile, error) {
+func userSectionTarget(sources *Sources, key []configdoc.Step, files map[string]editTargetFile, bindAuthoredPath bool) (editTargetFile, []configdoc.Step, bool, error) {
 	node := sources.node()
-	var ancestors []*srcNode
-	for _, step := range key {
+	type ancestor struct {
+		node       *srcNode
+		pathLength int
+	}
+	var ancestors []ancestor
+	for i, step := range key {
 		if step.IsIndex {
 			node = node.elem(step.Index)
 		} else {
@@ -396,31 +414,128 @@ func userSectionTarget(sources *Sources, key []configdoc.Step, files map[string]
 		if node == nil {
 			break
 		}
-		ancestors = append(ancestors, node)
+		ancestors = append(ancestors, ancestor{node: node, pathLength: i + 1})
+	}
+	lastIndex := -1
+	for i, step := range key {
+		if step.IsIndex {
+			lastIndex = i
+		}
 	}
 	for n := len(ancestors) - 1; n >= 0; n-- {
-		selected := ancestors[n]
+		selected := ancestors[n].node
 		for i := len(selected.writers) - 1; i >= 0; i-- {
-			f := selected.writers[i].file
-			if f == nil || f.role != editRoleUser || selected.writers[i].host != "" {
+			origin := selected.writers[i]
+			f := origin.file
+			if f == nil || f.role != editRoleUser || origin.host != "" {
 				continue
 			}
 			physical, err := filepath.EvalSymlinks(f.path)
 			if err != nil {
-				return editTargetFile{}, fmt.Errorf("resolve User section source %s: %w", f.path, err)
+				return editTargetFile{}, nil, false, fmt.Errorf("resolve User section source %s: %w", f.path, err)
 			}
 			physical, err = filepath.Abs(physical)
 			if err != nil {
-				return editTargetFile{}, err
+				return editTargetFile{}, nil, false, err
 			}
-			if entry, ok := files[filepath.Clean(physical)]; ok {
-				entry.logical = f.path
-				return entry, nil
+			physical = filepath.Clean(physical)
+			entry, ok := files[physical]
+			if !ok {
+				return editTargetFile{}, nil, false, fmt.Errorf("User section source %s was not consumed by the scoped graph", f.path)
 			}
-			return editTargetFile{}, fmt.Errorf("User section source %s was not consumed by the scoped graph", f.path)
+			entry.logical = f.path
+			if !bindAuthoredPath {
+				return entry, append([]configdoc.Step(nil), key...), false, nil
+			}
+			if lastIndex >= 0 {
+				if ancestors[n].pathLength <= lastIndex {
+					return editTargetFile{}, nil, false, fmt.Errorf("User indexed target has no consumed authored element at %s", strings.Join(stepPathNames(key), "."))
+				}
+				if err := requireUniqueIndexedOrigin(selected); err != nil {
+					return editTargetFile{}, nil, false, err
+				}
+				if countEditTargetIndices(origin.documentSteps) < countEditTargetIndices(key[:ancestors[n].pathLength]) {
+					return editTargetFile{}, nil, false, fmt.Errorf("User indexed target has no authored index mapping at %s", strings.Join(stepPathNames(key), "."))
+				}
+			}
+			authored := append([]configdoc.Step(nil), origin.documentSteps...)
+			for _, step := range key[ancestors[n].pathLength:] {
+				if step.IsIndex {
+					return editTargetFile{}, nil, false, fmt.Errorf("User target has no consumed authored source for an indexed suffix")
+				}
+				authored = append(authored, step)
+			}
+			return entry, authored, true, nil
 		}
 	}
-	return editTargetFile{}, nil
+	return editTargetFile{}, nil, false, nil
+}
+
+func editTargetPathHasIndex(path []configdoc.Step) bool {
+	return countEditTargetIndices(path) != 0
+}
+
+func countEditTargetIndices(path []configdoc.Step) int {
+	count := 0
+	for _, step := range path {
+		if step.IsIndex {
+			count++
+		}
+	}
+	return count
+}
+
+func stepPathNames(path []configdoc.Step) []string {
+	parts := make([]string, len(path))
+	for i, step := range path {
+		if step.IsIndex {
+			parts[i] = fmt.Sprintf("[%d]", step.Index)
+		} else {
+			parts[i] = step.Key
+		}
+	}
+	return parts
+}
+
+func requireUniqueIndexedOrigin(node *srcNode) error {
+	var physicalPath string
+	var documentPath []configdoc.Step
+	for _, origin := range node.writers {
+		f := origin.file
+		if f == nil || f.role != editRoleUser || origin.host != "" {
+			continue
+		}
+		physical, err := filepath.EvalSymlinks(f.path)
+		if err != nil {
+			return fmt.Errorf("resolve User indexed source %s: %w", f.path, err)
+		}
+		physical, err = filepath.Abs(physical)
+		if err != nil {
+			return err
+		}
+		physical = filepath.Clean(physical)
+		if physicalPath == "" {
+			physicalPath = physical
+			documentPath = append([]configdoc.Step(nil), origin.documentSteps...)
+			continue
+		}
+		if physical != physicalPath || !sameEditTargetPath(origin.documentSteps, documentPath) {
+			return fmt.Errorf("User indexed element has ambiguous authored sources; refusing to choose one")
+		}
+	}
+	return nil
+}
+
+func sameEditTargetPath(a, b []configdoc.Step) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func scopeForReadRole(role editReadRole) (ExplicitEditScope, bool) {
