@@ -177,9 +177,9 @@ func TestCustomizedContainerRuntimeCallsAuthorizedFallbackWithoutCaptureDecision
 		name, config string
 		store        bool
 	}{
-		{"packages", `{"packages":["hello"]}`, false},
+		{"packages", `{"install":{"nix":["hello"]}}`, false},
 		{"configured-loader", `{"env_sources":[{"NODE_OPTIONS":"--max-old-space-size=1024"}]}`, false},
-		{"configured-node", `{"mise_tools":{"node":"24"}}`, false},
+		{"configured-node", `{"install":{"mise":{"node":"24"}}}`, false},
 		{"store-loader", `{}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

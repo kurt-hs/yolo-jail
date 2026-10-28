@@ -82,6 +82,11 @@ func TestHostApplyNamesEveryConfigKeyTheHostLeavesUndone(t *testing.T) {
 		`"required_capabilities": ["code_editing"]`, `"perf_logging": true`,
 		`"security": {"blocked_tools": [{"name": "curl", "message": "no"}]}`)
 	cfg := `{"packs": ["pi"], "host_management": "own", ` + strings.Join(body, ", ") + `}`
+	for i, key := range keys {
+		if canonical, ok := map[string]string{"packages": "install.nix", "mise_tools": "install.mise", "gpu": "machine.gpu", "resources": "machine.resources"}[key]; ok {
+			keys[i] = canonical
+		}
+	}
 
 	for _, verbose := range []bool{false, true} {
 		for _, packs := range []string{`["pi"]`, `[]`} {
@@ -141,8 +146,8 @@ func TestHostApplyDoesNotNameAKeyThatDeclaresNothing(t *testing.T) {
 		t.Fatalf("dry run rc=%d\n%s", rc, report)
 	}
 	line := configKeyNotchLine(report)
-	if countWord(line, "mise_tools") != 1 {
-		t.Fatalf("mise_tools declares a tool and is not named once: %q\n%s", line, report)
+	if countWord(line, "install.mise") != 1 {
+		t.Fatalf("install.mise declares a tool and is not named once: %q\n%s", line, report)
 	}
 	for _, k := range []string{"mounts", "kvm", "resources"} {
 		if countWord(line, k) != 0 {

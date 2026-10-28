@@ -170,17 +170,21 @@ func (o *Options) launchImageIdentity(repoRoot string) func() (string, bool) {
 // installations stay on their authorized bounded legacy route instead of inventing
 // equality or widening the credential-free seal.
 func OrdinaryRuntimeUnsupported(cfg *jsonx.OrderedMap, storePackages bool) string {
-	packages, ok := cfg.Get("packages")
+	install := cfgMap(cfg, "install")
+	if install == nil {
+		install = jsonx.NewOrderedMap()
+	}
+	packages, ok := install.Get("nix")
 	if ok && packages != nil {
 		b, _ := jsonx.DumpsCompact(packages)
 		if b != "[]" {
-			return "packages: changes the runtime variant beyond the base image identity"
+			return "install.nix: changes the runtime variant beyond the base image identity"
 		}
 	}
 	if storePackages {
 		return "store-delivered packages/loader libraries are not identified by the base image marker"
 	}
-	if tools := cfgMap(cfg, "mise_tools"); tools != nil {
+	if tools := cfgMap(install, "mise"); tools != nil {
 		if _, ok := tools.Get("node"); ok {
 			return "the configured Node toolchain is not the sealed producer's observed toolchain"
 		}

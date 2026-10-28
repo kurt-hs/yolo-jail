@@ -126,7 +126,7 @@ func TestHostApplyNamesSourceBearingHostFilesAndMiseToolsInert(t *testing.T) {
 		if rc != 0 {
 			t.Fatalf("assert=%v rc=%d\n%s", write, rc, report)
 		}
-		for _, want := range []string{"host_files with a source", "mise_tools"} {
+		for _, want := range []string{"host_files with a source", "install.mise"} {
 			if !strings.Contains(report, want) {
 				t.Errorf("assert=%v: %q is not named inert at the host:\n%s", write, want, report)
 			}

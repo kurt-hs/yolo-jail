@@ -23,9 +23,9 @@ func TestSelectedNPMRunPublicCustomizedRuntimeRetainsBoundedLegacyConsumer(t *te
 		name, config string
 		store        bool
 	}{
-		{"image-packages", `{"packages":["hello"]}`, false},
+		{"image-packages", `{"install":{"nix":["hello"]}}`, false},
 		{"store-loader", `{}`, true},
-		{"configured-node", `{"mise_tools":{"node":"24"}}`, false},
+		{"configured-node", `{"install":{"mise":{"node":"24"}}}`, false},
 		{"configured-loader", `{"env_sources":[{"NODE_OPTIONS":"--max-old-space-size=1024"}]}`, false},
 		{"configured-ca-file", `{"env_sources":[{"SSL_CERT_FILE":"/fixture/trust.pem"}]}`, false},
 		{"configured-proxy", `{"env_sources":[{"HTTPS_PROXY":"http://proxy.invalid:3128"}]}`, false},

@@ -166,6 +166,18 @@ func inertConfigKeys(cfg *jsonx.OrderedMap, fields render.FieldSet) []string {
 			out = append(out, k)
 		}
 	}
+	for _, entry := range []struct{ parent, child, legacy string }{
+		{"install", "nix", "packages"}, {"install", "mise", "mise_tools"},
+		{"machine", "gpu", "gpu"}, {"machine", "resources", "resources"},
+	} {
+		parent, _ := cfg.Get(entry.parent)
+		if table, ok := parent.(*jsonx.OrderedMap); ok {
+			value, _ := table.Get(entry.child)
+			if d, _ := fields.ConfigKey(entry.legacy); d.LeftUndone() && declaresSomething(value) {
+				out = append(out, entry.parent+"."+entry.child)
+			}
+		}
+	}
 	sort.Strings(out)
 	return out
 }
