@@ -3,7 +3,7 @@ title: "Computed briefings: current-tree implementation handoff"
 date: 2026-10-28
 status: in-review
 stage: DESIGN
-next: "Close the applied-facts and producer carrier contracts, then verify the caller-red controls before marking this plan DECIDED"
+next: "Resolve the two recorded access-projection gaps and complete operation controls; proposed engineering APIs below are build work, not admission gates"
 depends-on:
   - computed-briefings.md
   - pack-manifests.md
@@ -18,8 +18,11 @@ vantage:
 
 **Status:** 2026-10-28. Written against `e02bb526bc5b4d59fa5ba7293163cdee44f3ff78`.
 The planner read the accepted design in full and replaced the seed with this source-grounded
-handoff. No software was changed, and no proposed red test was installed or executed. The
-remaining contracts below prevent an executable handoff; this is not a ready-to-build claim.
+handoff. The planner observed the three printed baseline red controls using uniquely named
+temporary test files in the isolated worktree, then removed only those files; no behavioral
+test is committed and no production source was changed. The remaining operation-level bodies
+are not complete or verified. Two observable access-projection gaps and unfinished operation
+controls prevent an executable handoff; this is not a ready-to-build claim.
 
 **Design:** [computed briefings](computed-briefings.md). **Precedence:** the design wins on
 behavior; the tree wins on cosmetic facts; the plan is advice and is the first thing to be wrong.
@@ -158,9 +161,34 @@ broker enforces. Reading already-approved core facts cannot widen authority.
 ## Proposed contracts and unresolved seams
 
 These are implementation-level prerequisites, not new owner product questions. Only their
-handoff owner may settle/export the exact signatures. No API below exists on the stamped base.
+handoff owner may settle/export the exact signatures. No API below exists on the stamped base; their absence is the feature gap, not an
+admission gate requiring another implementation to happen first.
 
 ### C1 — approved remote and grant carrier
+
+**Proposed engineering contract, owned by C:** retain the raw association as a list until the
+singleton projection is ruled; do not make a display string the wire value. New types in the
+core carrier seam (names proposed, no existing API claimed):
+
+```go
+type ApprovedRemote struct { Name, Identity string }
+type ApprovedAccessScope struct {
+    Source, Label, Form, LaunchID string
+    Repositories []string
+    Remotes []ApprovedRemote
+    Grants []brokerscope.Grant
+    AllowedKinds []string
+}
+```
+
+C extends `recordApprovedScopes` to carry this typed projection from `ScopeSource.Read.Remotes`;
+the keeper plan carries the same value by source, alongside legacy approved maps during the
+transition. Add optional `approved_remotes` to the version-1 scope file without changing broker
+authority fields. New readers accept version 1 with or without it; older JSON readers ignore
+this additive member. Validate its identities against that file's approved scope, not current
+workspace config. Missing metadata reads as an empty remote mapping, never a new host read;
+retain all concrete repositories/grants that can be normalized from the old file. The singleton
+projection alone waits on [the recorded mismatch](#OQ-CBP1).
 
 **New, proposed:** an error-bearing core carrier of source → approved scope form, concrete
 repository entries, raw remote-name/identity associations, grants, effective allowed kinds,
@@ -183,20 +211,70 @@ read semantics in the broker; do not turn legacy widening into new producer-gran
 
 ### C2 — actual broker start result across the keeper
 
+**Proposed engineering contract, owned by D after C's carrier:** final container composition
+runs inside `keeper.run`, after `startPlannedLoopholes` and its refusal check, before
+`startJailMain`. Current `keeper.go:421–470` has this exact pre-container interval and already
+holds the transferred launch lock; `unwindUnstarted(1)` unwinds owned handles without starting
+a container. No new fact-return frame is necessary: the keeper publishes the final batch
+itself and relays diagnostics through existing stderr frames.
+
+Parent preparation remains responsible for skills/mount-source directory preparation and
+secret-free applied body inputs, but must not evaluate/publish computed briefing text there.
+Add a typed briefing request to `keeperPlan` (deduplicated destinations, applied briefing
+input/extra/provenance, approved access carrier); the staged pack tree is already transferred.
+Keeper loads producers only from that tree, constructs disposition from actual handles and
+failed placement/scope/start results, evaluates once, publishes before container creation, and
+consumes handoff only after publication. Keep `keeperPlan.Build` matching and existing plan
+check; new optional request absent means the legacy static path, not invented producer facts.
+New feature requests are sent only to the same-build keeper. Sealed builds still receive no
+user prose or access facts. macos-user uses its existing per-session refresh interval, not the
+shared keeper's machine-wide `holdKey` composition.
+
+```go
+type BriefingBrokerDisposition struct { Running bool; WhyNot string }
+// New projection, not the configured candidate set.
+func briefingBrokerDispositions(scopes []ApprovedAccessScope, handles []loopholeDaemon) map[string]BriefingBrokerDisposition
+```
+
 **New, proposed:** a per-source disposition containing `running` and `why_not`, produced from
 placement, scope-file success, and successful service start, with no credential details.
 The macos-user arm can project actual returned handles. The fresh container parent has no
 such result at its current refresh point; the keeper starts services later.
 
-The launch/keeper owner must supply one explicit pre-agent-delivery handoff for this result,
-with the refresh/publication boundary and failure teardown ordering. Do not equate the
+The pre-agent-delivery handoff is the proposed keeper-owned publication interval above;
+implement it together with the parent preparation split and teardown caller tests. Do not equate the
 keeper plan, the enabled set, or written scope files with a running broker. This contract is
 required even if no configured grant changed. Apple Container and host are false dispositions
 with their design reasons; this feature must not change their service eligibility.
 
 ### C3 — bounded snapshot and diagnostic reads
 
-**New, proposed:** `brokerscope` / `brokerstore` export a context-bounded access snapshot that
+**Proposed engineering contract, owned by C:** export one narrow snapshot in `brokerstore`,
+with a specific `brokerscope` lock-held scope reader, rather than compose under a generic
+callback. This dependency is `brokerstore` → `brokerscope`, not a cycle: the scope package
+must not import the store. These are proposed new signatures:
+
+```go
+// brokerstore
+type AccessSnapshot struct {
+    Files []brokerscope.LiveFile
+    Working []WorkingEntry
+    ScopeReadError error
+}
+func ReadAccessSnapshot(ctx context.Context, source, container, workspace string) (AccessSnapshot, error)
+// brokerscope: caller must hold the source transaction; no nested acquisition.
+func ReadLiveScopesLocked(source, container, workspace string) ([]LiveFile, error)
+```
+
+The outer error is working-store/transaction/discovery failure; `ScopeReadError` describes a
+matching live scope that could not be decoded/read. One bounded source transaction reads both
+parts; filter working entries by `Live`, workspace, approved identity, `WorkingBranch` and
+`refs/heads/`, then sort names with declared grants taking `why=declared` precedence for an
+overlap. Existing `Store.Working` stays unchanged; no scope/store lock is recursively acquired.
+Snapshot values are copied before releasing the lock. Attach's scope-read exception projects
+false with the accepted reason; other read errors wait on [the explicit failure ruling](#OQ-CBP2).
+
+**New, proposed:** `brokerstore.ReadAccessSnapshot` is the context-bounded access snapshot that
 reads matching live scopes, read diagnostics, and live working entries under one source
 transaction. Do not export generic arbitrary locked callbacks to Lua or compose Lua while a
 source lock is held. Internally expose lock-held readers only to the core snapshot owner,
@@ -215,6 +293,30 @@ projection outside this specified attach case needs an explicit implementation h
 do not silently treat unknown working-set data as complete.
 
 ### C4 — error-bearing batch composition
+
+**Proposed engineering contract, owned by B/D:**
+
+```go
+// luahook: separate from DeriveCtx.
+type BriefingCtx struct { Notch, Agent string; Access map[string]BriefingAccess }
+type BriefingSession interface {
+    Registrations() []string
+    Eval(name string, ctx BriefingCtx) (string, error)
+    Close()
+}
+// packload: bindings retain source key, governor, audience and virtual Rel.
+func NewBriefingSession(p *Pack) (luahook.BriefingSession, error)
+// entrypoint: the same prepared destinations feed reporting and publication.
+func ComposeHostBriefingBatch(packs []*packload.Pack, home string, req HostBriefingRequest) ([]HostBriefingDestination, error)
+```
+
+`BriefingAccess` and its repository/branch records mirror exactly the accepted access-table
+fields, not generic config maps. B owns the context builder and source guard; D owns the
+batch/render caller migration. Keep the old static-only convenience wrapper only for callers
+that provably cannot receive producers; every production producer-capable caller uses the
+error-bearing batch. Migrate `RenderHostBriefings` and CLI reporting together so they share one
+result. A declaration without a script warns only on `os.ErrNotExist`; other script read errors
+are attributed composition errors, not disguised missing registrations.
 
 **New, proposed:** `luahook.BriefingCtx`, a briefing registration listing, and an evaluator
 session with `Eval(name, ctx) (string, error)` / `Close()`. Context has only `notch`, `agent`,
@@ -239,6 +341,24 @@ when that real file's content is empty. Producer lines refuse `from`/`into`; `ag
 selector. A virtual source must preserve its own governor and declaration location.
 
 ### C5 — known-source universe distinct from selection
+
+**Proposed engineering contract, owned by C:** a read-only declaration catalog distinct from
+activation, with source name, owning pack reference/name and broker declaration. Populate it
+from shipped manifest declarations and already-resolved offline configured/process pack
+declarations, honoring local filters and the existing trust/resolver rules. Read no unapproved
+arbitrary host path and perform no fetch. Loading a declaration does not reserve a pack name,
+stage a runtime pack, grant host execution, or select it. Duplicate source owners are a catalog
+error with both declaration locations; the selected universe is still computed separately.
+
+```go
+type BriefingAccessSource struct { Source, Pack string; Brokered loopholedecl.Brokered }
+func BriefingAccessSources(packs []*packload.Pack) (map[string]BriefingAccessSource, error)
+```
+
+The implementation receives the approved offline declaration set explicitly; it must not use
+`Resolver.Known` as an all-source catalog. Known but unselected entries become optional false
+facts or the required-source refusal; unknown names get the supersession-style suggestion.
+This catalog is new feature engineering, not a prior registry that must land before C starts.
 
 The design's unknown-versus-unselected distinction cannot be answered by the current selected
 set alone. `resolveConfiguredPacks` in the run pack reader computes the configured selection
@@ -273,14 +393,62 @@ The design requires no **producer-failed** batch to publish any computed text. T
 `runApplySteps` currently folds partial step outcomes, and replacing several scopes is not
 one transaction. E needs an error-bearing refresh outcome separate from `outcomeNextRestart`:
 a producer failure is fatal to the invoking operation, not a restart-pending success. The
-live-apply/command owner must pin its exit/report contract and its attach-time propagation
-before E starts. The current `applyAtAttach` path is void; a failure cannot disappear there.
-This is an API gap, not permission to invent a new approval policy.
+**Proposed engineering contract, owned by E:** retain `[]applyChange` and folded state, but
+return a separate `BriefingErr` from the sequence. CLI reports actual mutations, then the
+producer diagnostic, and returns failure (1), never restart-pending (3). Change `applyAtAttach`
+to return the briefing error; `attachExisting` aborts before session exec only on that error,
+preserving existing decline/pending behavior. The newer accepted producer-failure ruling
+supersedes the old void-path assumption that nothing here can fail attach. No approval or
+completed mutation is rolled back. Proposed signatures:
+
+```go
+type applyExecution struct { Changes []applyChange; BriefingErr error }
+func (o *Options) runApplySteps(run *applyRun, plan []applyChange) applyExecution
+func (o *Options) applyAtAttach(cname, rt string, cfg *jsonx.OrderedMap, envLines []string) error
+```
+
+Use running-tree and authenticated mechanics readers for the refresh request. Applied scope
+metadata/snapshot decides access even when another apply step failed; E implements these new
+APIs rather than waiting for another lane to implement its own component.
+
+## Pending observable access-projection decisions
+
+These two gaps were found in current-source planning. They do not reopen the three settled
+computed-briefing rulings; the accepted design is outside this writer's fence. Root must route
+the chosen behavior into that authority before dispatching affected implementation.
+
+1. 💬 **OQ-CBP1: Which repository identity does one remote name expose when it has several URLs?**
+
+   <!-- vantage: question id=OQ-CBP1 -->
+
+   `ReadAllRemotes` retains multiple `url` and `pushurl` values for one name, while the
+   accepted `ctx.access.git.remotes[name]` is one identity. Raw approved associations will be
+   retained; display labels will not be parsed. Safe alternatives are omitting an ambiguous
+   name, or exposing one identity only when all approved URLs normalize to the same identity.
+   Selecting a distinct fetch or push URL silently would prescribe a new finishing behavior.
+
+   **Answer:** Pending; no singleton projection is claimed settled here.
+
+2. 💬 **OQ-CBP2: What happens when access snapshot/store reads fail outside the attach scope-file exception?**
+
+   <!-- vantage: question id=OQ-CBP2 leaning="Fail the invoking composition on snapshot/store-read errors outside the accepted attach scope-file exception; do not publish incomplete facts." -->
+
+   Attach has an explicit unreadable-scope false-source exception. The design does not specify
+   other scope-discovery or working-store failures; hiding them as empty branches could deliver
+   incomplete finishing instructions.
+
+   _Leaning:_ Fail the invoking composition on snapshot/store-read errors outside the accepted
+   attach scope-file exception; do not publish incomplete facts.
+
+   **Answer:** Pending; this proposal is not an owner ruling.
 
 ## Permanent caller-red controls
 
-These are proposed test sources to install in the named implementation package, not tests
-added by this docs-only change. The first two controls use current caller/fixture APIs;
+These are proposed permanent test sources for the implementation package; this docs-only lane
+observed the three printed bodies as temporary baseline probes, then removed its temporary
+files. Declaration probe failed on unknown `derive`; jail caller probe failed on absent
+`COMPUTED-jail-pi`; host render probe failed on missing producer error. No production mutation
+control or green implementation is claimed. The first two controls use current caller/fixture APIs;
 fixture JSON unmarshaling intentionally bypasses declaration validation so the caller test
 cannot pass merely because the decoder refuses the new field. Unit A separately tests the
 decoder. Imports are `encoding/json`, `os`, `path/filepath`, `strings`, `testing`, and the
@@ -400,7 +568,8 @@ conditions. Commit messages are proposals to use exactly once the respective uni
 - **Settled, do not re-open:** producer declaration and registration pair both ways; missing
   registration warns, undeclared registration refuses; producer output takes the virtual file's
   slot; `agents` narrows and absence broadcasts.
-- **Preconditions:** C1's manifest portion has a source-locatable landed handoff; no concurrent
+- **Preconditions:** reconcile the actual landed grouped-TOML contribution representation; A itself
+  introduces `derive`/`reads` and needs no C1 carrier prerequisite. No concurrent
   manifest writer; `git status --short` clean; baseline declaration control is red as above.
 - **Tests first:** declaration control, physical/virtual collision including empty physical
   file, interleaved physical/virtual ordering, original-governor preservation across clones,
@@ -416,7 +585,7 @@ conditions. Commit messages are proposals to use exactly once the respective uni
 
 - **Settled, do not re-open:** only `notch`, destination `agent`, declared `access`; one session
   per pack/composition; five-second budget; strict string result ≤64 KiB; failure fatal.
-- **Preconditions:** A's field/key handoff; C4 exported signature fixed; dedicated session tests
+- **Preconditions:** A's field/key handoff; C4 proposed signature reconciled with the landed tree; dedicated session tests
   and actual lint caller tests present and demonstrably red. Do not add provider/config inputs.
 - **Tests first:** duplicate registration; independent derive/env/briefing namespaces; missing
   and surplus pairing; listing does not call a function that raises; timeout at registration
@@ -437,7 +606,7 @@ conditions. Commit messages are proposals to use exactly once the respective uni
 
 - **Settled, do not re-open:** applied, never configured; sorted concrete identities;
   wildcard expansion; broker start truth; source-not-selected optional entry is present/false.
-- **Preconditions:** C1–C3 and C5 exported handoffs and backward-read cases fixed. No change in the
+- **Preconditions:** C1–C3 and C5 proposed contracts and backward-read cases fixed. No change in the
   broker's authority or login/host-source boundary. Current APIs cannot supply these facts
   completely; do not implement this unit by guessing from the seed.
 - **Tests first:** gate approval declined/request edited after approval absent; raw remotes
@@ -549,8 +718,10 @@ conditions. Commit messages are proposals to use exactly once the respective uni
 
 ## Don't
 
-- Do not build from this document until C1–C5, live-apply failure propagation, and verified
-  caller-red evidence are attached and the plan is advanced to the repository's ready stage.
+- Do not build affected access projections until the two pending observable decisions are
+  recorded in the behavioral authority and the operation controls are complete/verified.
+  C1–C5 and live-apply signatures above are proposed engineering work, not preexisting APIs
+  that must land before the responsible units may begin.
 - Do not read full config into producers, add typed settings preemptively, publish pack facts,
   probe logins, widen credentials/grants, or treat generated prose as broker authority.
 - Do not activate the old seed, implement in a private user's pack, or reinterpret an unknown
@@ -567,9 +738,12 @@ The current source confirms the feature gap: `Contribution` has no briefing `der
 refresh/render never evaluate one. The old seed's static map did not cover the keeper boundary,
 applied remote-name carrier, live kind eligibility, or incremental-publication failure.
 
-Before implementation dispatch, attach source/API evidence for C1–C5 and the live-apply outcome,
-complete the exact operation-level red test bodies against those exported APIs, and execute the
-red controls. All owner product rulings stay closed. Independent docs-only review may be
+Before affected implementation dispatch, route the two observable gaps into the behavioral
+authority, complete exact operation-level red test bodies against the proposed contracts, and
+verify those controls. The three baseline red bodies printed here were observed on the
+unchanged production tree; operation abort/lock/keeper/live-apply controls remain unverified.
+The proposed C1–C5/live-apply APIs are implementation deliverables, not
+admission gates. All three original owner product rulings stay closed. Independent docs-only review may be
 explicitly skipped for this planning change; neither that skip nor targeted render/link checks
 is equivalent to a HIGH code review or the separately requested whole-document review.
 
