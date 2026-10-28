@@ -466,8 +466,13 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 			srcs[s.key(r.repo)] = r.keys()
 			approved[i] = ScopeRepo{Repo: r.repo, Sources: r.labels()}
 		}
-		out.next[s.Source] = names
-		out.nextSources[s.Source] = srcs
+		if len(cur) > 0 || len(s.Grants) > 0 {
+			out.next[s.Source] = names
+			out.nextSources[s.Source] = srcs
+		} else {
+			delete(out.next, s.Source)
+			delete(out.nextSources, s.Source)
+		}
 		out.approved[s.Label] = approved
 		// The grants under their own key, written only when there are some, so a source with
 		// none leaves the record's bytes as they were before grants existed.
