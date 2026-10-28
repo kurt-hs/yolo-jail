@@ -22,6 +22,21 @@ func editReadableMap(t *testing.T, text string) *jsonx.OrderedMap {
 	return mapping
 }
 
+func TestReadableBrokerDeclarationClonesSettingsDefaultLists(t *testing.T) {
+	settings := []loopholedecl.Setting{{Key: "visible", Type: loopholedecl.SettingTypeStringList, Scope: loopholedecl.SettingScopeWorkspace, Default: []string{"alpha", "beta"}}}
+	declaration := readableBrokerDeclaration("fixture", "fixture-broker", loopholedecl.Brokered{}, settings)
+
+	settings[0].Default.([]string)[0] = "source-mutated"
+	got := declaration.Settings[0].Default.([]string)
+	if !reflect.DeepEqual(got, []string{"alpha", "beta"}) {
+		t.Fatalf("declaration setting default aliases source: got %#v", got)
+	}
+	got[1] = "declaration-mutated"
+	if !reflect.DeepEqual(settings[0].Default, []string{"source-mutated", "beta"}) {
+		t.Fatalf("source setting default aliases declaration: got %#v", settings[0].Default)
+	}
+}
+
 func TestReadableBrokerDeclarationClonesExplicitPendingMetadata(t *testing.T) {
 	original := loopholedecl.Brokered{
 		Source: "github", RemoteHost: "github.com",

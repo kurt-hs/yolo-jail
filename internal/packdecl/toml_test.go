@@ -1,9 +1,70 @@
 package packdecl
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/json5"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 )
+
+func TestDecodeProviderTablePreservesMixedLegacyModelIDsWithoutMutatingInput(t *testing.T) {
+	decoded, err := json5.Decode([]byte(`{"providers":{"p":{"models":{"base":"base-wire","row":{"context":200}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := decoded.(*jsonx.OrderedMap)
+	providerTable, err := DecodeProviderTable(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providerTable.Declarations) != 1 {
+		t.Fatalf("declarations = %#v", providerTable.Declarations)
+	}
+	provider := providerTable.Declarations[0]
+	if provider.Models["base"] != "base-wire" || provider.ModelRows["row"].Context != 200 ||
+		!reflect.DeepEqual(provider.ModelOrder, []string{"row"}) {
+		t.Fatalf("mixed legacy and canonical model facts = %#v", provider)
+	}
+	providersRaw, _ := root.Get("providers")
+	providers := providersRaw.(*jsonx.OrderedMap)
+	entryRaw, _ := providers.Get("p")
+	entry := entryRaw.(*jsonx.OrderedMap)
+	modelsRaw, _ := entry.Get("models")
+	models := modelsRaw.(*jsonx.OrderedMap)
+	if base, _ := models.Get("base"); base != "base-wire" {
+		t.Fatalf("decoder mutated caller-owned model table: %#v", models)
+	}
+}
+
+func TestDecodeProviderTableKeepsCanonicalOrderAndTombstones(t *testing.T) {
+	decoded, err := json5.Decode([]byte(`{"providers":{"disabled":"off","local":{"via":"wire-bridge","every_model":{"api":"openai-responses","context":100},"models":{"zulu":{"context":200},"alpha":{"twin_of":"zulu"}},"variants":{"zeta":{"via":"wire-bridge"},"retired":"off","alpha":{"model":"variant"}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, ok := decoded.(*jsonx.OrderedMap)
+	if !ok {
+		t.Fatalf("root = %T", decoded)
+	}
+	got, err := DecodeProviderTable(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Disabled, []string{"disabled"}) ||
+		!reflect.DeepEqual(got.DisabledVariants["local"], []string{"retired"}) {
+		t.Fatalf("provider tombstones = %#v", got)
+	}
+	if len(got.Declarations) != 1 {
+		t.Fatalf("declarations = %#v", got.Declarations)
+	}
+	provider := got.Declarations[0]
+	if provider.Name != "local" || provider.Via != "wire-bridge" || provider.EveryModel == nil ||
+		!reflect.DeepEqual(provider.ModelOrder, []string{"zulu", "alpha"}) ||
+		!reflect.DeepEqual(provider.VariantOrder, []string{"zeta", "alpha"}) {
+		t.Fatalf("decoded provider = %#v", provider)
+	}
+}
 
 const groupedManifestFixture = `name = "sample"
 description = "grouped manifest"

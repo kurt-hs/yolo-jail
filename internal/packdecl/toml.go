@@ -891,6 +891,182 @@ func firstUnknownKey(fields map[string]any, allowed ...string) string {
 	return ""
 }
 
+// ProviderTable is the typed canonical projection of config's providers table. Disabled names
+// retain table tombstones so a caller can remove a lower pack declaration without treating the
+// tombstone as a selectable provider.
+type ProviderTable struct {
+	Declarations     []ProviderContribution
+	Disabled         []string
+	DisabledVariants map[string][]string
+}
+
+// DecodeProviderTable decodes canonical authored provider tables through the same pure provider
+// field decoder used by grouped pack TOML. root is the complete ordered config map so provider,
+// model, and variant declaration order survives lowering.
+func DecodeProviderTable(root *jsonx.OrderedMap) (ProviderTable, error) {
+	var result ProviderTable
+	if root == nil {
+		return result, nil
+	}
+	raw, present := root.Get("providers")
+	if !present {
+		return result, nil
+	}
+	providers, ok := raw.(*jsonx.OrderedMap)
+	if !ok {
+		return result, fmt.Errorf("providers must be a table keyed by provider name")
+	}
+	orderedRoot, _ := jsonx.DeepCopy(root).(*jsonx.OrderedMap)
+	orderedProvidersRaw, _ := orderedRoot.Get("providers")
+	orderedProviders := orderedProvidersRaw.(*jsonx.OrderedMap)
+	providers = orderedProviders
+	doc := &configdoc.Document{Values: orderedRoot}
+	for _, name := range providers.Keys() {
+		value, _ := orderedProviders.Get(name)
+		if off, isString := value.(string); isString {
+			if off != "off" {
+				return ProviderTable{}, fmt.Errorf("providers.%s: expected a provider table or \"off\"", name)
+			}
+			result.Disabled = append(result.Disabled, name)
+			orderedProviders.Delete(name)
+			continue
+		}
+		fields, ok := orderedProviderMap(value)
+		if !ok {
+			return ProviderTable{}, fmt.Errorf("providers.%s: provider declaration must be a table", name)
+		}
+		var legacyModels map[string]string
+		providerValue, ok := value.(*jsonx.OrderedMap)
+		if !ok {
+			return ProviderTable{}, fmt.Errorf("providers.%s: provider declaration must be a table", name)
+		}
+		if rawModels, present := providerValue.Get("models"); present {
+			modelMap, ok := rawModels.(*jsonx.OrderedMap)
+			if !ok {
+				return ProviderTable{}, fmt.Errorf("providers.%s.models must be a table keyed by model id", name)
+			}
+			for _, id := range append([]string(nil), modelMap.Keys()...) {
+				if wireID, ok := func() (string, bool) { value, _ := modelMap.Get(id); text, ok := value.(string); return text, ok }(); ok {
+					if legacyModels == nil {
+						legacyModels = make(map[string]string)
+					}
+					legacyModels[id] = wireID
+					modelMap.Delete(id)
+				}
+			}
+		}
+		variantsOff := []string(nil)
+		if rawVariants, present := providerValue.Get("variants"); present {
+			variantMap, ok := rawVariants.(*jsonx.OrderedMap)
+			if !ok {
+				return ProviderTable{}, fmt.Errorf("providers.%s.variants must be a table keyed by variant name", name)
+			}
+			for _, variant := range append([]string(nil), variantMap.Keys()...) {
+				variantValue, _ := variantMap.Get(variant)
+				if off, isString := variantValue.(string); isString {
+					if off != "off" {
+						return ProviderTable{}, fmt.Errorf("providers.%s.variants.%s: expected a variant table or \"off\"", name, variant)
+					}
+					variantsOff = append(variantsOff, variant)
+					variantMap.Delete(variant)
+				}
+			}
+			if len(variantsOff) != 0 {
+				result.DisabledVariants = ensureProviderDisabledVariantMap(result.DisabledVariants)
+				result.DisabledVariants[name] = variantsOff
+			}
+		}
+		fields, _ = orderedProviderMap(value)
+		if unknown := providerShapeUnknownField(fields); unknown != "" {
+			return ProviderTable{}, fmt.Errorf("unknown provider model field %q", "providers."+name+"."+unknown)
+		}
+		if renamed := providerRenamedField(fields); renamed != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %s", name, renameMessage(*renamed.Rename))
+		}
+		normalized, shape, err := normalizeProvider(name, fields, doc)
+		if err != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %w", name, err)
+		}
+		encoded, err := json.Marshal(normalized)
+		if err != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %w", name, err)
+		}
+		var contribution Contribution
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&contribution); err != nil {
+			return ProviderTable{}, fmt.Errorf("providers.%s: %w", name, err)
+		}
+		contribution.ProviderAlias = shape.alias
+		contribution.ProviderModel = shape.model
+		contribution.ProviderVariants = shape.variants
+		contribution.ProviderVariantOrder = append([]string(nil), shape.variantOrder...)
+		contribution.EveryProviderModel = shape.everyModel
+		contribution.ProviderModels = shape.models
+		contribution.ProviderModelOrder = append([]string(nil), shape.modelOrder...)
+		if legacyModels != nil {
+			contribution.Models = legacyModels
+		}
+		projected := (&Manifest{Contributes: []Contribution{contribution}}).Providers()
+		if len(projected) != 1 {
+			return ProviderTable{}, fmt.Errorf("providers.%s: decoder produced no provider declaration", name)
+		}
+		result.Declarations = append(result.Declarations, projected[0])
+	}
+	return result, nil
+}
+
+func ensureProviderDisabledVariantMap(value map[string][]string) map[string][]string {
+	if value == nil {
+		return make(map[string][]string)
+	}
+	return value
+}
+
+func orderedProviderMap(value any) (map[string]any, bool) {
+	ordered, ok := value.(*jsonx.OrderedMap)
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]any, ordered.Len())
+	for _, key := range ordered.Keys() {
+		item, _ := ordered.Get(key)
+		if nested, isTable := item.(*jsonx.OrderedMap); isTable {
+			converted, ok := orderedProviderMap(nested)
+			if !ok {
+				return nil, false
+			}
+			out[key] = converted
+		} else if entries, isArray := item.([]any); isArray {
+			copy := make([]any, len(entries))
+			for i := range entries {
+				if nested, isTable := entries[i].(*jsonx.OrderedMap); isTable {
+					converted, ok := orderedProviderMap(nested)
+					if !ok {
+						return nil, false
+					}
+					copy[i] = converted
+				} else {
+					copy[i] = orderedProviderScalar(entries[i])
+				}
+			}
+			out[key] = copy
+		} else {
+			out[key] = orderedProviderScalar(item)
+		}
+	}
+	return out, true
+}
+
+func orderedProviderScalar(value any) any {
+	if jsonx.IsInt(value) {
+		if number, ok := jsonx.AsInt(value); ok {
+			return number
+		}
+	}
+	return value
+}
+
 func normalizeProvider(name string, fields map[string]any, doc *configdoc.Document) (map[string]any, *providerShape, error) {
 	providerName := name
 	shape := &providerShape{}
