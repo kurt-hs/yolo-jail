@@ -65,11 +65,14 @@ func TestHostLaunchInjectsTheGuardedPosturesFlags(t *testing.T) {
 		"yolo host: yolo CHANGED the command you asked for:",
 		"  you asked for: tool sub",
 		"  yolo will run: tool --ask-first sub",
-		"  added by pack local: --ask-first",
+		"  added by pack local (",
 	} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("the host rewrite must be disclosed (%q):\n%s", want, errs)
 		}
+	}
+	if !strings.Contains(errs, "pack.json contributes[0].guarded.launch[0]): --ask-first") {
+		t.Errorf("guarded flags lost declaration attribution: %s", errs)
 	}
 }
 

@@ -608,7 +608,7 @@ func plannedPackFilesBindArgs(plan *packFilesPlan, rt string) []string {
 	}
 	var args []string
 	for _, mount := range plan.Mounts {
-		if mount.IsDir || rt != "container" {
+		if mount.IsDir || rt != "container" { // parity: HonoredBy — Apple single files are materialized; only its directory binds reach destination preflight.
 			args = append(args, "-v", mount.Src+":/home/agent/"+mount.Dest+":ro")
 		}
 	}

@@ -51,6 +51,11 @@ Subcommands:
                            what 'config apply' applied since).
   dump                     Print the full COMPUTED config as canonical JSON.
 
+Edit targets:
+  --user, --project, --local  Select the existing scope file.
+  --file <path>              Select one consumed config file.
+  --dry-run                  Show the edit without writing.
+
 Flags:
   --help, -h               Show this help.
 

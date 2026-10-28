@@ -200,7 +200,7 @@ func (b *atomicBool) store(v bool) {
 func TestHousekeepingLockIsMachineWide(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	got := HousekeepingLockPath()
-	if strings.Contains(got, "workspace") || !strings.HasSuffix(got, housekeepingLockName) {
+	if want := filepath.Join(paths.GlobalStorage(), "locks", housekeepingLockName); got != want {
 		t.Fatalf("HousekeepingLockPath() = %q — it must be one path per MACHINE, beside the "+
 			"per-workspace locks, not derived from a workspace", got)
 	}

@@ -114,10 +114,13 @@ func TestAHostLaunchWritesItsLaunchLineBeforeTheExec(t *testing.T) {
 		}
 		log := readFile(t, run.HostLaunchLogPath())
 		for _, w := range []string{"  you asked for: tool <1 argument>\n", "  yolo will run: tool <2 arguments>\n",
-			"  added by pack local: --ask-first\n"} {
+			"  added by pack local ("} {
 			if !strings.Contains(log, w) {
 				t.Errorf("host-launch.log lacks %q:\n%s", w, log)
 			}
+		}
+		if !strings.Contains(log, "pack.json contributes[0].guarded.launch[0]): --ask-first\n") {
+			t.Errorf("guarded flags lost declaration attribution: %s", log)
 		}
 		assertMachineLogsNever(t, secret, cwd)
 	})

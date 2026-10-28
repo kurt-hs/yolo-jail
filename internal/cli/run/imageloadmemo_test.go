@@ -78,7 +78,9 @@ func TestLaunchesInOneProcessLoadOneImageOnce(t *testing.T) {
 	}
 	// Another image is another load: the packages select the derivation.
 	cfg := jsonx.NewOrderedMap()
-	cfg.Set("packages", []any{"ripgrep"})
+	install := jsonx.NewOrderedMap()
+	install.Set("nix", []any{"ripgrep"})
+	cfg.Set("install", install)
 	memoLaunch(t, &present, nil).autoLoadImage(cfg, "podman", repo, storePackagesPlan{})
 	if *calls != 2 {
 		t.Errorf("a launch asking for another image (other packages) ran the real loader %d times in all, want 2", *calls)

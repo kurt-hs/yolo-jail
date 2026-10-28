@@ -137,7 +137,13 @@ func stageAt(t *testing.T, logPath string, compose func() string) string {
 		defer func() { startupLog = jailLog }()
 		return compose()
 	}()
-	if strings.Contains(stage, "/workspace/.yolo") {
+	fixtureWorkspace := filepath.Dir(filepath.Dir(logPath))
+	if fixtureWorkspace == "/workspace" {
+		t.Fatal("stage fixture must not be the live jail workspace")
+	}
+	// Validate only after excluding the exact owned fixture path, which may itself
+	// live below /workspace/.yolo/durable. The executed command is never rewritten.
+	if strings.Contains(strings.ReplaceAll(stage, fixtureWorkspace, "/fixture-workspace"), "/workspace/.yolo") {
 		t.Fatalf("refusing to run a command that still names /workspace/.yolo — inside a jail "+
 			"that is the live session's state dir, so the stage no longer takes its log path "+
 			"from startupLog:\n%s", stage)

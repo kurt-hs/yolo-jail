@@ -113,7 +113,7 @@ func TestRootLeavesAnUntranslatableLinkAlone(t *testing.T) {
 	for name, m := range map[string]HostMap{
 		"no map":    nil,
 		"a mask":    {dir: ""},
-		"elsewhere": {"/workspace": "/h"},
+		"elsewhere": {resolvedTempDir(t): "/h"},
 	} {
 		r := Registrar{Map: m, Socket: d.Socket, StoreDir: store}
 		link := filepath.Join(dir, "result")

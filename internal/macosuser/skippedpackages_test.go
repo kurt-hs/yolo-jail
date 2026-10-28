@@ -12,7 +12,9 @@ import (
 func pkgOpts(ws string, packages []any) Options {
 	o := newOpts(ws)
 	cfg := jsonx.NewOrderedMap()
-	cfg.Set("packages", packages)
+	install := jsonx.NewOrderedMap()
+	install.Set("nix", packages)
+	cfg.Set("install", install)
 	o.Config = cfg
 	return o
 }

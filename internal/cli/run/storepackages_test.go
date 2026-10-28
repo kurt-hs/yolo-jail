@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/image"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
@@ -36,13 +38,13 @@ func storeOptions(t *testing.T, env map[string]string) (*Options, *bytes.Buffer,
 
 func cfgWithPackages(t *testing.T, body string) *jsonx.OrderedMap {
 	t.Helper()
-	decoded, err := jsonx.Decode([]byte(body))
-	if err != nil {
-		t.Fatalf("decode config: %v", err)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, config.WorkspaceConfigName), []byte(body), 0600); err != nil {
+		t.Fatal(err)
 	}
-	m, ok := decoded.(*jsonx.OrderedMap)
-	if !ok {
-		t.Fatalf("config is not an object: %T", decoded)
+	m, err := config.LoadWorkspaceConfig(root, true, nil)
+	if err != nil {
+		t.Fatalf("read legacy package fixture through the actual workspace reader: %v", err)
 	}
 	return m
 }
