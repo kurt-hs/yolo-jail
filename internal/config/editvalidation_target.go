@@ -246,6 +246,15 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		return ResolvedEditTarget{}, fmt.Errorf("config target %s does not exist; create that config file first, then retry (no file was written): %w", selected.logical, err)
 	}
 	format := selected.format()
+	if intent.Kind == EditMutationRemove && format == configdoc.JSONC {
+		mapped, found, mapErr := editTargetJSONCRemovalPath(node, key, selected, role)
+		if mapErr != nil {
+			return ResolvedEditTarget{}, mapErr
+		}
+		if found {
+			authored = mapped
+		}
+	}
 	preimage, err := os.ReadFile(selected.physical)
 	if err != nil {
 		return ResolvedEditTarget{}, fmt.Errorf("read config target %s: %w", selected.logical, err)
@@ -255,6 +264,51 @@ func ResolveEditTarget(workspace string, intent EditMutationIntent, choice EditT
 		return ResolvedEditTarget{}, err
 	}
 	return ResolvedEditTarget{LogicalPath: selected.logical, PhysicalPath: selected.physical, Format: format, Role: role, Target: target, expected: cloneEditTargetBytes(preimage), intent: cloneEditMutationIntent(intent), authored: append([]configdoc.Step(nil), authored...)}, nil
+}
+
+func editTargetJSONCRemovalPath(root *srcNode, key []configdoc.Step, selected editTargetFile, role ExplicitEditScope) ([]configdoc.Step, bool, error) {
+	node := root
+	for _, step := range key {
+		if step.IsIndex {
+			node = node.elem(step.Index)
+		} else {
+			node = node.key(step.Key)
+		}
+		if node == nil {
+			return nil, false, nil
+		}
+	}
+	wantedRole := readRoleForScope(role)
+	var authored []configdoc.Step
+	for _, origin := range node.writerList() {
+		f := origin.file
+		if f == nil || origin.host != "" || f.role != wantedRole || f.format != configdoc.JSONC {
+			continue
+		}
+		physical, err := filepath.EvalSymlinks(f.path)
+		if err != nil {
+			return nil, false, fmt.Errorf("resolve JSONC removal source %s: %w", f.path, err)
+		}
+		physical, err = filepath.Abs(physical)
+		if err != nil {
+			return nil, false, err
+		}
+		if filepath.Clean(physical) != selected.physical {
+			continue
+		}
+		if _, present := f.locate(origin.steps, origin.documentSteps); !present {
+			return nil, false, fmt.Errorf("selected JSONC removal source %s has no unique authored value at %s", selected.logical, strings.Join(stepPathNames(origin.documentSteps), "."))
+		}
+		candidate := append([]configdoc.Step(nil), origin.documentSteps...)
+		if authored != nil && !sameEditTargetPath(authored, candidate) {
+			return nil, false, fmt.Errorf("selected JSONC removal source %s has ambiguous authored paths for %s", selected.logical, strings.Join(stepPathNames(key), "."))
+		}
+		authored = candidate
+	}
+	if authored == nil {
+		return nil, false, nil
+	}
+	return authored, true, nil
 }
 
 func readableEditTargetRule(path []string) (SchemaKey, bool) {

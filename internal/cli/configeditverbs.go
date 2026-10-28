@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -155,7 +156,7 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		fmt.Fprintf(errw, "cannot edit config: %v\n", err)
 		return 1
 	}
-	mutation, err = configEditUnsetMutation(target.Format, target.AuthoredPath())
+	mutation, err = configEditUnsetMutation(target.Format, target.AuthoredPath(), target.ExpectedBytes())
 	if err != nil {
 		fmt.Fprintf(errw, "cannot unset config key: %v\n", err)
 		return 1
@@ -318,8 +319,14 @@ func configEditValuePresent(root any, path []configdoc.Step) bool {
 	return true
 }
 
-func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step) (configedit.Mutation, error) {
+func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step, data []byte) (configedit.Mutation, error) {
 	rule, ok := configEditSchemaRule(path, format)
+	if !ok && format == configdoc.JSONC {
+		// JSONC supports the canonical readable spelling while legacy readers retain their
+		// own schema paths. When the selected key has no legacy policy, consult its canonical
+		// scalar shape; schema-specific legacy removals below remain unchanged.
+		rule, ok = configEditSchemaRule(path, configdoc.TOML)
+	}
 	if !ok {
 		return configedit.Mutation{}, fmt.Errorf("key has no removal policy in the selected config schema")
 	}
@@ -347,10 +354,67 @@ func configEditUnsetMutation(format configdoc.Format, path []configdoc.Step) (co
 		mutation.Value = "native"
 	case config.RemovalUnsetList:
 		return configedit.Mutation{}, fmt.Errorf("this key's removal requires updating both env.set and env.unset; no multi-key edit is available")
+	case config.RemovalUnspecified:
+		if rule.Type == config.SchemaTypeAny || rule.Type == config.SchemaTypeObject ||
+			rule.Type == config.SchemaTypeList || rule.Type == config.SchemaTypeObjectOrList {
+			return configedit.Mutation{}, fmt.Errorf("this key has no scalar removal policy in the selected config schema")
+		}
+		value, present, err := configEditAuthoredValue(data, format, path)
+		if err != nil {
+			return configedit.Mutation{}, err
+		}
+		if present && !configEditIsScalar(value) {
+			return configedit.Mutation{}, fmt.Errorf("this key's authored value is not an ordinary scalar and has no removal policy")
+		}
+		mutation.Action = configedit.Remove
 	default:
 		return configedit.Mutation{}, fmt.Errorf("the selected config schema does not define a removal for this key")
 	}
 	return mutation, nil
+}
+
+func configEditAuthoredValue(data []byte, format configdoc.Format, path []configdoc.Step) (any, bool, error) {
+	doc, err := configdoc.Parse(data, format)
+	if err != nil {
+		return nil, false, fmt.Errorf("cannot inspect authored config value: %w", err)
+	}
+	var value any = doc.Values
+	for _, step := range path {
+		if step.IsIndex {
+			items, ok := value.([]any)
+			if !ok || step.Index < 0 || step.Index >= len(items) {
+				return nil, false, nil
+			}
+			value = items[step.Index]
+			continue
+		}
+		object, ok := value.(*jsonx.OrderedMap)
+		if !ok {
+			return nil, false, nil
+		}
+		var present bool
+		value, present = object.Get(step.Key)
+		if !present {
+			return nil, false, nil
+		}
+	}
+	return value, true, nil
+}
+
+func configEditIsScalar(value any) bool {
+	if value == nil {
+		return false
+	}
+	kind := reflect.ValueOf(value).Kind()
+	switch kind {
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
 }
 
 func parseConfigEditValue(raw string, path []configdoc.Step) (any, error) {
