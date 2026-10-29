@@ -1153,8 +1153,8 @@ concurrent track's:
 **What is not built, or not closed:**
 
 - ~~Part 5's allowlist~~: built 2026-09-30 ([§6.1](#61-how-the-allowlist-is-built)).
-- ~~The Converse pass-through route, pi's.~~ Built 2026-10-08 ([WG-I48](#WG-I48),
-  [WG-I49](#WG-I49)): pi's row sits under yolo's own provider key, off pi's built-in
+- **Open follow-up (2026-10-29):** the whole `just check-ci` run while evaluating the recovery-hint change failed `wirebridged.TestConverseToAProxyKeepsItsPrefixAndOnlyTheAllowedHeaders` in its production-boot test ([test](../../internal/wirebridged/viaconverse_test.go#L312-L316); [WG-I48](#WG-I48)), with `condition never became true` after 2.16s. The focused isolated rerun and whole-gate retry passed, but there was no source fix; the cause remains undetermined and the green rerun does not close this. Reproduce under package/load conditions and capture which condition is unmet before changing the wait or production behavior; do not simply increase the timeout.
+- ~~The Converse pass-through route, pi's.~~ Built 2026-10-08 ([WG-I48](#WG-I48), [WG-I49](#WG-I49)): pi's row sits under yolo's own provider key, off pi's built-in
   `amazon-bedrock` ([`pi-codex-provider-shadowing.md` OQ-3](pi-codex-provider-shadowing.md#10-decision-ledger)),
   and speaks Converse to its via route, which signs and passes it through. Read from pi 1.0.4's
   source; no pi turn has crossed it.
