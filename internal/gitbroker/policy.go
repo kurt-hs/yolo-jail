@@ -22,7 +22,8 @@ import (
 //   - a creation, update or delete under refs/heads/ is covered by the workspace's working set:
 //     a live entry in the store for that workspace, repository and ref, or a branch an approved
 //     `branch` grant declares in config while the user's own config still lists the kind;
-//   - nothing else is covered (tags, and any branch outside the working set, need approval).
+//   - nothing else is covered: tags, and any branch outside the working set, need approval,
+//     which the push asks for (approval.go).
 //
 // The live scope file's grants and the user config's `grant_kinds` are read at every push, so
 // a `yolo config apply` or an edit of the user config on the host reaches the next one. A
@@ -129,8 +130,9 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 		branch, isBranch := strings.CutPrefix(c.Ref, "refs/heads/")
 		if !isBranch {
 			if strings.HasPrefix(c.Ref, "refs/tags/") {
-				say(c.Ref + ": the broker never pushes a tag, and no grant changes that; push it from the " +
-					"host (`git push origin " + c.Ref + "` in this workspace there).")
+				say(c.Ref + ": a tag is never in the working set and no grant covers one, so every tag push " +
+					"asks for approval (Allow once, with `yolo approve` on the host); or push it from the host " +
+					"(`git push origin " + c.Ref + "` in this workspace there).")
 			}
 			return "", "", false
 		}
@@ -249,12 +251,18 @@ func relayReport(out io.Writer, upstream io.Reader, caps gitproto.Caps) (gitprot
 	return r.rep, r.err
 }
 
-// record updates the working set from the upstream's report of a forwarded push: a creation
-// covered by the grant and reported `ok` joins it, a delete of an entry reported `ok` ends it.
-// A creation the report does not confirm records nothing (§5.1: a creation the push lost).
+// record updates the working set from the upstream's report of a forwarded push: a branch
+// creation covered by the create-branch grant or by an Allow once and reported `ok` joins it,
+// by that grant (GB-D22), and a delete of an entry reported `ok` ends it. A creation the report
+// does not confirm records nothing (§5.1: a creation the push lost); a tag never joins.
 func (b *Broker) record(repo string, p pushRead, refs []brokeraudit.RefUpdate, rep gitproto.Report, repErr error, say func(string)) {
 	for i, c := range p.cmds {
-		created := c.Create() && refs[i].CoveredBy == grantCreateBranch
+		by := refs[i].CoveredBy
+		if !strings.HasPrefix(by, "g-") {
+			by = byCreateBranch
+		}
+		created := c.Create() && strings.HasPrefix(c.Ref, "refs/heads/") &&
+			(refs[i].CoveredBy == grantCreateBranch || strings.HasPrefix(refs[i].CoveredBy, "g-"))
 		deleted := c.Delete() && strings.HasPrefix(refs[i].CoveredBy, "w-")
 		if !created && !deleted {
 			continue
@@ -270,7 +278,7 @@ func (b *Broker) record(repo string, p pushRead, refs []brokeraudit.RefUpdate, r
 		var err error
 		if created {
 			_, _, err = b.store.AddWorking(brokerstore.WorkingEntry{Workspace: b.bound.Workspace, Repo: repo,
-				Kind: brokerstore.WorkingBranch, Resource: c.Ref, By: byCreateBranch})
+				Kind: brokerstore.WorkingBranch, Resource: c.Ref, By: by})
 		} else {
 			err = b.store.EndWorking(refs[i].CoveredBy, brokerstore.EndDeleted)
 		}

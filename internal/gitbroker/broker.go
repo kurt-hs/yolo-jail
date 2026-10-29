@@ -11,11 +11,14 @@
 //
 //   - for a fetch (git-upload-pack), relays both ways: a `read`;
 //   - for a push (git-receive-pack), relays the upstream's advertisement, reads the push's ref
-//     commands before forwarding anything, and judges every ref (ID-9). A push nothing covers
-//     is refused whole in git's own report: over SSH the upstream is sent an empty command list and
-//     nothing else, over HTTPS no POST at all, and git prints `! [remote rejected] <ref> (<reason>)` per ref.
+//     commands before forwarding anything, and judges every ref (ID-9). A push no grant or
+//     working-set entry covers asks the host for approval (approval.go) and waits a bounded
+//     time; a push still not covered is refused whole in git's own report: over SSH the upstream
+//     is sent an empty command list and nothing else, over HTTPS no POST at all, and git prints
+//     `! [remote rejected] <ref> (<reason>)` per ref, naming the request.
 //     A covered push (a new branch under a create-branch grant, a branch in the workspace's
-//     working set, recorded or declared in config by a branch grant: policy.go) is forwarded, and the upstream's report updates the working set.
+//     working set, recorded or declared in config by a branch grant: policy.go, or a push an
+//     Allow once names) is forwarded, and the upstream's report updates the working set.
 //
 // Every call is audited with `service: git` (ID-13).
 package gitbroker
@@ -55,9 +58,9 @@ const (
 	serviceReceivePack = "git-receive-pack"
 )
 
-// reasonNeedsApproval is a push ref's refusal until requests turn on (step 3), the design's
-// own words (§6).
-const reasonNeedsApproval = "needs approval, which this version cannot ask for"
+// reasonNeedsApproval marks a ref no grant or working-set entry covers, which its push asks
+// approval for (approval.go); it is the ref's whole refusal only when the push cannot ask.
+const reasonNeedsApproval = "needs approval"
 
 // reasonOutsideRefs is the refusal of a ref no grant can ever cover (ID-9).
 const reasonOutsideRefs = "only refs/heads/ and refs/tags/ cross the git-broker; push other refs from the host"
@@ -109,17 +112,22 @@ func Main(argv []string) int {
 		Source:         Source,
 		SelfCheck:      SelfCheck,
 		SelfCheckUsage: "report the host ssh and git and exit (used by `yolo check`)",
-		NewHandler: func(ctx context.Context, scopeFile string, sf brokerscope.File, spawnCwd string, stderr io.Writer) (brokercore.Launch, int) {
-			b, cleanup, err := newBroker(ctx, scopeFile, sf, spawnCwd, stderr, os.Getenv)
-			l := brokercore.Launch{Cleanup: cleanup, Log: stderr}
-			if err != nil {
-				fmt.Fprintln(stderr, Name+": refusing host authority:", err, "; relaunch the jail")
-				return l, 1
-			}
-			l.Handle = b.Handle
-			return l, 0
-		},
+		NewHandler:     newHandler,
 	}.Main(argv)
+}
+
+// newHandler is the daemon's handler for one launch: the broker, and the store and lifetime
+// whose requests the user's on_request runs for.
+func newHandler(ctx context.Context, scopeFile string, sf brokerscope.File, spawnCwd string, stderr io.Writer) (brokercore.Launch, int) {
+	b, cleanup, err := newBroker(ctx, scopeFile, sf, spawnCwd, stderr, os.Getenv)
+	l := brokercore.Launch{Cleanup: cleanup, Log: stderr}
+	if err != nil {
+		fmt.Fprintln(stderr, Name+": refusing host authority:", err, "; relaunch the jail")
+		return l, 1
+	}
+	// The user's on_request runs for each request this broker lifetime files (BB-D75).
+	l.Handle, l.Store, l.Start = b.Handle, b.store, b.start
+	return l, 0
 }
 
 // newBroker binds a fresh broker lifetime to the launch's scope file and returns the broker
@@ -144,8 +152,15 @@ func newBroker(ctx context.Context, scopeFile string, sf brokerscope.File, spawn
 	// The store revalidates against this launch's live scope and audits every request, decision
 	// and spent grant, as `yolo approve`'s does (ApprovalStore).
 	b.store.Revalidate, b.store.Audit = b.revalidate, StoreAudit(b.audit)
-	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and approved HTTPS credentials; public HTTPS fetches are tried anonymously, and a push goes through when a create-branch grant or the workspace's working set (recorded, or declared in config) covers every ref")
-	return b, func() { _ = brokercore.CloseLease(Source, lease) }, nil
+	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and approved HTTPS credentials; public HTTPS fetches are tried anonymously, and a push goes through when a create-branch grant or the workspace's working set (recorded, or declared in config) covers every ref, or else when the host allows it once with `yolo approve`")
+	return b, func() {
+		// Its pushes' requests still pending have no push waiting on them any more: refused, as
+		// the GitHub broker's are at its stop. No grant ends (BB-D99).
+		if err := b.store.End(holderJail(bound), start); err != nil {
+			fmt.Fprintln(log, Name+": could not refuse this broker's pending requests:", err, "; they expire within the hour")
+		}
+		_ = brokercore.CloseLease(Source, lease)
+	}, nil
 }
 
 // parseRequest reads the helper's frame.
@@ -366,7 +381,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		ev.Set = "read"
 		return finish(b.uploadPack(u, in, out, &ev, dest, say))
 	}
-	return finish(b.receivePack(u, in, out, &ev, dest, cover, say))
+	return finish(b.receivePack(ctx, u, in, out, &ev, dest, cover, say))
 }
 
 // uploadPack relays a fetch both ways, and returns its exit code.

@@ -3,6 +3,7 @@ package gitbroker
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -26,7 +27,7 @@ import (
 // only as an Exit frame.
 
 // receivePack runs one push and returns its exit code.
-func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *brokeraudit.Event, dest string, cover coverer, say func(string)) int {
+func (b *Broker) receivePack(ctx context.Context, u *upstream, in io.Reader, out io.Writer, ev *brokeraudit.Event, dest string, cover coverer, say func(string)) int {
 	// 1. The advertisement, relayed packet by packet up to its flush.
 	relay := bufio.NewWriterSize(out, 64<<10)
 	adv := gitproto.NewReader(u.stdout)
@@ -63,8 +64,9 @@ func (b *Broker) receivePack(u *upstream, in io.Reader, out io.Writer, ev *broke
 		return brokercore.ExitUnavailable
 	}
 
-	// 2. The commands, buffered exactly as they arrived and judged before a byte goes up.
-	p, code, ok := b.readPush(in, ev, cover, say)
+	// 2. The commands, buffered exactly as they arrived and judged before a byte goes up. A
+	// push that asks for approval waits for its answer here, the upstream kept open (GB-D20).
+	p, code, ok := b.readPush(ctx, in, ev, cover, say)
 	if !ok {
 		_, _ = io.WriteString(u.stdin, "0000")
 		_ = u.stdin.Close()
@@ -117,7 +119,11 @@ type pushRead struct {
 // judges every ref. When they cannot be read it tells the user, records why, and returns ok
 // false with the exit code; the caller has sent the upstream none of them. A push nothing
 // refuses is recorded as run, in its set.
-func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, cover coverer, say func(string)) (pushRead, int, bool) {
+//
+// A push refused only because refs need approval asks for it (approval.go): an Allow once the
+// host gives for exactly this push, before or during the wait, covers it, and each ref that
+// needed it records the grant. Otherwise each such ref's reason names the request.
+func (b *Broker) readPush(ctx context.Context, in io.Reader, ev *brokeraudit.Event, cover coverer, say func(string)) (pushRead, int, bool) {
 	var teed bytes.Buffer
 	cr := gitproto.NewReader(in)
 	cr.Tee(&teed)
@@ -145,6 +151,23 @@ func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, cover coverer, sa
 	for _, r := range reasons {
 		p.refused = p.refused || r != ""
 	}
+	if needs := approvable(cmds, reasons); p.refused && needs != nil {
+		g, why, allowed := b.askForPush(ctx, ev.Repo, cmds, needs, ev)
+		for i := range reasons {
+			switch {
+			case allowed && reasons[i] == reasonNeedsApproval:
+				refs[i].CoveredBy = g.ID
+				reasons[i] = ""
+			case allowed:
+				reasons[i] = ""
+			case reasons[i] == reasonNeedsApproval:
+				reasons[i] = why
+			}
+		}
+		if allowed {
+			p.refused, set = false, setPush
+		}
+	}
 	if !p.refused {
 		ev.Set, ev.Outcome = set, "ran"
 		if len(cmds) == 0 {
@@ -159,13 +182,7 @@ func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, cover coverer, sa
 // upstream nothing beyond, over SSH, an empty command list.
 func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest string, ev *brokeraudit.Event, say func(string)) int {
 	ev.Set, ev.Outcome, ev.Reason = "refused", "refused", refusalSummary(p.reasons)
-	say("this push was refused whole, so nothing reached " + dest + " and the remote is unchanged; each ref's " +
-		"reason is on its `! [remote rejected]` line, and the lines above name the grant that covers each " +
-		"refused branch. Without approval, which this version cannot ask for, the broker pushes only a new " +
-		"branch under a create-branch grant and the branches in this workspace's working set: those it created " +
-		"that way, and those a branch grant in the workspace config declares (`yolo approve` on the host lists " +
-		"both). Push anything else from the host instead (`git push` in this workspace there), where " +
-		"`yolo audit --service git` shows what was refused.")
+	say(refusalMessage(p.reasons, dest))
 	if !p.caps.Has("report-status") && !p.caps.Has("report-status-v2") {
 		for i, c := range p.cmds {
 			say(c.Ref + ": " + p.reasons[i])
@@ -181,8 +198,8 @@ func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest st
 
 // judge assigns every ref command its outcome: covered (reason ""), or the reason it is not.
 // A ref outside refs/heads/ and refs/tags/ is refused always; any other ref cover does not
-// cover needs approval, which this version cannot ask for. A push is all or nothing (GB-D4),
-// so when any ref is refused, a covered one is refused with the rest.
+// cover needs approval, which readPush then asks for. A push is all or nothing (GB-D4), so
+// when any ref is refused, a covered one is refused with the rest.
 func judge(cmds []gitproto.Command, cover coverer) ([]brokeraudit.RefUpdate, []string, string) {
 	refs := make([]brokeraudit.RefUpdate, len(cmds))
 	reasons := make([]string, len(cmds))
@@ -224,7 +241,55 @@ func refusalSummary(reasons []string) string {
 			return "a ref outside refs/heads/ and refs/tags/"
 		}
 	}
+	for _, r := range reasons {
+		if r != "" && r != reasonWithTheRest {
+			return r
+		}
+	}
 	return reasonNeedsApproval
+}
+
+// approvable is the refs of a refused push that need approval, when approval could cover the
+// whole push: no ref is outside refs/heads/ and refs/tags/. Otherwise nil.
+func approvable(cmds []gitproto.Command, reasons []string) []string {
+	var needs []string
+	for i, r := range reasons {
+		switch r {
+		case reasonOutsideRefs:
+			return nil
+		case reasonNeedsApproval:
+			needs = append(needs, cmds[i].Ref)
+		}
+	}
+	return needs
+}
+
+// refusalMessage is the user's account of a push refused whole, ending in its next step: the
+// request to approve on the host and the same push again, or the push from the host.
+func refusalMessage(reasons []string, dest string) string {
+	lead := "this push was refused whole, so nothing reached " + dest + " and the remote is unchanged; each ref's " +
+		"reason is on its `! [remote rejected]` line."
+	for _, r := range reasons {
+		rest, ok := strings.CutPrefix(r, reasonNeedsApprovalPrefix)
+		if !ok || len(rest) < requestIDLen {
+			continue
+		}
+		id, answer := rest[:requestIDLen], rest[requestIDLen:]
+		if answer == "" || answer == reasonGrantGone {
+			return lead + " It needs approval, and request " + id + " asks for it: ask the user to run `yolo approve " +
+				id + "` on the host, then run the same push again within 15 minutes. Allow once covers exactly this " +
+				"push, once; a different push asks again. To push a branch without asking each time, the lines " +
+				"above name the grant that covers it; or push from the host (`git push` in this workspace there)."
+		}
+		return lead + " The host answered request " + id + " with no: ask the user before pushing it again, or " +
+			"push it from the host (`git push` in this workspace there)."
+	}
+	return lead + " The lines above name the grant that covers each refused branch. Unasked, the broker pushes " +
+		"only a new branch under a create-branch grant and the branches in this workspace's working set: those it " +
+		"created that way or under an Allow once, and those a branch grant in the workspace config declares " +
+		"(`yolo approve` on the host lists both). Any other branch or tag asks for approval, but nothing approves " +
+		"a ref outside refs/heads/ and refs/tags/, nor a push that holds one. Push that from the host instead " +
+		"(`git push` in this workspace there), where `yolo audit --service git` shows what was refused."
 }
 
 // writeRefusal is gitproto.WriteRefusal with a reason per ref: "unpack ok", then

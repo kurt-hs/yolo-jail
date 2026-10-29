@@ -27,19 +27,26 @@ With the broker running:
 - With the read grant, `git fetch`, `git pull` and `git ls-remote` work against this
   workspace's approved remotes, over SSH or HTTPS. An HTTPS credential is used only after that
   exact remote and read grant are approved.
-- **A push goes through only when the user granted it ahead of time.** With a `create-branch`
-  grant on the repository, you may push a branch that does not exist on the remote yet; once the
-  remote accepts it, it joins this workspace's working set, and later pushes to it (updates,
-  force-pushes, deletes) go through too, in this jail and in later ones. A `branch` grant in
-  the workspace config declares a branch (such as `main`) in the working set too: you may
-  create, push, force-push and delete it like one you created. Unless the working set holds it,
-  push your work to a new branch of your own, not to `main` or a branch someone else created.
-  Every other push is refused whole, per ref, in git's own report:
-  `! [remote rejected] <ref> (<reason>)`, and nothing is pushed. Read the reason: `needs
-  approval, which this version cannot ask for` means the user has to push it from the host (or
-  grant `create-branch` for a new branch, or a `branch` grant for that branch, in the workspace
-  config and approve it with `yolo config apply`); a ref outside `refs/heads/` and `refs/tags/` is never pushed through
-  the broker. Do not retry a refused push.
+- **A push goes through unasked only when the user granted it ahead of time.** With a
+  `create-branch` grant on the repository, you may push a branch that does not exist on the
+  remote yet; once the remote accepts it, it joins this workspace's working set, and later pushes
+  to it (updates, force-pushes, deletes) go through too, in this jail and in later ones. A
+  `branch` grant in the workspace config declares a branch (such as `main`) in the working set
+  too: you may create, push, force-push and delete it like one you created. Unless the working set
+  holds it, push your work to a new branch of your own, not to `main` or a branch someone else
+  created.
+- **Any other push of branches or tags asks the user.** It files one request for the whole push
+  and waits up to 30 seconds for an answer on the host. Allowed in that time, it goes through.
+  Otherwise it is refused whole, nothing is pushed, and each such ref's line in git's report
+  names the request: `! [remote rejected] <ref> (needs approval: r-<id>)`. Tell the user to run
+  `yolo approve r-<id>` on the host; once they have, run the same push again within 15 minutes.
+  Allow once covers exactly that push, once: a different push (another commit, another ref) asks
+  again. `(needs approval: r-<id>, denied on the host)` means the user said no: do not push it
+  again without asking them. A new branch the user allowed once joins the working set like one a
+  `create-branch` grant created. To push a branch without asking each time, the user can grant
+  `create-branch`, or a `branch` grant for that branch, in the workspace config and approve it
+  with `yolo config apply`. A ref outside `refs/heads/` and `refs/tags/` is never pushed through
+  the broker, and a push that holds one asks nothing: push that from the host.
 - A remote outside the approved scope is refused for SSH and push. A public HTTPS fetch may be
   tried anonymously outside that scope; if it asks for credentials, it is refused naming the
   scope. A new remote joins only when the user approves it in the config-change prompt on the

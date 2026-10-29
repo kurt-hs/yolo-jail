@@ -101,7 +101,8 @@ func TestRefusedUpdateHintOmitsAKindAlreadyAllowed(t *testing.T) {
 	}
 }
 
-// A tag is never covered, so its hint names the host push and suggests no grant.
+// A tag is never covered, so its hint says it asks for approval, names the host push and
+// suggests no grant.
 func TestRefusedTagNamesTheHostPush(t *testing.T) {
 	f := grantedFixture(t)
 	f.commit("one")
@@ -109,7 +110,7 @@ func TestRefusedTagNamesTheHostPush(t *testing.T) {
 	if err == nil {
 		t.Fatalf("a tag landed:\n%s", out)
 	}
-	if !strings.Contains(out, "refs/tags/v1: the broker never pushes a tag") || !strings.Contains(out, "from the host") {
+	if !strings.Contains(out, "refs/tags/v1: a tag is never in the working set") || !strings.Contains(out, "asks for approval") || !strings.Contains(out, "from the host") {
 		t.Fatalf("no tag hint:\n%s", out)
 	}
 	if strings.Contains(out, `{"kind":`) {

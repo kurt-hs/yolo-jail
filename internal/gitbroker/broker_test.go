@@ -292,6 +292,9 @@ func (f *fixture) launch(sf brokerscope.File, bound func(*fixture)) {
 	}
 	t.Cleanup(cleanup)
 	f.broker = b
+	// A push no grant covers asks for approval and waits for it: a short wait, so a test that
+	// never answers it is refused at once. A test answering during the wait lengthens it.
+	b.waitLimit = 50 * time.Millisecond
 	if bound != nil {
 		bound(f)
 	}
@@ -620,7 +623,7 @@ func TestPushRefusedNothingForwarded(t *testing.T) {
 		t.Fatalf("git push: %v (want exit 1)\n%s", err, out)
 	}
 	t.Logf("refused push output:\n%s", out)
-	for _, want := range []string{"! [remote rejected]", "needs approval, which this version cannot ask for"} {
+	for _, want := range []string{"! [remote rejected]", "(needs approval: r-", "yolo approve r-"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("push output lacks %q:\n%s", want, out)
 		}
@@ -1096,7 +1099,7 @@ func TestMainStillRefused(t *testing.T) {
 	before := f.upstreamRef("refs/heads/main")
 	f.commit("one")
 	out, err := f.git("push", "origin", "HEAD:main")
-	if err == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, reasonNeedsApproval) {
+	if err == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, "("+reasonNeedsApprovalPrefix+"r-") {
 		t.Fatalf("a push to main under create-branch: %v\n%s", err, out)
 	}
 	if f.upstreamRef("refs/heads/main") != before {

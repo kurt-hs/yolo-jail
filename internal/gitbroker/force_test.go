@@ -56,7 +56,7 @@ func TestRealGitPushRejectionPhases(t *testing.T) {
 		}
 		nAfter := countPushes(t)
 		if wantBroker {
-			if nAfter != nBefore+1 || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, reasonNeedsApproval) || strings.Contains(out, "needs force") {
+			if nAfter != nBefore+1 || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, "("+reasonNeedsApprovalPrefix+"r-") || strings.Contains(out, "needs force") {
 				t.Fatalf("expected broker refusal; push count %d -> %d, output:\n%s", nBefore, nAfter, out)
 			}
 			e := lastPush(t)
@@ -179,7 +179,7 @@ func TestRealGitPushRejectionPhases(t *testing.T) {
 		args = []string{"--force", "origin", blob + ":refs/heads/main"}
 		nBefore = countPushes(t)
 		out, pushErr = f.git(append([]string{"push"}, args...)...)
-		if pushErr == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, blob) || !strings.Contains(out, "("+reasonNeedsApproval+")") || strings.Contains(out, "needs force") {
+		if pushErr == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, blob) || !strings.Contains(out, "("+reasonNeedsApprovalPrefix+"r-") || strings.Contains(out, "needs force") {
 			t.Fatalf("forced blob did not reach broker needs-approval policy: %v\n%s", pushErr, out)
 		}
 		if countPushes(t) != nBefore+1 {
@@ -243,7 +243,7 @@ func TestRealGitPushRejectionPhases(t *testing.T) {
 		nBefore := countPushes(t)
 		postsBefore := len(h.pushPosts())
 		out, err := h.git("push", "origin", "HEAD:refs/heads/main")
-		if err == nil || !strings.Contains(out, reasonNeedsApproval) || strings.Contains(out, "needs force") {
+		if err == nil || !strings.Contains(out, "("+reasonNeedsApprovalPrefix+"r-") || strings.Contains(out, "needs force") {
 			t.Fatalf("HTTPS FF disposition: %v\n%s", err, out)
 		}
 		nAfter := countPushes(t)
@@ -265,7 +265,7 @@ func TestRealGitPushRejectionPhases(t *testing.T) {
 		nBefore = countPushes(t)
 		postsBefore = len(h.pushPosts())
 		forceOut, forceErr := h.git("push", "--force", "origin", "HEAD:refs/heads/main")
-		if forceErr == nil || !strings.Contains(forceOut, reasonNeedsApproval) || strings.Contains(forceOut, "needs force") {
+		if forceErr == nil || !strings.Contains(forceOut, "("+reasonNeedsApprovalPrefix+"r-") || strings.Contains(forceOut, "needs force") {
 			t.Fatalf("HTTPS forced FF disposition: %v\n%s", forceErr, forceOut)
 		}
 		nAfter = countPushes(t)

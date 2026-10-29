@@ -733,7 +733,7 @@ func (h *httpsLeg) push(in io.Reader, out io.Writer) int {
 		return brokercore.ExitUnavailable
 	}
 
-	p, code, ok := h.b.readPush(in, h.ev, h.cover, h.say)
+	p, code, ok := h.b.readPush(h.ctx, in, h.ev, h.cover, h.say)
 	if !ok {
 		return code
 	}
