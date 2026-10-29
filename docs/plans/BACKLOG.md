@@ -845,6 +845,15 @@ logged its "keeping the jail" decision without naming that pid. So the holder lo
 time can come back empty when the earlier one did not. Found by the capture record-platform lane,
 which touched nothing in `internal/cli/run`.
 
+### <a id="mountinfo-reread-flake"></a>🔧 **The mount-table test races a podman that unmounts between two reads**
+
+`TestIsMountPointReadsTheProcessMountTable` (`internal/entrypoint/fsx_test.go`) reads
+`/proc/self/mountinfo`, then asks `IsMountPoint` about each mount point, and `IsMountPoint` reads the
+table again. On 2026-10-29, during a `just check-ci` with podman running in the jail, an overlay
+mount under `/var/lib/containers/storage` was gone by the second read. The test failed on it, then
+passed three times alone. The test should compare against the same table it read, or skip mount
+points that vanished in between.
+
 ### <a id="program-capture-record-platform"></a>🔧 **A program capture still judges an existing entry's platform by its manifest**
 
 The capture store's [record-platform rule](../reference/install-capture.md#record-platform) makes
