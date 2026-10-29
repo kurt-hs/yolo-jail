@@ -13,10 +13,11 @@
 // forwarding anything. A push lands only where a grant or the working set covers every ref
 // (ID-9: creating a branch under a create-branch grant, then updating or deleting a branch the
 // broker created or a branch grant in the workspace config declares, GB-D12); every
-// other push is refused per ref, and every call is audited.
+// other push asks the host user for an Allow once (GB-D16) and is refused per ref until
+// allowed, and every call is audited.
 {
   "name": "git-broker",
-  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only using those credentials against this workspace's approved git remotes and read grant (brokered.git.grants). A public HTTPS fetch is tried anonymously even without a grant or approved remote. A push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares; yolo approve lists them), every other push is refused per ref (push from the host), and every call is audited on the host (yolo audit --service git).",
+  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only using those credentials against this workspace's approved git remotes and read grant (brokered.git.grants). A public HTTPS fetch is tried anonymously even without a grant or approved remote. A push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares; yolo approve lists them); every other push of branches or tags files a request the host user answers with yolo approve <id> (Allow once, for that exact push run again within 15 minutes) and is refused per ref until then, and every call is audited on the host (yolo audit --service git).",
   "version": 1,
 
   // NO SWITCH, AND NO ACCESS BY DEFAULT (boundary-broker.md BB-D104 to BB-D106, git-broker.md

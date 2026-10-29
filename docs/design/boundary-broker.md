@@ -2055,7 +2055,7 @@ path. Full resource-scoped grants and working-set Add remain future work.
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | *"support for whatever loopholes you need/want with rw and ro support, maybe factoring out the CLI wrapping/proxy stuff"* | Brokered sources with read and write sets on a shared core | The GitHub source's read path, scope, audit, mount fence, the `intercept` kind, the host store and `yolo approve`, the delivery-gated write handler | The broker-core factoring and the git source ([`git-broker.md`](git-broker.md)); write kinds, user grants and the working set ([§5.7](#57-permission-sets), [§5.8](#58-long-lived-access-and-temporary-access)) |
 | 2 | *"generic support for yolo-jail sending (actionable) toasts on linux/mac"* | The toast notifier, a store front-end for every source ([§6](#6-the-doorbell-a-persistent-desktop-notification)) | Nothing: no notification code | All of it: D-Bus on Linux, terminal-notifier on macOS, the formula dependency and `yolo check` row |
-| 3 | *"host-side machinery as a CLI that can view/approve these access requests"* | `yolo approve` across sources, with `--json` and `--watch` ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)); the answer path; then writes turned on | `yolo approve` for the github store, as text; `yolo gh status` and `wait` | The broad cross-source surface; the answer path ([OQ-BB17](#OQ-BB17)); exact Allow once is implemented for GitHub writes in the private Stage2 candidate |
+| 3 | *"host-side machinery as a CLI that can view/approve these access requests"* | `yolo approve` across sources, with `--json` and `--watch` ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)); the answer path; then writes turned on | `yolo approve` for the github store, as text; `yolo gh status` and `wait` | The broad cross-source surface; the answer path ([OQ-BB17](#OQ-BB17)); exact Allow once is implemented for GitHub writes in the private Stage2 candidate, and for git pushes since 2026-10-29 ([GB-D16](git-broker.md#GB-D16)) |
 | 4 | *"build your proposed web UI out of tree, and plug into the CLI"* | Nothing in the tree: the surface step 3 fixed, and its documentation | — | The CLI's documentation of the JSON contract and of the loopback warning |
 | 5 | *"talk about merging the web UI at this point"* | A conversation, with a UI that exists | — | — |
 
@@ -2098,7 +2098,9 @@ a running jail by `yolo config apply` ([`live-config-apply.md`](live-config-appl
    working set and is pushable again with no human, across launches
    ([OQ-GB2](git-broker.md#OQ-GB2)), so the agent can publish its own work before any notifier
    exists. Without the grant, git read-only pushes nothing ([BB-D78](#BB-D78)). Every other push
-   answers 77, as gh's writes do. The grant is `create-branch` ([OQ-BB19](#OQ-BB19)).
+   was refused at once, "needs approval, which this version cannot ask for". Since 2026-10-29 it
+   files an Allow-once request instead ([GB-D16](git-broker.md#GB-D16)). The grant is
+   `create-branch` ([OQ-BB19](#OQ-BB19)).
 
 [`git-broker-plan.md`](git-broker-plan.md) builds items 1 to 3, with user grants in two layers
 for git, kinds in the user config and grants in the workspace config behind the config-change
@@ -2137,6 +2139,10 @@ terminal-notifier later, once the macOS release signs ([OQ-BB4](#15-decision-led
    its answer can reach the agent (step 2 of this list). Then every write no user grant or
    working-set entry covers, GitHub's and git's per-ref pushes alike, files a request on its
    resource instead of answering 77, answered by the buttons of [§6.4](#64-choosing-a-duration).
+   **Built for git's pushes 2026-10-29, as Allow once and Deny only** ([GB-D16](git-broker.md#GB-D16)
+   to [GB-D23](git-broker.md#GB-D23)). One request per push. The push waits 30 seconds. A host with
+   no notifier and no `on_request` hook logs the request only ([BB-D98](#BB-D98)). The 15-minute
+   answer and Add stay unbuilt for git, as for GitHub.
 4. **The event hook** ([BB-D75](#BB-D75)), after the watch and not holding writes: the
    user-scope command yolo runs per filed request with its JSON on stdin. **Built** 2026-10-23
    as `on_request`, inert until step 3 files requests; the release notes cover it once step 3 ships.

@@ -2,11 +2,13 @@ package integration
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -160,7 +162,7 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 		"g fetch origin",                       // B: a read
 		"g rev-parse refs/remotes/origin/main", // C: what it fetched
 		"g checkout -q -b work origin/main && g commit -q --allow-empty -m agent", // D
-		"g push origin HEAD:main", // E: refused
+		"g push origin HEAD:main", // E: files a request, waits, and is refused naming it
 	)
 	r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", script}, fx.opts...)
 	if r.rc != 0 {
@@ -175,7 +177,7 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 	if !strings.Contains(r.stdout, fx.upstream) {
 		t.Errorf("the fetch did not bring the upstream's main %s:\n%s", fx.upstream, out)
 	}
-	for _, want := range []string{"! [remote rejected]", "needs approval, which this version cannot ask for"} {
+	for _, want := range []string{"! [remote rejected]", "(needs approval: r-", "yolo approve r-"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the refused push does not say %q:\n%s", want, out)
 		}
@@ -192,17 +194,17 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 		t.Errorf("the host ssh was not run as the broker runs it:\n%s", logged)
 	}
 
-	// `yolo audit --service git` on the host: one read and one refused push.
+	// `yolo audit --service git` on the host: one read, the filed request, and one refused push.
 	a := runCommand(t, fx.dir, []string{"audit", "--json", "--service", "git"}, withHostSemantics())
-	var sets []string
+	var events []string
 	for _, line := range strings.Split(strings.TrimSpace(a.stdout), "\n") {
 		var e brokeraudit.Event
 		if json.Unmarshal([]byte(line), &e) == nil {
-			sets = append(sets, e.Set)
+			events = append(events, e.Event+"/"+e.Set)
 		}
 	}
-	if strings.Join(sets, ",") != "read,refused" {
-		t.Errorf("yolo audit --service git listed sets %v, want [read refused]:\n%s", sets, a.combined())
+	if got := strings.Join(events, ","); got != "call/read,request/push,call/refused" {
+		t.Errorf("yolo audit --service git listed %v, want [call/read request/push call/refused]:\n%s", events, a.combined())
 	}
 }
 
@@ -300,7 +302,7 @@ func TestGitBrokerCreateBranch(t *testing.T) {
 	}
 	before := hostGit(t, fx.bare, "rev-parse", ref)
 	out, _ = launch("third launch", "g commit -q --allow-empty -m four && g push origin HEAD:"+ref)
-	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "needs approval, which this version cannot ask for") {
+	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "(needs approval: r-") {
 		t.Fatalf("after the revoke, the push was not refused:\n%s%s", out, gitBrokerDaemonLog(t))
 	}
 	if got := hostGit(t, fx.bare, "rev-parse", ref); got != before {
@@ -367,10 +369,109 @@ func TestGitBrokerConfigBranch(t *testing.T) {
 	without := newGitBrokerFixtureWith(t, userCfg, `{}`)
 	without.recordScope(t, "git@fixture.test:o/r.git")
 	out, _ = launch(without, "without the grant")
-	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "needs approval, which this version cannot ask for") {
+	if kvLine(out, "RCA") != "1" || !strings.Contains(out, "(needs approval: r-") {
 		t.Fatalf("without the grant, the push to main was not refused:\n%s%s", out, gitBrokerDaemonLog(t))
 	}
 	if got := hostGit(t, without.bare, "rev-parse", "refs/heads/main"); got != without.upstream {
 		t.Fatalf("without the grant, the upstream's main moved to %s", got)
+	}
+}
+
+// ALLOW ONCE, END TO END (docs/design/git-broker.md GB-D16 to GB-D22). Nothing covers main, so
+// the jail's push files a request, waits, and is refused naming it; the jail writes the refusal
+// into the workspace and waits. The host reads the request id there and runs `yolo approve <id>`
+// while the jail's broker still runs, as a human would, then writes a marker; the jail pushes the
+// same commit again, and it lands, audited as the push set spending the grant. A third push of
+// a new commit asks again: Allow once was that exact push, once.
+func TestGitBrokerAllowOncePush(t *testing.T) {
+	fx := newGitBrokerFixture(t, true)
+	fx.recordScope(t, "git@fixture.test:o/r.git")
+	refusal, marker := filepath.Join(fx.dir, ".push-refusal"), filepath.Join(fx.dir, ".approved")
+
+	// The host half, which may not fail the test from its goroutine: it waits for the jail's
+	// refusal, approves the request it names with the host's `yolo approve`, and reports.
+	type approval struct {
+		id, out string
+		err     error
+	}
+	approved := make(chan approval, 1)
+	go func() {
+		var a approval
+		defer func() { approved <- a }()
+		deadline := time.Now().Add(4 * time.Minute)
+		for ; time.Now().Before(deadline); time.Sleep(time.Second) {
+			b, _ := os.ReadFile(refusal)
+			if i := strings.Index(string(b), "(needs approval: r-"); i >= 0 {
+				a.id = strings.SplitN(string(b[i+len("(needs approval: "):]), ")", 2)[0]
+				break
+			}
+		}
+		if a.id == "" {
+			a.err = errors.New("the jail never wrote a refusal naming a request")
+			return
+		}
+		cfg := runConfig{}
+		for _, o := range append(fx.opts, withHostSemantics()) {
+			o(&cfg)
+		}
+		name, argv := launchCommand(cfg, yoloBin, []string{"approve", a.id})
+		cmd := exec.Command(name, argv...)
+		cmd.Dir, cmd.Env = fx.dir, launchEnvironment(cfg)
+		out, err := cmd.CombinedOutput()
+		a.out, a.err = string(out), err
+		if werr := os.WriteFile(marker, []byte("ok\n"), 0o644); a.err == nil {
+			a.err = werr
+		}
+	}()
+
+	r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", gitInJail + ghScript(
+		"g fetch -q origin && g checkout -q -b work origin/main && g commit -q --allow-empty -m agent", // A
+		"(g push origin HEAD:main > .push-out 2>&1; rc=$?; mv .push-out .push-refusal; exit $rc)",      // B: asks, refused
+		"for i in $(seq 240); do [ -f .approved ] && break; sleep 1; done; [ -f .approved ]",           // C: the host answers
+		"g push origin HEAD:main",                                       // D: the same push lands
+		"g rev-parse HEAD | sed 's/^/HEAD=/'",                           // E
+		"g commit -q --allow-empty -m again && g push origin HEAD:main", // F: asks again
+	)}, fx.opts...)
+	a := <-approved
+	refused, _ := os.ReadFile(refusal)
+	t.Logf("launch: rc %d\n%s\nfirst push:\n%s\nyolo approve %s: %v\n%s", r.rc, r.combined(), refused, a.id, a.err, a.out)
+	if r.rc != 0 || a.err != nil {
+		t.Fatalf("the launch or the host's approval failed%s", gitBrokerDaemonLog(t))
+	}
+	if !strings.Contains(string(refused), "! [remote rejected]") || !strings.Contains(string(refused), "yolo approve "+a.id) {
+		t.Errorf("the first push's refusal does not name `yolo approve %s`:\n%s", a.id, refused)
+	}
+	for k, want := range map[string]string{"RCA": "0", "RCB": "1", "RCC": "0", "RCD": "0", "RCF": "1"} {
+		if got := kvLine(r.stdout, k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if !strings.Contains(a.out, "one exact command, 1 use(s)") {
+		t.Errorf("yolo approve %s did not Allow once:\n%s", a.id, a.out)
+	}
+	head := kvLine(r.stdout, "HEAD")
+	if got := hostGit(t, fx.bare, "rev-parse", "refs/heads/main"); got != head || head == "" || got == fx.upstream {
+		t.Errorf("the upstream's main is %s, want the jail's approved HEAD %q", got, head)
+	}
+	if t.Failed() {
+		t.Fatalf("output above%s", gitBrokerDaemonLog(t))
+	}
+
+	// The audit: a request, refused; its decision; the push spending the grant; a second request.
+	au := runCommand(t, fx.dir, []string{"audit", "--json", "--service", "git"}, withHostSemantics())
+	var pushes []string
+	for _, line := range strings.Split(strings.TrimSpace(au.stdout), "\n") {
+		var e brokeraudit.Event
+		if json.Unmarshal([]byte(line), &e) == nil && len(e.Argv) > 0 && e.Argv[0] == "git-receive-pack" {
+			ev := e.Event + "/" + e.Set
+			if e.Event == "call" && e.Set == "push" && (e.Request != a.id || e.Grant == "") {
+				ev += "(request " + e.Request + ", grant " + e.Grant + ")"
+			}
+			pushes = append(pushes, ev)
+		}
+	}
+	want := "request/push,call/refused,decision/push,grant-used/push,call/push,request/push,call/refused"
+	if got := strings.Join(pushes, ","); got != want {
+		t.Errorf("the pushes' audit is %v, want %s:\n%s", pushes, want, au.combined())
 	}
 }

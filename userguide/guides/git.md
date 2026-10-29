@@ -185,7 +185,7 @@ from your user config. The broker reads both at every push, so either reaches th
 | `git fetch`, `git pull`, `git ls-remote` over HTTPS | Sent to an approved remote over HTTPS, checked against your machine's trusted certificates, with the credential your machine's `git credential fill` gives when the server asks for one |
 | A push of a new branch, with a create-branch grant | Sent to the remote; when the remote accepts it, the branch joins the working set |
 | A push to a branch in the working set, recorded or declared in config | Sent to the remote, force-pushes and deletes included |
-| Any other `git push` | Refused per branch, nothing sent: `! [remote rejected] <branch> (needs approval, which this version cannot ask for)`. Push from your machine |
+| Any other `git push`, tags included | Asks you. The push waits 30 seconds for an answer; unanswered, it is refused per ref with nothing sent: `! [remote rejected] <ref> (needs approval: r-<id>)`. Run `yolo approve r-<id>` on your machine to allow that exact push once, then have the agent run it again within 15 minutes. A new branch allowed this way joins the working set. `yolo approve r-<id> --deny` refuses it |
 | A push of several branches, one of them refused | Refused whole: a push through the broker goes through entirely or not at all |
 | A push to anything but a branch or a tag | Refused always, naming `refs/heads/` and `refs/tags/` |
 | A remote you did not approve | Refused at once, naming the approved remotes and how to add one; nothing runs |
