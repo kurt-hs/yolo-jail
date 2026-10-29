@@ -836,6 +836,15 @@ fixed-name volumes, or a run should refuse while another holds the machine.
 once during a 2026-10-23 landing gate with other agents' builds running, and passed alone. Each
 deadline should measure what it pins without a wall-clock bound the machine's load can cross.
 
+### <a id="keeper-holder-flake"></a>🔧 **The keeper's keep line sometimes names no session-lock holder**
+
+`TestTheKeeperLogsTheSessionLockHolderWhenItKeepsTheJail` (`internal/cli/run`) failed once in a
+full `go test -short ./internal/...` run on 2026-10-29, while other agents' builds were running,
+and passed three times alone. The keeper logged that the test's pid held the session lock, then
+logged its "keeping the jail" decision without naming that pid. So the holder lookup at decision
+time can come back empty when the earlier one did not. Found by the capture record-platform lane,
+which touched nothing in `internal/cli/run`.
+
 ### <a id="program-capture-record-platform"></a>🔧 **A program capture still judges an existing entry's platform by its manifest**
 
 The capture store's [record-platform rule](../reference/install-capture.md#record-platform) makes
