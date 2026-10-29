@@ -16,6 +16,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
+// requestIDLen is the length of a request id, "r-" and 32 hex digits.
+const requestIDLen = 34
+
 // refusedRequest is the request a refused push's output names on its ref line, checking
 // that the user is told the host command that approves it.
 func refusedRequest(t *testing.T, out string, err error) string {
@@ -162,7 +165,7 @@ func TestPushDeniedNothingForwarded(t *testing.T) {
 		t.Fatal(aerr)
 	}
 	if err == nil || !strings.Contains(out, "! [remote rejected]") || !strings.Contains(out, ", denied on the host)") ||
-		!strings.Contains(strings.Join(strings.Fields(out), " "), "with no: ask the user before pushing it again") {
+		!strings.Contains(strings.Join(strings.Fields(out), " "), "ask the user before pushing it again") {
 		t.Fatalf("a denied push: %v\n%s", err, out)
 	}
 	if f.upstreamRef("refs/heads/main") != before {

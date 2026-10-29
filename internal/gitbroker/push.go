@@ -113,6 +113,7 @@ type pushRead struct {
 	teed    []byte // the command section's bytes exactly as they arrived
 	reasons []string
 	refused bool
+	next    string // the refusal's next step, when the push asked for approval
 }
 
 // readPush reads the push's commands from the client without forwarding a byte of them, and
@@ -161,9 +162,10 @@ func (b *Broker) readPush(ctx context.Context, in io.Reader, ev *brokeraudit.Eve
 			case allowed:
 				reasons[i] = ""
 			case reasons[i] == reasonNeedsApproval:
-				reasons[i] = why
+				reasons[i] = why.reason
 			}
 		}
+		p.next = why.next
 		if allowed {
 			p.refused, set = false, setPush
 		}
@@ -182,7 +184,7 @@ func (b *Broker) readPush(ctx context.Context, in io.Reader, ev *brokeraudit.Eve
 // upstream nothing beyond, over SSH, an empty command list.
 func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest string, ev *brokeraudit.Event, say func(string)) int {
 	ev.Set, ev.Outcome, ev.Reason = "refused", "refused", refusalSummary(p.reasons)
-	say(refusalMessage(p.reasons, dest))
+	say(refusalMessage(p, dest))
 	if !p.caps.Has("report-status") && !p.caps.Has("report-status-v2") {
 		for i, c := range p.cmds {
 			say(c.Ref + ": " + p.reasons[i])
@@ -265,24 +267,12 @@ func approvable(cmds []gitproto.Command, reasons []string) []string {
 }
 
 // refusalMessage is the user's account of a push refused whole, ending in its next step: the
-// request to approve on the host and the same push again, or the push from the host.
-func refusalMessage(reasons []string, dest string) string {
+// one its approval request gave (approval.go), or the grant or host push that would cover it.
+func refusalMessage(p pushRead, dest string) string {
 	lead := "this push was refused whole, so nothing reached " + dest + " and the remote is unchanged; each ref's " +
 		"reason is on its `! [remote rejected]` line."
-	for _, r := range reasons {
-		rest, ok := strings.CutPrefix(r, reasonNeedsApprovalPrefix)
-		if !ok || len(rest) < requestIDLen {
-			continue
-		}
-		id, answer := rest[:requestIDLen], rest[requestIDLen:]
-		if answer == "" || answer == reasonGrantGone {
-			return lead + " It needs approval, and request " + id + " asks for it: ask the user to run `yolo approve " +
-				id + "` on the host, then run the same push again within 15 minutes. Allow once covers exactly this " +
-				"push, once; a different push asks again. To push a branch without asking each time, the lines " +
-				"above name the grant that covers it; or push from the host (`git push` in this workspace there)."
-		}
-		return lead + " The host answered request " + id + " with no: ask the user before pushing it again, or " +
-			"push it from the host (`git push` in this workspace there)."
+	if p.next != "" {
+		return lead + p.next
 	}
 	return lead + " The lines above name the grant that covers each refused branch. Unasked, the broker pushes " +
 		"only a new branch under a create-branch grant and the branches in this workspace's working set: those it " +

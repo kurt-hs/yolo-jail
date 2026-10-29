@@ -56,7 +56,7 @@ func TestAskForPushSpendsExactGrantOnce(t *testing.T) {
 	if ok {
 		t.Fatal("a push nobody approved was allowed")
 	}
-	id := pendingID(t, reason)
+	id := pendingID(t, reason.reason)
 	if ev.Request != id || ev.CommandDigest == "" {
 		t.Fatalf("audit event %+v", ev)
 	}
@@ -86,13 +86,13 @@ func TestAskForPushSpendsExactGrantOnce(t *testing.T) {
 
 	// Spent: the same push again files a new request.
 	_, reason, ok = f.broker.askForPush(ctx, repo, cmds, nil, []string{"refs/heads/main"}, &brokeraudit.Event{})
-	if ok || pendingID(t, reason) == id {
+	if ok || pendingID(t, reason.reason) == id {
 		t.Fatalf("a spent Allow once covered a second push: ok %v, %q", ok, reason)
 	}
 
 	// A different push (another new id) is not covered by an exact grant on the first.
 	other := []gitproto.Command{{Old: cmds[0].Old, New: cmds[0].Old, Ref: cmds[0].Ref}}
-	g2id := pendingID(t, reason)
+	g2id := pendingID(t, reason.reason)
 	if _, err := ApprovalStore().Decide(g2id, "pending", brokerstore.Decision{}); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestAskForPushWaitsForTheAnswer(t *testing.T) {
 		if ok == deny {
 			t.Fatalf("deny %v: ok %v, %q", deny, ok, reason)
 		}
-		if deny && !strings.Contains(reason, "denied") {
+		if deny && !strings.Contains(reason.reason, "denied") {
 			t.Fatalf("a denied push says %q", reason)
 		}
 	}
