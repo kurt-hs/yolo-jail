@@ -153,7 +153,7 @@ _yolo_compatibility_check() {
         echo "yolo: ERROR: cannot verify $BIN's version for this macos-user self launch; use a container backend (podman or container), or repair its declared version probe." >&2
         return 1
     fi
-    if [[ "$output" =~ (^|[^[:alnum:].]|[vV])([0-9]+)\.([0-9]+)\.([0-9]+)($|[^[:alnum:].]) ]]; then
+    if [[ "$output" =~ (^|[^[:alnum:].]|[vV])([0-9]+)\.([0-9]+)\.([0-9]+)($|[^[:alnum:].]|\.($|[[:space:]])) ]]; then
         actual="${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.${BASH_REMATCH[4]}"
     else
         echo "yolo: ERROR: cannot parse $BIN's declared version probe for this macos-user self launch; use a container backend (podman or container), or repair its declared version probe." >&2

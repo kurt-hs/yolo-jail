@@ -283,7 +283,7 @@ func TestShippedCopilotMalformedVersionTokensFailClosed(t *testing.T) {
 	imageProbeBase = t.TempDir()
 	t.Cleanup(func() { imageProbeBase = orig })
 
-	for _, version := range []string{"1.0.92.103", "1.0.", "1234567890.0.1"} {
+	for _, version := range []string{"1.0.92.103", "1.0.", "1.0.92.103.", "1234567890.0.1"} {
 		t.Run(version, func(t *testing.T) {
 			p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", version)
 			out, err := p.run(t, "")
@@ -305,6 +305,9 @@ func TestShippedCopilotVersionProbeAcceptsVendorLabelAndNumericComparison(t *tes
 	}{
 		{name: "affected", version: "Copilot CLI v1.0.103 (stable)", wantRefuse: true},
 		{name: "compatible", version: "Copilot CLI v1.0.92 (stable)"},
+		// Copilot 1.0.103's own output, captured natively on macOS: its version ends a sentence.
+		{name: "affected sentence", version: "GitHub Copilot CLI 1.0.103.\nRun 'copilot update' to check for updates.", wantRefuse: true},
+		{name: "compatible sentence", version: "GitHub Copilot CLI 1.0.92.\nRun 'copilot update' to check for updates."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := newCopilotCompatibilityProbe(t, `{"mode":1,"workspace":"/w","home":"/h"}`, true, "false", tc.version)
