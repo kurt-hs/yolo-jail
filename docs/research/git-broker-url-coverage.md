@@ -19,12 +19,12 @@ summary: "Grounded audit and bounded repair of Git URL forms crossing the host b
 
 | Input | Result | Scope and safety |
 | :--- | :--- | :--- |
-| `ssh://[user@]host[:port]/path`, including unqualified IPv6 address literals and a `/~/` path | Routed to SSH broker | Exact URL approval and read grant; user, port and path retain the existing constrained SSH argv rules. |
+| `ssh://[user@]host[:port]/path`, including bracketed IPv6 address authorities and a `/~/` path | Routed to SSH broker | Exact URL approval and read grant; user, port and path retain the existing constrained SSH argv rules. |
 | `git@host:path`, including `git@[IPv6]:path` | Routed to SSH broker | Exact URL approval and read grant. Bracketed IPv6 scp parsing now skips the address's internal colons. |
 | `git+ssh://…`, `ssh+git://…` | Routed to SSH broker | Newly rewritten and accepted only as these two SSH aliases; the original alias URL itself must be approved. |
 | `https://host[:port]/path` | Routed to HTTPS broker | Credentialed access requires exact URL approval and read grant. Public fetch may retain the existing anonymous out-of-scope path. URL user-info remains excluded from scope and is not a credential hint. |
 | Valid scp forms such as `host:path` or `alice@host:path` | Direct in ordinary Git: no pack rewrite | A direct call does not reach the broker. If explicitly sent through the broker helper, scp-style parsing is available, but exact URL scope and read-grant checks still apply. |
-| `http://`, `git://`, `ftp://`, `file://`, local paths, or Windows-shaped local paths | Direct, not brokered | No host-file forwarding or new transport is introduced. A URL manually presented to the broker is refused unless it is one of the supported SSH/HTTPS forms. |
+| `http://`, `git://`, `file://`, local paths, or Windows-shaped local paths | Direct, not brokered | No host-file forwarding or new transport is introduced. A URL manually presented to the broker is refused unless it is one of the supported SSH/HTTPS forms. |
 | `ext::`, `fd::`, other `<transport>::` helpers, option-shaped remotes, malformed URL/path forms, query/fragment, or SSH percent escapes | Refused if submitted to the broker | The broker does not execute host helpers, accept host options, or relax path parsing. Percent-escaped SSH input remains refused because Git's decoding and broker identity/argv interpretations can differ. |
 
 Git itself may use SSH URL percent escapes differently from the old parser comment's claim; the comment now explains why the broker still refuses them. No blanket percent-decoding or identity canonicalization was added.
@@ -47,7 +47,9 @@ Changed implementation seams: `internal/gitproto.Identity` now recognizes only t
 - **Whole-tree gate:** `just check-ci` passed after the source changes. Its complete output is saved in the untracked durable evidence bundle.
 - **Nested bundle verification:** `just build-dev-bundle` passed. The emitted launcher, invoked by absolute path from an isolated workspace and a fresh no-packs `HOME`, completed an actual nested podman jail run and printed `nested-no-packs-ok` and the in-jail Git version. This verifies the Linux nested path, not rootless-only behavior; inherited unknown-setting warnings did not prevent launch.
 - **Matching integration:** `go test -v -run '^TestGitBrokerFetchAndRefusal$' ./integration -count=1 -timeout=0` passed; verbose output confirms the test ran, not skipped.
-- **Still required before candidate handoff:** commit the source and docs; run full integration once on the clean final candidate; run `just done`; verify clean status and final HEAD. The private candidate includes updated main `727b94848`, whose ancestry includes hatch `99ba81be2` and the unrelated proxy-test tracking commit. No host deployment, real remote/API, credential grant, or production push/fetch was performed; caller tests used fake local SSH/bare repositories or a fixture TLS server.
+- **Full integration:** `go test -count=1 -timeout=0 ./integration` passed (773.163s) on clean source commit `8fa41b4e5d87fa5ff0b6c0a6408d2ebf83ee37c7`; the command's recorded `HEAD` and clean status match that source commit. It includes the updated main ancestry through `727b94848` and hatch `99ba81be2`.
+- **Completion:** a docs-only QA update follows that source commit. Run `just done` on the final clean QA commit; its outcome is preserved in the untracked durable run evidence. The source commit remains private and is not Main-landed here.
+- **Side-effect boundary:** the accepted broker-call tests are guarded and use fake local SSH/bare repositories or fixture TLS. The earlier pre-guard timeout showed no successful remote operation, but an outbound SSH attempt cannot be excluded. No authorized live credentials, grants, production deploy, or API/remote operation was part of the test plan.
 
 ## Sources
 
