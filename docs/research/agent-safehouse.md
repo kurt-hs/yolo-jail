@@ -5,7 +5,7 @@ status: in-review
 tags: [research, macos, seatbelt, macos-user, packs, threat-model, comparison]
 summary: "Agent Safehouse confines an agent that runs AS YOU, by enumerating what it may touch; yolo-jail gives the agent a different machine and a different identity, so there is nothing of yours to enumerate. On the one axis where they build the same artifact — the macos-user Seatbelt profile — theirs is decisively tighter and ours is barely tested, and that is the adoption surface. Their per-agent prose is the better human artifact and the worse machine one: measured on their own repo, the enforced half moved 106 commits to the documented half's 3, and their opencode investigation documents a program three major versions and one whole reimplementation behind the profile that ships beside it."
 stage: DESIGN
-next: "Build OQ-AS3: refuse a workspace env_sources file outside the workspace; then rule OQ-AS2"
+next: "Build OQ-AS3: refuse a workspace env_sources file outside the workspace"
 vantage:
   status-chip: true
 ---
@@ -931,26 +931,14 @@ Re-check these before quoting them; everything here moved within the last six mo
    `a84a18ca3` (2026-10-22), adapted from Safehouse's layered profiles with their attribution in
    its header (`denyDefaultHeader`, [`seatbeltdeny.go`](../../internal/macosuser/seatbeltdeny.go)).
    This comparison predates it, so its "theirs is decisively tighter" verdict describes the old
-   `(allow default)` self profile. Account mode keeps `(allow default)`; its boundary is the
-   separate `_yolojail` account, not the profile.
+   `(allow default)` self profile. **Ruled 2026-10-29:** account mode keeps `(allow default)`; its
+   boundary is the separate `_yolojail` account, not the profile (*"yes, allow by default for separate
+   account mode. not relitigating that."*).
 
-2. <a id="OQ-AS2"></a>💬 **OQ-AS2: Does yolo want a published per-agent investigation series at all?**
+2. <a id="OQ-AS2"></a>✅ **OQ-AS2: Does yolo want a published per-agent investigation series at all?**
 
-   <!-- vantage: question id=OQ-AS2 leaning="No series; instead give the existing measured tables one home in docs/research/ and adopt their provenance header, so the format is available without committing to thirteen documents." -->
-
-   Stakes: Safehouse's 10,020 lines of per-agent prose are the best human artifact in this
-   comparison and they rotted in seven months, measurably — 106 commits to the policy against 3
-   to the prose, and one investigation now documents a superseded implementation. This repo's
-   own standing lesson is to remove a drift-prone form rather than keep updating it. But yolo
-   currently publishes *nothing* of this kind, and the knowledge exists, scattered across design
-   docs that will be archived when their designs are built.
-
-   _Leaning:_ No per-agent series. Consolidate the measured tables that already exist into one
-   research document, adopt their header discipline, and let the pack declarations stay the
-   enforcement.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+   **Ruled 2026-10-29: no, not yet** (*"no agent investigations yet."*). The pack manifests stay the
+   record of what each agent touches.
 
 3. <a id="OQ-AS3"></a>✅ **OQ-AS3: Should `mounts` and `env_sources` become user-scope-only?**
 

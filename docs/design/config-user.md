@@ -82,6 +82,9 @@ on_request = ["push", "new_branches"]   # a project may request these; each appr
 always = ["read"]
 on_request = ["create_pr", "create_issue"]
 
+[allow.mounts]                    # what a project's mounts may ask for beyond read-only  (RC-D24)
+on_request = ["write"]            # a project may request a writable mount; each approved at launch, in red
+
 [allow.aws-auth]                  # settings; the switch is the name in packs              (§7)
 profile = "my-sso-profile"
 unnarrowed = true

@@ -75,9 +75,10 @@ Today:
 Proposed:
 
 ```toml
-mounts = [                                # read-only unless `write = true`, which only your config may say
+mounts = [                                # read-only unless `write = true`, which your config must allow first (RC-D24)
   "~/code/acme-shared",                   # a bare path lands at /ctx/acme-shared, as today
   { host = "~/x", at = "/ctx/x" },        # one list; an entry is a path or a table
+  { host = "~/scratch", at = "/ctx/scratch", write = true },  # refused unless your config allows it; then approved at launch, in red
 ]
 
 [install]
