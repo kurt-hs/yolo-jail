@@ -264,11 +264,20 @@ func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {
 	for _, argv := range [][]string{
 		{"pr", "view", "41", "--repo", "outside/secret"},
 		{"auth", "token"},
+		{"api", "-H", "X-HTTP-Method-Override: DELETE", "repos/o/r/issues/1"},
 	} {
+		before, err := os.ReadFile(fixture.calls)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if code, _, stderr := fixture.forward(argv...); code == 0 {
 			t.Fatalf("out-of-scope or secret command was not refused: %v", argv)
 		} else if strings.Contains(stderr, "fake GitHub receipt") {
 			t.Fatalf("refused command reached fake host gh: %v: %q", argv, stderr)
+		}
+		after, err := os.ReadFile(fixture.calls)
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatalf("refused command reached fake host gh: argv=%v before=%q after=%q err=%v", argv, before, after, err)
 		}
 	}
 	requests, _, err := fixture.store.List()
