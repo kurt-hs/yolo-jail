@@ -2,7 +2,7 @@
 title: "GitHub write approval Stage 2 QA evidence"
 status: accepted
 stage: CURRENT
-next: "Commit the private candidate, rerun clean-tree integration and dev-bundle checks, then obtain independent review"
+next: "Run just done from the clean candidate and obtain independent review"
 tags: [qa, github, approvals, evidence]
 summary: "Recorded Stage 1 baseline and intentionally red production-caller evidence for exact GitHub write approval."
 ---
@@ -44,13 +44,15 @@ host-asserted identity; no production identity check was weakened.
 | `go test -count=1 -run '^TestProductionGitHubWriteApprovalFlow$' ./internal/cli` | Passed against production daemon/front/host CLI with fake host `gh`, both with and without the optional hook; hook output alone did not approve. |
 | `go test -count=1 -run '^TestGitHubBrokerRunsAReadAgainstTheHostGH$' ./integration` | Passed; this used the real jail test harness and fake host `gh`. |
 | `python3 scripts/completion-census.py` | Passed; updated `scripts/completion-readers.json` for the added exact-consume and production-caller tests. |
-| `just check-ci` | Failed in unrelated environment-sensitive tests: `internal/cli/check/TestASignalToCheckStopsItsNix` could not ready after podman connection failures, and `internal/macosuser/TestStageFontCopyConcurrentLaunchesAgree` plus a macOS-only `chmod +a` test failed on Linux. The changed packages passed in this run. |
-| `go test -count=1 -timeout 0 ./integration` | All but `TestTheJailsYoloCarriesItsMatchedBundleStamp` completed successfully; it failed because the uncommitted candidate's binary version had a `.dirty` suffix. Rerun after candidate commit before acceptance. |
+| `just check-ci` | The first uncommitted attempt hit environment-sensitive failures; retry on the clean candidate passed, including lint and `go test -short ./...`. |
+| `go test -count=1 -timeout 0 ./integration` | The first pre-commit run had only the dirty-stamp mismatch; the clean-candidate rerun passed: `ok github.com/mschulkind-oss/yolo-jail/integration 777.215s`. |
+| `go test -count=1 -timeout 0 ./integration -run '^TestTheJailsYoloCarriesItsMatchedBundleStamp$'` | Passed after candidate commit; the earlier `.dirty` suffix was caused by testing before the implementation commit. |
+| `just build-dev-bundle` + absolute launcher from `/workspace/.yolo/durable/github-write-approval-item5/stage2-nested-workspace` | Passed on the nested podman path with a fake host `gh`; `gh pr view 1` reached fake host `gh` as `pr view --repo=yolo-it/app 1` and returned 0. `yolo check --no-build` validated the temporary user/workspace config. This nested environment is not evidence for rootless-only or reachability behavior. |
+| `uvx vantage-check docs/design/boundary-broker.md docs/design/github-write-approval-plan.md docs/research/github-write-approval-qa.md userguide/guides/github.md userguide/reference/cli-reference.md packs/github/README.md packs/github/briefing/gh.md` | Passed: 7 files checked, no findings. |
 | `just format` | Passed. |
 | Merge of `d159a57f03310f3da5ed49dda7546763361e9a38` | Merged by normal ancestry into this private branch; `main` remains unchanged. |
 
-Still outstanding: clean-candidate `just check-ci`/full integration follow-up, absolute-path
-`just build-dev-bundle` invocation from the durable scratch workspace, `just done`, and independent
-review. The integration run takes approximately 13 minutes here. The nested preflight is podman
-rootful (`false` for `.Host.Security.Rootless`) with `slirp4netns`; nested evidence will not establish
-rootless-only or real reachability behavior.
+Still outstanding: final QA-evidence commit, clean `just done`, and independent review. The clean
+candidate is commit `a71c83693` atop the merge commit for exact root-approved `d159a57f03310f3da5ed49dda7546763361e9a38`; local `main` remains at that approved commit.
+The nested preflight is podman rootful (`false` for `.Host.Security.Rootless`) with `slirp4netns`;
+nested evidence does not establish rootless-only or real reachability behavior.
