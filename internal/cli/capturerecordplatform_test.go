@@ -211,3 +211,12 @@ func TestAForkBuildsPlatformRefusalNamesYoloCapture(t *testing.T) {
 		t.Errorf("the message names `yolo capture`, which does not dispatch")
 	}
 }
+
+// A PACK-TREE program whose launcher could not name its pack ("pack:/<from>") is still told to run
+// `yolo pack build`, which builds every pack-tree program, never `yolo capture <bin>`.
+func TestAPackTreeRefusalWithNoPackNamesYoloPackBuild(t *testing.T) {
+	got := forkBuildPlatformStep("board", "pack:/tools/board-cli", "darwin/arm64")
+	if !strings.Contains(got, "`yolo pack build --force` on the host, in this workspace") {
+		t.Errorf("a pack-tree program with no pack named = %q, want `yolo pack build --force`", got)
+	}
+}

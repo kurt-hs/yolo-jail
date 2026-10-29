@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 func packTreeLauncher(t *testing.T) (home, launcher string) {
@@ -181,5 +183,17 @@ func TestAPackTreeLauncherReplacesAnOlderBuildWhole(t *testing.T) {
 	if rc == 0 || !strings.Contains(out, "pack fx's build of board from tools/board-cli (bad) could not be put in place") ||
 		strings.Contains(out, "fork") {
 		t.Errorf("rc=%d, a failed materialize said %q, want the pack's build named and no fork", rc, out)
+	}
+}
+
+// A PACK-TREE program's launcher declares a pack build source ("pack:…") even when it was handed no
+// pack, so a materialize refusal names `yolo pack build`, never a fork's `yolo capture <bin>`, which
+// builds no pack-tree program (internal/cli's forkBuildPlatformStep reads that prefix).
+func TestAPackTreeLauncherWithNoPackStillDeclaresAPackBuildSource(t *testing.T) {
+	inst := &packdecl.Install{Kind: packdecl.InstallKindSource, Bin: "board", PackFrom: "tools/board-cli", PackRun: "dist/board.js"}
+	for _, d := range []ForkDelivery{{Key: "k"}, {Key: "k", Pack: "fx"}} {
+		if got := sourceDeclared(inst, d); !strings.HasPrefix(got, "pack:") {
+			t.Errorf("sourceDeclared(pack-tree, pack %q) = %q, want a pack: build source", d.Pack, got)
+		}
 	}
 }

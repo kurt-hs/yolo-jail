@@ -158,9 +158,11 @@ func sourceOwner(inst *packdecl.Install, d ForkDelivery) string {
 
 // sourceDeclared is the declared source a source launcher's materialize records in its receipt: a
 // fork's pinned source address, or a pack-tree program's build source, "pack:<pack>/<from>", the
-// string its build receipt carries (packdecl.PackTreeBuildSource).
+// string its build receipt carries (packdecl.PackTreeBuildSource). A pack-tree program handed no pack
+// still declares "pack:/<from>": the prefix is what tells a materialize refusal to name `yolo pack
+// build`, and a pack-tree program has no fork source address to fall back to.
 func sourceDeclared(inst *packdecl.Install, d ForkDelivery) string {
-	if inst.IsPackTree() && d.Pack != "" {
+	if inst.IsPackTree() {
 		return packdecl.PackTreeBuildSource(d.Pack, inst.PackFrom)
 	}
 	return inst.Source

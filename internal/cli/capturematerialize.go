@@ -364,6 +364,8 @@ func materializeForkBuild(store *capture.Store, a materializeArgs, platform stri
 func forkBuildPlatformStep(bin, declared, platform string) string {
 	cmd := "yolo capture " + shquote.Quote(bin)
 	if rest, ok := strings.CutPrefix(declared, "pack:"); ok {
+		// No pack named ("pack:/<from>"): the bare build, which builds every pack-tree program.
+		cmd = "yolo pack build --force"
 		if pack, _, _ := strings.Cut(rest, "/"); pack != "" {
 			cmd = "yolo pack build " + shquote.Quote(pack) + " --force"
 		}
