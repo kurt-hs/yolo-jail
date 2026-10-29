@@ -189,11 +189,32 @@ Before final combined-tree gates, merge the exact root-authorized docs-only comm
 | Shared store is safe without regressions | Empty digest does not cover GitHub exact path; existing exact-grant rows remain valid under unchanged parent metadata after restart; other sources still consume intended set grants; concurrent one-use spend is serialized. |
 | Failure, replay and restart are truthful | Required failure never executes; an approved unspent exact grant retries after restart once; spent, denied, expired and revoked states never execute. |
 
+## Current proof-matrix status
+
+The original Stage 2 candidate at `f94aa9b13534b998aa3d77200a4488369b3adf74` received a frozen
+end-review BLOCK; its earlier completion paragraph below was the candidate author's status, not final
+acceptance. Bounded repairs are in private commits `5eff5aca0cf4e956c76c2505201cd9caca58fc59` and
+`5a5ad6c990e010968496da898f4883f9a52daff3`. Fresh affected-package/race tests, the full integration
+run, nested preflight and final `just check-ci` are recorded in the [QA evidence](../research/github-write-approval-qa.md).
+
+- Production `Forward`/front/daemon/host-CLI proof now covers approved PR comment and issue close,
+  exact NUL-boundary argv receipts, actual stdin-byte digest, request/grant/audit linkage, pending
+  no-dispatch, manual approval without a hook, hook-output-alone not being consent, standing read/write,
+  out-of-scope and secret-command refusal, and spent replay/body/target mutation non-dispatch.
+- The end-review's remaining broader caller proof is still open: expiry, explicit revoke, restart,
+  required spend-audit failure, hostile API-header refusal and concurrent one-use contenders have not
+  all been driven through the production caller. Component tests remain complementary, not a substitute
+  for those caller-level proofs. Do not treat Task 5 or this matrix as fully satisfied yet.
+- Nested verification was rootful podman (`Rootless=false`, `slirp4netns`) and cannot establish rootless,
+  reachability, macOS or live GitHub behavior. No live credentials or GitHub API were used.
+
 ## Stage boundary
 
-Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead has
-authorized Stage 2 under this bounded contract. Tasks 1–6 are implemented and committed in the private Stage2 candidate; the affected-package tests,
-`just check-ci`, the clean full integration suite, the absolute-path dev-bundle launch, and `just done`
-have passed. Independent review is the remaining acceptance gate. Keep Issue 65 open as an upstream
-wait, and do not change user config, credentials, repository grants or main. Record final Stage 2
-commands and outcomes in the named [QA evidence](../research/github-write-approval-qa.md).
+Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead authorized
+Stage 2 under this bounded contract. The original Stage 2 implementation and its historic package,
+check-ci, integration, bundle and done claims were recorded above; the later end-review found specific
+P1/P2 omissions, so those historic claims do not constitute acceptance. The private remediation closes
+the canceled final-audit loss and exposes exact command/stdin identity, fixes the live listing text and
+substantially strengthens the production caller receipt, but the broader Task 5 caller proof is still
+open as itemized above. Keep Issue 65 open as an upstream wait, and do not change user config,
+credentials, repository grants or main. Record current commands/outcomes in the named [QA evidence](../research/github-write-approval-qa.md).
