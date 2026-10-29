@@ -1,7 +1,7 @@
 ---
 status: accepted
 stage: DECIDED
-next: "Execute the local real-Git witness matrix; do not repair production without a reproduced false fast-forward rejection."
+next: "Closed as not a broker defect unless the incident recurs; a recurrence should record `yolo audit --service git` for the push and the pack files' change times."
 ---
 
 # Issue 3: real-Git rejection phase witness
@@ -59,3 +59,19 @@ Report durable receipts under `.yolo/durable/git-scope-force-20261029`, actual c
 ## External witness only after local actions
 
 If matrix sustains legitimate checks/nonreproduction, next unlock is smallest redacted original stderr (including rejected vs remote rejected), client Git version, installed/source yolo ref, helper capabilities, refspec/force mode, advertised old/new IDs, object types, shallow flag and local ancestry exit status. Do not solicit URL/credentials, public GitHub data, API calls or live pushes. Reproduction is not closed as fixed merely because local tests pass.
+
+## Owner witness, 2026-10-29, and disposition
+
+The owner ran the witness commands in the dotfiles checkout, once on the host (Git 2.56.0) and once in its jail (Git 2.55.0), after the branch had been updated from the host. Both gave the same answers:
+
+| Check | Result |
+|---|---|
+| `git ls-remote origin refs/heads/patch/pi-session-search` | `562b20e8…`, the commit the refused push tried to send |
+| `git cat-file -t` of `562b20e8` and `26e920dec` | `commit` for both |
+| `git merge-base --is-ancestor 26e920dec 562b20e8` | exit 0: a true fast-forward |
+| shallow / partial clone | `false` / neither `extensions.partialclone` nor `remote.origin.promisor` set |
+
+Git's client says `needs force` only when the advertised old object exists locally but does not resolve to a commit, or the new one does not. The broker relays the upstream's advertisement unchanged (`receivePack` in `internal/gitbroker/push.go`), so it cannot have altered the old object ID. With both objects intact commits now, the rejection came from the client's object lookup failing at that moment. The likeliest cause is host-side Git rewriting packs in the same repository while the jail pushed, since the jail's `/workspace` is the host checkout live. That cannot be confirmed after the fact.
+
+Disposition: not a broker defect, and no production change. The real refusal behind the `--force` retry was issue 2, which the per-ref grant hint now answers.
+
