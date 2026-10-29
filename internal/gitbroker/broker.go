@@ -97,6 +97,9 @@ type Broker struct {
 	// It is a test seam and nothing else: no config key or environment variable reaches it,
 	// and nothing turns verification off (docs/design/git-broker-plan.md task 6's fence).
 	rootCAs *x509.CertPool
+	// waitLimit, when set below pushWait, shortens a push's wait for its request's answer. It
+	// is a test seam and nothing else.
+	waitLimit time.Duration
 }
 
 // Main is `yolo internal daemon git-broker`: the core's daemon around this source's broker.
@@ -138,6 +141,9 @@ func newBroker(ctx context.Context, scopeFile string, sf brokerscope.File, spawn
 	b := &Broker{ctx: ctx, scopeFile: scopeFile, bound: bound, start: start, spawnCwd: spawnCwd, getenv: getenv,
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) { fmt.Fprintln(log, Name+":", msg) }),
 		log:   log, now: time.Now, store: &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source}}
+	// The store revalidates against this launch's live scope and audits every request, decision
+	// and spent grant, as `yolo approve`'s does (ApprovalStore).
+	b.store.Revalidate, b.store.Audit = b.revalidate, StoreAudit(b.audit)
 	fmt.Fprintln(log, Name+": serving this jail's git remotes through the host's ssh and approved HTTPS credentials; public HTTPS fetches are tried anonymously, and a push goes through when a create-branch grant or the workspace's working set (recorded, or declared in config) covers every ref")
 	return b, func() { _ = brokercore.CloseLease(Source, lease) }, nil
 }

@@ -84,6 +84,9 @@ type Request struct {
 	// printed. Both are terminal-safe, and empty unless it failed (NoteHookFailure).
 	HookFailure string `json:",omitempty"`
 	HookOutput  string `json:",omitempty"`
+	// NeedsApproval is, for a git push, the refs among Argv's that nothing else covered: what
+	// a front end marks as the reason the push asks. It is shown, never part of Digest.
+	NeedsApproval []string `json:",omitempty"`
 }
 
 // Expires is when the request stops waiting for an answer, whatever its state now.
