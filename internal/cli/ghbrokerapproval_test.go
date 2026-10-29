@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
@@ -81,8 +83,12 @@ func startGitHubApprovalBroker(t *testing.T, home, workspace, fakeGH, ghConfig, 
 		_, err := os.Stat(socket)
 		return err == nil
 	})
-	endpointDir, err := filepath.EvalSymlinks(t.TempDir())
+	endpointRoot, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	endpointDir := filepath.Join(endpointRoot, paths.JailShortHash("approval-fixture"))
+	if err := os.MkdirAll(endpointDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(endpointDir, 0o700); err != nil {
@@ -108,12 +114,13 @@ func waitGitHubApproval(t *testing.T, what string, timeout time.Duration, ready 
 }
 
 type productionGitHubFixture struct {
-	broker *githubApprovalBroker
-	store  *brokerstore.Store
-	calls  string
+	broker  *githubApprovalBroker
+	store   *brokerstore.Store
+	calls   string
+	hookLog string
 }
 
-func newProductionGitHubFixture(t *testing.T, userConfig string) *productionGitHubFixture {
+func newProductionGitHubFixture(t *testing.T, userConfig string, withHook bool) *productionGitHubFixture {
 	t.Helper()
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -144,6 +151,30 @@ func newProductionGitHubFixture(t *testing.T, userConfig string) *productionGitH
 	if err := os.MkdirAll(ghConfig, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	hookLog := filepath.Join(fakeDir, "requests.log")
+	if withHook {
+		hookPath := filepath.Join(fakeDir, "on-request")
+		hookScript := fmt.Sprintf("#!/bin/sh\ncat > %s\necho approve\n", shquote.Quote(hookLog))
+		if err := os.WriteFile(hookPath, []byte(hookScript), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var config map[string]json.RawMessage
+		if userConfig == "" {
+			config = make(map[string]json.RawMessage)
+		} else if err := json.Unmarshal([]byte(userConfig), &config); err != nil {
+			t.Fatal(err)
+		}
+		hookCommand, err := json.Marshal(shquote.Quote(hookPath))
+		if err != nil {
+			t.Fatal(err)
+		}
+		config["on_request"] = hookCommand
+		encodedConfig, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		userConfig = string(encodedConfig)
+	}
 	scopeFile, err := brokerscope.Write(brokerscope.File{Source: ghbroker.Source, LaunchID: "cafe", PID: os.Getpid(),
 		Container: "approval-fixture", Workspace: workspace, Repos: []string{"o/r"},
 		Grants: []brokerscope.Grant{{Kind: brokerscope.KindRead, Repo: brokerscope.AnyRepo}}})
@@ -151,9 +182,10 @@ func newProductionGitHubFixture(t *testing.T, userConfig string) *productionGitH
 		t.Fatal(err)
 	}
 	return &productionGitHubFixture{
-		broker: startGitHubApprovalBroker(t, home, workspace, fakeGH, ghConfig, scopeFile, userConfig),
-		store:  &brokerstore.Store{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source},
-		calls:  calls,
+		broker:  startGitHubApprovalBroker(t, home, workspace, fakeGH, ghConfig, scopeFile, userConfig),
+		store:   &brokerstore.Store{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source},
+		calls:   calls,
+		hookLog: hookLog,
 	}
 }
 
@@ -174,7 +206,7 @@ func (f *productionGitHubFixture) forward(argv ...string) (int, string, string) 
 
 func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {
 	userConfig := `{"brokered":{"github":{"sets":[{"name":"read-only","mode":"standing"},{"name":"read-write","mode":"standing"}]}}}`
-	fixture := newProductionGitHubFixture(t, userConfig)
+	fixture := newProductionGitHubFixture(t, userConfig, false)
 	if code, out, stderr := fixture.forward("pr", "view", "41", "--repo", "o/r"); code != 0 || !strings.Contains(out, "fake GitHub receipt") {
 		t.Fatalf("standing read changed: exit %d, stdout %q, stderr %q", code, out, stderr)
 	}
@@ -199,7 +231,7 @@ func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {
 }
 
 func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
-	fixture := newProductionGitHubFixture(t, "")
+	fixture := newProductionGitHubFixture(t, "", true)
 
 	for _, tc := range []struct {
 		name, command, receipt string
@@ -256,6 +288,14 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 
+			waitGitHubApproval(t, "the host on_request receipt", 3*time.Second, func() bool {
+				data, err := os.ReadFile(fixture.hookLog)
+				return err == nil && bytes.Contains(data, []byte(request.ID))
+			})
+			status, err := fixture.store.Status(request.Jail, request.Start, request.ID)
+			if err != nil || status.State != "pending" {
+				t.Fatalf("on_request output was interpreted as consent: %+v %v", status, err)
+			}
 			if rc := Main([]string{"yolo", "approve", request.ID}); rc != 0 {
 				t.Fatalf("host yolo approve exited %d for %s", rc, request.ID)
 			}

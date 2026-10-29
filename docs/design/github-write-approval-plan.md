@@ -2,18 +2,24 @@
 title: "Implementation plan: production GitHub Allow once"
 status: accepted
 stage: DECIDED
-next: "Wait for the lead's Stage 1 review and authorization; then implement tasks 1–7"
+next: "Implement Stage 2 tasks 1–7 under the lead's authorization"
 tags: [implementation-plan, github, approvals, security]
 summary: "A source-grounded hand-off to wire one exact host-approved GitHub write without changing other broker sources or enabling standing writes."
 ---
 
 # Implementation plan: production GitHub Allow once
 
+**Written against:** `b8a32ac0ff0a06d417ed5725a1e62239afd505e0` (2026-10-28), the verified private
+worktree base. The parent `main` had the same base at admission; Stage 2 stays private and preserves
+history.
+
 This is the implementation hand-off for [`github-write-approval.md`](github-write-approval.md).
 The policy authority remains [`boundary-broker.md`](boundary-broker.md), especially BB-D76/77/79,
 BB-D98 and BB-D99. Its timed-resource and working-set Add answers stay unfinished backlog. The
 [research note](../research/github-write-approval.md) records current production wiring and the
-measured-red caller test. **Do not start production edits until the lead accepts Stage 1.**
+measured-red caller test. [Stage 1 QA evidence](../research/github-write-approval-qa.md) records
+commands, outcomes and environment limits. The lead has accepted the bounded Stage 2 direction;
+implement only the listed source changes.
 
 ## Contract and fence
 
@@ -30,7 +36,8 @@ measured-red caller test. **Do not start production edits until the lead accepts
   decision, spend, audit and execution. Audit digests and IDs, never stdin contents or credential
   material; required request/decision/spend audit remains before dispatch.
 - Reuse `brokercore.Daemon.Main`'s existing `StartOnRequest`/`on_request` path and host broker log;
-  wire a real request notice plus host-CLI answer path into production readiness. No HTTP approval
+  a configured host hook is optional and may call `yolo approve`, but its output/exit status alone
+  is never consent. The host CLI/log path supports manual approval without a hook. No HTTP approval
   endpoint, terminal-startup notice, launcher warning, host-run fallback or interactive test.
 - A pending request is visible in host `yolo approve` / `--json` / `--watch --json`. Deny, silence,
   delivery/audit failure and lost responses never run or automatically repeat a write. After an
@@ -42,9 +49,10 @@ The current in-tree consumer-path tests are `TestProductionGitHubWriteApprovalFl
 `TestProductionStandingWritePolicyRefusesWritesAndKeepsReads` in
 [`internal/cli/ghbrokerapproval_test.go`](../../internal/cli/ghbrokerapproval_test.go). They start
 production `ghbroker.Main` in a helper process, route `ghbroker.Forward` through
-`svcendpoint.ServeFront`, use the actual `cli.Main` `yolo approve` path, and run only a recording
-fake host `gh`. No private delivery seam is installed. The first expects these exact actions and
-host receipts after Allow once:
+`svcendpoint.ServeFront`, and run only recording fake host `gh`/`on_request` commands. The Allow-once
+flow configures a hook that logs the request ID but only prints `approve`; it then proves the request
+stays pending until the actual host `cli.Main` `yolo approve` command is called. No private delivery
+seam is installed. The flow expects these exact actions and host receipts:
 
 | Case | Forward argv | Expected fake-host receipt |
 | :--- | :--- | :--- |
@@ -56,7 +64,7 @@ The standing-write test sets only its temporary user's `brokered.github.sets` to
 `read-only: standing` and `read-write: standing`. It requires the read above to run, but the write
 `pr comment 41 --repo o/r --body must-not-run` to return `ghbroker.ExitNoPerm` with both
 `brokered.github.sets` and `remove` in the explanation; no request is filed and no comment reaches
-fake `gh`. This does not alter any user config.
+fake `gh`. These temporary policy fixtures do not alter any user config.
 
 Exact RED command:
 
@@ -65,11 +73,11 @@ go test ./internal/cli -run '^(TestProductionGitHubWriteApprovalFlow|TestProduct
 ```
 
 The command's expected current non-zero result is captured outside the checkout at
-`/workspace/.yolo/durable/github-write-approval-item5/stage1-red-regression-03.txt`; do not treat it
-as a green feature test. Both write cases presently exit 77 before filing a request. The read
-control succeeds, but the standing-policy write gets the generic missing-delivery/host-run refusal
-instead of the required policy-specific refusal. The test must fail if production delivery wiring
-is removed.
+`/workspace/.yolo/durable/github-write-approval-item5/stage1-red-regression-05.txt`; do not treat it
+as a green feature test. The writes presently exit 77 before filing. The read control succeeds,
+while a standing-policy write receives the generic missing-delivery refusal rather than the
+policy-specific refusal. The production test proves the real approval caller and fails if production
+`RequiredDelivery` wiring is removed.
 
 ## Stage 2 tasks (ordered)
 
@@ -100,7 +108,9 @@ rows remain live across restart. Exclude only empty-digest GitHub set-wide rows;
 store's default selector for other sources. Keep lock ordering, durable spend and required audit
 before dispatch. Add source-named tests in [`internal/brokerstore/store_test.go`](../../internal/brokerstore/store_test.go)
 for exact/non-exact selection, parent/invocation mismatch, concurrent spend and expiry/restart; keep
-existing tests proving non-GitHub set grants still work.
+existing tests proving non-GitHub set grants still work. Rewrite
+[`internal/ghbroker/window_test.go`](../../internal/ghbroker/window_test.go)'s broad timed-grant cases
+for GitHub exact-only spend; preserve generic timed-grant coverage in brokerstore for other sources.
 
 ### 3. Bind required store audit to the exact action and use
 
@@ -115,11 +125,14 @@ mutation changes the digest without logging the body.
 ### 4. Wire actual GitHub request delivery and decision surfaces
 
 In [`internal/ghbroker/daemon.go`](../../internal/ghbroker/daemon.go) / `newBroker`, install the
-production `RequiredDelivery`; do not edit only the fake fixture. Use a real host-log request notice
-and the existing host `yolo approve` store path. `Ready` must describe those real production
-capabilities. Keep the already-configured `StartOnRequest` daemon hook as an optional notifier; it
-must not approve. A request/log/delivery error leaves the request inspectable, returns its ID and
-host `yolo approve <id>` step, and never dispatches.
+production `RequiredDelivery`. Its readiness requires the real background log and host CLI path,
+consistent with BB-D98; an `on_request` hook is optional. Use the existing host command as one request
+affordance when configured. It may call host `yolo approve`; only the store decision written through
+that CLI is consent, never hook output or exit status. Keep `brokercore.StartOnRequest` as the
+execution path and report hook failure; request/log failure never dispatches. Update the inaccurate
+[`internal/ghbroker/onrequest_test.go`](../../internal/ghbroker/onrequest_test.go) claim that hooks
+only notify: the configured trusted command may invoke `yolo approve`, but hook output alone never
+changes stored status. Do not edit only the fake fixture.
 
 In [`internal/cli/approve.go`](../../internal/cli/approve.go), reject `--for` and `--add` for pending
 GitHub writes with the plain `yolo approve <id>` Allow-once next step. Do not alter these flags for
@@ -127,25 +140,31 @@ other broker sources, fabricate a timed/Add grant or silently coerce them. Refre
 empty-state and decision messages so a user can distinguish a pending request from an old
 set-wide grant. Tests must pin source-specific refusal and unchanged other-source behavior.
 
-### 5. Prove the complete production caller, deny and no-notifier behavior
+### 5. Prove the complete production caller and approval behavior
 
-Finish the new CLI tests so the real front/daemon/host CLI flow approves both actions, checks the
-exact fake-`gh` argv and receipt, request visibility, action/stdin digest and correlated request/grant
-audit. Add production-path refusal checks for no approval, deny, expiry/revocation, changed
-argv/repository/stdin, legacy empty-digest GitHub grants, standing `read-write` policy, required
-audit failure and concurrent one-use calls. Verify one existing exact unspent grant remains valid
-across restart and spend still prevents replay. Do not use a private executor or delivery mock to
-claim production wiring; callee-only unit tests complement, never replace, this caller proof.
+Finish the new CLI tests so the real front/daemon/host CLI flow exercises the optional configured
+hook, proves hook output alone is not approval, then approves both actions via `cli.Main`, checks the
+exact fake-`gh` argv/receipt and correlated request/grant/action audit. Add production-path refusal
+checks for no approval, deny, expiry/revocation, changed argv/repository/stdin, legacy empty-digest
+GitHub grants, standing `read-write` policy, required audit failure and concurrent one-use calls.
+Verify an existing unspent exact grant remains valid across restart and spend prevents replay. Do
+not use a private executor or delivery mock to claim production wiring; callee-only unit tests
+complement, never replace, this caller proof.
 
 ### 6. Update source-facing explanations without changing policy authority
 
 Refresh [`internal/cli/gh.go`](../../internal/cli/gh.go),
 [`internal/cli/help.go`](../../internal/cli/help.go),
 [`packs/github/briefing/gh.md`](../../packs/github/briefing/gh.md),
+[`packs/github/README.md`](../../packs/github/README.md),
+[`userguide/guides/github.md`](../../userguide/guides/github.md),
 [`packs/github/loopholes/github-broker/manifest.jsonc`](../../packs/github/loopholes/github-broker/manifest.jsonc),
-[`internal/ghbroker/daemon_test.go`](../../internal/ghbroker/daemon_test.go), and the existing
+[`internal/ghbroker/daemon_test.go`](../../internal/ghbroker/daemon_test.go),
+[`internal/ghbroker/onrequest_test.go`](../../internal/ghbroker/onrequest_test.go), and the existing
 read-only integration fixture [`integration/githubbroker_test.go`](../../integration/githubbroker_test.go):
-remove the claim that all writes immediately exit 77 or that `host-run` is the approval path; do
+refresh the intro/table in `userguide/guides/github.md` and the intro/exit-77 row in
+`packs/github/README.md`; remove the claim that all writes immediately exit 77 or that `host-run` is
+the approval path; do
 not make the read-only regression test wait 30 seconds for an unapproved write. The integration
 fixture may retain read/refusal coverage; production approved writes are proven by the actual
 consumer-path test. Update only the implementation/status table and stale shipping-state paragraphs
@@ -154,7 +173,11 @@ questions. Review every source-named statement with `rg` and the implemented pat
 
 ### 7. Validate the shipped caller and scoped change
 
-Run `gofmt`, the affected package tests (`go test -short ./internal/ghbroker ./internal/brokerstore ./internal/brokercore ./internal/cli`), the relevant broker integration test(s), and `just check-ci`. Because production code is under `internal/`, perform the mandatory nested-jail check: `just build-dev-bundle`, then call its emitted launcher by absolute path from a throwaway workspace. Tests use fake host `gh`; make no live GitHub call. Inspect the owner Go cache at its normal path; do not set a private `GOCACHE` override. Never edit or write main. The current host preflight is `podman info --format '{{.Host.Security.Rootless}}'` = `false` and `podman info --format '{{.Host.RootlessNetworkCmd}}'` = `slirp4netns`; the nested jail proves launcher/production wiring only, not a rootless-only or reachability path.
+Run `just format`, the affected package tests (`go test -short ./internal/ghbroker ./internal/brokerstore ./internal/brokercore ./internal/cli`), and `just check-ci`. Because the repaired path includes daemon startup/launch behavior, run the **full** integration suite once on the final combined tree (`just test`, which includes `go test -count=1 -timeout 0 ./integration`), not only a symbol-filtered subset. If changed repo-reader tests read outside their package, rerun `python3 scripts/completion-census.py` and commit its output.
+
+For the mandatory nested check of the `internal/` change, run `just build-dev-bundle` and invoke its emitted launcher by absolute path from a fresh workspace under `/workspace/.yolo/durable/github-write-approval-item5/stage2-nested-workspace`. The current host preflight is `podman info --format '{{.Host.Security.Rootless}}'` = `false` and `podman info --format '{{.Host.RootlessNetworkCmd}}'` = `slirp4netns`; this nested jail proves launcher/production wiring only, not a rootless-only or reachability path. Use fake host `gh`, inspect but do not override the owner Go cache, and never edit or write main.
+
+Before final combined-tree gates, merge the exact root-authorized docs-only commit `ed4aed903415bb4e67c61203dc742d6181384bd6` (or a later root-provided docs ref) into the private branch by normal ancestry, without rebasing or rewriting Stage 1. After all coherent commits, ensure the worktree is clean and run `just done`.
 
 ## Proof matrix
 
@@ -168,7 +191,7 @@ Run `gofmt`, the affected package tests (`go test -short ./internal/ghbroker ./i
 
 ## Stage boundary
 
-Stage 1 is research, design, the completed hand-off and the measured-red consumer test only. Keep its
-log outside the repository at the named durable path, commit only the Stage 1 source test/docs in the
-private worktree, and send the lead a blocking approval request. Stop there. Stage 2 production
-changes begin only after the lead replies. Issue 65 remains open as an upstream wait throughout.
+Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead has
+authorized Stage 2 under this bounded contract. Continue from the private Stage 1 history, keep
+Issue 65 open as an upstream wait, and do not change user config, credentials, repository grants or
+main. Run and record every Stage 2 gate in the named [QA evidence](../research/github-write-approval-qa.md).

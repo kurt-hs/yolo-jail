@@ -9,8 +9,10 @@ summary: "A bounded implementation slice that turns the existing GitHub broker's
 
 # One host yes authorizes one exact GitHub write
 
-**Status:** Settled bounded slice. Source facts and the current exit-77 reproduction are recorded in
-[the research note](../research/github-write-approval.md).
+**Status:** Settled bounded slice. **Written against:** `b8a32ac0ff0a06d417ed5725a1e62239afd505e0`
+(2026-10-28). Source facts and the current exit-77 reproduction are recorded in
+[the research note](../research/github-write-approval.md) and
+[Stage 1 QA evidence](../research/github-write-approval-qa.md).
 
 > **In short.** A GitHub write runs only after a human approves its exact canonical action through
 the host's existing `yolo approve` interface. The grant is one use, expires after 15 minutes, and
@@ -70,9 +72,10 @@ reads and current explicit scope/refusal rules are unchanged.
 - **Request store:** the existing host-owned, locked store records one exact request. Its command
   digest is over canonical argv, resolved repository and SHA-256 of the exact stdin bytes, including
   empty stdin. No stdin body alias or host-file alias is introduced.
-- **Host approver:** the existing `yolo approve <id>` CLI is the sole decision authority. The optional
-  existing `on_request` hook may notify, and `yolo approve --watch --json` may observe; neither
-  becomes an alternate decision protocol. A jail cannot read or write the store or approve itself.
+- **Host approver:** the existing `yolo approve <id>` CLI is the only store decision surface. A
+  configured `on_request` is a trusted host command and may call that CLI; its stdout, stderr or
+  exit status alone is never interpreted as consent. `yolo approve --watch --json` may observe.
+  A jail cannot read or write the store or approve itself.
 - **Host executor:** the existing isolated host `gh` runner receives only broker-canonical argv and
   the captured stdin bytes; its existing empty working directory, reduced environment, host-file
   placement guard and no-token-to-jail boundary remain in force.
@@ -90,10 +93,12 @@ empty-digest set-wide GitHub rows, with no policy clamping or expiry migration.
    stored action, consumed action and executed action must denote those same argv, repository and
    body bytes; no request value supplied by the jail can stand in for host identity or consent.
 2. If no exact live Allow-once grant covers it, the broker files the request and its required audit
-   under the existing store transaction. The production delivery dependency is ready only when the
-   real request/log path and the host CLI answer path are available; it is not an unconditional
-   test bypass. The request ID is written to the broker's existing background log. The configured
-   `on_request` hook continues to run through its existing daemon wiring, if present.
+   under the existing store transaction. The production delivery dependency is ready when the real
+   background-log path and host CLI answer path are available; a configured `on_request` hook is
+   optional. The request ID is written to the broker's existing background log. If configured, the
+   trusted hook may call host `yolo approve`; its output is not a decision. Without a hook, the user
+   can still find and decide the request with manual host `yolo approve`. No test-only ready bit is
+   used.
 3. The host human approves through `yolo approve <id>`. Decision audit and grant creation use the
    existing shared transaction. The host may also deny; denial never dispatches. A successful
    Allow once creates a workspace-held, digest-bound, one-use grant for 15 minutes.
@@ -126,9 +131,10 @@ classified as an unreviewed standing read.
 A pending request remains visible in the existing host `yolo approve` list and machine-readable
 `--json`/`--watch --json` views. The broker background log records its request ID and an actionable
 `yolo approve <id>` next step without exposing workspace paths, repository names, body bytes or
-credentials. The existing `on_request` hook may notify, but still only calls the host CLI to decide.
-No notifier is required for a human to use manual `yolo approve`; absence of one does not add a
-startup line, terminal notice file, HTTP port or pasted host-run command.
+credentials. A configured trusted host `on_request` command may notify or call `yolo approve`; only
+the store decision written by the CLI counts, never hook output. Without a configured hook, the
+background-log entry and manual host `yolo approve` remain available. No new desktop notifier,
+startup line, terminal notice file, HTTP port or pasted host-run command is added.
 
 | Outcome | Broker behavior and next step |
 | :--- | :--- |

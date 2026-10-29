@@ -2,7 +2,7 @@
 title: "GitHub write approval has a real store path and an unwired production gate"
 status: accepted
 stage: CURRENT
-next: "Implement the accepted Allow-once-first design in github-write-approval-plan.md after lead approval"
+next: "Implement the bounded Stage 2 path in github-write-approval-plan.md"
 tags: [research, github, security, approvals]
 summary: "Source audit for wiring GitHub write approval through the existing host request store, broker front, and yolo approve CLI."
 ---
@@ -41,10 +41,11 @@ broker sources must keep the store's existing set-wide behavior.
 The required building blocks exist: a canonical parsed request; `brokerstore.CommandDigest`, which
 hashes canonical argv, resolved repository and stdin digest; locked approval and consumption;
 `yolo approve <id>` as the host-side Allow-once action; a bounded caller wait/status response; the
-existing background daemon log; the optional `on_request` notification hook; and `yolo approve
---watch --json`. No daemon-to-launch notice, new HTTP approval endpoint, user-file alias or pasted
-host command is needed. A request with no notifier still needs an operator-visible background-log
-entry, while an unanswered or denied request must not run `gh` or retry automatically.
+existing background daemon log; optional `on_request` host command; and `yolo approve --watch --json`.
+The trusted hook may invoke host `yolo approve`, but its output or exit status is not consent. Without
+a hook, the background log and manual host CLI still let a human decide. No new HTTP approval
+endpoint, terminal notice, user-file alias or pasted host command is needed. Unanswered or denied
+requests never run `gh` or retry automatically.
 
 The code's default classification gives a write the legacy `read-write` windowed outcome. User
 configuration can declare a set `standing`, and the legacy `read-write` set can be configured that
@@ -60,13 +61,14 @@ from the base classifier. Do not repair this by changing user config or adding a
 
 Added `internal/cli/ghbrokerapproval_test.go`, a consumer-path regression test. It starts the actual
 `ghbroker.Main` daemon in a subprocess, connects `ghbroker.Forward` through the real service front,
-and provides only a recording fake `gh`. The test contains the host `cli.Main` `yolo approve` step
-once a request has been filed; the current red baseline returns before that step is reached. No
-production seams are set and no interactive agent or network API is invoked. The targeted run is
+and provides only recording fake host `gh`/`on_request` commands. The test contains the host
+`cli.Main` `yolo approve` step once a request has been filed; the current red baseline returns before
+that step is reached. No production seams are set and no interactive agent or network API is
+invoked. The targeted run is
 captured outside the repository at
-`/workspace/.yolo/durable/github-write-approval-item5/stage1-red-regression-03.txt` (do not commit
+`/workspace/.yolo/durable/github-write-approval-item5/stage1-red-regression-05.txt` (do not commit
 that log). Both PR-comment and issue-close attempts exit 77 before a request exists. The standing
 policy case's ordinary standing read succeeds, while its write gets the current generic exit-77
 host-run handoff rather than the required policy-specific refusal. The assertions are intentionally
-for a later green approval flow and explicit standing-policy refusal, so this is evidence of current
-failure, not a passing feature test.
+for later green approval flow and explicit refusal behavior; this is measured-red evidence, not a
+passing feature test.
