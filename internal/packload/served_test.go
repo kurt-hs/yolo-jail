@@ -243,18 +243,22 @@ func TestAnOverrideOfAnUnservedPointerIsNoFinding(t *testing.T) {
 
 // THE GIT REWRITE EXISTS ONLY WHERE THE GIT-BROKER RUNS (docs/design/git-broker-plan.md ID-6):
 // packs/git's GIT_CONFIG_* contribution is `served_by` its loophole, so the host notch, which
-// serves nothing, folds none of it, and a jail serving git-broker folds all seven keys. Deleting
+// serves nothing, folds none of it, and a jail serving git-broker folds all eleven keys. Deleting
 // `served_by` from the pack's env contribution fails the first half.
 func TestGitRewriteWithheldWhereUnserved(t *testing.T) {
 	packs := embeddedNamed(t, "git")
 	keys := map[string]string{
-		"GIT_CONFIG_COUNT":   "3",
+		"GIT_CONFIG_COUNT":   "5",
 		"GIT_CONFIG_KEY_0":   "url.yolo::ssh://.insteadOf",
 		"GIT_CONFIG_VALUE_0": "ssh://",
 		"GIT_CONFIG_KEY_1":   "url.yolo::https://.insteadOf",
 		"GIT_CONFIG_VALUE_1": "https://",
 		"GIT_CONFIG_KEY_2":   "url.yolo::git@.insteadOf",
 		"GIT_CONFIG_VALUE_2": "git@",
+		"GIT_CONFIG_KEY_3":   "url.yolo::git+ssh://.insteadOf",
+		"GIT_CONFIG_VALUE_3": "git+ssh://",
+		"GIT_CONFIG_KEY_4":   "url.yolo::ssh+git://.insteadOf",
+		"GIT_CONFIG_VALUE_4": "ssh+git://",
 	}
 	compose := func(served ServedDaemons) *CredentialScope {
 		t.Helper()

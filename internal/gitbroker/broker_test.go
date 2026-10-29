@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -84,11 +86,13 @@ func sshScript(record, srv, body string) string {
 	if body == "tee" {
 		body = `PATH="$(git --exec-path):$PATH"
 cd ` + srv + ` || exit 1
+last=$(printf '%s\n' "$last" | sed "s|'\\/o\\/r.git'|'` + srv + `/o/r.git'|")
 tee ` + record + `/stdin | sh -c "$last"`
 	}
 	if body == "" {
 		body = `PATH="$(git --exec-path):$PATH"
 cd ` + srv + ` || exit 1
+last=$(printf '%s\n' "$last" | sed "s|'\\/o\\/r.git'|'` + srv + `/o/r.git'|")
 exec sh -c "$last"`
 	}
 	return `#!/bin/sh
@@ -240,6 +244,8 @@ func newFixtureOpts(t *testing.T, o fixtureOpts) *fixture {
 	writeExec(t, filepath.Join(f.bin, "ssh"), sshScript(f.record, filepath.Join(root, "srv"), sshBody))
 	writeExec(t, filepath.Join(f.helperBin, "git-remote-yolo"),
 		"#!/bin/sh\nexec \"$TEST_BINARY\" -test.run='^TestHelperProcess$' -- \"$@\"\n")
+	writeExec(t, filepath.Join(f.helperBin, "ssh-outside-broker"),
+		"#!/bin/sh\necho 'direct SSH bypassed the broker' >&2\nexit 97\n")
 
 	pathFirst := f.bin
 	if o.prepare != nil {
@@ -321,15 +327,55 @@ func serve(t *testing.T, handler hostservice.Handler) string {
 	return endpoint
 }
 
-// git runs the real git in the workspace the way the jail's does: every git@ and https://
-// remote rewritten to the helper, which reaches the fixture's endpoint.
+func packGitRewriteEnv(t *testing.T) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "packs", "git", "pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Contributes []struct {
+			Kind     string            `json:"kind"`
+			ServedBy string            `json:"served_by"`
+			Vars     map[string]string `json:"vars"`
+		} `json:"contributes"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, contribution := range manifest.Contributes {
+		if contribution.Kind != "env" || contribution.ServedBy != "git-broker" {
+			continue
+		}
+		count, err := strconv.Atoi(contribution.Vars["GIT_CONFIG_COUNT"])
+		if err != nil || count == 0 {
+			t.Fatalf("git pack has invalid GIT_CONFIG_COUNT %q", contribution.Vars["GIT_CONFIG_COUNT"])
+		}
+		env := []string{"GIT_CONFIG_COUNT=" + strconv.Itoa(count)}
+		for i := 0; i < count; i++ {
+			for _, key := range []string{fmt.Sprintf("GIT_CONFIG_KEY_%d", i), fmt.Sprintf("GIT_CONFIG_VALUE_%d", i)} {
+				value, ok := contribution.Vars[key]
+				if !ok {
+					t.Fatalf("git pack rewrite is missing %s", key)
+				}
+				env = append(env, key+"="+value)
+			}
+		}
+		return env
+	}
+	t.Fatal("git pack has no served_by git-broker env contribution")
+	return nil
+}
+
+// git runs the real git in the workspace with the production pack's rewrite contribution:
+// rewritten URLs reach the helper, which dispatches through the fixture broker.
 func (f *fixture) git(args ...string) (string, error) {
 	f.t.Helper()
-	env := gitEnv("GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=url.yolo::git@.insteadOf", "GIT_CONFIG_VALUE_0=git@",
-		"GIT_CONFIG_KEY_1=url.yolo::https://.insteadOf", "GIT_CONFIG_VALUE_1=https://",
+	extra := append(packGitRewriteEnv(f.t),
 		"PATH="+f.helperBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"GIT_SSH_COMMAND="+filepath.Join(f.helperBin, "ssh-outside-broker"),
 		gitremote.EndpointEnv+"="+f.endpoint, "GO_HELPER=1", "TEST_BINARY="+os.Args[0])
-	return run(f.t, f.ws, env, args...)
+	return run(f.t, f.ws, gitEnv(extra...), args...)
 }
 
 // helper runs the jail's helper in-process against the fixture for url and service, with
@@ -387,6 +433,138 @@ func auditRaw(t *testing.T) string {
 	t.Helper()
 	data, _ := os.ReadFile(paths.BrokerAuditLog())
 	return string(data)
+}
+
+func TestRealGitRoutesBracketedIPv6ScpThroughBroker(t *testing.T) {
+	const remote = "git@[::1]:o/r.git"
+	f := newFixture(t, "", remote)
+	out, err := f.git("ls-remote", remote)
+	if err != nil {
+		t.Fatalf("git ls-remote %q: %v\n%s", remote, err, out)
+	}
+	if !strings.Contains(out, "\trefs/heads/main") {
+		t.Fatalf("ls-remote did not receive the fixture's main ref:\n%s", out)
+	}
+	argv, err := os.ReadFile(filepath.Join(f.record, "argv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(argv), "git@::1") || !strings.Contains(string(argv), "git-upload-pack 'o/r.git'") {
+		t.Fatalf("broker did not dispatch the bracketed IPv6 URL as scp-style SSH:\n%s", argv)
+	}
+}
+
+func TestGitPackRewritesSSHFormsThroughTheBroker(t *testing.T) {
+	wantRules := map[string]string{
+		"url.yolo::ssh://.insteadOf":     "ssh://",
+		"url.yolo::https://.insteadOf":   "https://",
+		"url.yolo::git@.insteadOf":       "git@",
+		"url.yolo::git+ssh://.insteadOf": "git+ssh://",
+		"url.yolo::ssh+git://.insteadOf": "ssh+git://",
+	}
+	env := packGitRewriteEnv(t)
+	gotRules := map[string]string{}
+	for _, item := range env[1:] {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || !strings.HasPrefix(key, "GIT_CONFIG_KEY_") {
+			continue
+		}
+		index := strings.TrimPrefix(key, "GIT_CONFIG_KEY_")
+		gotRules[value] = envValue(env, "GIT_CONFIG_VALUE_"+index)
+	}
+	for key, value := range wantRules {
+		if got := gotRules[key]; got != value {
+			t.Errorf("git pack rewrite %q = %q, want %q", key, got, value)
+		}
+	}
+
+	for _, remote := range []string{
+		"ssh://git@fixture.test/o/r.git",
+		"git+ssh://git@fixture.test/o/r.git",
+		"ssh+git://git@fixture.test/o/r.git",
+		"ssh://git@[::1]:2222/o/r.git",
+	} {
+		t.Run(remote, func(t *testing.T) {
+			f := newFixture(t, "", remote)
+			out, err := f.git("ls-remote", remote)
+			if err != nil || !strings.Contains(out, "\trefs/heads/main") {
+				t.Fatalf("real git ls-remote %q: %v\n%s", remote, err, out)
+			}
+			events := auditEvents(t)
+			if len(events) != 1 || events[0].Set != "read" || events[0].Remote != remote {
+				t.Fatalf("the real Git call did not reach the broker with its exact approved URL: %+v", events)
+			}
+		})
+	}
+}
+
+func envValue(env []string, key string) string {
+	for _, item := range env {
+		name, value, ok := strings.Cut(item, "=")
+		if ok && name == key {
+			return value
+		}
+	}
+	return ""
+}
+
+func TestGitPackLeavesOtherValidGitURLsDirect(t *testing.T) {
+	f := newFixture(t, "")
+	for _, remote := range []string{
+		"fixture.test:o/r.git",
+		"alice@fixture.test:o/r.git",
+		"http://fixture.test/o/r.git",
+		"git://fixture.test/o/r.git",
+		"file:///srv/o/r.git",
+		"/srv/o/r.git",
+		"C:/src/o/r.git",
+	} {
+		out, err := f.git("ls-remote", "--get-url", remote)
+		if err != nil || strings.TrimSpace(out) != remote {
+			t.Errorf("git's no-network URL expansion for %q = %q, %v; want unchanged direct URL", remote, out, err)
+		}
+	}
+	if f.sshRan() {
+		t.Fatal("a valid but unrewritten URL reached the broker's host SSH transport")
+	}
+}
+
+func TestSameIdentityDoesNotApproveAnotherSSHURL(t *testing.T) {
+	f := newFixture(t, "")
+	const alias = "git+ssh://git@fixture.test/o/r.git"
+	out, err := f.git("ls-remote", alias)
+	if err == nil || !strings.Contains(out, "approved scope") {
+		t.Fatalf("unapproved alias with the same repository identity was not refused: %v\n%s", err, out)
+	}
+	if f.sshRan() {
+		t.Fatal("the host SSH transport ran for a URL that was not approved exactly")
+	}
+	events := auditEvents(t)
+	if len(events) != 1 || events[0].Set != "out-of-scope" || events[0].Remote != alias {
+		t.Fatalf("out-of-scope alias audit: %+v", events)
+	}
+}
+
+func TestSSHAliasPushStillRefusesAnUncoveredRef(t *testing.T) {
+	const remote = "ssh+git://git@fixture.test/o/r.git"
+	f := newFixture(t, "tee", remote)
+	f.localCommit()
+	out, err := f.git("push", remote, "HEAD:main")
+	if err == nil || !strings.Contains(out, "! [remote rejected]") {
+		t.Fatalf("push through alias was not refused by the per-ref policy: %v\n%s", err, out)
+	}
+	if sent, err := os.ReadFile(filepath.Join(f.record, "stdin")); err != nil || string(sent) != "0000" {
+		t.Fatalf("receive-pack got %q (%v), want only the empty command list", sent, err)
+	}
+	var receive *brokeraudit.Event
+	for _, event := range auditEvents(t) {
+		if len(event.Argv) == 1 && event.Argv[0] == serviceReceivePack {
+			receive = &event
+		}
+	}
+	if receive == nil || receive.Set != "refused" || receive.Remote != remote {
+		t.Fatalf("receive-pack alias audit: %+v", receive)
+	}
 }
 
 func TestFetchThroughTheBroker(t *testing.T) {
@@ -514,7 +692,7 @@ func TestSSHHostStartingWithDashRefused(t *testing.T) {
 func TestOnlySSHAndHTTPSTransports(t *testing.T) {
 	f := newFixture(t, "")
 	for _, bad := range []string{"file:///srv/r.git", "ext::sh -c x", "ext::sh", "fd::3", "-oProxyCommand=x:r",
-		"git@fixture.test:-oFoo", "git+ssh://fixture.test/o/r", "http://fixture.test/o/r.git", "/srv/o/r.git"} {
+		"git@fixture.test:-oFoo", "git+http://fixture.test/o/r", "http://fixture.test/o/r.git", "/srv/o/r.git"} {
 		f.setScope(bad)
 		rc, stdout, stderr := f.helper(bad, "git-upload-pack", nil)
 		if rc == 0 || stdout != "connect\n\n" {
@@ -524,10 +702,13 @@ func TestOnlySSHAndHTTPSTransports(t *testing.T) {
 			t.Fatalf("%q: the fake ssh ran", bad)
 		}
 	}
-	// https:// is the other transport that crosses, over the HTTPS upstream (https_test.go),
-	// never the host's ssh.
 	if tr, err := transportOf("https://fixture.test/o/r.git"); err != nil || tr != transportHTTPS {
 		t.Fatalf("https: transport %q, %v", tr, err)
+	}
+	for _, remote := range []string{"git+ssh://fixture.test/o/r.git", "ssh+git://fixture.test/o/r.git"} {
+		if tr, err := transportOf(remote); err != nil || tr != transportSSH {
+			t.Errorf("%s: transport %q, %v", remote, tr, err)
+		}
 	}
 }
 
@@ -646,6 +827,12 @@ func TestSSHArgv(t *testing.T) {
 			"-o", "ConnectTimeout=30", "-p", "2222", "-o", "SendEnv=GIT_PROTOCOL", "--", "git@host", "git-upload-pack '~/repo.git'"}},
 		{"ssh://host/srv/it's.git", "version=9", []string{"-x", "-T", "-o", "ClearAllForwardings=yes", "-o", "PermitLocalCommand=no",
 			"-o", "ConnectTimeout=30", "--", "host", `git-upload-pack '/srv/it'\''s.git'`}},
+		{"git@[::1]:o/r.git", "", []string{"-x", "-T", "-o", "ClearAllForwardings=yes", "-o", "PermitLocalCommand=no",
+			"-o", "ConnectTimeout=30", "--", "git@::1", "git-upload-pack 'o/r.git'"}},
+		{"ssh://git@[::1]:2222/o/r.git", "", []string{"-x", "-T", "-o", "ClearAllForwardings=yes", "-o", "PermitLocalCommand=no",
+			"-o", "ConnectTimeout=30", "-p", "2222", "--", "git@::1", "git-upload-pack '/o/r.git'"}},
+		{"git+ssh://alice@host/o/r.git", "", []string{"-x", "-T", "-o", "ClearAllForwardings=yes", "-o", "PermitLocalCommand=no",
+			"-o", "ConnectTimeout=30", "--", "alice@host", "git-upload-pack '/o/r.git'"}},
 	} {
 		got, err := sshArgv(tc.url, "git-upload-pack", tc.protocol)
 		if err != nil || strings.Join(got, "\x00") != strings.Join(tc.want, "\x00") {

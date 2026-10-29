@@ -14,8 +14,8 @@ import (
 )
 
 // The user part of an SSH remote reaches ssh's argv, where an ssh config's %r expands it: one
-// outside [A-Za-z0-9._-], or any part git would not have read as written (git does not
-// percent-decode an ssh URL), is refused before ssh runs.
+// outside [A-Za-z0-9._-], or an SSH URL whose percent-decoding could disagree with the broker's
+// exact-scope identity and upstream path, is refused before ssh runs.
 func TestSSHUserAndEncodingRefused(t *testing.T) {
 	f := newFixture(t, "")
 	for _, bad := range []string{"ssh://a%0Ab@fixture.test/o/r", "ssh://%24%28id%29@fixture.test/o/r", "a;id@fixture.test:o/r",

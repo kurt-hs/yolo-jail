@@ -170,11 +170,14 @@ answer."*
 
 ### 4.1 The jail's leg
 
-- **Every remote form is rewritten to the broker.** The jail's git configuration carries
-  `url.<broker>.insteadOf` rules for the scp-style `git@host:…` form, `ssh://` and `https://`,
-  so whatever spelling a remote uses, the jail's git dials the broker's endpoint. The rewritten
-  URL carries the original remote, so the broker knows the upstream host, path and form; how it
-  is encoded is the implementer's.
+- **The configured SSH and HTTPS remotes are rewritten to the broker.** The jail's git
+  configuration carries `url.<broker>.insteadOf` rules for scp-style `git@host:…`, `ssh://`,
+  `git+ssh://`, `ssh+git://` and `https://` remotes. The SSH aliases and bracketed IPv6 scp form
+  use the same broker transport; the broker accepts only these supported forms after checking the
+  original URL against exact approved scope. Other valid Git syntax, including `host:path` and
+  `alice@host:path`, and other remote forms are not implicitly brokered. The rewritten URL carries
+  the original remote, so the broker knows the upstream host, path and form; how it is encoded is
+  the implementer's.
 - **That leg carries no git credential.** The jail reaches the endpoint with the loophole
   transport's own token, which reaches only the broker
   ([`loophole-transport.md`](../reference/loophole-transport.md)).

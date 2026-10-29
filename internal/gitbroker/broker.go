@@ -293,7 +293,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 	transport, err := transportOf(req.URL)
 	if err != nil {
 		return refuse("refused", "transport not brokered", "the approved remote "+req.URL+" does not cross the git-broker: "+
-			err.Error()+". Only ssh://, https:// and scp-style user@host:path remotes reach the host, so nothing ran. "+
+			err.Error()+". Only ssh://, git+ssh://, ssh+git://, https:// and scp-style [user@]host:path remotes reach the host, so nothing ran. "+
 			"Give the remote its SSH or HTTPS URL (`git remote set-url`), or fetch it on the host.", brokercore.ExitUsage)
 	}
 	credentialPolicy := func() (bool, string, error) {

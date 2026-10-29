@@ -2,7 +2,8 @@
 // one jail's approved git remotes the way the host does, on its behalf
 // (docs/design/git-broker.md, docs/design/git-broker-plan.md task 7). The daemon is
 // internal/gitbroker, reached from the jail through git's own remote-helper protocol: the
-// pack's `env` contribution rewrites ssh://, https:// and git@ remotes to `yolo::<url>`, so the
+// pack's `env` contribution rewrites ssh://, git+ssh://, ssh+git://, https:// and git@ remotes
+// (including scp-style bracketed IPv6 forms) to `yolo::<url>`, so the
 // jail's real git runs `git-remote-yolo`, which the pack's `intercept` forwards to
 // `yolo git-remote --` (ID-4).
 //

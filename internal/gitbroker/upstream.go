@@ -30,10 +30,10 @@ const (
 )
 
 // transportOf says which upstream an approved remote URL takes, or why the broker carries
-// none. Only ssh://, https:// and scp-style [user@]host:path remotes cross: git's
-// `<transport>::<address>` remote-helper form (ext::, fd::, …), file://, http://, git://, any
-// other scheme and a local path are refused, as is anything starting with "-" that ssh could
-// read as an option. The scope file accepts any transport string; this is where it stops.
+// none. Only ssh://, git+ssh://, ssh+git://, https:// and scp-style [user@]host:path remotes
+// cross: git's `<transport>::<address>` remote-helper form (ext::, fd::, …), file://, http://,
+// git://, any other scheme and a local path are refused, as is anything starting with "-" that ssh
+// could read as an option. The scope file accepts any transport string; this is where it stops.
 func transportOf(remote string) (string, error) {
 	if strings.HasPrefix(remote, "-") {
 		return "", errors.New("it starts with \"-\", which the host's ssh would read as an option")
@@ -43,7 +43,7 @@ func transportOf(remote string) (string, error) {
 	}
 	if scheme, _, ok := strings.Cut(remote, "://"); ok {
 		switch strings.ToLower(scheme) {
-		case "ssh", "https":
+		case "ssh", "https", "git+ssh", "ssh+git":
 		default:
 			return "", fmt.Errorf("it uses %s://", scheme)
 		}
@@ -53,6 +53,7 @@ func transportOf(remote string) (string, error) {
 		if strings.EqualFold(scheme, "https") {
 			return transportHTTPS, nil
 		}
+		return transportSSH, nil
 	} else if _, err := gitproto.Identity(remote); err != nil {
 		return "", err
 	}
@@ -85,8 +86,31 @@ type sshTarget struct {
 	path string // the path git sends the remote command, unquoted
 }
 
-// parseSSH takes an ssh:// or scp-style remote apart. For ssh://, a path starting "/~" loses
-// its leading slash, as git's own does; an scp-style path is used as written.
+// scpPathColon skips the colons inside a bracketed IPv6 host to find git's scp-style
+// host:path separator.
+func scpPathColon(remote string) int {
+	colon := strings.IndexByte(remote, ':')
+	if colon < 0 {
+		return colon
+	}
+	bracket := strings.LastIndexByte(remote[:colon], '[')
+	if bracket < 0 {
+		return colon
+	}
+	close := strings.IndexByte(remote[bracket:], ']')
+	if close < 0 {
+		return colon
+	}
+	close += bracket
+	if close+1 < len(remote) && remote[close+1] == ':' {
+		return close + 1
+	}
+	return colon
+}
+
+// parseSSH takes an SSH URL (ssh://, git+ssh:// or ssh+git://) or scp-style remote apart. For
+// URL-form SSH, a path starting "/~" loses its leading slash, as git's own does; an scp-style
+// path is used as written.
 func parseSSH(remote string) (sshTarget, error) {
 	if _, err := transportOf(remote); err != nil {
 		return sshTarget{}, err
@@ -94,16 +118,17 @@ func parseSSH(remote string) (sshTarget, error) {
 	return splitSSH(remote)
 }
 
-// splitSSH takes an SSH remote apart from its raw text, as git does: git never
-// percent-decodes an ssh URL, so neither does this. A URL whose user, host or path a URL
-// decoder would read differently from the text (a %-escape) is refused rather than guessed
-// at, and the user part, which reaches ssh's argv and an ssh config's %r, must be a plain
+// splitSSH takes an SSH remote apart from its raw text. Git can percent-decode SSH URL paths,
+// but the broker deliberately refuses %-escapes: exact URL approval, repository identity and
+// the path sent upstream must not disagree about which repository the text names. A URL whose
+// user, host or path a URL decoder would read differently from the text is refused rather than
+// guessed at. The user part, which reaches ssh's argv and an ssh config's %r, must be a plain
 // login name: [A-Za-z0-9._-], not starting with "-".
 func splitSSH(remote string) (sshTarget, error) {
 	var t sshTarget
 	var user, host string
 	if scheme, rest, ok := strings.Cut(remote, "://"); ok {
-		if !strings.EqualFold(scheme, "ssh") {
+		if !strings.EqualFold(scheme, "ssh") && !strings.EqualFold(scheme, "git+ssh") && !strings.EqualFold(scheme, "ssh+git") {
 			return t, fmt.Errorf("%s:// is not an SSH remote", scheme)
 		}
 		slash := strings.IndexByte(rest, '/')
@@ -130,7 +155,7 @@ func splitSSH(remote string) (sshTarget, error) {
 			}
 		}
 		if decodedUser != user || u.Host != hostPort || u.Path != rawPath || u.RawQuery != "" || u.Fragment != "" {
-			return t, errors.New("it holds a %-escape, which git sends as written but a URL decoder would not; " +
+			return t, errors.New("it holds a %-escape, which exact approval and the upstream path could interpret differently; " +
 				"write the remote without one")
 		}
 		host, t.port = u.Hostname(), u.Port()
@@ -139,7 +164,7 @@ func splitSSH(remote string) (sshTarget, error) {
 			t.path = t.path[1:]
 		}
 	} else {
-		colon := strings.IndexByte(remote, ':')
+		colon := scpPathColon(remote)
 		if colon < 0 {
 			return t, errors.New("it is not an SSH remote")
 		}
@@ -149,6 +174,9 @@ func splitSSH(remote string) (sshTarget, error) {
 			if user == "" {
 				return t, errors.New("its user part is empty")
 			}
+		}
+		if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+			host = host[1 : len(host)-1]
 		}
 	}
 	if user != "" && !validSSHUser(user) {

@@ -156,7 +156,7 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 	fx.recordScope(t, "git@fixture.test:o/r.git")
 
 	script := gitInJail + ghScript(
-		"env | grep -c '^GIT_CONFIG_COUNT=3$'", // A: the rewrite is in the env
+		"env | grep -c '^GIT_CONFIG_COUNT=5$'", // A: the rewrite is in the env
 		"g fetch origin",                       // B: a read
 		"g rev-parse refs/remotes/origin/main", // C: what it fetched
 		"g checkout -q -b work origin/main && g commit -q --allow-empty -m agent", // D
@@ -213,7 +213,7 @@ func TestGitBrokerFetchAndRefusal(t *testing.T) {
 func TestGitBrokerWithNoGrantRefusesTheFetch(t *testing.T) {
 	fx := newGitBrokerFixture(t, false)
 	script := gitInJail + ghScript(
-		"env | grep -c '^GIT_CONFIG_COUNT=3$'",
+		"env | grep -c '^GIT_CONFIG_COUNT=5$'",
 		"g fetch origin",
 	)
 	r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", script}, fx.opts...)

@@ -20,6 +20,10 @@ func TestIdentity(t *testing.T) {
 		"https://me:hunter2@git.example.com/x.git": "git.example.com/x",
 		"host.example:~/repo.git":                  "host.example/repo",
 		"ssh://git@GitHub.com/o/r.git/":            "github.com/o/r",
+		"git@[::1]:o/r.git":                        "[::1]/o/r",
+		"ssh://git@[::1]/o/r.git":                  "[::1]/o/r",
+		"git+ssh://alice@[::1]:2222/o/r.git":       "[::1]:2222/o/r",
+		"ssh+git://[2001:db8::1]/~/team/repo.git":  "[2001:db8::1]/team/repo",
 	} {
 		got, err := Identity(in)
 		if err != nil || got != want {
@@ -31,7 +35,7 @@ func TestIdentity(t *testing.T) {
 		"http://github.com/o/r", "git://github.com/o/r", "ssh://github.com", "https://github.com/",
 		"git@github.com:", "ssh://-oX@github.com/o/r", "-oProxyCommand=x:r", "https://github.com/o/r?x=1",
 		"https://github.com/o/r#frag", "https://github.com/o/../x", "https://github.com/o//r",
-		"git@github.com:o/r .git", "./relative/x", "[::1]:r", "https://github.com/.git",
+		"git@github.com:o/r .git", "./relative/x", "https://github.com/.git", "git@[:::]:r", "git@[::1]o/r",
 	} {
 		if got, err := Identity(bad); err == nil {
 			t.Errorf("Identity(%q) accepted as %q", bad, got)

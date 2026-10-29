@@ -2,6 +2,7 @@ package gitproto
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 )
@@ -13,11 +14,11 @@ import (
 // git@github.com:o/r.git, ssh://git@github.com/o/r and https://github.com/o/r.git are all
 // github.com/o/r.
 //
-// It accepts the forms the jail's git rewrites to the broker: ssh://, https:// and scp-style
-// [user@]host:path. Anything else is an error: another scheme (http://, git://, file://), a
-// local path, a host or user starting with "-" (which ssh would read as an option), a query or
-// fragment, and a path that is empty or holds an empty, "." or ".." segment or a space or
-// control byte.
+// It accepts the forms the jail's git rewrites to the broker: ssh://, https://,
+// git+ssh://, ssh+git:// and scp-style [user@]host:path. Anything else is an error: another
+// scheme (http://, git://, file://), a local path, a host or user starting with "-" (which ssh
+// would read as an option), a query or fragment, and a path that is empty or holds an empty,
+// "." or ".." segment or a space or control byte.
 func Identity(remote string) (string, error) {
 	host, path, err := splitRemote(remote)
 	if err != nil {
@@ -47,9 +48,9 @@ func Identity(remote string) (string, error) {
 func splitRemote(remote string) (host, path string, err error) {
 	if scheme, _, ok := strings.Cut(remote, "://"); ok {
 		switch strings.ToLower(scheme) {
-		case "ssh", "https":
+		case "ssh", "https", "git+ssh", "ssh+git":
 		default:
-			return "", "", fmt.Errorf("remote %q uses %s://; only ssh://, https:// and scp-style remotes reach the broker", remote, scheme)
+			return "", "", fmt.Errorf("remote %q uses %s://; only ssh://, git+ssh://, ssh+git://, https:// and scp-style remotes reach the broker", remote, scheme)
 		}
 		u, err := url.Parse(remote)
 		if err != nil {
@@ -72,9 +73,7 @@ func splitRemote(remote string) (host, path string, err error) {
 		}
 		return strings.ToLower(u.Host), u.Path, nil
 	}
-	// git's own rule: a colon before any slash makes an scp-style ssh remote; anything else is
-	// a local path.
-	colon := strings.IndexByte(remote, ':')
+	colon := scpColon(remote)
 	if colon < 0 || strings.Contains(remote[:colon], "/") {
 		return "", "", fmt.Errorf("remote %q is a local path, which does not reach the broker", remote)
 	}
@@ -86,14 +85,35 @@ func splitRemote(remote string) (host, path string, err error) {
 		}
 		h = userHost[at+1:]
 	}
-	if err := checkHost(h, false); err != nil {
+	if err := checkHost(h, true); err != nil {
 		return "", "", fmt.Errorf("remote %q: %v", remote, err)
 	}
 	return strings.ToLower(h), path, nil
 }
 
-// checkHost accepts a DNS name or an IPv4 address, and, in URL form only, an IPv6 address
-// (which url.Hostname has already unbracketed).
+// scpColon finds the delimiter after a bracketed IPv6 host, rather than one of its colons.
+func scpColon(remote string) int {
+	colon := strings.IndexByte(remote, ':')
+	if colon < 0 {
+		return colon
+	}
+	bracket := strings.LastIndexByte(remote[:colon], '[')
+	if bracket < 0 {
+		return colon
+	}
+	close := strings.IndexByte(remote[bracket:], ']')
+	if close < 0 {
+		return colon
+	}
+	close += bracket
+	if close+1 < len(remote) && remote[close+1] == ':' {
+		return close + 1
+	}
+	return colon
+}
+
+// checkHost accepts a DNS name or an IP address. IPv6 literals are bracketed in scp-style
+// URLs and unbracketed after net/url has parsed a URL authority.
 func checkHost(h string, ipv6 bool) error {
 	if h == "" {
 		return fmt.Errorf("no host")
@@ -101,9 +121,15 @@ func checkHost(h string, ipv6 bool) error {
 	if h[0] == '-' {
 		return fmt.Errorf("host %q starts with \"-\"", h)
 	}
+	if strings.HasPrefix(h, "[") || strings.HasSuffix(h, "]") {
+		if !ipv6 || len(h) < 3 || h[0] != '[' || h[len(h)-1] != ']' || net.ParseIP(h[1:len(h)-1]) == nil || !strings.Contains(h, ":") {
+			return fmt.Errorf("host %q is not a bracketed IPv6 address", h)
+		}
+		return nil
+	}
 	if ipv6 && strings.Contains(h, ":") {
-		if strings.Trim(strings.ToLower(h), "0123456789abcdef:.") != "" {
-			return fmt.Errorf("host %q is not an address", h)
+		if net.ParseIP(h) == nil {
+			return fmt.Errorf("host %q is not an IPv6 address", h)
 		}
 		return nil
 	}

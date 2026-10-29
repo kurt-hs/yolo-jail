@@ -1,0 +1,57 @@
+---
+title: "Git broker URL coverage: supported, direct, and refused forms"
+date: 2026-10-29
+tags: [research, git, broker, ssh, urls]
+summary: "Grounded audit and bounded repair of Git URL forms crossing the host broker, with exact-scope and no-network regression evidence."
+---
+
+# Git broker URL coverage
+
+**Checked against:** `5594d2d68` at task start; the broker, protocol, remote helper, pack and existing broker authorities had no intervening changes from that audit base. The confirmed bracketed-IPv6 scp defect and two Git SSH aliases matched the audit packet.
+
+**Finding:** `git@[::1]:o/r.git` was rewritten by the shipped `git@` rule, but the broker split at the first colon inside `[::1]` and refused it. Git's `git+ssh://` and `ssh+git://` URL schemes are valid SSH aliases, but neither was rewritten or accepted. The owner's particular `ssh://` failure is still unidentifiable: no URL or error was supplied, so this repair does not claim to explain it.
+
+**Boundary:** an SSH or credentialed HTTPS request still needs the exact remote URL in the live approved scope and an applicable read grant. Repository identity groups grants; it does not approve another URL spelling. The existing anonymous public HTTPS fetch exception remains unchanged. This document supplements [`git-broker.md`](../design/git-broker.md) and [`git-broker-plan.md`](../design/git-broker-plan.md); it does not widen their trust boundary.
+
+## URL coverage
+
+“Routed” means the pack rewrites the URL into `git-remote-yolo`; SSH and credentialed HTTPS still pass broker policy. “Direct” means the pack does not intercept the remote, so jail Git's normal behavior applies and host credentials do not cross by this broker.
+
+| Input | Result | Scope and safety |
+| :--- | :--- | :--- |
+| `ssh://[user@]host[:port]/path`, including unqualified IPv6 address literals and a `/~/` path | Routed to SSH broker | Exact URL approval and read grant; user, port and path retain the existing constrained SSH argv rules. |
+| `git@host:path`, including `git@[IPv6]:path` | Routed to SSH broker | Exact URL approval and read grant. Bracketed IPv6 scp parsing now skips the address's internal colons. |
+| `git+ssh://…`, `ssh+git://…` | Routed to SSH broker | Newly rewritten and accepted only as these two SSH aliases; the original alias URL itself must be approved. |
+| `https://host[:port]/path` | Routed to HTTPS broker | Credentialed access requires exact URL approval and read grant. Public fetch may retain the existing anonymous out-of-scope path. URL user-info remains excluded from scope and is not a credential hint. |
+| Valid scp forms such as `host:path` or `alice@host:path` | Direct in ordinary Git: no pack rewrite | A direct call does not reach the broker. If explicitly sent through the broker helper, scp-style parsing is available, but exact URL scope and read-grant checks still apply. |
+| `http://`, `git://`, `ftp://`, `file://`, local paths, or Windows-shaped local paths | Direct, not brokered | No host-file forwarding or new transport is introduced. A URL manually presented to the broker is refused unless it is one of the supported SSH/HTTPS forms. |
+| `ext::`, `fd::`, other `<transport>::` helpers, option-shaped remotes, malformed URL/path forms, query/fragment, or SSH percent escapes | Refused if submitted to the broker | The broker does not execute host helpers, accept host options, or relax path parsing. Percent-escaped SSH input remains refused because Git's decoding and broker identity/argv interpretations can differ. |
+
+Git itself may use SSH URL percent escapes differently from the old parser comment's claim; the comment now explains why the broker still refuses them. No blanket percent-decoding or identity canonicalization was added.
+
+## Bounded implementation plan and result
+
+1. Preserve the defect as a real-Git RED before production changes: run a real `git ls-remote` through the production `git@` rewrite, remote-helper process, and broker fixture for `git@[::1]:o/r.git`; require the fixture's `main` ref and SSH dispatch. **Observed RED:** broker rejected host `[` before SSH ran. The output is preserved with the untracked durable run evidence, not in the source tree.
+2. Parse bracketed scp IPv6 only when a closing bracket is followed by the host/path delimiter; validate it as an IP literal, preserve the bracketed host in repository identity, and pass the unbracketed host to SSH as real Git does. Keep exact URL scope matching.
+3. Add the two aliases only because network-free real Git exercises confirm its `insteadOf` rewrite and SSH dispatch semantics. Add them to the pack and broker URL parser, not to scope matching. Drive the unit fixture from the shipped `packs/git/pack.json` environment contribution so tests fail if the production rewrite disappears.
+4. Cover real Git fetch/`ls-remote` through helper and broker for ordinary SSH URL, both aliases, bracketed scp IPv6, and IPv6 URL with port; assert the audit contains the original exact URL. Also prove valid-but-direct scp, HTTP, git, file, local and Windows-shaped inputs remain unrevised using Git's no-network `ls-remote --get-url`; cover an unapproved alias with the same repository identity and a refused alias push whose upstream receives only the empty command list. Keep existing HTTPS user-info/credential tests, helper/file refusals, option-injection checks, and SSH command quoting tests.
+
+Changed implementation seams: `internal/gitproto.Identity` now recognizes only the two explicit SSH aliases and bracketed scp IPv6; `internal/gitbroker.transportOf`/SSH parsing mirrors those schemes and parses the scp delimiter safely; `packs/git/pack.json` adds only the two alias rewrites; the packload and integration assertions follow the manifest's five rewrite rules. `packs/git/briefing/git.md` and the URL statements in the existing broker design/plan now describe the implemented surface without implying all Git URL syntaxes are intercepted.
+
+## QA record
+
+- **RED:** `go test ./internal/gitbroker -run '^TestRealGitRoutesBracketedIPv6ScpThroughBroker$' -count=1` failed before the fix with the parser error `host "[" has a character a host name cannot`; the failure is preserved in the untracked durable run evidence.
+- **GREEN, focused:** `go test ./internal/gitproto ./internal/gitbroker -run 'Test(GitPackLeavesOtherValidGitURLsDirect|GitPackRewritesSSHFormsThroughTheBroker|SameIdentityDoesNotApproveAnotherSSHURL|SSHAliasPushStillRefusesAnUncoveredRef)$' -count=1 -timeout=60s` passed; the real Git tests use the production pack rules and local fixtures.
+- **GREEN, package:** `go test ./internal/gitproto ./internal/gitbroker ./internal/packload -count=1 -timeout=150s` passed. Existing HTTPS tests also use real Git through the fixture helper and production pack rewrite, against a local TLS server.
+- **Harness incident:** one earlier pre-guard broad test invocation timed out while exercising aliases; it showed no successful remote operation, but whether a system SSH connection was attempted cannot be proven. It is not accepted validation. The fixture now sets a fail-closed caller-side `GIT_SSH_COMMAND`, and all accepted caller evidence is from guarded reruns with local fake transports. Full history is preserved outside the source tree.
+- **Whole-tree gate:** `just check-ci` passed after the source changes. Its complete output is saved in the untracked durable evidence bundle.
+- **Nested bundle verification:** `just build-dev-bundle` passed. The emitted launcher, invoked by absolute path from an isolated workspace and a fresh no-packs `HOME`, completed an actual nested podman jail run and printed `nested-no-packs-ok` and the in-jail Git version. This verifies the Linux nested path, not rootless-only behavior; inherited unknown-setting warnings did not prevent launch.
+- **Matching integration:** `go test -v -run '^TestGitBrokerFetchAndRefusal$' ./integration -count=1 -timeout=0` passed; verbose output confirms the test ran, not skipped.
+- **Still required before candidate handoff:** commit the source and docs; run full integration once on the clean final candidate; run `just done`; verify clean status and final HEAD. The private candidate includes updated main `727b94848`, whose ancestry includes hatch `99ba81be2` and the unrelated proxy-test tracking commit. No host deployment, real remote/API, credential grant, or production push/fetch was performed; caller tests used fake local SSH/bare repositories or a fixture TLS server.
+
+## Sources
+
+- [`git-broker.md`](../design/git-broker.md) — exact URL scope, credential boundary, and SSH/HTTPS transport policy.
+- [`git-broker-plan.md`](../design/git-broker-plan.md) — pack rewrite and broker implementation choices.
+- [`packs/git/pack.json`](../../packs/git/pack.json) — shipped URL rewrite rules; the real-Git test reads this manifest contribution directly.
+- `internal/gitproto.Identity`, `internal/gitbroker.transportOf` — implementation and refusal seams verified by the tests named above.

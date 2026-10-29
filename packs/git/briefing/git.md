@@ -8,8 +8,9 @@
   rewritten, and a remote that needs a credential fails for want of one, since the jail holds
   none. Ask the user to run `yolo check` on the host, in this workspace.
 - **A number: the broker runs.** This jail's `git` is the real one, but its `ssh://`,
-  `https://` and `git@` remotes go through the git pack's broker on the host: `GIT_CONFIG_COUNT`
-  and the `GIT_CONFIG_KEY_<n>` variables rewrite them to `yolo::<url>`, and git runs
+  `git+ssh://`, `ssh+git://`, `https://` and `git@` remotes go through the git pack's broker on
+  the host: `GIT_CONFIG_COUNT` and the `GIT_CONFIG_KEY_<n>` variables rewrite them to `yolo::<url>`,
+  and git runs
   `git-remote-yolo` (`~/.yolo/bin/block/git-remote-yolo`, a forwarder to `yolo git-remote`). The
   host connects with its own credentials, its SSH keys or agent for an SSH remote and its git
   credential helper for an HTTPS one; the jail holds no git credential.
@@ -47,8 +48,10 @@ With the broker running:
 - An HTTPS fetch the host has no credential for is refused naming the `git credential fill` the
   user can run on the host, but only after its URL and read grant are approved; public fetches
   never ask the helper. The broker never prompts.
-- `http://`, `git://`, `file://`, local paths, and an scp-style remote whose user is not `git`
-  are not rewritten, so they behave as they would with no broker.
+- `http://`, `git://`, `file://`, local paths, and scp-style URLs that do not start with `git@`
+  (including `host:path` and `alice@host:path`) are not rewritten, so they follow jail Git's
+  ordinary behavior without this broker. Other broker-helper inputs such as helper schemes are
+  refused; they do not open host file or command access.
 - Never set or export `GIT_CONFIG_COUNT` or `GIT_CONFIG_KEY_<n>` yourself: yours replaces
   the pack's, so the rewrite is gone and every fetch then fails for want of a credential.
 - If git says the broker's endpoint is missing, the broker is not running for this jail: ask the

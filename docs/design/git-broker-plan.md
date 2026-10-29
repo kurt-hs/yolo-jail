@@ -193,14 +193,16 @@ Each is the planner's, decided within the design's behavior. Each is reversible;
    `github.com/o/r`. *Why:* one branch must not be two working-set entries because it has two
    remotes. *Reverse by:* re-keying the store, before any release carries it.
 4. **ID-4 — The jail leg is a git remote helper.** The jail's git rewrites
-   `ssh://` to `yolo::ssh://`, `https://` to `yolo::https://` and `git@` to `yolo::git@`, by
-   `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` from a pack `env` contribution.
-   git then runs `git-remote-yolo <remote> <url>`, placed by an `intercept` contribution forwarding
-   to `yolo git-remote --`. The helper answers `capabilities` with `connect` and nothing else. Not
-   rewritten, and documented: `http://`, `git://`, `file://`, local paths, and an scp-style remote
-   whose user is not `git`. *Why:* the env keeps the jail's global git config, which yolo composes,
-   untouched, and the `yolo::` prefix carries the original URL to the helper unchanged.
-   *Reverse by:* moving the rewrite into the composed global config.
+   `ssh://`, `git+ssh://`, `ssh+git://`, `https://` and scp-style `git@` URLs (including bracketed
+   IPv6 scp hosts) to `yolo::<original URL>`, by `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/
+   `GIT_CONFIG_VALUE_<n>` from a pack `env` contribution. Git then runs `git-remote-yolo <remote>
+   <url>`, placed by an `intercept` contribution forwarding to `yolo git-remote --`. The helper
+   answers `capabilities` with `connect` and nothing else. Not rewritten, and documented:
+   `http://`, `git://`, `file://`, local paths, and scp-style remotes that do not start with `git@`
+   (such as `host:path` and `alice@host:path`). *Why:*
+   the env keeps the jail's global git config, which yolo composes, untouched, and the `yolo::`
+   prefix carries the original URL to the helper unchanged. *Reverse by:* moving the rewrite into
+   the composed global config.
 5. **ID-5 — The jail-to-host stream.** The helper sends one request frame
    `{"service":"git-upload-pack"|"git-receive-pack","url":"<original URL>","protocol":"<GIT_PROTOCOL or empty>","agent":"<agent name or empty>"}`,
    then git's bytes as Stdout(0) frames; a Stdout frame with an empty payload means git closed its
@@ -574,7 +576,7 @@ expensive with every change to `internal/ghbroker`; land it first.
 ### Task 4 — the jail's remote helper (`yolo git-remote`)
 
 - **Settled, do not re-open:** the jail runs the real git, unchanged; the leg to the broker
-  carries no git credential; every remote form is rewritten to the broker
+  carries no git credential; the supported remote forms are rewritten to the broker
   ([§4.1](git-broker.md#41-the-jails-leg)). ID-4, ID-5.
 - **Preconditions:** task 3 landed.
 - **Tests first:** `internal/gitremote/helper_test.go`.
@@ -653,7 +655,7 @@ expensive with every change to `internal/ghbroker`; land it first.
   - `TestOnlySSHAndHTTPSTransports`: scope entries `file:///srv/r.git`, `ext::sh -c x`,
     `fd::3` and a scp-style path starting with `-` (each written directly to the scope file,
     which accepts any transport string) are refused before any upstream starts; the broker
-    allows only `ssh://`, `https://` and scp-style `user@host:path`.
+    allows only the supported SSH URL forms (`ssh://`, `git+ssh://`, `ssh+git://` and scp-style `user@host:path`, including bracketed IPv6 hosts), plus `https://`.
   - The receive-pack path forwards the bytes `gitproto.Reader.Tee` buffered, only after the
     commands are judged, and never re-encodes them with `WriteCommands` (which drops shallow
     lines and re-orders capabilities).
@@ -740,7 +742,7 @@ expensive with every change to `internal/ghbroker`; land it first.
   - `internal/packload/served_test.go`, `TestGitRewriteWithheldWhereUnserved`, built like
     `TestAPointerIsDeliveredOnlyWhereItsDaemonIsServed` with `embeddedNamed(t, "git")`:
     `ScopeCredentials` with `Served: NothingServed()` (the host notch) folds no
-    `GIT_CONFIG_COUNT`; with `ServedInJail([]string{"git-broker"})` it folds all seven keys.
+    `GIT_CONFIG_COUNT`; with `ServedInJail([]string{"git-broker"})` it folds all eleven keys.
   - `internal/packload/embeddrift_test.go`'s `TestEmbedMatchesTree` goes red when `packs/git/` exists unlisted.
   - `integration/gitbroker_test.go`, `TestGitBrokerFetchAndRefusal`: copying
     `githubBrokerFixture`, a fake host `ssh` first on the launcher's PATH serving a bare
@@ -755,10 +757,9 @@ expensive with every change to `internal/ghbroker`; land it first.
 - **Change:** `packs/git/pack.json` with three contributions: the loophole
   `loopholes/git-broker`, the briefing `briefing/git.md`, the intercept
   `{"bin": "git-remote-yolo", "forward": ["yolo", "git-remote", "--"]}`, and an `env`
-  contribution `served_by: "git-broker"` with
-  `GIT_CONFIG_COUNT=3`, `GIT_CONFIG_KEY_0=url.yolo::ssh://.insteadOf`, `GIT_CONFIG_VALUE_0=ssh://`,
-  `GIT_CONFIG_KEY_1=url.yolo::https://.insteadOf`, `GIT_CONFIG_VALUE_1=https://`,
-  `GIT_CONFIG_KEY_2=url.yolo::git@.insteadOf`, `GIT_CONFIG_VALUE_2=git@`. The manifest mirrors
+  contribution `served_by: "git-broker"` with `GIT_CONFIG_COUNT=5` and rewrites for `ssh://`,
+  `https://`, `git@`, `git+ssh://` and `ssh+git://`. Bracketed IPv6 scp remotes use the same
+  broker transport. The manifest mirrors
   `packs/github/loopholes/github-broker/manifest.jsonc`: `default_enabled: false`,
   `transport: "loopback-tls"`, `lifecycle: "spawned"`,
   `brokered: {"source": "git", "remote_host": "*", "credential_paths": ["~/.ssh", "$SSH_AUTH_SOCK", "~/.git-credentials", "~/.config/git/credentials"]}`,

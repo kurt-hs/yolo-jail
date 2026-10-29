@@ -18,13 +18,17 @@
       "kind": "env",
       "served_by": "git-broker",
       "vars": {
-        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_COUNT": "5",
         "GIT_CONFIG_KEY_0": "url.yolo::ssh://.insteadOf",
         "GIT_CONFIG_VALUE_0": "ssh://",
         "GIT_CONFIG_KEY_1": "url.yolo::https://.insteadOf",
         "GIT_CONFIG_VALUE_1": "https://",
         "GIT_CONFIG_KEY_2": "url.yolo::git@.insteadOf",
-        "GIT_CONFIG_VALUE_2": "git@"
+        "GIT_CONFIG_VALUE_2": "git@",
+        "GIT_CONFIG_KEY_3": "url.yolo::git+ssh://.insteadOf",
+        "GIT_CONFIG_VALUE_3": "git+ssh://",
+        "GIT_CONFIG_KEY_4": "url.yolo::ssh+git://.insteadOf",
+        "GIT_CONFIG_VALUE_4": "ssh+git://"
       }
     }
   ],
