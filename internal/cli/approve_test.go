@@ -55,7 +55,8 @@ func TestGitHubApproveRefusesSetWideDecisionsButOtherSourcesKeepThem(t *testing.
 		t.Fatalf("GitHub Allow once was not exact: %+v err=%v", grants, err)
 	}
 
-	git, gitRequest := newRequest(t, "git")
+	// A source with no Allow-once-only rule (both shipped sources have one now) keeps them.
+	git, gitRequest := newRequest(t, "other")
 	out.Reset()
 	errs.Reset()
 	if rc := approveMain(context.Background(), []string{gitRequest.ID, "--for", "15m"}, false, git, &out, &errs); rc != 0 {

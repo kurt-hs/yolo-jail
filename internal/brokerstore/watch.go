@@ -205,6 +205,9 @@ type RequestView struct {
 	// (Request.HookFailure); absent when it did not.
 	HookFailure string `json:"hook_failure,omitempty"`
 	HookOutput  string `json:"hook_output,omitempty"`
+	// NeedsApproval is, for a git push, the refs no grant or working-set entry covered: what
+	// the request asks approval for (Request.NeedsApproval); absent otherwise.
+	NeedsApproval []string `json:"needs_approval,omitempty"`
 }
 
 // GrantView is a grant as the surface shows it.
@@ -270,7 +273,8 @@ func (s *Store) RequestView(q Request) RequestView {
 	v := RequestView{Schema: Schema, ID: q.ID, Source: s.SourceName(), Jail: q.Jail, Workspace: q.Workspace,
 		Set: q.Set, Argv: q.Argv, Command: shquote.JoinDisplay(q.Argv), Repo: q.Repo,
 		CommandDigest: q.Digest, StdinDigest: q.StdinDigest, Filed: q.Filed,
-		Expires: q.Expires(), State: q.State, HookFailure: q.HookFailure, HookOutput: q.HookOutput}
+		Expires: q.Expires(), State: q.State, HookFailure: q.HookFailure, HookOutput: q.HookOutput,
+		NeedsApproval: q.NeedsApproval}
 	if v.Argv == nil {
 		v.Argv = []string{}
 	}

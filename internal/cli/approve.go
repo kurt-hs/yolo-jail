@@ -39,13 +39,18 @@ request once, grant its requested set for a bounded duration, deny it, or
 revoke a grant or a working-set entry. Without --for, Allow once covers that
 exact command for one use, for at most 15 minutes and never beyond its set's
 ceiling. --for hands over the whole requested set, within its policy ceiling
-and use cap; session is 12 hours. GitHub write requests accept Allow once only;
---for and --add are refused for them. Other registered sources keep their existing
-decision semantics. A grant belongs to the request's workspace: every jail of that project may use it, and it lasts through broker and jail
-restarts and relaunches until it expires, its uses run out, or it is revoked.
+and use cap; session is 12 hours. GitHub write and git push requests accept
+Allow once only; --for and --add are refused for them. A git push request lists
+each ref it would change, old id -> new id, marked "needs approval" where no
+grant or working-set entry covered it; Allow once covers that exact push, every
+ref of it, once, and a new branch it creates joins the working set. A grant
+belongs to the request's workspace: every jail of that project may use it, and
+it lasts through broker and jail restarts and relaunches until it expires, its
+uses run out, or it is revoked.
 
 The working set is the branches a workspace's git-broker pushes unasked: each
-one the agent created through the broker under a create-branch grant, until
+one the agent created through the broker under a create-branch grant or an
+Allow once (by the grant's g-<id>), until
 the branch is deleted or the entry revoked (a w-<id> entry), and each one a
 branch grant declares in the project's config (a c-<id> line, marked "from
 config", listed while a jail of that project runs). --revoke w-<id> ends one
@@ -79,10 +84,9 @@ in config); 6 the host can no longer confirm
 the request (its jail's launch is gone or its scope changed), so it cannot be
 allowed. A request whose jail stopped normally is already refused, which is 3.
 
-No requests, grants or working-set entries. A GitHub write can file a pending
-approval request while its host broker runs; git pushes not covered by a branch
-grant or working set refuse without a request. Run yolo approve --help for the
-host store commands.
+No requests, grants or working-set entries. A GitHub write, or a git push no
+grant or working-set entry covers, files a pending Allow-once request while its
+host broker runs. Run yolo approve --help for the host store commands.
 
 Examples:
   yolo approve
@@ -116,11 +120,11 @@ func runApprove(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// Every registered source's store: the GitHub broker's requests and grants, and the git
-	// broker's working set. The git source files no request in this version, so its store
-	// needs no approval authority; a decision on it fails closed.
+	// broker's push requests, grants and working set, each decided against its live host
+	// authority and audited.
 	stores := []*brokerstore.Store{
 		{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source, Revalidate: ghbroker.ApprovalAuthority, Audit: ghbroker.StoreAudit(brokeraudit.Open(paths.BrokerAuditLog(), nil))},
-		{Dir: paths.BrokerSourceDir(gitbroker.Source), Source: gitbroker.Source},
+		gitbroker.ApprovalStore(),
 	}
 	return approveAll(ctx, args[1:], config.InJail(), stores, os.Stdout, os.Stderr)
 }
@@ -241,12 +245,12 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 		if err != nil {
 			return approveFailure(err, errs)
 		}
-		if found && source == ghbroker.Source {
+		if what, onceOnly := allowOnceOnly[source]; found && onceOnly {
 			flag := "--for"
 			if addSeen {
 				flag = "--add"
 			}
-			fmt.Fprintf(errs, "yolo approve: %s is not available for GitHub writes. Next: run `yolo approve %s` with no flags to Allow once.\n", flag, termsafe.Visible(request))
+			fmt.Fprintf(errs, "yolo approve: %s is not available for %s. Next: run `yolo approve %s` with no flags to Allow once.\n", flag, what, termsafe.Visible(request))
 			return approveExitPolicy
 		}
 		if addSeen {
@@ -300,12 +304,16 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 		empty = empty && len(snaps[i].Requests) == 0 && len(snaps[i].Grants) == 0 && !anyLive(snaps[i].Working) && len(declared) == 0
 	}
 	if empty {
-		fmt.Fprintln(out, "No requests, grants or working-set entries. A windowed GitHub write can file a pending Allow-once request; decide it with `yolo approve <id>`. Run `yolo approve --help` for the host store commands.")
+		fmt.Fprintln(out, "No requests, grants or working-set entries. A windowed GitHub write, or a git push no grant or working-set entry covers, can file a pending Allow-once request; decide it with `yolo approve <id>`. Run `yolo approve --help` for the host store commands.")
 	} else {
-		fmt.Fprintln(out, "Decide pending requests with `yolo approve <id>` (GitHub writes are Allow once; `--for <duration>` grants a whole set only where supported), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|c-entry|all> [--workspace <path>]` (a c- entry is a working-set branch declared in config and is removed there).")
+		fmt.Fprintln(out, "Decide pending requests with `yolo approve <id>` (GitHub writes and git pushes are Allow once; `--for <duration>` grants a whole set only where supported), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|c-entry|all> [--workspace <path>]` (a c- entry is a working-set branch declared in config and is removed there).")
 	}
 	return 0
 }
+
+// allowOnceOnly is each source whose requests take Allow once and Deny alone, with how the
+// refusal of --for and --add names its requests (BB-D77; GB-D16 for git).
+var allowOnceOnly = map[string]string{ghbroker.Source: "GitHub writes", gitbroker.Source: "git pushes"}
 
 // pendingRequestSource returns the source owning a currently visible pending request.
 func pendingRequestSource(stores []*brokerstore.Store, id string) (string, bool, error) {
@@ -529,6 +537,7 @@ func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 		if r.Digest != "" || r.StdinDigest != "" {
 			fmt.Fprintf(out, "    action identity: command %s; stdin SHA-256 %s\n", termsafe.Visible(r.Digest), termsafe.Visible(r.StdinDigest))
 		}
+		printPushRefs(out, r)
 		if r.HookFailure != "" {
 			fmt.Fprintf(out, "    your on_request failed, so you may not have been notified: %s (its output: `yolo approve --json`)\n", termsafe.Visible(r.HookFailure))
 		}
@@ -543,6 +552,32 @@ func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 			coverage += " (once)"
 		}
 		fmt.Fprintf(out, "%s  %s  [%s]  set %s  %d use(s)  expires %s\n", termsafe.Visible(g.ID), state, termsafe.Visible(g.Workspace), termsafe.Visible(coverage), g.Uses, g.Expires.Format(time.RFC3339))
+	}
+}
+
+// printPushRefs lists a git push request's refs, one line each: the ref, its old and new ids
+// shortened, and whether it is what needs approval or covered already (GB-D17, GB-D21). Any
+// other request prints nothing.
+func printPushRefs(out io.Writer, r brokerstore.Request) {
+	if r.Set != "push" || len(r.Argv) < 2 || r.Argv[0] != "git-receive-pack" {
+		return
+	}
+	short := func(id string) string {
+		if len(id) > 7 {
+			return id[:7]
+		}
+		return id
+	}
+	for _, line := range r.Argv[1:] {
+		f := strings.Fields(line)
+		if len(f) != 3 {
+			continue
+		}
+		mark := "covered"
+		if slices.Contains(r.NeedsApproval, f[2]) {
+			mark = "needs approval"
+		}
+		fmt.Fprintf(out, "    %s  %s -> %s  %s\n", termsafe.Visible(f[2]), termsafe.Visible(short(f[0])), termsafe.Visible(short(f[1])), mark)
 	}
 }
 
