@@ -110,6 +110,7 @@ func (x *ordinaryNoFallback) check(t *testing.T) {
 }
 
 func TestOrdinaryNewerFailureRefusesTheLaunchWithTheRecoveryBlock(t *testing.T) {
+	t.Setenv(patchrecovery.UseInstalledEnv, "")
 	x := newOrdinaryNoFallback(t)
 	x.admit(t)
 	x.failedCheck(t)

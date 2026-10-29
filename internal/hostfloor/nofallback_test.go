@@ -47,6 +47,7 @@ func failedUpdateWorld(t *testing.T) (*world, Program) {
 // The refusal's exact shape: the ERROR line naming the program and both versions, the facts, the
 // repair, and the one hatch that runs the installed version.
 func TestAFailedUpdateRefusalNamesTheVersionsTheRepairAndTheHatch(t *testing.T) {
+	t.Setenv(patchrecovery.UseInstalledEnv, "")
 	w, p := failedUpdateWorld(t)
 	before := len(w.out.String())
 	_, _, err := w.floor.Ensure(context.Background(), p)

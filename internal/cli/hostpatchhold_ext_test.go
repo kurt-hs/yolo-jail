@@ -29,6 +29,30 @@ func heldTreeFailureFixture(t *testing.T) *treeFixture {
 	return fx
 }
 
+func TestTheApplyOffExtensionRefusalMergesExistingRecoverySelection(t *testing.T) {
+	heldTreeFailureFixture(t)
+	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "other1,other2")
+	got := captureHostExec(t)
+	var errw bytes.Buffer
+	if rc := hostExec(nil, []string{"tool"}, io.Discard, &errw, nil); rc == 0 || got.execed {
+		t.Fatalf("host launch unexpectedly continued: rc=%d execed=%v\n%s", rc, got.execed, errw.String())
+	}
+	out := errw.String()
+	command := "YOLO_ALLOW_PATCH_FAILURES=other1,other2,treepack/tool-ext yolo host -- tool"
+	if !strings.Contains(out, command) {
+		t.Fatalf("refusal did not preserve prior selections in its copyable command %q:\n%s", command, out)
+	}
+
+	// The combined assignment remains a working next step for the actual host launch caller.
+	t.Setenv("YOLO_ALLOW_PATCH_FAILURES", "other1,other2,treepack/tool-ext")
+	got = captureHostExec(t)
+	var retryErr bytes.Buffer
+	if rc := hostExec(nil, []string{"tool"}, io.Discard, &retryErr, nil); rc != 0 || !got.execed {
+		t.Fatalf("the emitted merged recovery selection did not start the host launch: rc=%d execed=%v\n%s",
+			rc, got.execed, retryErr.String())
+	}
+}
+
 // A HOLD HOLDS FOR A PATCHED EXTENSION AT `yolo host -- <bin>` (§3.4, OQ-PBR5), with the launch's
 // apply on and off: held, its recorded patch failure has no bearing while its good build serves, so
 // the owner starts with no error block. Red with hostTreePatchFailureAllows not asking whether the

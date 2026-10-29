@@ -168,6 +168,7 @@ func TestPrelaunchRefreshWatchedContentMakesItDueInsideTheInterval(t *testing.T)
 // is installed" — and neither stamped nor recorded as seen, so the next launch runs it again, a
 // stamp-only refresh included, instead of running the program with its add-ons as they were.
 func TestPrelaunchRefreshFailureRefusesAndIsRetriedByTheNextLaunch(t *testing.T) {
+	t.Setenv("YOLO_USE_INSTALLED", "")
 	w := newRefreshWorld(t, "echo 'registry said no' >&2; exit 3")
 	p := refreshProgram(settingsRel)
 	got := w.refresh(p)

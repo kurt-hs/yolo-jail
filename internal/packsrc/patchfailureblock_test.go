@@ -10,6 +10,9 @@ import (
 // TestPatchFailureBlockGolden pins the error block's shape (ruled 2026-10-16): one ERROR line, the
 // facts, a blank line and the repair, a blank line and the hatches as copyable commands — no prose.
 func TestPatchFailureBlockGolden(t *testing.T) {
+	for _, env := range append(append([]string{}, patchrecovery.Scoped...), patchrecovery.UseInstalledEnv) {
+		t.Setenv(env, "")
+	}
 	f := &PatchFailure{Target: ListEntry{Commit: "abcdef0123456789", Tag: "v1.4.0", Version: "1.4.0"}, Kind: "conflict",
 		Member: "0001-x.patch", Paths: []string{"src/a.ts", "src/b.ts"}}
 	recipe := RebaseRecipe{Repo: "https://example.com/pi.git", Base: "1111111", Patches: "/packs/pi-fork/patches", Dir: "pi-rebase"}
@@ -36,6 +39,7 @@ func TestPatchFailureBlockGolden(t *testing.T) {
 // TestPatchBypassLegacyFieldsDeriveHatches keeps a caller still setting Runs, CachedGood or Missing
 // listing the same hatches the new shape names, scoped to the subject's key.
 func TestPatchBypassLegacyFieldsDeriveHatches(t *testing.T) {
+	t.Setenv(patchrecovery.AllowPatchFailuresEnv, "")
 	got := PatchBypass{Command: "yolo host -- pi", Runs: "v1.1.0 + 2 patches"}.List("pi-fork/pi")
 	if len(got) != 1 || got[0].Text() != "YOLO_ALLOW_PATCH_FAILURES=pi-fork/pi yolo host -- pi" {
 		t.Fatalf("Runs = %+v", got)

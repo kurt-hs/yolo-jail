@@ -23,6 +23,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 // The hatches. AllowPatchFailures and AllowMissingPrograms predate this package and keep their
@@ -159,13 +160,43 @@ type Hatch struct {
 	Label string
 }
 
-// Text is the copyable command: `YOLO_X=value command`.
+// Text is the copyable command: `YOLO_X=value command`. Scoped hatches merge the requested name
+// with that same variable's existing selection, so a one-off recovery does not discard other picks.
 func (h Hatch) Text() string {
 	cmd := h.Command
 	if cmd == "" {
 		cmd = "yolo"
 	}
-	return h.Env + "=" + h.Value + " " + cmd
+	value := h.Value
+	if scopedHatch(h.Env) {
+		if current, ok := os.LookupEnv(h.Env); ok {
+			value = mergeScope(current, value)
+		}
+		value = shquote.Quote(value)
+	}
+	return h.Env + "=" + value + " " + cmd
+}
+
+func scopedHatch(env string) bool {
+	return env == UseInstalledEnv || slices.Contains(Scoped, env)
+}
+
+func mergeScope(current, requested string) string {
+	prior := Parse(current)
+	if prior.All() {
+		return "1"
+	}
+	addition := Parse(requested)
+	if addition.All() {
+		return "1"
+	}
+	names := prior.Names()
+	for _, name := range addition.Names() {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, ",")
 }
 
 // StartAnyway is the heading the hatches stand under.

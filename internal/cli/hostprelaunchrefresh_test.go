@@ -224,6 +224,7 @@ func TestHostPiRefreshFollowsAgentUpdates(t *testing.T) {
 // the floor's refusal block and the line that says so; pi is not started. Remove refreshRefusalExit's
 // call from the launch and pi starts.
 func TestHostPiRefreshFailureRefusesTheLaunch(t *testing.T) {
+	t.Setenv("YOLO_USE_INSTALLED", "")
 	h := newRefreshHost(t, piOnItsPathCopy, "  exit 7")
 	r := h.launch(t)
 	if r.rc != 1 || r.execEnv != nil {

@@ -1,9 +1,13 @@
 package patchrecovery
 
 import (
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
 
 var piFork = Subject{Key: "pi-fork/pi", Pack: "pi-fork", Name: "pi"}
@@ -72,9 +76,98 @@ func TestUnmatchedIsAWarningNamingWhatIsHere(t *testing.T) {
 	}
 }
 
+func TestTextMergesExistingScopedHatchSelection(t *testing.T) {
+	for _, env := range append(append([]string{}, Scoped...), UseInstalledEnv) {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv(env, "other/one, other-two,,other/one")
+			got := (Hatch{Env: env, Value: "target/key", Command: "yolo -- supplied --args"}).Text()
+			want := env + "=other/one,other-two,target/key yolo -- supplied --args"
+			if got != want {
+				t.Fatalf("Text() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestTextScopedMergeGrammarAndShellQuoting(t *testing.T) {
+	cases := []struct {
+		name, current, requested, want string
+	}{
+		{name: "append", current: "other1,other2", requested: "target", want: "other1,other2,target"},
+		{name: "deduplicate target", current: "other1,target,other2", requested: "target", want: "other1,target,other2"},
+		{name: "empty current", current: " , , ", requested: "target", want: "target"},
+		{name: "trim and deduplicate", current: " other1 ,, other2, other1 ", requested: " target , target ", want: "other1,other2,target"},
+		{name: "preserve global", current: " 1 ", requested: "target", want: "1"},
+		{name: "a 1 selector in a list is not global", current: "1,other", requested: "target", want: "1,other,target"},
+		{name: "quote shell metacharacters", current: "other;$(printf injected)'", requested: "target", want: "other;$(printf injected)',target"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(AllowPatchFailuresEnv, tc.current)
+			got := (Hatch{Env: AllowPatchFailuresEnv, Value: tc.requested, Command: "yolo"}).Text()
+			want := AllowPatchFailuresEnv + "=" + shquote.Quote(tc.want) + " yolo"
+			if got != want {
+				t.Fatalf("Text() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestTextExecutesComposedShellAssignmentWithoutInjection(t *testing.T) {
+	marker := t.TempDir() + "/unexpected"
+	current := "other one;$(touch " + marker + ")'"
+	t.Setenv(AllowPatchFailuresEnv, current)
+	hint := (Hatch{Env: AllowPatchFailuresEnv, Value: "target", Command: `sh -c 'printf %s "$YOLO_ALLOW_PATCH_FAILURES"'`}).Text()
+	out, err := exec.Command("/bin/sh", "-c", hint).Output()
+	if err != nil {
+		t.Fatalf("execute recovery hint: %v", err)
+	}
+	if want := current + ",target"; string(out) != want {
+		t.Fatalf("hint set value %q, want %q", out, want)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("shell injection created marker %q (stat err %v)", marker, err)
+	}
+}
+
+func TestTextKeepsSimpleHintWhenScopedVariableIsAbsent(t *testing.T) {
+	old, wasSet := os.LookupEnv(AllowPatchFailuresEnv)
+	if err := os.Unsetenv(AllowPatchFailuresEnv); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv(AllowPatchFailuresEnv, old)
+		} else {
+			_ = os.Unsetenv(AllowPatchFailuresEnv)
+		}
+	})
+	got := (Hatch{Env: AllowPatchFailuresEnv, Value: "target/key", Command: "yolo -- supplied --args"}).Text()
+	if want := AllowPatchFailuresEnv + "=target/key yolo -- supplied --args"; got != want {
+		t.Fatalf("Text() = %q, want %q", got, want)
+	}
+}
+
+func TestTextDoesNotChangeNonScopedHatchesOrEmptyScopedFormatting(t *testing.T) {
+	t.Setenv(AllowMissingProgramsEnv, "other")
+	if got, want := (Hatch{Env: AllowMissingProgramsEnv, Value: "1", Command: "yolo"}).Text(), AllowMissingProgramsEnv+"=1 yolo"; got != want {
+		t.Fatalf("boolean hatch Text() = %q, want %q", got, want)
+	}
+	t.Setenv(AllowPatchFailuresEnv, "")
+	if got, want := (Hatch{Env: AllowPatchFailuresEnv, Value: "target/key", Command: "yolo"}).Text(), AllowPatchFailuresEnv+"=target/key yolo"; got != want {
+		t.Fatalf("empty scoped hatch Text() = %q, want %q", got, want)
+	}
+	if got, want := (Hatch{Env: "YOLO_RUNTIME", Value: "container", Command: "yolo"}).Text(), "YOLO_RUNTIME=container yolo"; got != want {
+		t.Fatalf("unrelated hatch Text() = %q, want %q", got, want)
+	}
+}
+
 // TestSectionGolden pins the hatch list's shape (ruled 2026-10-16): a blank line, the heading, one
 // copyable command per line in one column, a few words of label after it.
 func TestSectionGolden(t *testing.T) {
+	for _, env := range append(append([]string{}, Scoped...), UseInstalledEnv) {
+		t.Setenv(env, "")
+	}
 	hatches := []Hatch{
 		{Env: AllowPatchFailuresEnv, Value: "pi-fork/pi", Command: "yolo", Label: "run v1.1.0 + 2 patches"},
 		{Env: AllowOlderUpstreamEnv, Value: "pi-fork/pi", Command: "yolo", Label: "build on an older release"},
