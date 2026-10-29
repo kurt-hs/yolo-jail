@@ -1337,6 +1337,16 @@ oh-omp and opencode, and `openai-codex`, the first case. For such a provider:
   the one list `packs/openai-auth` declares ([ML-D1](../design/model-lists-and-pickers.md#ML-D1)),
   which their packs say with `yolo_lists`, so its `YOLO_MODEL_<ROLE>` tiers are composed and the
   profile line names its `openai-responses` endpoint. oh-omp runs it on its own list.
+- **`github-copilot` ships with pi, provider and profile**, so pi on its own GitHub Copilot client
+  needs no declaration: `-p pi=github-copilot`, or beside Bedrock as
+  `"profile": {"pi": ["bedrock", "github-copilot"]}`, whose scoped list and pi-subagents scope
+  then hold `github-copilot/**` and `github-copilot/*` beside Bedrock's
+  ([BI-D13](../design/pi-codex-provider-shadowing.md#BI-D13)). The provider names no endpoint
+  and no key: pi signs in with its own `/login`, which is not the Copilot CLI's. It names the
+  platform `github-copilot`, so opencode and oh-omp, which have it built in, run it on their own
+  clients, and for an agent with no client of its own (claude, codex, the Copilot CLI) a bare
+  `-p github-copilot` reaches nothing, which the launch's profile line says with the
+  `-p <agent>=` next step.
 - **A plan the agent has no provider of its own for** (a `null` plan) gets nothing written, and
   the launch's profile line says the profile reaches nothing for that agent, naming
   `-p <agent>=<name>`. No shipped pack declares one.
@@ -1787,7 +1797,11 @@ never in a release, and redundant once `-p` carried both grammars.)
 [ES-D27](../design/credential-sources-separation.md#10-decision-ledger)), for the ONE command they
 compose: a bare name selects that profile for it, and a `cli=name` pair naming that command (the
 command after `--`, or `yolo host env`'s `--agent`) means the bare name, so
-`yolo host -p claude=zai -- claude` is `yolo host -p zai -- claude`. A pair naming any other CLI is
+`yolo host -p claude=zai -- claude` is `yolo host -p zai -- claude`. An empty pair naming that
+command selects no profile for it, over the `profile` key, as it does on a jail launch:
+`yolo host -p pi= -- pi` runs pi on its own settings whatever the key selects
+([ES-D27](../design/credential-sources-separation.md#10-decision-ledger), amended 2026-10-29). `-p pi=null` is a
+profile named `null`; only the key's JSON null selects none. A pair naming any other CLI is
 refused by name, since there is no second process for it to select for; handing the command
 another provider's key stays `--with-credentials`' alone. Before, both host parsers took a bare name
 only and refused `claude=codex` as an undeclared profile of that name. The run path's help scan
@@ -2313,7 +2327,8 @@ the line, naming why and the fix, in two cases:
   also says where the selection came from and how to undo it there: the `profile` key's file and
   line with the key respelled to select none for that agent
   (`"profile": {"*": "bedrock", "copilot": null}`), or, for a `-p`, the `-p copilot=` that does.
-  At `yolo host`, whose `-p` refuses `-p copilot=`, a typed `-p` is undone by leaving it out; in a
+  At `yolo host`, a typed `-p` is undone by leaving it out, or by making it `-p copilot=` when the
+  key selects for the command too; in a
   jail, whose user config is a read-only copy, the key's spelling goes in the host's user config
   ([PP-D12](../design/providers-and-profiles-redesign.md#PP-D12));
 - the provider names no endpoint, so [the credential preflight](#the-credential-preflight) asks

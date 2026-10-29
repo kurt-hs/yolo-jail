@@ -464,23 +464,25 @@ func ProfileDeselection(key, flag ProfileSelection, cli string) string {
 }
 
 // HostProfileDeselection is ProfileDeselection for `yolo host --` and `yolo host env`, whose -p
-// selects for its one command and refuses `-p <cli>=` ("names no profile"), so no -p spelling
-// selects none there and the clause never offers one. typed is whether this command's -p made
-// the selection; keyReaches whether the `profile` key selects a profile for cli without it.
+// selects for its one command, `-p <cli>=` selecting none for it over the key as on a jail launch
+// (ES-D27 and PP-D12, amended 2026-10-29). typed is whether this command's -p made the selection;
+// keyReaches whether the `profile` key selects a profile for cli without it.
 //
 // A key-made selection names the key's fix exactly as a jail launch does: the fold the host
 // composes from (FoldProfiles over ConfigProfileSelection) reads the key's null for cli as none,
-// so the spelling it prints stops the warning on every later command. A typed one is undone by
-// leaving the -p out, and when the key would then select for cli too, the key's fix follows.
+// so the spelling it prints stops the warning on every later command; `-p <cli>=` follows for one
+// command. A typed one is undone by leaving the -p out, and when the key would then select for cli
+// too, by making it `-p <cli>=`, with the key's fix after it.
 func HostProfileDeselection(key ProfileSelection, typed, keyReaches bool, cli string) string {
 	if !typed {
-		return "the selection is " + profileKeyFix(key, cli, "command")
+		return "the selection is " + profileKeyFix(key, cli, "command") + ", or add `-p " + cli +
+			"=` for one command"
 	}
-	out := "the selection is this command's `-p`, so leave it out"
 	if keyReaches {
-		out += "; without it the selection is " + profileKeyFix(key, cli, "command")
+		return "the selection is this command's `-p`, so make it `-p " + cli + "=`; without it the " +
+			"selection is " + profileKeyFix(key, cli, "command")
 	}
-	return out
+	return "the selection is this command's `-p`, so leave it out"
 }
 
 // profileKeyFix is where the `profile` key's selection for cli was written and the instruction

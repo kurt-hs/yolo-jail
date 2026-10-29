@@ -14,7 +14,10 @@ import (
 )
 
 // The grammar's arms: a bare name, a pair naming the agent, a pair naming another CLI, a pair
-// with no name.
+// with no name, which selects NO profile for the agent, as `-p <cli>=` does on a jail launch, and
+// comes back in that spelling so the fold reads it as none and a remedy can re-run it.
+// `-p claude=null` is a profile literally named "null": only the config key's JSON null selects
+// none.
 func TestHostProfileForReadsTheRunGrammar(t *testing.T) {
 	for _, tc := range []struct {
 		v, want, refusal string
@@ -25,7 +28,9 @@ func TestHostProfileForReadsTheRunGrammar(t *testing.T) {
 		{"", "", ""},
 		{"pi=codex", "", `selects a profile for "pi", but this composes the environment of "claude" alone`},
 		{"claude=bedrock,pi=codex", "", `selects a profile for "pi"`},
-		{"claude=", "", `names no profile for "claude"`},
+		{"claude=", "claude=", ""},
+		{"claude=bedrock,claude=", "claude=", ""},
+		{"claude=null", "null", ""},
 	} {
 		got, err := hostProfileFor(tc.v, "claude", false)
 		if tc.refusal == "" {

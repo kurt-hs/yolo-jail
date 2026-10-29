@@ -172,7 +172,7 @@ func (c *hostComposition) modelMenu(target string, catalogEnv []string, sel *hos
 // MM-D22 exists to prevent. Providers, not profile names, because the list derive reads the
 // provider.
 func (c *hostComposition) menuFollowsTheLaunch(sel *hostSelection) (string, bool) {
-	if c.typedProfile == "" {
+	if c.typedProfile == "" || hostDeselects(c.typedProfile, c.agent) {
 		return "", true
 	}
 	if sel != nil && sel.declared {
@@ -295,6 +295,19 @@ func (c *hostComposition) launchSelection(typed, environ []string, say func(stri
 		return nil
 	}
 	p, spec := hostSelectionProgram(c.packs, c.agent)
+	// `-p <agent>=` SELECTS NO PROFILE (hostNoProfile), so there is no selection to hand. A pack
+	// with session homes has its config rendered for that launch (hostSessionInputs), so the
+	// program starts on none; any other starts on what its own file holds, which no launch word
+	// takes away, and the line says so with the config's way to select none.
+	if hostDeselects(c.typedProfile, c.agent) {
+		if spec != nil && p != nil && p.Decl != nil && len(p.Decl.SessionHomes()) == 0 {
+			say(fmt.Sprintf("-p %s selects no profile for %s, but %s starts on the selection its own config "+
+				"holds (~/%s), which a launch cannot take away. To start it on none, select none for %s in "+
+				"your config's `profile` key (a null for %s) and run `yolo host apply`.",
+				shquote.Quote(c.typedProfile), c.agent, c.agent, spec.Surface, c.agent, c.agent))
+		}
+		return nil
+	}
 	if spec == nil {
 		return &hostSelection{bin: c.agent}
 	}

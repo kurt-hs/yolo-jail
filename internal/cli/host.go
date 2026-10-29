@@ -520,10 +520,21 @@ func hostProfileFor(v, agent string, envVerb bool) (string, error) {
 			shquote.Quote(v), cli, agent, chose, agent, shquote.Quote(agent), cli, other, withCredentialsFlag)
 	}
 	if len(pairs[agent]) == 0 || pairs[agent][0] == "" {
-		return "", fmt.Errorf("-p %s names no profile for %q", shquote.Quote(v), agent)
+		return hostNoProfile(agent), nil
 	}
 	return strings.Join(pairs[agent], ","), nil
 }
+
+// hostNoProfile is hostProfileFor's answer for `-p <agent>=`: NO PROFILE for this command,
+// overriding the `profile` key, as the same pair does on a jail launch (ES-D27 and PP-D12, amended
+// 2026-10-29). It is the pair's own spelling, so every remedy that re-runs the launch with the -p
+// as typed prints a spelling that does the same, and no profile name can be it: a name holds no
+// "=". hostProfileFold reads it as the agent's empty set, which FoldProfiles emits as none.
+func hostNoProfile(agent string) string { return agent + "=" }
+
+// hostDeselects reports whether typed, a -p as hostProfileFor resolved it, selects no profile for
+// agent (hostNoProfile).
+func hostDeselects(typed, agent string) bool { return agent != "" && typed == hostNoProfile(agent) }
 
 // narrowHostBareList is OQ-AP3 (ruled 2026-09-29, option C) at the host: a BARE list, a typed -p
 // naming no agent, goes whole to a set-capable agent and its first entry to one that runs one
@@ -1684,8 +1695,8 @@ func (c *hostComposition) profileLines() []string {
 	}
 	var out []string
 	// The "reaches nothing" warning's ending (PP-D12): where this command's selection came from
-	// and how to select none for it there, in the host's own terms — its -p refuses `-p <cli>=`,
-	// so the clause never offers it, and the key's null works here through the same fold.
+	// and how to select none for it there, in the host's own terms — its `-p <cli>=` selects none
+	// for this one command, and the key's null works here through the same fold.
 	key := config.ConfigProfileSelection(c.cfg)
 	deselect := func(agent, _ string) string {
 		return config.HostProfileDeselection(key, c.typedProfile != "", len(c.configuredSet) > 0, agent)
@@ -2687,7 +2698,7 @@ func composeHostVarsWith(cfg *jsonx.OrderedMap, workspace, agent, command, profi
 	// notch the command is the whole launch, so a -p that reaches nothing would be a flag that
 	// silently does nothing. After the declaration check, so an undeclared name keeps its own
 	// message, and the provider the refusal names is the profile's resolved one.
-	if profile != "" && !selectedPackInstalls(packs, agent) {
+	if profile != "" && !hostDeselects(profile, agent) && !selectedPackInstalls(packs, agent) {
 		c.err = fmt.Errorf("-p %s selects a profile for agent CLIs only, at every notch, and no "+
 			"selected pack installs %q, so it would reach nothing here. An arbitrary command "+
 			"receives a provider's key only through the grant: %s", shquote.Quote(profile), agent,
@@ -3740,7 +3751,11 @@ func effectiveHostProfiles(cfg *jsonx.OrderedMap, packs []*packload.Pack, agent,
 func hostProfileFold(cfg *jsonx.OrderedMap, packs []*packload.Pack, agent, typed string) config.ProfileFold {
 	var flag config.ProfileSelection
 	if typed != "" && agent != "" {
-		flag.Named = map[string][]string{agent: packload.SplitProfileList(typed)}
+		set := packload.SplitProfileList(typed)
+		if hostDeselects(typed, agent) {
+			set = []string{}
+		}
+		flag.Named = map[string][]string{agent: set}
 	}
 	return config.FoldProfiles(config.ReceiversOf(packs), config.ConfigProfileSelection(cfg), flag)
 }
