@@ -343,6 +343,22 @@ func buildCapturePlanAt(opts CaptureOptions, stagingRoot string) CapturePlan {
 	if captureEnv == nil {
 		captureEnv = jsonx.NewOrderedMap()
 	}
+	// A capture owns these roots; never carry composed launch metadata into its program
+	// launchers. The same resolved value is passed to the bootstrap and written into the
+	// driver's session environment so the generated launcher evaluates this capture's policy.
+	captureEnv = withoutEnvVar(captureEnv, paths.MacosUserTmpdirContextEnv)
+	if opts.Mode == ModeAccount || opts.Mode == ModeSelf {
+		validationContext := SandboxTmpdirValidationContext{
+			Mode: opts.Mode, Workspace: stagingRoot, Home: stagingHome,
+		}
+		if self {
+			validationContext.DarwinUserTempDir = opts.DarwinUserTempDir
+			validationContext.SharedTmp = opts.SharedTmp
+		}
+		if contextJSON, err := MarshalSandboxTmpdirValidationContext(validationContext); err == nil {
+			captureEnv = withEnvVar(captureEnv, paths.MacosUserTmpdirContextEnv, contextJSON)
+		}
+	}
 	// THE RUN-AS-YOU CAPTURE'S OWN TMPDIR (MMP-D21), over any composed one: its profile closes the
 	// shared /tmp, and a TMPDIR from the user's env would point outside the staging tree, where
 	// the installer cannot write either. It rides the env file to the driver and the bootstrap's

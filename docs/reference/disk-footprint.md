@@ -232,18 +232,25 @@ degraded tar fallback, which carries only `:latest`). A nameless row has lost th
 that was the evidence it was yolo's.
 
 **Provenance is a label baked into the image config**, `org.yolo-jail.owner`, which survives the
-loss of the tag and stays filterable. The reaper lists candidates with two queries, the
-repository-name filter and the label filter, because podman refuses both in one. The label value
-is the flake's image identity, the finest identity nix can spell, so it proves ownership, not
-which build. The probe passes no `-a`, which would surface build intermediates the ruling does
-not cover.
+loss of the tag and stays filterable by Podman. On Podman the reaper lists candidates with two
+queries, the repository-name filter and the label filter, because Podman refuses both in one. The
+label's value is `yolo`, proving the image is yolo-built rather than identifying which build. The
+probe passes no `-a`, which would surface build intermediates the ruling does not cover.
+
+Apple Container uses `container image list --format json` and considers exact yolo-jail repository
+references only; optional owner-label widening is intentionally absent. It joins native
+all-container JSON by the full image descriptor digest and, before each deletion, re-reads inventory
+and liveness and inspects the stored reference to verify its exact name and digest. Apple Container
+has no proven in-use delete veto, so any failed or ambiguous check skips deletion; the interval
+between the final check and deletion remains an unverified native-runtime race.
 
 > [!WARNING]
-> **A label says "ours". It never says "not in use", and a removal needs both.** The liveness
-> veto ([`image-retention.md`](image-retention.md)) still gates every removal, and removal is not
-> forced, so an image with a container refuses to go. Rows older than the label are left alone
-> permanently and listed by `yolo stores` as a class nothing reclaims; `podman image prune` is the
-> user's to run ([OQ-DF3](#why-its-this-way)).
+> **A label says "ours". It never says "not in use", and a removal needs both.** Podman's liveness
+> veto ([`image-retention.md`](image-retention.md)) gates every removal, and plain non-forcing
+> `rmi` is a second veto. Apple Container does not widen ownership by label; its fresh image,
+> all-container and inspect checks gate each reference deletion. Rows older than the label are left
+> alone permanently and listed by `yolo stores` as a class nothing reclaims; `podman image prune` is
+> the user's to run ([OQ-DF3](#why-its-this-way)).
 
 Ledger C has no write-path moment to clean up after itself: a launch that mints a new tag never
 supersedes another workspace's. That is why it is reaped from the slot and Ledger B was fixed
@@ -294,7 +301,7 @@ program, and none of the slot's stores grows at that notch.
 
 | Store | Tier | Why | Steady state |
 | :--- | :--- | :--- | :--- |
-| Tagged podman images | automatic | evidence complete (the runtime's liveness and the per-workspace pointers); regeneration is an image copy | one current image per workspace |
+| Tagged Podman images; Apple Container yolo-jail references | automatic | runtime liveness and per-workspace pointers; Apple also revalidates native reference binding before deletion | one current image per workspace |
 | Image tars on a streaming runtime | automatic | a tar is one-shot (P3); regeneration is a build | none |
 | Superseded vendor versions | automatic, in the launcher itself | the live symlink is complete evidence | two builds per program |
 | Agent staging, retired loophole state | automatic | tri-state gated; small | swept |
@@ -303,7 +310,7 @@ program, and none of the slot's stores grows at that notch.
 | yolo's own unrooted store outputs | automatic, host-only | every running jail's prefix is rooted ([OQ-BF4](#why-its-this-way)), and nix refuses a live path | deleted by name |
 | Shared cache, older than its age cutoff | **offered**, then automatic | regeneration is a re-download of unknown size | age purge, once consented |
 | Unused mise tool versions | **offered**, then automatic | regeneration is a re-download for a workspace that returns | versions no jail used within the window, once consented |
-| Untagged podman rows | automatic for labelled rows; never for rows older than the label | a row without the label carries no evidence it is yolo's | listed by `yolo stores` |
+| Untagged Podman rows | automatic for labelled rows; never for rows older than the label | a row without the label carries no evidence it is yolo's | listed by `yolo stores` |
 | Agent worktrees | never | not yolo's bytes | none |
 
 ### The offer
@@ -964,8 +971,9 @@ number; each is now one of the mechanisms above.
 - **Workspace-local bytes are in no inventory row.** Agent worktrees under
   `<workspace>/.claude/worktrees/` are on the same device and appear nowhere in `yolo stores`;
   whether that belongs to `yolo stores` or to nothing is undecided.
-- **Apple Container's image store has no reclaimer** and was never measured; the label probe is
-  podman's spelling.
+- **Apple Container's image store now has a bounded native JSON/reference selector**, but its emitted
+  fixture shape and the reference-resolution race have not been verified on native hardware.
+  Optional owner-label widening is intentionally absent; only repository references are candidates.
 - **Host wrappers written from a dev launcher name a reapable bundle.** `hostwrap.Running` falls
   back to the running executable when no PATH entry names it, which for a dev launcher is
   `dev-bundles/<bundle>/bin/yolo` ([development bundles](#development-bundles)). The fix is for

@@ -151,10 +151,13 @@ Four properties of the pointers, each of which a plausible change would get wron
   is in use is protected by liveness regardless of any count, and under a shared-base layer plan
   every kept image also holds the base in place.
 
-**Liveness comes from the runtime, and removal does not force.** The container listing yields the
-image IDs with containers on them and nothing in that set is ever selected. Removal is then a plain
-delete rather than a forcing one, so the safety survives a *wrong* answer instead of depending on a
-right one — an in-use image simply refuses to be removed.
+**Liveness comes from the runtime, and removal does not force.** On Podman the container listing yields
+image IDs and the plain `rmi` is a second in-use veto. Apple Container uses its native JSON image and
+all-container listings, joins on the full descriptor digest, and deletes by the stored reference.
+Because Apple Container does not provide a proven in-use deletion veto, every Apple delete re-reads
+both listings and inspects the exact reference immediately before applying it; an unreadable or
+changed binding skips that delete. The remaining race between that check and the runtime delete is a
+native-runtime risk, not something source-derived fixtures settle.
 
 ## GC-root retention — age, except under a running image
 

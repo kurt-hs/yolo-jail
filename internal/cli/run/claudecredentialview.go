@@ -55,24 +55,12 @@ var registerView = func(loc claudeview.Location, rt, cname string) (oauthbroker.
 	return oauthbroker.RegisterView(loc, rt, cname)
 }
 
-// registerClaudeCredentialView registers this workspace's view with the host broker and writes
-// it from the machine's login, when the launch delivers the view. It runs after the host
-// services started, because the broker's start is what creates the state directory the
-// registration lives in. That broker is this jail's own where HD-R1 is built
-// (hostdaemonperjail.go), and it keeps every registered view current while the jail runs.
-//
-// Never fatal. A launch whose registration failed still starts, and says why its Claude may lack
-// a login; on macos-user it preserves the view-off path, while distinguishing the self-mode
-// session-TMPDIR workaround from account mode's measured Keychain write hang. Refusing a launch
-// would be a bigger loss for a credential that may be recoverable from another supported path.
-//
-// OQ-CL2's "the next launch says so" is here: a workspace a jail's /logout signed out is signed
-// back in to the machine's login by this registration, and the line names both halves.
-func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.OrderedMap) {
-	if !o.claudeCredentialView(rt, cfg) {
-		return
-	}
-	out := o.pr(o.Stderr)
+var retireView = func(loc claudeview.Location) (bool, error) {
+	oauthbroker.ConfigureStore()
+	return oauthbroker.RetireViewRegistration(loc)
+}
+
+func (o *Options) claudeCredentialViewLocation(rt string) claudeview.Location {
 	subdir := claudeview.HostSubdir(rt)
 	if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: HonoredBy — registration follows MMP-D5 HOME; account mode keeps its undotted location
 		homes := macosuser.LaunchHomes(macosuser.ModeSelf, o.Workspace, o.macosUserHostHome())
@@ -80,7 +68,35 @@ func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.Orde
 		// directory under that HOME, where CL-D8 says Claude reads without env overrides.
 		subdir = filepath.Base(filepath.Join(homes.Home, filepath.Dir(claudeview.ViewRel)))
 	}
-	loc := claudeview.Location{Workspace: o.Workspace, Subdir: subdir}
+	return claudeview.Location{Workspace: o.Workspace, Subdir: subdir}
+}
+
+// registerClaudeCredentialView registers this workspace's view with the host broker and writes
+// it from the machine's login, when the launch delivers the view. When this launch instead
+// selects the interception layout, retire only the selected workspace's broker registration;
+// credential bytes and links are left untouched. Retirement failures are warnings, never fatal.
+//
+// The On path is also never fatal. A launch whose registration failed still starts, and says why
+// its Claude may lack a login; on macos-user it preserves the view-off path, while distinguishing
+// the self-mode session-TMPDIR workaround from account mode's measured Keychain write hang.
+// Refusing a launch would be a bigger loss for a credential that may be recoverable from another
+// supported path.
+//
+// OQ-CL2's "the next launch says so" is here: a workspace a jail's /logout signed out is signed
+// back in to the machine's login by this registration, and the line names both halves.
+func (o *Options) registerClaudeCredentialView(rt, cname string, cfg *jsonx.OrderedMap) {
+	loc := o.claudeCredentialViewLocation(rt)
+	if !o.claudeCredentialView(rt, cfg) {
+		removed, err := retireView(loc)
+		out := o.pr(o.Stderr)
+		if err != nil {
+			out.printf("[yellow]Warning: could not retire this workspace's Claude credential view registration (%s); the broker may continue maintaining stale view metadata. Check `yolo claude-auth status`, correct the broker/lock failure, then relaunch.[/yellow]", err.Error())
+		} else if removed {
+			out.print("[dim]Claude: disabled this workspace's credential view; the broker will no longer maintain its view.[/dim]")
+		}
+		return
+	}
+	out := o.pr(o.Stderr)
 	res, err := registerView(loc, rt, cname)
 	if err != nil {
 		if rt == "macos-user" && o.MacosUserMode == macosuser.ModeSelf { // parity: NotApplicable — podman and Apple Container have no native self mode

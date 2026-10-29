@@ -424,13 +424,11 @@ func listImagesByOwnerLabel(rt string, run RunFunc) string {
 	return res.Stdout
 }
 
-// PruneOldImages lists the images yolo can PROVE are its own, keeps every image
-// the `protected` tag set vouches for and every image a container is running on,
-// and returns the image IDs removed (or slated for removal in dry-run).
-// TWO `images` probes (repository name, owner label) → merge their rows →
-// parse (id, repo:tag, createdAt) lines (>=3 fields, split maxsplit=2) → ONE
-// ENTRY PER IMAGE ID → drop the protected and the in-use → `rmi <id>` each when
-// apply. A missing/failed runtime yields an empty list.
+// PruneOldImages lists the images yolo can PROVE are its own and keeps images named by current
+// pointers or used by containers. Podman returns short image IDs; Apple Container returns stored
+// references. Dry-run reports the same backend-specific identifiers without deleting.
+// The Podman path merges two `images` probes (repository name, owner label), parses rows, and
+// removes by ID. The Apple path uses native JSON inventory/liveness and guarded reference deletion.
 //
 // # THERE IS NO KEEP WINDOW ANY MORE (OQ-LS3, ruled 2026-09-08)
 //
@@ -529,6 +527,9 @@ func PruneOldImages(rt string, protected map[string]struct{}, protectedKnown boo
 // in the returned list. The manual `yolo prune` passes neither.
 func pruneOldImages(rt string, protected map[string]struct{}, protectedKnown bool, apply bool, run RunFunc,
 	guard Guard, recheck func(tags []string) bool) (removed []string, declined ImageReapDecline) {
+	if rt == "container" {
+		return pruneAppleOldImages(rt, protected, protectedKnown, apply, run, guard, recheck)
+	}
 	// THE CANDIDATE LISTING COMES FIRST, and the order is load-bearing since
 	// OQ-LS2 made a decline an ERROR on the manual path. A machine where yolo
 	// has never launched has no current-image pointers, so protectedKnown is
@@ -807,13 +808,13 @@ func RunningImageRefs(rt string, run RunFunc) ([]string, bool) {
 	return refs, true
 }
 
-// imagesInUseByRunningContainers asks the runtime which image IDs currently have
-// a container on them. known=false when the question could not be answered, and
-// the caller then declines to remove anything.
+// imagesInUseByRunningContainers is the Podman-path helper that asks which image IDs currently
+// have a container on them. known=false when the question could not be answered, and the caller
+// then declines to remove anything. Apple Container uses its native descriptor-digest probe in
+// appleImagesInUse instead.
 //
-// Every runtime yolo drives spells this the same way, and the ID is matched
-// against the same `{{.ID}}` column `podman images` prints, so no tag parsing is
-// involved — a jail runs a content-addressed ref, and tags are exactly what the
+// Podman matches the ID against the same `{{.ID}}` column `podman images` prints, so no tag parsing
+// is involved — a jail runs a content-addressed ref, and tags are exactly what the
 // LRU veto already reasons about badly.
 func imagesInUseByRunningContainers(rt string, run RunFunc) (map[string]bool, bool) {
 	res := run([]string{rt, "ps", "--format", "{{.ImageID}}"}, psTimeout)
