@@ -124,6 +124,12 @@ sibling problem).
   and `Store.Admit` refuses a staged tree from anywhere else rather than copying gigabytes.
 - **The completion marker is written last, and it is all `Resolve` reads.** A torn or in-flight
   entry reads as absent, and the next admit of the same content clears and redoes it.
+- <a id="host-owned-metadata"></a>**Only the host writes an entry's receipts and marker.** A
+  proto-entry is the out directory a capture or build jail filled, so `Store.AdmitEntry` (and its
+  guarded and validated forms) refuses one that already holds `receipts.jsonl` or the completion
+  marker, before anything is stored. A record counts only for the entry its key names: the reader
+  (`captureRecords`) drops a line naming another key or none, and selection and the materialize's
+  platform gate ignore a record keyed to another entry.
 - **Resolve is strictly offline.** A miss is `ErrNotCaptured`, naming the act that would fix it.
 - **Entry files are frozen read-only at admit, and nothing is deduplicated within the store.**
   Directories keep their write bit so a reap can unlink them.
@@ -270,6 +276,9 @@ invoked costs nothing.
   (`MaterializeOptions.PlatformRecords`), when a record beside the entry names it exactly; with
   neither it refuses with `capture.ErrWrongPlatform` before writing. The fork-build launcher, the
   installer-capture launcher, the host floor and the cached-good check all judge by the record.
+  The host floor selects a host capture's record (platform plus the `+host` mark) as well as a
+  jail's, so its reader (`floorCaptureRecords`) reads that mark as the platform it was captured
+  on; a jail's reader keeps it, since no jail selects a host capture.
 - <a id="slice-4f"></a>**The capture jail is given no store** (see [Invariants](#invariants)).
 - **Materialize is not transactional.** A failure partway leaves what it already placed, and the
   launcher falls through to the vendor installer.

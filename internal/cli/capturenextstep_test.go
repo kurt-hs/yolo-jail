@@ -167,8 +167,21 @@ func TestEveryCaptureStopNamesItsNextStep(t *testing.T) {
 			})
 			withFakeCaptureJail(t, func(o run.Options) int {
 				rc := fill(o)
-				// A directory where the receipt goes: the entry is admitted, the append fails.
-				if err := os.MkdirAll(capture.ReceiptsPath(filepath.Join(o.Workspace, captureOutLeaf)), 0o755); err != nil {
+				// A directory where the receipt goes: the entry is admitted, the append fails. The
+				// proto-entry may not hold it (install-capture.md#host-owned-metadata), so the same
+				// bytes are admitted first and the directory planted beside THAT entry, which this
+				// capture's admission then finds.
+				store := &capture.Store{Dir: filepath.Dir(filepath.Dir(o.Workspace))}
+				pre, err := store.Stage("pre-admitted")
+				if err != nil {
+					t.Fatal(err)
+				}
+				copyAdmittedTree(t, filepath.Join(o.Workspace, captureOutLeaf), pre)
+				entry, err := store.AdmitEntry(pre)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(capture.ReceiptsPath(entry.Root), 0o755); err != nil {
 					t.Fatal(err)
 				}
 				return rc

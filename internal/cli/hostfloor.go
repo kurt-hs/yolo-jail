@@ -67,9 +67,10 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 		GOARCH: runtime.GOARCH,
 		// The identity ResolveCapture and floorForkBuild name, so the materialize checks the same.
 		CapturePlatform: hostFloorCapturePlatform(),
-		// The records that selection reads, so a materialize honors the platform a record names
+		// The records that selection reads, a host capture's +host one included (floorCaptureRecords),
+		// so a materialize honors the platform a record names
 		// when the same bytes were admitted for another platform first.
-		CaptureRecords: captureRecords,
+		CaptureRecords: floorCaptureRecords,
 		NodeFloor:      hostfloor.HighestNodeFloor(progs),
 		Include:        func(pack string) bool { return entrypoint.PackPolicyAllows(floorWire, pack) },
 		// The user's provisioner order (PS-D12): a program it gives to a manager on the launch PATH

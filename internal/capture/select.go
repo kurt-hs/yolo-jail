@@ -91,6 +91,11 @@ func (p Program) String() string {
 // consumer of a content-addressed directory — including internal/prune, which deliberately
 // does not import internal/config.
 type Record struct {
+	// Key is the store key the receipt names (its `resolved` field). A record counts only for the
+	// entry whose key it names: a line copied or planted beside another entry attributes nothing,
+	// to selection or to the materialize's platform gate. "" is a reader that does not carry it;
+	// the production reader (internal/cli's captureRecords) drops such a line itself.
+	Key string
 	// Compatibility separates resolved ordinary installs from each other and legacy captures.
 	Compatibility string
 	// Bin and Platform are the program this entry was captured for.
@@ -114,6 +119,10 @@ type Record struct {
 	// selection never looks at it.
 	Digest string
 }
+
+// namesEntry reports whether r may speak for the entry under key: it names that key, or names none
+// (a reader that does not carry keys — see Record.Key).
+func (r Record) namesEntry(key string) bool { return r.Key == "" || r.Key == key }
 
 // Records reads the `record` receipts beside ONE entry, given the entry's directory.
 //
@@ -224,7 +233,7 @@ func scanRecords(s *Store, read Records) ([]entryRecords, error) {
 			continue
 		}
 		for _, r := range recs {
-			if r.Bin == "" || r.Platform == "" {
+			if r.Bin == "" || r.Platform == "" || !r.namesEntry(key) {
 				continue
 			}
 			er.Records = append(er.Records, r)

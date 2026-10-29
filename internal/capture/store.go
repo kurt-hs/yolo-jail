@@ -285,6 +285,11 @@ func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, 
 	} else if !fi.IsDir() {
 		return nil, fmt.Errorf("capture admit: staged tree %s is not a directory", digestOf)
 	}
+	if whole {
+		if err := refuseHostOwnedMetadata(staged); err != nil {
+			return nil, err
+		}
+	}
 	// The staging root is yolo's own, reached as the OS does, so a user's link to the store or the
 	// state directory is followed; below it is the capture jail's workspace, where no link is
 	// (BG-D23).
@@ -362,6 +367,29 @@ func (s *Store) admit(ctx context.Context, staged, digestOf string, whole bool, 
 		}
 	}
 	return entry, nil
+}
+
+// hostOwnedNames are the names beside an entry's tree that only the HOST writes, after admission:
+// the record receipts that selection and the materialize's platform gate trust, and the
+// completion marker that alone says the entry exists. A proto-entry is the out directory a capture
+// or build jail filled, so one that already holds either was written by the installer or build
+// under capture — a forged record, or a marker that commitAdmission would write through.
+var hostOwnedNames = []string{ReceiptsName, completeMarker}
+
+// refuseHostOwnedMetadata refuses an entry-shaped staged directory that holds any hostOwnedNames,
+// in any form (Lstat: a link counts too), before anything is digested, locked or renamed.
+func refuseHostOwnedMetadata(staged string) error {
+	for _, name := range hostOwnedNames {
+		if _, err := os.Lstat(filepath.Join(staged, name)); err == nil {
+			return fmt.Errorf("capture admit: %s holds %s, which only yolo writes beside an admitted "+
+				"entry — the installer or build that ran in the capture jail wrote it into its out "+
+				"directory, so nothing was stored; change that installer or build so it writes nothing "+
+				"outside its home, then run the capture or build again", staged, name)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("capture admit: checking %s for %s: %w — nothing was stored", staged, name, err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) clearIncompleteEntry(entry string) error {

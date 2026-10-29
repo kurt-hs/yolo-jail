@@ -222,7 +222,7 @@ func Materialize(opts MaterializeOptions) (*MaterializeResult, error) {
 	if want == "" {
 		want = Platform()
 	}
-	if m.Platform != "" && m.Platform != want && !recordedFor(opts.PlatformRecords, opts.Entry.Root, want) {
+	if m.Platform != "" && m.Platform != want && !recordedFor(opts.PlatformRecords, opts.Entry, want) {
 		return nil, fmt.Errorf("capture materialize: entry %s is a %s capture and this is %s: %w",
 			opts.Entry.Key, m.Platform, want, ErrWrongPlatform)
 	}
@@ -693,18 +693,18 @@ func orUnknown(s string) string {
 	return s
 }
 
-// recordedFor reports whether a `record` beside the entry at root, read by read, names platform
+// recordedFor reports whether a `record` beside entry, read by read and keyed to it, names platform
 // exactly. Nil read, an unreadable log, or no such record is false: the platform gate fails closed.
-func recordedFor(read Records, root, platform string) bool {
+func recordedFor(read Records, entry *Entry, platform string) bool {
 	if read == nil || platform == "" {
 		return false
 	}
-	recs, err := read(root)
+	recs, err := read(entry.Root)
 	if err != nil {
 		return false
 	}
 	for _, r := range recs {
-		if r.Platform == platform {
+		if r.Platform == platform && r.namesEntry(entry.Key) {
 			return true
 		}
 	}

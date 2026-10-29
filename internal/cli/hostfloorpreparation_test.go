@@ -607,11 +607,13 @@ func admitBuildReceipt(t *testing.T, p hostfloor.Program, good *packsrc.GoodBuil
 		Recipe: recipe, Fork: fork.Key(), Series: good.Series, Tag: tag, Version: version,
 		Act: entrypoint.ReceiptActRecord, Time: at,
 	}
-	if err := os.WriteFile(capture.ReceiptsPath(staged), []byte(receipt.Line()+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// The receipt goes beside the ADMITTED entry, as every writer's does: a proto-entry holding one
+	// is refused (install-capture.md#host-owned-metadata).
 	entry, err := store.AdmitEntry(staged)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(capture.ReceiptsPath(entry.Root), []byte(receipt.Line()+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if entry.Key != entryKey || !entry.Complete() {

@@ -481,6 +481,19 @@ const hostOriginMark = "+host"
 // driver observed platform.
 func hostCapturePlatform(platform string) string { return platform + hostOriginMark }
 
+// floorCaptureRecords is the HOST FLOOR's record reader for its materializes' platform gate
+// (hostfloor.Floor.CaptureRecords): captureRecords, with a host capture's +host record read as the
+// platform it was captured on. The floor selects either origin (resolveFloorCapture), so it must
+// materialize what either selects; a jail's reader keeps the mark, since no jail selects a host
+// capture.
+func floorCaptureRecords(entryDir string) ([]capture.Record, error) {
+	recs, err := captureRecords(entryDir)
+	for i := range recs {
+		recs[i].Platform = strings.TrimSuffix(recs[i].Platform, hostOriginMark)
+	}
+	return recs, err
+}
+
 // resolveFloorCapture is the HOST FLOOR's question of the store: the newest capture of bin for
 // platform, of either origin — a capture jail's, or this host's own (hostCapturePlatform). A jail
 // never asks it: its launcher's materialize asks resolveCaptureFor, which a host capture cannot
@@ -540,7 +553,12 @@ func newerSelection(a, b capture.Selected) bool {
 // lines would let `yolo prune --apply` delete every fork entry as unattributed. A build record
 // carries its source address, which selection keys on, so neither kind can answer a query for the
 // other.
+//
+// ONLY A LINE KEYED TO THIS ENTRY COUNTS (capture.Record.Key): every writer of a record names the
+// entry it sits beside, so a line naming another key — or none — was copied or planted, and it
+// attributes nothing, to selection, the reap or the materialize's platform gate.
 func captureRecords(entryDir string) ([]capture.Record, error) {
+	key := filepath.Base(entryDir)
 	path := capture.ReceiptsPath(entryDir)
 	recs, err := entrypoint.ReadCaptureReceipts(path)
 	if err != nil {
@@ -552,21 +570,21 @@ func captureRecords(entryDir string) ([]capture.Record, error) {
 	}
 	out := make([]capture.Record, 0, len(recs)+len(builds))
 	for _, r := range recs {
-		if r.Act != entrypoint.ReceiptActRecord {
+		if r.Act != entrypoint.ReceiptActRecord || r.Key != key {
 			continue
 		}
 		out = append(out, capture.Record{
-			Bin: r.Bin, Platform: r.Platform, Time: r.Time, Digest: r.Digest, Compatibility: r.Compatibility,
+			Key: r.Key, Bin: r.Bin, Platform: r.Platform, Time: r.Time, Digest: r.Digest, Compatibility: r.Compatibility,
 		})
 	}
 	for _, r := range builds {
 		// An empty source is not a fork's build: selection would file it with the installer
 		// captures, which is the near-miss the kind exists to rule out.
-		if r.Act != entrypoint.ReceiptActRecord || r.Source == "" {
+		if r.Act != entrypoint.ReceiptActRecord || r.Source == "" || r.Key != key {
 			continue
 		}
 		out = append(out, capture.Record{
-			Bin: r.Bin, Platform: r.Platform, Source: r.Source, Revision: r.Revision,
+			Key: r.Key, Bin: r.Bin, Platform: r.Platform, Source: r.Source, Revision: r.Revision,
 			Recipe: r.Recipe, Time: r.Time, Digest: r.Digest,
 			// A PATCHED fork's build is selected by its fork, never its source (capture.Program.Fork).
 			Fork: r.Fork, Series: r.Series, Tree: r.Tree, Tag: r.Tag, Version: r.Version,
