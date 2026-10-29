@@ -2,7 +2,7 @@
 title: "GitHub write approval Stage 2 QA evidence"
 status: in-progress
 stage: CURRENT
-next: "Run the final private-candidate gates and obtain the same independent reviewer follow-up; do not land without separate authority"
+next: "Obtain the same independent reviewer follow-up on the private candidate; do not land without separate authority"
 tags: [qa, github, approvals, evidence]
 summary: "Records historical Stage 1 and Stage 2 evidence, the end-review block on f94aa9b, bounded repairs, and the final gates run on the private remediation candidate."
 ---
@@ -114,19 +114,22 @@ A red-first regression confirmed `approveWatch` live text events called `Request
 
 The same real caller fixture now covers unused exact grant body/target mismatch without spending the grant, then exact action single spend; a supported 1ns window expiration and explicit unused-grant revoke; actual broker SIGTERM/drain/restart followed by exact same-workspace spend, with cross-workspace and out-of-scope repository fences; a fixture-owned `.audit.lock` directory fault that fails required predispatch audit after durable consumption and proves zero dispatch/no refund/no retry; and two simultaneous production Forward contenders with one dispatch, one used grant, and a denied pending loser. The fixture uses fake `gh`, only private temporary HOME/workspace state, and no external GitHub effects.
 
-These targeted normal cases passed before the successor commit. Exact final-head normal/race, whole-tree and nested/integration outcomes will be appended below; the original frozen f94 reviewer verdict remains BLOCK until a same-reviewer follow-up. The timed-resource/Add decisions remain unfinished and outside this remediation.
+These targeted normal and race commands passed at private source/test candidate `398ad02298add896acd4aaacddca2f40066efea2`; the whole-tree gate, matching bundle and actual nested invocation also passed there. The original frozen `f94aa9b` verdict remains BLOCK; independent reviewer follow-up is still outstanding. The timed-resource/Add decisions remain unfinished and outside this remediation.
 
 ### Successor targeted capture
 
 | Command | Result / capture |
 | :--- | :--- |
-| `go test ./internal/brokerstore ./internal/cli -run '<successor source-named cases>' -count=1` and matching `go test -race` | Passed before final candidate capture; exact commands, HEAD/status and exit are captured under `/workspace/.yolo/durable/github-write-approval-item5/successor/targeted-pre-gates.log` and `targeted-race-pre-gates.log`. |
+| `go test ./internal/brokerstore ./internal/brokerhook ./internal/cli -run '^(TestRequestSummaryLeadsWithTheSetAndPreservesDigestsWhenCommandIsLong|TestRequestSummaryRedactsBodyAndHeaderValues|TestTheHookGetsTheEventAndOnlyItsOwnLifetime|TestApproveWatchTextLiveRequestsIncludeCompleteActionIdentity|TestProductionGitHubHookSummariesDistinguishStdinBodies|TestProductionUnusedExactGrantSurvivesBodyMismatch|TestProductionUnusedGrantExpiryAndRevocation|TestProductionExactGrantSurvivesBrokerRestartAndScopeFences|TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry|TestProductionConcurrentForwardersSpendOneExactGrantOnce|TestProductionGitHubWriteApprovalFlow|TestProductionStandingWritePolicyRefusesWritesAndKeepsReads|TestTheOnRequestExampleDecidesThroughTheCLI)$' -count=1` | Passed at private source/test candidate `398ad02298add896acd4aaacddca2f40066efea2`; exact command, HEAD/status and exit recorded. |
+| Same `go test -race` command for those packages/tests | Passed at the same source/test candidate; exact command, HEAD/status and exit recorded. |
+| `go test ./internal/cli -run '^TestProductionConcurrentForwardersSpendOneExactGrantOnce$' -count=5` | Passed; five repeated real two-contender cases completed. |
+| `just format && git diff --check` | Passed at the clean `398ad022` source/test candidate. |
+| `just check-ci` | First candidate attempt failed because the summary-format change invalidated two old hook-test expectations; both tests were corrected without production workaround. Final whole-tree run passed at `398ad022`, including lint, platform vet/staticcheck, short tests and docs checks. |
+| `HOME=<private fixture> just build-dev-bundle`, then the emitted absolute launcher `run --accept-config-changes -- bash -lc ...` from an empty durable workspace | Passed; this was an actual new rootful podman jail launch (prints `NESTED_JAIL_FINAL_OK`), not a `check --no-build` preflight. No packs, credentials or real GitHub operation. |
+| `podman info --format '{{.Host.Security.Rootless}} {{.Host.RootlessNetworkCmd}}'` | `false slirp4netns`. The nested run is not evidence for rootless-only or reachability behavior; native macOS is untested. |
+| Full slow `go test ./integration` | Not run for this successor: it changes only host request summaries and test fixtures, not an in-jail launch/daemon call path or integration-consumed behavior. `just check-ci` did run the short integration package. |
 
 ## Current candidate status
 
-The source/test candidate remains private through `64c065b92e0d5fa50b1e9c08776674c21e908d7e`; subsequent
-commits only maintain this evidence page. The required production caller test matrix above is not complete,
-so the frozen reviewer's full P1 caller-proof finding remains open and **candidate handoff remains blocked**.
-`main` remains at `d159a57f03310f3da5ed49dda7546763361e9a38`; the full source diff is private and unlanded.
-A later review should be the same existing independent reviewer narrowed to the remaining Task 5 matrix,
-not a new review panel.
+The source/test candidate remains private through `398ad02298add896acd4aaacddca2f40066efea2`; final QA evidence is a documentation-only follow-up. The previously missing summary identity and production caller proofs now have passing targeted normal/race cases, and `just check-ci` plus a matching actual nested launcher run passed. This is **not acceptance**: the frozen original SolHIGH BLOCK remains in force pending the same independent reviewer follow-up, and native macOS/rootless/reachability boundaries remain unproven.
+`main` remains at `d159a57f03310f3da5ed49dda7546763361e9a38`; the feature source remains private and unlanded. Next review should use the existing reviewer, narrowly validating the remaining P1 findings and the newly added proof matrix; do not open a new panel.

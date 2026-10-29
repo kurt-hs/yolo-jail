@@ -205,12 +205,15 @@ run, nested preflight and final `just check-ci` are recorded in the [QA evidence
   non-dispatch. The bounded successor adds production before-consumption body/target mismatch, unused
   grant expiry/revoke, restart with repository/workspace fences, required spend-audit failure, and
   concurrent one-use contender cases; each uses the same real caller path and fake host `gh`.
-- Successor targeted normal tests pass for the added cases. Final targeted race and repository gates,
-  nested invocation and independent review remain pending; the original reviewer BLOCK stays in force
-  until those are complete. Do not mark Task 5 accepted from these test results alone.
-- Nested verification historically was rootful podman (`Rootless=false`, `slirp4netns`) and cannot
-  establish rootless, reachability, macOS or live GitHub behavior. No live credentials or GitHub API
-  were used.
+- The added successor proofs pass in targeted normal and race runs at private source/test candidate
+  `398ad02298add896acd4aaacddca2f40066efea2`; `just check-ci`, matching `just build-dev-bundle` and an
+  actual emitted-launcher nested jail command also passed there. The full slow integration suite was
+  not reached by this host-summary/test-only delta; check-ci exercised its short package. The original
+  frozen reviewer BLOCK remains until the same independent reviewer follows up; no acceptance claim is
+  made from tests or the whole-tree gate alone.
+- The rootful podman nested run reports `Rootless=false`, `slirp4netns`, and host-network sharing. It
+  cannot establish rootless-only or host-loopback reachability behavior; native macOS and live GitHub
+  remain untested. No live credentials or GitHub API were used.
 
 ## Stage boundary
 
