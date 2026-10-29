@@ -151,12 +151,46 @@ func waitGitHubApproval(t *testing.T, what string, timeout time.Duration, ready 
 	}
 }
 
+func (p *githubApprovalBroker) restart(t *testing.T) {
+	t.Helper()
+	old := p.cmd
+	if err := syscall.Kill(-old.Process.Pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.done:
+	case <-time.After(2 * time.Second):
+		_ = syscall.Kill(-old.Process.Pid, syscall.SIGKILL)
+		<-p.done
+		t.Fatal("the production broker did not drain before restart")
+	}
+	cmd := exec.Command(old.Args[0], old.Args[1:]...)
+	cmd.Dir, cmd.Env = old.Dir, old.Env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdout, cmd.Stderr = &p.logs, &p.logs
+	p.cmd, p.done = cmd, make(chan struct{})
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = cmd.Wait(); close(p.done) }()
+	waitGitHubApproval(t, "the restarted production broker front", 5*time.Second, func() bool {
+		return svcendpoint.Probe(p.endpoint)
+	})
+}
+
 type productionGitHubFixture struct {
-	broker  *githubApprovalBroker
-	store   *brokerstore.Store
-	calls   string
-	stdin   string
-	hookLog string
+	broker         *githubApprovalBroker
+	store          *brokerstore.Store
+	calls          string
+	stdin          string
+	hookLog        string
+	hookSummaryLog string
+	home           string
+	workspace      string
+	fakeGH         string
+	ghConfig       string
+	scopeFile      string
+	userConfig     string
 }
 
 func newProductionGitHubFixture(t *testing.T, userConfig string, withHook bool) *productionGitHubFixture {
@@ -194,9 +228,10 @@ func newProductionGitHubFixture(t *testing.T, userConfig string, withHook bool) 
 		t.Fatal(err)
 	}
 	hookLog := filepath.Join(fakeDir, "requests.log")
+	hookSummaryLog := filepath.Join(fakeDir, "request-summaries.log")
 	if withHook {
 		hookPath := filepath.Join(fakeDir, "on-request")
-		hookScript := fmt.Sprintf("#!/bin/sh\ncat > %s\necho approve\n", shquote.Quote(hookLog))
+		hookScript := fmt.Sprintf("#!/bin/sh\ncat > %s\nprintf '%%s\\n' \"$YOLO_REQUEST_SUMMARY\" >> %s\necho approve\n", shquote.Quote(hookLog), shquote.Quote(hookSummaryLog))
 		if err := os.WriteFile(hookPath, []byte(hookScript), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -224,11 +259,18 @@ func newProductionGitHubFixture(t *testing.T, userConfig string, withHook bool) 
 		t.Fatal(err)
 	}
 	return &productionGitHubFixture{
-		broker:  startGitHubApprovalBroker(t, home, workspace, fakeGH, ghConfig, scopeFile, userConfig),
-		store:   &brokerstore.Store{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source},
-		calls:   calls,
-		stdin:   stdinReceipt,
-		hookLog: hookLog,
+		broker:         startGitHubApprovalBroker(t, home, workspace, fakeGH, ghConfig, scopeFile, userConfig),
+		store:          &brokerstore.Store{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source},
+		calls:          calls,
+		stdin:          stdinReceipt,
+		hookLog:        hookLog,
+		hookSummaryLog: hookSummaryLog,
+		home:           home,
+		workspace:      workspace,
+		fakeGH:         fakeGH,
+		ghConfig:       ghConfig,
+		scopeFile:      scopeFile,
+		userConfig:     userConfig,
 	}
 }
 
@@ -249,6 +291,685 @@ func (f *productionGitHubFixture) forwardInput(stdin string, argv ...string) (in
 		OriginRepo: func() string { return "o/r" },
 	})
 	return code, out.String(), stderr.String()
+}
+
+func seedUnusedProductionGrant(t *testing.T, f *productionGitHubFixture, body, seedTarget, grantTarget string) brokerstore.Request {
+	t.Helper()
+	finished := make(chan productionForwardResult, 1)
+	go func() {
+		code, out, stderr := f.forwardInput(body, "pr", "comment", seedTarget, "--repo", "o/r", "--body-file", "-")
+		finished <- productionForwardResult{code: code, out: out, stderr: stderr}
+	}()
+	var seed brokerstore.Request
+	waitGitHubApproval(t, "the production scope-seed request", 3*time.Second, func() bool {
+		requests, _, err := f.store.List()
+		if err != nil {
+			return false
+		}
+		for _, q := range requests {
+			if q.State == "pending" && len(q.Argv) == 5 && q.Argv[4] == seedTarget {
+				seed = q
+				return true
+			}
+		}
+		select {
+		case got := <-finished:
+			t.Fatalf("scope-seed caller returned before request filing: %d %q", got.code, got.stderr)
+		default:
+		}
+		return false
+	})
+	if rc := Main([]string{"yolo", "approve", seed.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying scope-seed request returned %d", rc)
+	}
+	select {
+	case got := <-finished:
+		if got.code != ghbroker.ExitNoPerm {
+			t.Fatalf("denied scope-seed caller returned %d: %q", got.code, got.stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("denied scope-seed caller did not return")
+	}
+	seed.Argv[len(seed.Argv)-1] = grantTarget
+	request, err := f.store.File(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc := Main([]string{"yolo", "approve", request.ID}); rc != 0 {
+		t.Fatalf("allowing exact scope-seed request returned %d", rc)
+	}
+	return request
+}
+
+func TestProductionGitHubHookSummariesDistinguishStdinBodies(t *testing.T) {
+	fixture := newProductionGitHubFixture(t, "", true)
+	for _, body := range []string{"first private body", "second private body"} {
+		type result struct {
+			code        int
+			out, stderr string
+		}
+		finished := make(chan result, 1)
+		go func(body string) {
+			code, out, stderr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+			finished <- result{code: code, out: out, stderr: stderr}
+		}(body)
+		var request brokerstore.Request
+		waitGitHubApproval(t, "the pending body-bound production request", 3*time.Second, func() bool {
+			requests, _, err := fixture.store.List()
+			if err != nil {
+				return false
+			}
+			for _, q := range requests {
+				if q.State == "pending" && len(q.Argv) > 0 && q.Argv[0] == "pr" && q.StdinDigest != "" {
+					request = q
+					return true
+				}
+			}
+			return false
+		})
+		wantStdin := sha256.Sum256([]byte(body))
+		if request.StdinDigest != hex.EncodeToString(wantStdin[:]) {
+			t.Fatalf("filed request does not bind submitted stdin bytes: %+v", request)
+		}
+		waitGitHubApproval(t, "the actual on_request summary", 3*time.Second, func() bool {
+			data, err := os.ReadFile(fixture.hookSummaryLog)
+			return err == nil && strings.Contains(string(data), request.ID)
+		})
+		summaries, err := os.ReadFile(fixture.hookSummaryLog)
+		if err != nil || !strings.Contains(string(summaries), "command SHA-256 "+request.Digest) ||
+			!strings.Contains(string(summaries), "stdin SHA-256 "+request.StdinDigest) || strings.Contains(string(summaries), body) {
+			t.Fatalf("production hook summary omits identity or exposes body: %q, %v", summaries, err)
+		}
+		if rc := Main([]string{"yolo", "approve", request.ID, "--deny"}); rc != 0 {
+			t.Fatalf("host yolo approve --deny exited %d", rc)
+		}
+		select {
+		case got := <-finished:
+			if got.code != ghbroker.ExitNoPerm {
+				t.Fatalf("denied write returned %d, stdout %q, stderr %q", got.code, got.out, got.stderr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the denied production request did not return")
+		}
+		if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("denied production write reached fake gh: %v", err)
+		}
+	}
+	requests, _, err := fixture.store.List()
+	if err != nil || len(requests) != 2 || requests[0].StdinDigest == requests[1].StdinDigest {
+		t.Fatalf("different body requests were not distinct: %+v err=%v", requests, err)
+	}
+}
+
+func TestProductionUnusedExactGrantSurvivesBodyMismatch(t *testing.T) {
+	fixture := newProductionGitHubFixture(t, "", false)
+	approvedBody := "approved exact body\n"
+	startForward := func(body, target string) <-chan struct {
+		code        int
+		out, stderr string
+	} {
+		finished := make(chan struct {
+			code        int
+			out, stderr string
+		}, 1)
+		go func() {
+			callArgv := []string{"pr", "comment", target, "--repo", "o/r", "--body-file", "-"}
+			code, out, stderr := fixture.forwardInput(body, callArgv...)
+			finished <- struct {
+				code        int
+				out, stderr string
+			}{code, out, stderr}
+		}()
+		return finished
+	}
+	pending := func(finished <-chan struct {
+		code        int
+		out, stderr string
+	}, target string) brokerstore.Request {
+		t.Helper()
+		var request brokerstore.Request
+		waitGitHubApproval(t, "an exact-action pending request", 3*time.Second, func() bool {
+			requests, _, err := fixture.store.List()
+			if err != nil {
+				return false
+			}
+			for _, q := range requests {
+				if q.State == "pending" && len(q.Argv) == 5 && q.Argv[0] == "pr" && q.Argv[1] == "comment" && q.Argv[4] == target {
+					request = q
+					return true
+				}
+			}
+			select {
+			case got := <-finished:
+				t.Fatalf("production forward returned before request became pending: %d %q", got.code, got.stderr)
+			default:
+			}
+			return false
+		})
+		return request
+	}
+	finishDenied := func(finished <-chan struct {
+		code        int
+		out, stderr string
+	}) {
+		t.Helper()
+		select {
+		case got := <-finished:
+			if got.code != ghbroker.ExitNoPerm {
+				t.Fatalf("denied caller returned %d: %q %q", got.code, got.out, got.stderr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("denied production caller did not return")
+		}
+	}
+
+	first := startForward(approvedBody, "40")
+	original := pending(first, "40")
+	if rc := Main([]string{"yolo", "approve", original.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying the seed request returned %d", rc)
+	}
+	finishDenied(first)
+
+	// Re-file the observed production scope with a new, not previously denied exact target;
+	// host CLI approval seeds one unused grant, and each subsequent action traverses Forward.
+	original.Argv[len(original.Argv)-1] = "41"
+	grantRequest, err := fixture.store.File(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc := Main([]string{"yolo", "approve", grantRequest.ID}); rc != 0 {
+		t.Fatalf("approving the unused exact request returned %d", rc)
+	}
+	_, grants, err := fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Digest != grantRequest.Digest || grants[0].Uses != 1 || !grants[0].Ended.IsZero() {
+		t.Fatalf("expected one unused exact grant before mutation: %+v err=%v", grants, err)
+	}
+
+	mutation := startForward("mutated private body\n", "41")
+	changed := pending(mutation, "41")
+	if changed.Digest == grantRequest.Digest || changed.StdinDigest == grantRequest.StdinDigest {
+		t.Fatalf("body mutation did not change the production action identity: old=%+v new=%+v", grantRequest, changed)
+	}
+	_, grants, err = fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 1 || !grants[0].Ended.IsZero() {
+		t.Fatalf("mismatched action spent or ended the unused authority: %+v err=%v", grants, err)
+	}
+	if rc := Main([]string{"yolo", "approve", changed.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying the mutated request returned %d", rc)
+	}
+	finishDenied(mutation)
+	if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("mutated body reached fake gh: %v", err)
+	}
+
+	targetMutation := startForward(approvedBody, "42")
+	changedTarget := pending(targetMutation, "42")
+	if changedTarget.Digest == grantRequest.Digest || changedTarget.Argv[len(changedTarget.Argv)-1] == grantRequest.Argv[len(grantRequest.Argv)-1] {
+		t.Fatalf("target mutation did not change the production action identity: old=%+v new=%+v", grantRequest, changedTarget)
+	}
+	_, grants, err = fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 1 || !grants[0].Ended.IsZero() {
+		t.Fatalf("target mismatch spent or ended the unused authority: %+v err=%v", grants, err)
+	}
+	if rc := Main([]string{"yolo", "approve", changedTarget.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying the changed target request returned %d", rc)
+	}
+	finishDenied(targetMutation)
+	if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("mutated target reached fake gh: %v", err)
+	}
+
+	approved := startForward(approvedBody, "41")
+	select {
+	case got := <-approved:
+		if got.code != 0 || !strings.Contains(got.out, "fake GitHub receipt") {
+			t.Fatalf("the subsequent exact action was not authorized once: %d %q %q", got.code, got.out, got.stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the exact approved action did not finish")
+	}
+	wantReceipt := append([]byte(strings.Join(grantRequest.Argv, "\x00")), 0, 0)
+	gotReceipt, err := os.ReadFile(fixture.calls)
+	if err != nil || !bytes.Equal(gotReceipt, wantReceipt) {
+		t.Fatalf("exact action receipt differs or dispatched more than once: got %q want %q err=%v", gotReceipt, wantReceipt, err)
+	}
+	gotStdin, err := os.ReadFile(fixture.stdin)
+	if err != nil || !bytes.Equal(gotStdin, []byte(approvedBody)) {
+		t.Fatalf("exact action stdin differs: %q err=%v", gotStdin, err)
+	}
+	_, grants, err = fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
+		t.Fatalf("exact authority was not spent exactly once: %+v err=%v", grants, err)
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spent := 0
+	for _, event := range events {
+		if event.Request == grantRequest.ID && event.Grant == grants[0].ID && event.Event == "grant-used" && event.Outcome == "spent-before-dispatch" {
+			spent++
+		}
+	}
+	if spent != 1 {
+		t.Fatalf("audit does not record exactly one spend for the approved production identity: %d %+v", spent, events)
+	}
+}
+
+func TestProductionConcurrentForwardersSpendOneExactGrantOnce(t *testing.T) {
+	fixture := newProductionGitHubFixture(t, "", false)
+	body := "concurrent exact body\n"
+	request := seedUnusedProductionGrant(t, fixture, body, "40", "41")
+	start := make(chan struct{})
+	results := make(chan productionForwardResult, 2)
+	for range 2 {
+		go func() {
+			<-start
+			code, out, stderr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+			results <- productionForwardResult{code: code, out: out, stderr: stderr}
+		}()
+	}
+	close(start)
+	var loser brokerstore.Request
+	var successCount int
+	var done []productionForwardResult
+	waitGitHubApproval(t, "one live loser request and one completed exact dispatch", 5*time.Second, func() bool {
+		requests, _, err := fixture.store.List()
+		if err == nil {
+			for _, q := range requests {
+				if q.State == "pending" && q.Digest == request.Digest && q.ID != request.ID {
+					loser = q
+				}
+			}
+		}
+	drain:
+		for len(done) < 2 {
+			select {
+			case got := <-results:
+				done = append(done, got)
+				if got.code == 0 {
+					successCount++
+				}
+			default:
+				break drain
+			}
+		}
+		return loser.ID != "" && successCount == 1
+	})
+	if loser.ID == "" {
+		t.Fatal("the losing contender did not wait for new consent")
+	}
+	if rc := Main([]string{"yolo", "approve", loser.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying concurrent loser returned %d", rc)
+	}
+	for len(done) < 2 {
+		select {
+		case got := <-results:
+			done = append(done, got)
+			if got.code == 0 {
+				successCount++
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("both real forwarders did not return after denying the loser")
+		}
+	}
+	if successCount != 1 {
+		t.Fatalf("concurrent contenders returned %d successful authorizations: %+v", successCount, done)
+	}
+	denials := 0
+	for _, got := range done {
+		if got.code == ghbroker.ExitNoPerm {
+			denials++
+		}
+	}
+	if denials != 1 {
+		t.Fatalf("concurrent loser was not denied/refused cleanly: %+v", done)
+	}
+	wantReceipt := append([]byte(strings.Join(request.Argv, "\x00")), 0, 0)
+	gotReceipt, err := os.ReadFile(fixture.calls)
+	if err != nil || !bytes.Equal(gotReceipt, wantReceipt) {
+		t.Fatalf("contenders dispatched other than exactly one invocation: %q want %q err=%v", gotReceipt, wantReceipt, err)
+	}
+	_, grants, err := fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
+		t.Fatalf("concurrent callers did not spend the one-use grant exactly once: %+v err=%v", grants, err)
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spends := 0
+	for _, event := range events {
+		if event.Request == request.ID && event.Grant == grants[0].ID && event.Event == "grant-used" {
+			spends++
+		}
+	}
+	if spends != 1 {
+		t.Fatalf("concurrent use audit count %d, want one: %+v", spends, events)
+	}
+}
+
+func TestProductionExactGrantSurvivesBrokerRestartAndScopeFences(t *testing.T) {
+	fixture := newProductionGitHubFixture(t, "", false)
+	body := "restart-bound exact body\n"
+	grantRequest := seedUnusedProductionGrant(t, fixture, body, "40", "41")
+	_, grants, err := fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 1 || !grants[0].Ended.IsZero() {
+		t.Fatalf("expected an unused exact grant before restart: %+v err=%v", grants, err)
+	}
+	fixture.broker.restart(t)
+
+	otherRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherWorkspace := filepath.Join(otherRoot, "workspace")
+	if err := os.MkdirAll(otherWorkspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	otherScope, err := brokerscope.Write(brokerscope.File{Source: ghbroker.Source, LaunchID: "other-launch", PID: os.Getpid(),
+		Container: "other-approval-fixture", Workspace: otherWorkspace, Repos: []string{"o/r"},
+		Grants: []brokerscope.Grant{{Kind: brokerscope.KindRead, Repo: brokerscope.AnyRepo}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := *fixture
+	other.workspace = otherWorkspace
+	other.broker = startGitHubApprovalBroker(t, fixture.home, otherWorkspace, fixture.fakeGH, fixture.ghConfig, otherScope, fixture.userConfig)
+	crossWorkspace := make(chan productionForwardResult, 1)
+	go func() {
+		code, out, stderr := other.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+		crossWorkspace <- productionForwardResult{code: code, out: out, stderr: stderr}
+	}()
+	var otherRequest brokerstore.Request
+	var crossWorkspaceResult *productionForwardResult
+	waitGitHubApproval(t, "a refusal instead of cross-workspace grant use", 3*time.Second, func() bool {
+		requests, _, err := fixture.store.List()
+		if err == nil {
+			for _, q := range requests {
+				if q.State == "pending" && q.Workspace == otherWorkspace && q.Digest == grantRequest.Digest {
+					otherRequest = q
+					return true
+				}
+			}
+		}
+		select {
+		case got := <-crossWorkspace:
+			crossWorkspaceResult = &got
+			return true
+		default:
+			return false
+		}
+	})
+	if crossWorkspaceResult != nil {
+		if crossWorkspaceResult.code != ghbroker.ExitNoPerm && crossWorkspaceResult.code != ghbroker.ExitUnavailable {
+			t.Fatalf("cross-workspace grant attempt was not refused: %d %q", crossWorkspaceResult.code, crossWorkspaceResult.stderr)
+		}
+	} else {
+		if rc := Main([]string{"yolo", "approve", otherRequest.ID, "--deny"}); rc != 0 {
+			t.Fatalf("denying cross-workspace request returned %d", rc)
+		}
+		select {
+		case got := <-crossWorkspace:
+			if got.code != ghbroker.ExitNoPerm {
+				t.Fatalf("cross-workspace action returned %d: %q", got.code, got.stderr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("cross-workspace caller did not return")
+		}
+	}
+
+	outOfScope, _, scopeErr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "outside/private", "--body-file", "-")
+	if outOfScope != ghbroker.ExitUsage {
+		t.Fatalf("out-of-scope repository returned %d: %q", outOfScope, scopeErr)
+	}
+	_, grants, err = fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 1 {
+		t.Fatalf("out-of-scope repository spent authority: %+v err=%v", grants, err)
+	}
+
+	approved := make(chan productionForwardResult, 1)
+	go func() {
+		code, out, stderr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+		approved <- productionForwardResult{code: code, out: out, stderr: stderr}
+	}()
+	select {
+	case got := <-approved:
+		if got.code != 0 || !strings.Contains(got.out, "fake GitHub receipt") {
+			t.Fatalf("same-workspace exact grant failed after restart: %d %q %q", got.code, got.out, got.stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("same-workspace caller did not finish after restart")
+	}
+	wantReceipt := append([]byte(strings.Join(grantRequest.Argv, "\x00")), 0, 0)
+	gotReceipt, err := os.ReadFile(fixture.calls)
+	if err != nil || !bytes.Equal(gotReceipt, wantReceipt) {
+		t.Fatalf("restart grant receipt differs or repeated: got %q want %q err=%v", gotReceipt, wantReceipt, err)
+	}
+	_, grants, err = fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
+		t.Fatalf("restart did not consume the one-use authority once: %+v err=%v", grants, err)
+	}
+}
+
+func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
+	fixture := newProductionGitHubFixture(t, "", false)
+	body := "audit failure body\n"
+	seedDone := make(chan productionForwardResult, 1)
+	go func() {
+		code, out, stderr := fixture.forwardInput(body, "pr", "comment", "40", "--repo", "o/r", "--body-file", "-")
+		seedDone <- productionForwardResult{code: code, out: out, stderr: stderr}
+	}()
+	var seed brokerstore.Request
+	waitGitHubApproval(t, "the audit-fault grant seed request", 3*time.Second, func() bool {
+		requests, _, err := fixture.store.List()
+		if err != nil {
+			return false
+		}
+		for _, q := range requests {
+			if q.State == "pending" && len(q.Argv) == 5 && q.Argv[4] == "40" {
+				seed = q
+				return true
+			}
+		}
+		return false
+	})
+	if rc := Main([]string{"yolo", "approve", seed.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying grant seed returned %d", rc)
+	}
+	select {
+	case got := <-seedDone:
+		if got.code != ghbroker.ExitNoPerm {
+			t.Fatalf("seed caller exit %d: %q", got.code, got.stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("seed caller did not return")
+	}
+	seed.Argv[len(seed.Argv)-1] = "41"
+	approved, err := fixture.store.File(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rc := Main([]string{"yolo", "approve", approved.ID}); rc != 0 {
+		t.Fatalf("allowing exact audit-fault grant returned %d", rc)
+	}
+
+	lock := filepath.Join(filepath.Dir(paths.BrokerAuditLog()), ".audit.lock")
+	if err := os.Remove(lock); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	attempt := make(chan productionForwardResult, 1)
+	go func() {
+		code, out, stderr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+		attempt <- productionForwardResult{code: code, out: out, stderr: stderr}
+	}()
+	select {
+	case got := <-attempt:
+		if got.code != ghbroker.ExitUnavailable {
+			t.Fatalf("required spend-audit failure returned %d, want unavailable refusal: %q", got.code, got.stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("audit append failure did not release the production caller")
+	}
+	if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("required spend-audit failure dispatched fake gh: %v", err)
+	}
+	_, grants, err := fixture.store.List()
+	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
+		t.Fatalf("failed predispatch audit refunded or lost durable spend: %+v err=%v", grants, err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Request == approved.ID && event.Event == "grant-used" {
+			t.Fatalf("failed required audit unexpectedly left a spend record: %+v", event)
+		}
+	}
+
+	// A later explicit invocation cannot retry the spent grant; it needs a fresh decision.
+	retry := make(chan productionForwardResult, 1)
+	go func() {
+		code, out, stderr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+		retry <- productionForwardResult{code: code, out: out, stderr: stderr}
+	}()
+	var refiled brokerstore.Request
+	waitGitHubApproval(t, "a fresh request after the durable failed spend", 3*time.Second, func() bool {
+		requests, _, err := fixture.store.List()
+		if err != nil {
+			return false
+		}
+		for _, q := range requests {
+			if q.State == "pending" && q.Digest == approved.Digest {
+				refiled = q
+				return true
+			}
+		}
+		return false
+	})
+	if rc := Main([]string{"yolo", "approve", refiled.ID, "--deny"}); rc != 0 {
+		t.Fatalf("denying fresh retry request returned %d", rc)
+	}
+	select {
+	case got := <-retry:
+		if got.code != ghbroker.ExitNoPerm {
+			t.Fatalf("freshly denied retry exit %d: %q", got.code, got.stderr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("freshly denied retry did not return")
+	}
+	if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("retry reached fake gh without fresh approval: %v", err)
+	}
+}
+
+func TestProductionUnusedGrantExpiryAndRevocation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		config     string
+		revoke     bool
+		wantReason string
+	}{
+		{name: "expired", config: `{"brokered":{"github":{"sets":[{"name":"read-write","mode":"windowed","window":"1ns","max_window":"1ns"}]}}}`, wantReason: brokerstore.EndExpired},
+		{name: "revoked unused", wantReason: brokerstore.EndRevoked, revoke: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newProductionGitHubFixture(t, tc.config, false)
+			start := func(target string) chan productionForwardResult {
+				finished := make(chan productionForwardResult, 1)
+				go func() {
+					code, out, stderr := fixture.forwardInput("expiry and revoke body\n", "pr", "comment", target, "--repo", "o/r", "--body-file", "-")
+					finished <- productionForwardResult{code: code, out: out, stderr: stderr}
+				}()
+				return finished
+			}
+			pending := func(finished <-chan productionForwardResult, target string) brokerstore.Request {
+				t.Helper()
+				var request brokerstore.Request
+				waitGitHubApproval(t, "the production pending exact request", 3*time.Second, func() bool {
+					requests, _, err := fixture.store.List()
+					if err != nil {
+						return false
+					}
+					for _, q := range requests {
+						if q.State == "pending" && len(q.Argv) == 5 && q.Argv[4] == target {
+							request = q
+							return true
+						}
+					}
+					select {
+					case got := <-finished:
+						t.Fatalf("caller returned before request filed: %d %q", got.code, got.stderr)
+					default:
+					}
+					return false
+				})
+				return request
+			}
+			finish := func(ch <-chan productionForwardResult, want int) {
+				t.Helper()
+				select {
+				case got := <-ch:
+					if got.code != want {
+						t.Fatalf("production caller exit %d, want %d: %q", got.code, want, got.stderr)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("production caller did not return")
+				}
+			}
+			seedForward := start("40")
+			seed := pending(seedForward, "40")
+			if rc := Main([]string{"yolo", "approve", seed.ID, "--deny"}); rc != 0 {
+				t.Fatalf("denying scope-seed request returned %d", rc)
+			}
+			finish(seedForward, ghbroker.ExitNoPerm)
+			seed.Argv[len(seed.Argv)-1] = "41"
+			approved, err := fixture.store.File(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rc := Main([]string{"yolo", "approve", approved.ID}); rc != 0 {
+				t.Fatalf("allowing unused grant returned %d", rc)
+			}
+			if tc.revoke {
+				_, grants, err := fixture.store.List()
+				if err != nil || len(grants) != 1 {
+					t.Fatalf("grant listing: %+v %v", grants, err)
+				}
+				if rc := Main([]string{"yolo", "approve", "--revoke", grants[0].ID}); rc != 0 {
+					t.Fatalf("revoking unused exact grant returned %d", rc)
+				}
+			}
+			attempt := start("41")
+			refiled := pending(attempt, "41")
+			_, grants, err := fixture.store.List()
+			if err != nil || len(grants) != 1 || grants[0].Uses != 1 || grants[0].EndedBy() != tc.wantReason {
+				t.Fatalf("production attempt spent or revived unavailable authority: %+v err=%v", grants, err)
+			}
+			if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("unavailable grant dispatched to fake gh: %v", err)
+			}
+			if rc := Main([]string{"yolo", "approve", refiled.ID, "--deny"}); rc != 0 {
+				t.Fatalf("denying re-filed caller returned %d", rc)
+			}
+			finish(attempt, ghbroker.ExitNoPerm)
+		})
+	}
+}
+
+type productionForwardResult struct {
+	code        int
+	out, stderr string
 }
 
 func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {

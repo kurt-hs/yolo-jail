@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -177,6 +179,66 @@ func TestApproveWatchText(t *testing.T) {
 
 // `--watch --json` over several stores opens with ONE "state" object holding every store's
 // records (boundary-broker.md BB-D72, §6.6), then each store's events.
+// Live text events identify both the command and stdin bytes, even when argv is long enough
+// to push trailing fields past the bounded summary's display budget.
+func TestApproveWatchTextLiveRequestsIncludeCompleteActionIdentity(t *testing.T) {
+	fastWatch(t)
+	s := &brokerstore.Store{Dir: t.TempDir(), Source: "github"}
+	_, err := s.File(brokerstore.Request{
+		Jail: "jail", Start: "baseline", Workspace: "/workspace", Set: "read-write",
+		Argv: []string{"pr", "view", "41"}, Repo: "o/r", StdinDigest: "baseline",
+		Policy: brokerstore.Policy{Window: time.Minute, MaxWindow: time.Minute, Uses: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var out, errs syncBuffer
+	done := make(chan int)
+	go func() { done <- approveMain(ctx, []string{"--watch"}, false, s, &out, &errs) }()
+	waitLines(t, &out, 2)
+
+	requests := make([]brokerstore.Request, 2)
+	for i, body := range []string{"private body one", "private body two"} {
+		stdinHash := sha256.Sum256([]byte(body))
+		q, err := s.File(brokerstore.Request{
+			Jail: "jail", Start: "start", Workspace: "/workspace", Set: "read-write",
+			Argv: []string{"pr", "comment", "41", "--body", strings.Repeat("long-argument-", 200)},
+			Repo: "o/r", StdinDigest: fmt.Sprintf("%x", stdinHash),
+			Policy: brokerstore.Policy{Window: time.Minute, MaxWindow: time.Minute, Uses: 1},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		requests[i] = q
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		output := out.String()
+		if strings.Contains(output, requests[0].ID) && strings.Contains(output, requests[1].ID) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("watch did not emit both newly filed request events: %q", output)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+	cancel()
+	if rc := <-done; rc != 0 {
+		t.Fatal(rc, errs.String())
+	}
+	live := strings.Join(lines[1:], "\n")
+	for _, q := range requests {
+		if !strings.Contains(live, q.Digest) || !strings.Contains(live, q.StdinDigest) || !strings.Contains(live, "request-filed") {
+			t.Fatalf("live text events omit complete action identity for request %s: %q", q.ID, live)
+		}
+	}
+	if requests[0].StdinDigest == requests[1].StdinDigest || strings.Contains(live, "private body") {
+		t.Fatalf("live summaries do not safely distinguish bodies: %q", live)
+	}
+}
+
 func TestApproveWatchJSONOpensWithOneMergedState(t *testing.T) {
 	fastWatch(t)
 	gh, r := approvalFixture(t)

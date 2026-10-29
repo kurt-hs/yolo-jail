@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -335,25 +336,88 @@ const SummaryMax = 2048
 
 // RequestSummary is the one line a person reads about a request. What is being approved
 // comes first: the request id, the set, the repository and the jail; the command comes
-// last, each value over 60 characters elided to its first 40, its length and a short hash
-// (boundary-broker.md §6.3), so a long --body cannot push the rest off screen. The line is
-// cut at SummaryMax, and nothing in it can drive a terminal.
+// last, with body/header/input values redacted and other long values elided. The complete
+// command and stdin digests are a fixed suffix so neither a long argv nor the summary cap
+// can hide what exact action was approved. The line is capped at SummaryMax, and nothing in
+// it can drive a terminal.
 func (s *Store) RequestSummary(q Request) string {
-	argv := make([]string, len(q.Argv))
-	for i, v := range q.Argv {
+	argv := summaryArgv(q.Argv)
+	for i, v := range argv {
 		argv[i] = elide(v)
 	}
-	line := termsafe.Visible(fmt.Sprintf("%s %s: set %s on %s for jail %s, to run: %s",
-		s.SourceName(), q.ID, elide(q.Set), elide(q.Repo), elide(q.Jail), shquote.JoinDisplay(argv)))
-	if len(line) <= SummaryMax {
-		return line
+	prefix := termsafe.Visible(fmt.Sprintf("%s %s: set %s on %s for jail %s, to run: ",
+		s.SourceName(), q.ID, elide(q.Set), elide(q.Repo), elide(q.Jail)))
+	command := termsafe.Visible(shquote.JoinDisplay(argv))
+	var identity []string
+	if q.Digest != "" {
+		identity = append(identity, "command SHA-256 "+q.Digest)
 	}
-	const more = "…"
-	cut := SummaryMax - len(more)
-	for cut > 0 && !utf8.RuneStart(line[cut]) {
-		cut--
+	if q.StdinDigest != "" {
+		identity = append(identity, "stdin SHA-256 "+q.StdinDigest)
 	}
-	return line[:cut] + more
+	suffix := ""
+	if len(identity) != 0 {
+		suffix = " [" + strings.Join(identity, "; ") + "]"
+	}
+	available := SummaryMax - len(prefix) - len(suffix)
+	if available < 0 {
+		// Digests produced by this store are fixed-size; an oversized malformed identity
+		// cannot be shown completely within the summary cap.
+		return prefix
+	}
+	if len(command) > available {
+		const more = "…"
+		cut := available - len(more)
+		if cut < 0 {
+			cut = 0
+		}
+		for cut > 0 && !utf8.RuneStart(command[cut]) {
+			cut--
+		}
+		command = command[:cut] + more
+	}
+	return prefix + command + suffix
+}
+
+// summaryArgv hides option values that commonly carry request bodies, headers, or input paths.
+// Their complete command digest remains visible in RequestSummary for exact action identity.
+func summaryArgv(argv []string) []string {
+	out := make([]string, 0, len(argv))
+	redactNext := false
+	for _, arg := range argv {
+		if redactNext {
+			out = append(out, "[redacted]")
+			redactNext = false
+			continue
+		}
+		switch arg {
+		case "--body", "--body-file", "--field", "-F", "--raw-field", "-f", "--header", "-H", "--input":
+			out = append(out, arg)
+			redactNext = true
+			continue
+		}
+		redacted := false
+		for _, flag := range []string{"--body=", "--body-file=", "--field=", "-F=", "--raw-field=", "-f=", "--header=", "-H=", "--input="} {
+			if strings.HasPrefix(arg, flag) {
+				out = append(out, flag+"[redacted]")
+				redacted = true
+				break
+			}
+		}
+		if !redacted {
+			for _, flag := range []string{"-F", "-f", "-H"} {
+				if strings.HasPrefix(arg, flag) && len(arg) > len(flag) {
+					out = append(out, flag+"[redacted]")
+					redacted = true
+					break
+				}
+			}
+		}
+		if !redacted {
+			out = append(out, arg)
+		}
+	}
+	return out
 }
 
 // elide shortens a value over 60 characters to its first 40, its length and a short hash.

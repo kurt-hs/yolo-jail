@@ -202,21 +202,25 @@ run, nested preflight and final `just check-ci` are recorded in the [QA evidence
   exact NUL-boundary argv receipts, actual stdin-byte digest, request/grant/audit linkage, pending
   no-dispatch, manual approval without a hook, hook-output-alone not being consent, standing read/write,
   out-of-scope, secret-command and hostile API-header refusal, and spent replay/body/target mutation
-  non-dispatch.
-- The end-review's remaining broader caller proof is still open: expiry, explicit revoke, restart,
-  required spend-audit failure and concurrent one-use contenders have not all been driven through the
-  production caller. Component tests remain complementary, not a substitute for those caller-level
-  proofs. Do not treat Task 5 or this matrix as fully satisfied yet.
-- Nested verification was rootful podman (`Rootless=false`, `slirp4netns`) and cannot establish rootless,
-  reachability, macOS or live GitHub behavior. No live credentials or GitHub API were used.
+  non-dispatch. The bounded successor adds production before-consumption body/target mismatch, unused
+  grant expiry/revoke, restart with repository/workspace fences, required spend-audit failure, and
+  concurrent one-use contender cases; each uses the same real caller path and fake host `gh`.
+- Successor targeted normal tests pass for the added cases. Final targeted race and repository gates,
+  nested invocation and independent review remain pending; the original reviewer BLOCK stays in force
+  until those are complete. Do not mark Task 5 accepted from these test results alone.
+- Nested verification historically was rootful podman (`Rootless=false`, `slirp4netns`) and cannot
+  establish rootless, reachability, macOS or live GitHub behavior. No live credentials or GitHub API
+  were used.
 
 ## Stage boundary
 
 Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead authorized
 Stage 2 under this bounded contract. The original Stage 2 implementation and its historic package,
 check-ci, integration, bundle and done claims were recorded above; the later end-review found specific
-P1/P2 omissions, so those historic claims do not constitute acceptance. The private remediation closes
-the canceled final-audit loss and exposes exact command/stdin identity, fixes the live listing text and
-substantially strengthens the production caller receipt, but the broader Task 5 caller proof is still
-open as itemized above. Keep Issue 65 open as an upstream wait, and do not change user config,
-credentials, repository grants or main. Record current commands/outcomes in the named [QA evidence](../research/github-write-approval-qa.md).
+P1/P2 omissions, so those historic claims do not constitute acceptance. The private successor adds
+removal-sensitive caller-level regressions for every remaining end-review proof hole. Targeted normal
+runs pass; final race, repository gates, nested invocation and the same independent end-review remain
+required before acceptance. The original `f94aa9b` verdict remains **BLOCK** until those are complete.
+Timed-resource/Add remain ruled unfinished backlog, and this page makes no claim that the whole boundary
+broker is complete. Keep Issue 65 open as an upstream wait; do not change user config, credentials,
+repository grants or main. Record current commands/outcomes in the named [QA evidence](../research/github-write-approval-qa.md).

@@ -60,10 +60,10 @@ func kindsOf(evs []Event) []string {
 
 // The summary leads with what is approved, elides a long value with its length and a
 // hash, and stays far below Linux's per-string limit however long the command is.
-func TestRequestSummaryLeadsWithTheSetAndElidesLongValues(t *testing.T) {
+func TestRequestSummaryLeadsWithTheSetAndPreservesDigestsWhenCommandIsLong(t *testing.T) {
 	s, _, input := fixture(t)
-	body := strings.Repeat("x", 3000)
-	input.Argv = []string{"pr", "comment", "1", "--body", body}
+	value := strings.Repeat("x", 3000)
+	input.Argv = []string{"pr", "comment", "1", "--label", value}
 	r, err := s.File(input)
 	if err != nil {
 		t.Fatal(err)
@@ -74,10 +74,13 @@ func TestRequestSummaryLeadsWithTheSetAndElidesLongValues(t *testing.T) {
 		t.Fatalf("summary %q, want it to start %q", line, head)
 	}
 	if strings.Contains(line, strings.Repeat("x", 41)) || !strings.Contains(line, strings.Repeat("x", 40)+"…[3000 chars, sha256 ") {
-		t.Fatalf("the body is not elided: %q", line)
+		t.Fatalf("the long argument is not elided: %q", line)
 	}
-	if !strings.Contains(line, "pr comment 1 --body ") {
+	if !strings.Contains(line, "pr comment 1 --label ") {
 		t.Fatalf("a short value was elided: %q", line)
+	}
+	if !strings.Contains(line, "command SHA-256 "+r.Digest) || !strings.Contains(line, "stdin SHA-256 "+r.StdinDigest) || strings.Contains(line, "private body") {
+		t.Fatalf("the complete safe action identity is missing: %q", line)
 	}
 
 	many := make([]string, 5000)
@@ -86,7 +89,27 @@ func TestRequestSummaryLeadsWithTheSetAndElidesLongValues(t *testing.T) {
 	}
 	r.Argv = many
 	line = s.RequestSummary(r)
-	if len(line) > SummaryMax || !strings.HasPrefix(line, head) || !strings.HasSuffix(line, "…") {
-		t.Fatalf("a long command is not capped at %d bytes: %d bytes", SummaryMax, len(line))
+	if len(line) > SummaryMax || !strings.HasPrefix(line, head) || !strings.Contains(line, "… [command SHA-256 "+r.Digest+"; stdin SHA-256 "+r.StdinDigest+"]") {
+		t.Fatalf("long command hid identity or exceeded %d bytes: %d bytes: %q", SummaryMax, len(line), line)
+	}
+}
+
+func TestRequestSummaryRedactsBodyAndHeaderValues(t *testing.T) {
+	s, _, input := fixture(t)
+	input.Argv = []string{"api", "repos/o/r/issues/1", "--field", "body=private body text", "--body=private inline body", "-H", "Authorization: Bearer private-token", "-HAuthorization: Bearer inline-token"}
+	r, err := s.File(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := s.RequestSummary(r)
+	for _, secret := range []string{"private body text", "private inline body", "private-token", "inline-token", "Authorization: Bearer"} {
+		if strings.Contains(line, secret) {
+			t.Fatalf("request summary exposed sensitive argument %q: %q", secret, line)
+		}
+	}
+	for _, want := range []string{"--field '[redacted]'", "--body=[redacted]", "-H '[redacted]'", "-H[redacted]", "command SHA-256 " + r.Digest, "stdin SHA-256 " + r.StdinDigest} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("request summary lacks safe value %q: %q", want, line)
+		}
 	}
 }
