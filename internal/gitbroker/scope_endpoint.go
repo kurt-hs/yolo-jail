@@ -18,8 +18,9 @@ func scopeContains(f brokerscope.File, remote string) bool {
 }
 
 // equivalentSSHEndpoint compares the SSH target Git will use, without equating aliases,
-// usernames, ports, path suffixes, or other URL spellings. The sole path exception is GitHub's
-// relative scp path versus its absolute SSH URL path.
+// usernames, ports, other path suffixes, or other URL spellings. The sole path exceptions are
+// for GitHub's git@github.com user with no port: its relative scp path versus its absolute SSH
+// URL path, and a single trailing .git on the repository segment, with or without the slash.
 func equivalentSSHEndpoint(approved, request string) bool {
 	if approved == request {
 		return true
@@ -50,16 +51,13 @@ func equivalentSSHEndpoint(approved, request string) bool {
 	return githubRelativeAbsolutePath(approvedTarget.path, requestTarget.path)
 }
 
+// githubRelativeAbsolutePath reports whether two different GitHub repository paths name the same
+// repository: one optional leading slash and one trailing .git are the only differences allowed.
+// The repository segment left after stripping must be a plain owner/repo pair.
 func githubRelativeAbsolutePath(a, b string) bool {
-	if strings.HasPrefix(a, "/") == strings.HasPrefix(b, "/") {
-		return false
-	}
-	if strings.HasPrefix(a, "/") {
-		a = strings.TrimPrefix(a, "/")
-	} else {
-		b = strings.TrimPrefix(b, "/")
-	}
-	if a != b || strings.ContainsAny(a, "%~\\?#") {
+	a = strings.TrimSuffix(strings.TrimPrefix(a, "/"), ".git")
+	b = strings.TrimSuffix(strings.TrimPrefix(b, "/"), ".git")
+	if a != b || strings.ContainsAny(a, "%~\\?#") || strings.HasSuffix(a, ".git") {
 		return false
 	}
 	parts := strings.Split(a, "/")

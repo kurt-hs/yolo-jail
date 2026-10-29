@@ -175,9 +175,10 @@ answer."*
   `git+ssh://`, `ssh+git://` and `https://` remotes. The SSH aliases and bracketed IPv6 scp form
   use the same broker transport; the broker checks the original URL against approved scope,
   allowing SSH-scheme spellings only when parsed destination, explicit port and path match, plus
-  GitHub's `git@github.com:owner/repo` scp path versus `/owner/repo` SSH URL path. The request
-  URL is preserved for upstream and audit; matching does not equate host aliases, usernames,
-  ports, generic relative/absolute paths, HTTPS, or path suffix variants. Other valid Git syntax,
+  GitHub's `git@github.com:owner/repo` scp path versus `/owner/repo` SSH URL path, and for that
+  same no-port GitHub user a single trailing `.git` on the repository segment, in either spelling.
+  The request URL is preserved for upstream and audit; matching does not equate host aliases,
+  usernames, ports, generic relative/absolute paths, HTTPS, or other path suffix variants. Other valid Git syntax,
   including `host:path` and `alice@host:path`, and other remote forms are not implicitly brokered.
   The rewritten URL carries the original remote, so the broker knows the upstream host, path and
   form; how it is encoded is the implementer's.
