@@ -193,18 +193,20 @@ Before final combined-tree gates, merge the exact root-authorized docs-only comm
 
 The original Stage 2 candidate at `f94aa9b13534b998aa3d77200a4488369b3adf74` received a frozen
 end-review BLOCK; its earlier completion paragraph below was the candidate author's status, not final
-acceptance. Bounded repairs are in private commits `5eff5aca0cf4e956c76c2505201cd9caca58fc59` and
-`5a5ad6c990e010968496da898f4883f9a52daff3`. Fresh affected-package/race tests, the full integration
+acceptance. Bounded repairs are in private commits `5eff5aca0cf4e956c76c2505201cd9caca58fc59`,
+`5a5ad6c990e010968496da898f4883f9a52daff3` and
+`64c065b92e0d5fa50b1e9c08776674c21e908d7e`. Fresh affected-package/race tests, the full integration
 run, nested preflight and final `just check-ci` are recorded in the [QA evidence](../research/github-write-approval-qa.md).
 
 - Production `Forward`/front/daemon/host-CLI proof now covers approved PR comment and issue close,
   exact NUL-boundary argv receipts, actual stdin-byte digest, request/grant/audit linkage, pending
   no-dispatch, manual approval without a hook, hook-output-alone not being consent, standing read/write,
-  out-of-scope and secret-command refusal, and spent replay/body/target mutation non-dispatch.
+  out-of-scope, secret-command and hostile API-header refusal, and spent replay/body/target mutation
+  non-dispatch.
 - The end-review's remaining broader caller proof is still open: expiry, explicit revoke, restart,
-  required spend-audit failure, hostile API-header refusal and concurrent one-use contenders have not
-  all been driven through the production caller. Component tests remain complementary, not a substitute
-  for those caller-level proofs. Do not treat Task 5 or this matrix as fully satisfied yet.
+  required spend-audit failure and concurrent one-use contenders have not all been driven through the
+  production caller. Component tests remain complementary, not a substitute for those caller-level
+  proofs. Do not treat Task 5 or this matrix as fully satisfied yet.
 - Nested verification was rootful podman (`Rootless=false`, `slirp4netns`) and cannot establish rootless,
   reachability, macOS or live GitHub behavior. No live credentials or GitHub API were used.
 
