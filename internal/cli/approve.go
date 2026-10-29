@@ -42,8 +42,9 @@ ceiling. --for hands over the whole requested set, within its policy ceiling
 and use cap; session is 12 hours. GitHub write and git push requests accept
 Allow once only; --for and --add are refused for them. A git push request lists
 each ref it would change, old id -> new id, marked "needs approval" where no
-grant or working-set entry covered it; Allow once covers that exact push, every
-ref of it, once, and a new branch it creates joins the working set. A grant
+grant or working-set entry covered it, then each push option it sends; Allow
+once covers that exact push, every ref and option of it, once, and a new branch
+it creates joins the working set. A grant
 belongs to the request's workspace: every jail of that project may use it, and
 it lasts through broker and jail restarts and relaunches until it expires, its
 uses run out, or it is revoked.
@@ -556,19 +557,24 @@ func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 }
 
 // printPushRefs lists a git push request's refs, one line each: the ref, its old and new ids
-// shortened, and whether it is what needs approval or covered already (GB-D17, GB-D21). Any
-// other request prints nothing.
+// to 12 hex digits, and whether it is what needs approval or covered already, then each push
+// option the push sends, which the approval covers too (GB-D17, GB-D21). Any other request
+// prints nothing.
 func printPushRefs(out io.Writer, r brokerstore.Request) {
 	if r.Set != "push" || len(r.Argv) < 2 || r.Argv[0] != "git-receive-pack" {
 		return
 	}
 	short := func(id string) string {
-		if len(id) > 7 {
-			return id[:7]
+		if len(id) > 12 {
+			return id[:12]
 		}
 		return id
 	}
 	for _, line := range r.Argv[1:] {
+		if o, ok := strings.CutPrefix(line, "push-option="); ok {
+			fmt.Fprintf(out, "    push option: %s\n", termsafe.Visible(o))
+			continue
+		}
 		f := strings.Fields(line)
 		if len(f) != 3 {
 			continue

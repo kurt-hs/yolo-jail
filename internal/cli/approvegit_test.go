@@ -60,7 +60,7 @@ func TestApproveGitRequestAllowOnceAndRefusesFor(t *testing.T) {
 	empty := sha256.Sum256(nil)
 	s := gitbroker.ApprovalStore()
 	q, err := s.File(brokerstore.Request{Jail: paths.JailShortHash(sf.Container), Start: start, Workspace: sf.Workspace,
-		LaunchID: sf.LaunchID, Argv: []string{"git-receive-pack", old + " " + updated + " refs/heads/main", old + " " + covered + " refs/heads/agent/x"},
+		LaunchID: sf.LaunchID, Argv: []string{"git-receive-pack", old + " " + updated + " refs/heads/main", old + " " + covered + " refs/heads/agent/x", "push-option=ci.skip"},
 		Repo: "fixture.test/o/r", Set: "push", StdinDigest: hex.EncodeToString(empty[:]),
 		Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: 15 * time.Minute, Uses: 1}, NeedsApproval: []string{"refs/heads/main"}})
 	if err != nil {
@@ -69,13 +69,14 @@ func TestApproveGitRequestAllowOnceAndRefusesFor(t *testing.T) {
 
 	rc, out, errs := captureStd(t, func() int { return registry["approve"]([]string{"approve"}) })
 	if rc != 0 || !strings.Contains(out, q.ID) ||
-		!strings.Contains(out, "refs/heads/main  1111111 -> 2222222  needs approval") ||
-		!strings.Contains(out, "refs/heads/agent/x  1111111 -> 3333333  covered") {
+		!strings.Contains(out, "refs/heads/main  111111111111 -> 222222222222  needs approval") ||
+		!strings.Contains(out, "refs/heads/agent/x  111111111111 -> 333333333333  covered") ||
+		!strings.Contains(out, "    push option: ci.skip\n") {
 		t.Fatalf("listing: rc %d\n%s%s", rc, out, errs)
 	}
 
 	rc, out, errs = captureStd(t, func() int { return registry["approve"]([]string{"approve", "--json"}) })
-	if rc != 0 || !strings.Contains(out, `"needs_approval":["refs/heads/main"]`) {
+	if rc != 0 || !strings.Contains(out, `"needs_approval":["refs/heads/main"]`) || !strings.Contains(out, `"push-option=ci.skip"`) {
 		t.Fatalf("JSON listing: rc %d\n%s%s", rc, out, errs)
 	}
 

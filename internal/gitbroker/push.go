@@ -127,7 +127,7 @@ func (b *Broker) readPush(ctx context.Context, in io.Reader, ev *brokeraudit.Eve
 	var teed bytes.Buffer
 	cr := gitproto.NewReader(in)
 	cr.Tee(&teed)
-	cmds, caps, _, err := gitproto.ReadCommands(cr)
+	cmds, caps, opts, err := gitproto.ReadCommands(cr)
 	cr.Tee(nil)
 	if err != nil {
 		ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "unreadable push commands"
@@ -152,7 +152,7 @@ func (b *Broker) readPush(ctx context.Context, in io.Reader, ev *brokeraudit.Eve
 		p.refused = p.refused || r != ""
 	}
 	if needs := approvable(cmds, reasons); p.refused && needs != nil {
-		g, why, allowed := b.askForPush(ctx, ev.Repo, cmds, needs, ev)
+		g, why, allowed := b.askForPush(ctx, ev.Repo, cmds, opts, needs, ev)
 		for i := range reasons {
 			switch {
 			case allowed && reasons[i] == reasonNeedsApproval:

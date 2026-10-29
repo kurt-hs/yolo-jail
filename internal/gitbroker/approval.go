@@ -38,12 +38,13 @@ func (b *Broker) revalidate(q brokerstore.Request) (brokerstore.Policy, error) {
 	return revalidatePush(b.scopeFile, b.bound, b.start, q)
 }
 
-// askForPush asks for approval of the push of cmds to repo, in which the refs needs are those
+// askForPush asks for approval of the push of cmds with the push options opts to repo, in
+// which the refs needs are those
 // nothing else covered. It returns the grant it spent and true when an Allow once covers the
 // push: the use is spent and audited under the store's lock, which is released before the push
 // is forwarded (GB-D19). Otherwise it returns the reason each ref in needs is refused with.
-func (b *Broker) askForPush(ctx context.Context, repo string, cmds []gitproto.Command, needs []string, ev *brokeraudit.Event) (brokerstore.Grant, string, bool) {
-	q := b.pushRequest(repo, cmds)
+func (b *Broker) askForPush(ctx context.Context, repo string, cmds []gitproto.Command, opts, needs []string, ev *brokeraudit.Event) (brokerstore.Grant, string, bool) {
+	q := b.pushRequest(repo, cmds, opts)
 	q.NeedsApproval = needs
 	ev.CommandDigest, ev.StdinDigest = q.Digest, q.StdinDigest
 	// A grant is held by its workspace (BB-D99), so its request may come from a jail or broker

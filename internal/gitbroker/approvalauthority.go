@@ -23,8 +23,9 @@ import (
 // the check every step of its life re-runs against the launch's live scope file: filing it,
 // deciding it with `yolo approve`, and spending its grant.
 //
-// A push's request is the whole push (GB-D4, GB-D17): its argv is `git-receive-pack` and one
-// "<old> <new> <ref>" per ref command, its repository is the remote's identity
+// A push's request is the whole push (GB-D4, GB-D17): its argv is `git-receive-pack`, one
+// "<old> <new> <ref>" per ref command, and one "push-option=<value>" per push option the push
+// sends upstream (a server acts on them: GitLab merges or sets CI variables by them), its repository is the remote's identity
 // (gitproto.Identity), and its stdin digest is that of nothing, since the new ids already name
 // what the push sends. The only answers are Allow once and Deny (GB-D16): Allow once is one use
 // of that exact push, held by the workspace, for 15 minutes.
@@ -43,12 +44,20 @@ var pushStdinDigest = func() string {
 	return hex.EncodeToString(sum[:])
 }()
 
+// pushOptionPrefix starts a push option's line in a push request's argv. A ref command's line
+// starts with an object id, so the two never collide.
+const pushOptionPrefix = "push-option="
+
 // pushArgv is the canonical command of a push: `git-receive-pack`, then each ref command as
-// "<old> <new> <ref>", in the order the push sent them.
-func pushArgv(cmds []gitproto.Command) []string {
+// "<old> <new> <ref>", then each push option as "push-option=<value>", each in the order the
+// push sent them.
+func pushArgv(cmds []gitproto.Command, opts []string) []string {
 	argv := []string{serviceReceivePack}
 	for _, c := range cmds {
 		argv = append(argv, c.Old+" "+c.New+" "+c.Ref)
+	}
+	for _, o := range opts {
+		argv = append(argv, pushOptionPrefix+o)
 	}
 	return argv
 }
@@ -58,7 +67,18 @@ func checkPushArgv(argv []string) error {
 	if len(argv) < 2 || argv[0] != serviceReceivePack {
 		return errors.New("the request is not a push of at least one ref")
 	}
-	for _, line := range argv[1:] {
+	options := false
+	for i, line := range argv[1:] {
+		if o, ok := strings.CutPrefix(line, pushOptionPrefix); ok {
+			if i == 0 || strings.ContainsAny(o, "\n\x00") {
+				return errors.New("the request holds a malformed push option")
+			}
+			options = true
+			continue
+		}
+		if options {
+			return errors.New("the request holds a ref command after its push options")
+		}
 		f := strings.Split(line, " ")
 		if len(f) != 3 || !objectID(f[0]) || !objectID(f[1]) {
 			return errors.New("the request holds a malformed ref command")
@@ -156,9 +176,9 @@ func ApprovalStore() *brokerstore.Store {
 }
 
 // pushRequest is the request a push of cmds to repo files from this broker, unfiled.
-func (b *Broker) pushRequest(repo string, cmds []gitproto.Command) brokerstore.Request {
+func (b *Broker) pushRequest(repo string, cmds []gitproto.Command, opts []string) brokerstore.Request {
 	q := brokerstore.Request{Jail: holderJail(b.bound), Start: b.start, Workspace: b.bound.Workspace,
-		LaunchID: b.bound.LaunchID, Argv: pushArgv(cmds), Repo: repo, Set: setPush, Policy: pushPolicy,
+		LaunchID: b.bound.LaunchID, Argv: pushArgv(cmds, opts), Repo: repo, Set: setPush, Policy: pushPolicy,
 		StdinDigest: pushStdinDigest}
 	q.Digest = brokerstore.CommandDigest(q)
 	return q

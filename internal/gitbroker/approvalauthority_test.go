@@ -23,7 +23,7 @@ func (f *fixture) pushRequest(cmds ...gitproto.Command) brokerstore.Request {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return f.broker.pushRequest(repo, cmds)
+	return f.broker.pushRequest(repo, cmds, nil)
 }
 
 func TestApprovalAuthorityAcceptsTheLiveLaunchsPush(t *testing.T) {

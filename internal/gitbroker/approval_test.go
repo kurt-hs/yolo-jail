@@ -52,7 +52,7 @@ func TestAskForPushSpendsExactGrantOnce(t *testing.T) {
 	ctx := context.Background()
 
 	ev := &brokeraudit.Event{}
-	_, reason, ok := f.broker.askForPush(ctx, repo, cmds, []string{"refs/heads/main"}, ev)
+	_, reason, ok := f.broker.askForPush(ctx, repo, cmds, nil, []string{"refs/heads/main"}, ev)
 	if ok {
 		t.Fatal("a push nobody approved was allowed")
 	}
@@ -79,13 +79,13 @@ func TestAskForPushSpendsExactGrantOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev = &brokeraudit.Event{}
-	spent, reason, ok := f.broker.askForPush(ctx, repo, cmds, []string{"refs/heads/main"}, ev)
+	spent, reason, ok := f.broker.askForPush(ctx, repo, cmds, nil, []string{"refs/heads/main"}, ev)
 	if !ok || spent.ID != g.ID || spent.Uses != 0 || ev.Grant != g.ID || ev.Request != id {
 		t.Fatalf("the approved push: ok %v, reason %q, grant %+v, event %+v", ok, reason, spent, ev)
 	}
 
 	// Spent: the same push again files a new request.
-	_, reason, ok = f.broker.askForPush(ctx, repo, cmds, []string{"refs/heads/main"}, &brokeraudit.Event{})
+	_, reason, ok = f.broker.askForPush(ctx, repo, cmds, nil, []string{"refs/heads/main"}, &brokeraudit.Event{})
 	if ok || pendingID(t, reason) == id {
 		t.Fatalf("a spent Allow once covered a second push: ok %v, %q", ok, reason)
 	}
@@ -96,7 +96,7 @@ func TestAskForPushSpendsExactGrantOnce(t *testing.T) {
 	if _, err := ApprovalStore().Decide(g2id, "pending", brokerstore.Decision{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok := f.broker.askForPush(ctx, repo, other, []string{"refs/heads/main"}, &brokeraudit.Event{}); ok {
+	if _, _, ok := f.broker.askForPush(ctx, repo, other, nil, []string{"refs/heads/main"}, &brokeraudit.Event{}); ok {
 		t.Fatal("an Allow once covered a push it did not name")
 	}
 }
@@ -130,7 +130,7 @@ func TestAskForPushWaitsForTheAnswer(t *testing.T) {
 		if deny {
 			push = []gitproto.Command{{Old: cmds[0].Old, New: cmds[0].Old, Ref: cmds[0].Ref}}
 		}
-		_, reason, ok := f.broker.askForPush(context.Background(), repo, push, []string{"refs/heads/main"}, &brokeraudit.Event{})
+		_, reason, ok := f.broker.askForPush(context.Background(), repo, push, nil, []string{"refs/heads/main"}, &brokeraudit.Event{})
 		if err := <-decided; err != nil {
 			t.Fatal(err)
 		}

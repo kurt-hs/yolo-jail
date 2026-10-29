@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -247,7 +248,7 @@ func TestHandlerRunsOnRequestAndRefusesPendingAtStop(t *testing.T) {
 	}
 	repo, _ := gitproto.Identity(origin)
 	q := brokerstore.Request{Jail: paths.JailShortHash(sf.Container), Start: l.Start, Workspace: sf.Workspace,
-		LaunchID: sf.LaunchID, Argv: pushArgv([]gitproto.Command{{Old: oldID, New: newID, Ref: "refs/heads/main"}}),
+		LaunchID: sf.LaunchID, Argv: pushArgv([]gitproto.Command{{Old: oldID, New: newID, Ref: "refs/heads/main"}}, nil),
 		Repo: repo, Set: setPush, Policy: pushPolicy, StdinDigest: pushStdinDigest}
 	filed, err := l.Store.File(q)
 	if err != nil {
@@ -257,5 +258,48 @@ func TestHandlerRunsOnRequestAndRefusesPendingAtStop(t *testing.T) {
 	got, err := l.Store.Status(q.Jail, l.Start, filed.ID)
 	if err != nil || got.State != "refused" {
 		t.Fatalf("a pending request after the broker stopped: %v %+v", err, got)
+	}
+}
+
+// A push's options are part of what an Allow once approves (GB-D17): the request lists each
+// one, and the same ref commands sent with other options, or with none, spend nothing.
+func TestPushOptionsAreBoundIntoTheAllowOnce(t *testing.T) {
+	f := newFixture(t, "")
+	mustGit(t, f.bare, "config", "receive.advertisePushOptions", "true")
+	f.commit("one")
+	before, head := f.upstreamRef("refs/heads/main"), mustGit(t, f.ws, "rev-parse", "HEAD")
+
+	out, err := f.git("push", "-o", "ci.skip", "origin", "HEAD:main")
+	id := refusedRequest(t, out, err)
+	reqs, _, err := ApprovalStore().List()
+	if err != nil || len(reqs) != 1 || !slices.Contains(reqs[0].Argv, pushOptionPrefix+"ci.skip") {
+		t.Fatalf("the request does not name its push option: %v %+v", err, reqs)
+	}
+	g := allow(t, id)
+
+	unspent := func(step string) {
+		t.Helper()
+		_, gs, err := ApprovalStore().List()
+		if err != nil || len(gs) != 1 || gs[0].ID != g.ID || gs[0].Uses != 1 {
+			t.Fatalf("%s: the grant was spent: %v %+v", step, err, gs)
+		}
+		if f.upstreamRef("refs/heads/main") != before {
+			t.Fatalf("%s: main moved", step)
+		}
+	}
+	out, err = f.git("push", "-o", "merge_request.merge_when_pipeline_succeeds", "origin", "HEAD:main")
+	if again := refusedRequest(t, out, err); again == id {
+		t.Fatal("other push options were covered by the Allow once")
+	}
+	unspent("other options")
+	out, err = f.git("push", "origin", "HEAD:main")
+	if again := refusedRequest(t, out, err); again == id {
+		t.Fatal("a push without the options was covered by the Allow once")
+	}
+	unspent("no options")
+
+	f.mustPush("-o", "ci.skip", "origin", "HEAD:main")
+	if got := f.upstreamRef("refs/heads/main"); got != head {
+		t.Fatalf("the approved push with its option did not land: %q", got)
 	}
 }
