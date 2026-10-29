@@ -836,6 +836,19 @@ fixed-name volumes, or a run should refuse while another holds the machine.
 once during a 2026-10-23 landing gate with other agents' builds running, and passed alone. Each
 deadline should measure what it pins without a wall-clock bound the machine's load can cross.
 
+### <a id="program-capture-record-platform"></a>🔧 **A program capture still judges an existing entry's platform by its manifest**
+
+The capture store's [record-platform rule](../reference/install-capture.md#record-platform) makes
+the platform a property of each record, not of the entry, so identical bytes serve every platform a
+record names. Sealed program captures (`prepareProgramCapture`) do not follow it yet:
+`validateProgramManifest` checks both the selected winner and the retained duplicate against
+`inputs.Platform`, so a pure-JS npm package with the same bytes on Linux and darwin is refused when
+the second platform is admitted. `TestProgramCaptureAdmissionLinuxDarwinSameBytesRetainsOldReceipt`
+and the `platform` case of `TestProgramCaptureAdmissionRejectsRetainedMetadataConflict` pin that
+refusal on purpose (commit `5be28a2d6`), so changing it reverses a deliberate decision. Today it is
+unreachable, because program captures run only for a Linux capture jail's platform
+(`programcapturedemand.go`). Revisit it when darwin program captures arrive.
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
