@@ -85,7 +85,7 @@ Mac, which is never wiped between jobs.
 Tested by hand: a no-op run took 8 s, and a dummy tag `yolo-jail:0000000000000000` was deleted
 with nothing else touched.
 
-**It is not registered.** Registering it edits the runner's `.env` and restarts its service,
+**Registered later the same day** at the maintainer's request (see the [SecurityServer audit report](2026-10-29-mac-securityserver-audit.md#7-state-changed-on-this-mac)). At the time of this section it was not: registering it edits the runner's `.env` and restarts its service,
 which is the maintainer's call:
 
 ```sh

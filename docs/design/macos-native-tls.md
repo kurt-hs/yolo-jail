@@ -24,7 +24,7 @@ the cause in [§2](#2-the-cause) predicts every Mac.
 
 **Start at [§2](#2-the-cause).**
 
-**Mac-side follow-up:** [Audit the SecurityServer boundary](#mac-side-follow-up--audit-the-securityserver-boundary) before this design graduates.
+**Mac-side follow-up:** [Audit the SecurityServer boundary](#mac-side-follow-up--audit-the-securityserver-boundary): run 2026-10-29, [results](../lab-reports/2026-10-29-mac-securityserver-audit.md). The deny stays; graduating this design is the maintainer's call.
 
 **Needs your ruling:** none. **Ruled 2026-10-23:** [OQ-MT1](#OQ-MT1) (a mise yolo installs,
 ideally from Nix, no maintained patches; never securityd), [OQ-MT2](#OQ-MT2) (account mode may
@@ -173,7 +173,7 @@ tools installed, with no profile change.
 
 ## Mac-side follow-up — audit the SecurityServer boundary
 
-**Pending as of 2026-10-28.** The current profile denies Mach lookups to
+**Run 2026-10-29; [results](../lab-reports/2026-10-29-mac-securityserver-audit.md).** The deny is load-bearing and stays; `SecTrustEvaluateWithError` verifies under the unchanged profile, and only SecureTransport fails. Two small tests remain open there (lock-all, an MDM-CA host). The brief as written follows. The current profile denies Mach lookups to
 `com.apple.SecurityServer` and related security services by name; this is a coarse service boundary,
 not an item-level keychain policy. A file-read denial does not stop a service from acting for its
 caller. Conversely, permission to look up a service does not erase per-item access controls or prove
