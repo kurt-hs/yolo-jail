@@ -463,7 +463,7 @@ func (f *Floor) installFromPatchedState(ctx context.Context, p Program, dir stri
 	home := filepath.Join(dir, "home")
 	endMaterialize := f.span(p.Bin(), "materialize")
 	res, err := capture.Materialize(capture.MaterializeOptions{Entry: g.Entry, Home: home, Stderr: f.out(),
-		Confined: true, Platform: f.CapturePlatform})
+		Confined: true, Platform: f.CapturePlatform, PlatformRecords: f.CaptureRecords})
 	endMaterialize()
 	if errors.Is(err, capture.ErrNotRelocatable) {
 		buildHome := "/home/agent"

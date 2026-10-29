@@ -299,6 +299,41 @@ func TestAPackTreeProgramWithNoSourceAndNoPrebuiltIsNoFloorEntry(t *testing.T) {
 // the Mac's build act cannot run now, its own blocker (BuildActUnavailable) is the no-entry reason.
 // On any other platform there is still no entry, naming a jail and `host_floor`. No fork path is
 // reached on any platform.
+// THE PLATFORM IS A RECORD'S (install-capture.md#record-platform): the store keys by content alone,
+// so a script admitted first for a jail's platform keeps that manifest when this floor's platform
+// admits the same bytes. The floor's materialize takes its CapturePlatform from a record beside the
+// entry, and without one it still refuses. Drop PlatformRecords from materializeBuild and this fails.
+func TestAPackTreeEntryFirstAdmittedForAnotherPlatformInstallsByItsRecord(t *testing.T) {
+	const floorPlatform = "plan9/mips" // the entries' manifests name capture.Platform()
+	for _, tc := range []struct {
+		name    string
+		records capture.Records
+		wantOK  bool
+	}{
+		{"a record for the floor's platform", func(string) ([]capture.Record, error) {
+			return []capture.Record{{Bin: "board", Platform: capture.Platform()}, {Bin: "board", Platform: floorPlatform}}, nil
+		}, true},
+		{"no record for it", func(string) ([]capture.Record, error) {
+			return []capture.Record{{Bin: "board", Platform: capture.Platform()}}, nil
+		}, false},
+		{"no reader", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			digest := packTreeDigestOne
+			w, _, _ := packTreeWorld(t, &digest, nil)
+			w.floor.CapturePlatform = floorPlatform
+			w.floor.CaptureRecords = tc.records
+			_, outcome, err := w.floor.Ensure(context.Background(), packTreeProgram())
+			if tc.wantOK && (err != nil || outcome != Installed) {
+				t.Fatalf("Ensure = %s %v, want installed by the record\n%s", outcome, err, w.out.String())
+			}
+			if !tc.wantOK && (err == nil || !errors.Is(err, capture.ErrWrongPlatform)) {
+				t.Fatalf("Ensure = %s %v, want the platform refusal\n%s", outcome, err, w.out.String())
+			}
+		})
+	}
+}
+
 func TestAPackTreeProgramOnAMacFloorIsBuiltAndInstalled(t *testing.T) {
 	digest := packTreeDigestOne
 	w, ps, resolves := packTreeWorld(t, &digest, nil)

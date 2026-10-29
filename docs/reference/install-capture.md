@@ -262,6 +262,14 @@ invoked costs nothing.
   workspace. Newest record wins by receipt time, the greater key breaking a tie (the stamp has
   one-second resolution), and the winner is then fetched through `Store.Resolve`, so a receipt
   beside a torn tree cannot select it.
+- <a id="record-platform"></a>**The platform is a record's, not the entry's.** The key is the
+  tree's content alone, so the same bytes admitted for a second platform (a script, which no build
+  changes) land on the existing entry: its manifest, which names the platform admitted first, is
+  kept, and the second admission adds only a `record` receipt. `capture.Materialize` therefore
+  takes the platform asked for when the manifest names it or, given a record reader
+  (`MaterializeOptions.PlatformRecords`), when a record beside the entry names it exactly; with
+  neither it refuses with `capture.ErrWrongPlatform` before writing. The fork-build launcher, the
+  installer-capture launcher, the host floor and the cached-good check all judge by the record.
 - <a id="slice-4f"></a>**The capture jail is given no store** (see [Invariants](#invariants)).
 - **Materialize is not transactional.** A failure partway leaves what it already placed, and the
   launcher falls through to the vendor installer.
@@ -465,6 +473,7 @@ Their reaps follow the same complement rule, so a fork's newest build per source
 | Torn or in-flight entry | Reads as absent; the next admit of that content redoes it |
 | Entry reaped mid-materialize | A miss; the launcher downloads |
 | Relocation refused | Pre-write, `ErrNotRelocatable`; the launcher downloads |
+| No manifest or record names this platform | Pre-write, `ErrWrongPlatform`; the fork-build launcher names the host act that records one: `yolo pack build <pack> --force` for a pack-tree program, `yolo capture <bin>` for a fork |
 | Installer fails, or lands nothing | No manifest, or an empty delta refused; nothing is stored, the launch continues |
 | Two workspaces capture one program | The loser skips and installs lazily |
 | Auto-capture fails | Warns once, backs off per program and platform, the launch continues |
@@ -545,6 +554,7 @@ comments cite them.
 | <a id="slice-4a-row"></a>slice-4a | Materialize stays in the launcher, as reflink → hardlink → copy | Reflink crosses the bind-mount gap `link(2)` cannot, so there is no need to move materialize host-side and lose "a tool never invoked costs nothing" |
 | <a id="slice-4e-row"></a>slice-4e | No index; scan the receipts beside each entry | An index is a second record admit and reap must keep true, and a stale one is a wrong answer |
 | <a id="slice-4f-row"></a>slice-4f | The capture jail is suppressed at the mount (`CapturesDir` returns `""`), and the same switch suppresses auto-capture | A launcher exception would be a second rule; a capture of an already-captured program must record fresh installer bytes |
+| <a id="record-platform-row"></a>record-platform | A [record beside the entry](#record-platform), not only the manifest, licenses the platform a materialize places for; the store key stays content-only. **Owner-approved direction, 2026-10-29** | Keying by platform too would re-key every existing entry. Bytes identical across platforms otherwise selected by one platform's record and were refused by the other platform's manifest on every relaunch (seen natively on a Mac: [lab report §4](../lab-reports/2026-10-29-mac-native-witnesses-apple-prune-and-copilot-probe.md#4-also-seen)). The record is the same evidence selection already trusts, so no integrity check beyond the platform label moves |
 | <a id="slice-5-row"></a>slice-5 | The reap is the complement of `capture.Select`, `K = 1`, no age floor, no flag | Under reflink `st_nlink` says nothing about referrers, and no workspace enumeration is a safe oracle; deriving the reap from the reader makes them unable to drift. The marker already hides an in-flight entry, and the store is not a version history |
 | <a id="slice-6b-row"></a>slice-6b | A `macos-user` capture stages on neutral ground, and the move into the store refuses on `EXDEV` | The sandbox account must not reach the invoking user's home or the rest of the store; a multi-gigabyte copy is not an honest fallback |
 | <a id="slice-6e-row"></a>slice-6e | The file-content scan is opt-in (`--scan-content-refs`), passed by the `macos-user` capture, the host capture and the container auto-capture | It is a read pass over the whole delta; a capture without it records `relocatable:false` for want of the scan, never a wrong `true` |

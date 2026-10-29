@@ -229,6 +229,12 @@ type Floor struct {
 	// up under, so one floor judges an entry by one platform. Empty is this process's own
 	// (capture.Platform), which is what production's is.
 	CapturePlatform string
+	// CaptureRecords reads the `record` receipts beside a store entry (capture.Records). The store
+	// keys by content alone, so bytes admitted for a jail's platform and then this host's share one
+	// entry whose manifest names the first; a materialize takes CapturePlatform when a record beside
+	// the entry names it (capture.MaterializeOptions.PlatformRecords). Nil judges by the manifest
+	// alone.
+	CaptureRecords capture.Records
 	// Now is the clock. nil => time.Now.
 	Now func() time.Time
 	// Node says where the floor's Node comes from (node.go).

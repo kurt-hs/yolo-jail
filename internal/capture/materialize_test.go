@@ -599,6 +599,42 @@ func TestMaterializeJudgesTheCallersPlatform(t *testing.T) {
 	}
 }
 
+// The platform is a RECORD's, not the entry's: the store keys by content alone, so the same bytes
+// admitted for a second platform keep the first one's manifest. A record beside the entry naming
+// the platform asked for licenses it; a reader with no such record, an unreadable log, and no
+// reader at all each refuse with ErrWrongPlatform.
+func TestMaterializeAcceptsAPlatformARecordBesideTheEntryNames(t *testing.T) {
+	home := t.TempDir()
+	_, entry := entryFixture(t, home, "plan9/mips", nil)
+	records := func(platforms ...string) Records {
+		return func(root string) ([]Record, error) {
+			if root != entry.Root {
+				t.Errorf("records read beside %s, want the entry's own %s", root, entry.Root)
+			}
+			var out []Record
+			for _, p := range platforms {
+				out = append(out, Record{Bin: "vendor", Platform: p})
+			}
+			return out, nil
+		}
+	}
+	if _, err := Materialize(MaterializeOptions{Entry: entry, Home: home, Platform: "plan9/arm",
+		PlatformRecords: records("plan9/mips", "plan9/arm")}); err != nil {
+		t.Fatalf("materialize for a platform a record names = %v, want it placed", err)
+	}
+	for name, read := range map[string]Records{
+		"no record for it": records("plan9/mips", "plan9/386"),
+		"unreadable log":   func(string) ([]Record, error) { return nil, errors.New("torn") },
+		"no reader":        nil,
+	} {
+		_, err := Materialize(MaterializeOptions{Entry: entry, Home: t.TempDir(), Platform: "plan9/arm",
+			PlatformRecords: read})
+		if !errors.Is(err, ErrWrongPlatform) || !strings.Contains(err.Error(), "this is plan9/arm") {
+			t.Errorf("%s: materialize = %v, want ErrWrongPlatform naming plan9/arm", name, err)
+		}
+	}
+}
+
 // A stale FILE at a captured path is replaced; a DIRECTORY there is refused rather than
 // removed, because os.RemoveAll on the home's side of that disagreement is how a materialize
 // would delete a user's data.

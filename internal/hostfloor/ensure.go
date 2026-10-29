@@ -881,7 +881,7 @@ func (f *Floor) installFromCapture(p Program, dir string) (*Record, error) {
 	// the host, so nothing it names may land outside home or be written through a link beneath it.
 	materialize := func(e *capture.Entry) (*capture.MaterializeResult, error) {
 		return capture.Materialize(capture.MaterializeOptions{Entry: e, Home: home, Stderr: f.out(),
-			Confined: true, Platform: f.CapturePlatform})
+			Confined: true, Platform: f.CapturePlatform, PlatformRecords: f.CaptureRecords})
 	}
 	res, err := materialize(entry)
 	if errors.Is(err, capture.ErrNotRelocatable) && !recaptured && f.Capture != nil {

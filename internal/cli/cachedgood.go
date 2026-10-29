@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -342,9 +343,11 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	if err != nil {
 		return nil, nil, fmt.Sprintf("the recorded Good entry has an unreadable manifest (%v)", err)
 	}
-	if manifest.Platform != platform {
-		return nil, nil, fmt.Sprintf("the recorded Good entry is for %s, not this jail's %s", manifest.Platform, platform)
-	}
+	// THE PLATFORM IS A RECORD'S, not the manifest's: the store keys by content alone, so the same
+	// bytes admitted for a second platform keep the first one's manifest (capture.MaterializeOptions.
+	// PlatformRecords). A manifest naming another platform is refused below unless an admission
+	// record beside the entry names this one — and the exact match after it requires one anyway.
+	manifestOtherPlatform := manifest.Platform != platform
 	if why := cachedGoodHome(manifest, platform); why != "" {
 		return nil, nil, why
 	}
@@ -365,6 +368,11 @@ func validateCachedGood(f packload.Fork, platform string, good *packsrc.GoodBuil
 	receipts, err := entrypoint.ReadBuildReceipts(receiptsPath)
 	if err != nil {
 		return nil, nil, fmt.Sprintf("cannot read the recorded Good entry's build receipts (%v)", err)
+	}
+	if manifestOtherPlatform && !slices.ContainsFunc(receipts, func(r entrypoint.BuildReceipt) bool {
+		return r.Act == entrypoint.ReceiptActRecord && r.Key == key && r.Platform == platform
+	}) {
+		return nil, nil, fmt.Sprintf("the recorded Good entry is for %s, not this jail's %s", manifest.Platform, platform)
 	}
 	// THE SOURCE IDENTITY: a fork's repository and subdirectory; a BUILT EXTENSION's (an npm source
 	// among them, which no address parse reads) is the build source its receipt records,

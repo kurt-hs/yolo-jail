@@ -85,6 +85,12 @@ import (
 // See Manifest.Relocatable for the three-clause contract Materialize implements.
 var ErrNotRelocatable = errors.New("the capture was made under a different home")
 
+// ErrWrongPlatform reports that neither the entry's manifest nor a `record` beside it (when the
+// caller hands Materialize a reader, MaterializeOptions.PlatformRecords) names the platform asked
+// for. A sentinel so a caller can name its own next step: the answer is a capture or build FOR this
+// platform, never a retry.
+var ErrWrongPlatform = errors.New("the capture is not recorded for this platform")
+
 // MaterializeOptions configures putting one admitted entry into one home.
 type MaterializeOptions struct {
 	// Entry is the resolved store entry (Store.Resolve). Its Tree is the source and its
@@ -107,6 +113,13 @@ type MaterializeOptions struct {
 	// name. Empty is this process's own (Platform()); the host agent floor passes the platform it
 	// installs for, so a floor is judged by one platform throughout.
 	Platform string
+	// PlatformRecords reads the `record` receipts beside the entry (the same reader selection
+	// uses). The store is keyed by content alone (store.go), so bytes admitted for two platforms
+	// share one entry whose manifest names the platform admitted FIRST; the platform is a property
+	// of each record, not of the entry. When the manifest names another platform than Platform,
+	// the materialize proceeds only if one of these records names Platform exactly. Nil judges by
+	// the manifest alone.
+	PlatformRecords Records
 }
 
 // MaterializeResult reports what was put where, and by which mechanism.
@@ -199,13 +212,19 @@ func Materialize(opts MaterializeOptions) (*MaterializeResult, error) {
 	// linux/arm64 tree unpacked into a linux/amd64 home is a program that exists and does
 	// not run. Checking it twice costs one string compare and removes a whole class of
 	// caller bug (§6.3: "captures are per-platform, and only for platforms we can run").
+	//
+	// THE MANIFEST'S PLATFORM IS THE FIRST ADMISSION'S, NOT THE ENTRY'S. The key is the tree's
+	// content alone, so the same bytes admitted for a second platform (a script, which no build
+	// changes) land on the existing entry, keep its manifest, and add only a record. A record
+	// beside the entry naming the platform asked for is therefore as good as the manifest's own
+	// claim; with no reader, or no such record, the gate fails closed as before.
 	want := opts.Platform
 	if want == "" {
 		want = Platform()
 	}
-	if m.Platform != "" && m.Platform != want {
-		return nil, fmt.Errorf("capture materialize: entry %s is a %s capture and this is %s",
-			opts.Entry.Key, m.Platform, want)
+	if m.Platform != "" && m.Platform != want && !recordedFor(opts.PlatformRecords, opts.Entry.Root, want) {
+		return nil, fmt.Errorf("capture materialize: entry %s is a %s capture and this is %s: %w",
+			opts.Entry.Key, m.Platform, want, ErrWrongPlatform)
 	}
 	// THE ENTRIES ARE A TREE UNDER THE HOME, checked before anything is written (confine.go):
 	// the manifest is the capture jail's own account of itself, and an entry that climbs out, or
@@ -672,4 +691,22 @@ func orUnknown(s string) string {
 		return "an unknown filesystem"
 	}
 	return s
+}
+
+// recordedFor reports whether a `record` beside the entry at root, read by read, names platform
+// exactly. Nil read, an unreadable log, or no such record is false: the platform gate fails closed.
+func recordedFor(read Records, root, platform string) bool {
+	if read == nil || platform == "" {
+		return false
+	}
+	recs, err := read(root)
+	if err != nil {
+		return false
+	}
+	for _, r := range recs {
+		if r.Platform == platform {
+			return true
+		}
+	}
+	return false
 }

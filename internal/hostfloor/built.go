@@ -210,7 +210,7 @@ func (f *Floor) materializeBuild(p Program, entry *capture.Entry, dir, what, fro
 	home := filepath.Join(dir, "home")
 	endMaterialize := f.span(bin, "materialize")
 	res, err := capture.Materialize(capture.MaterializeOptions{Entry: entry, Home: home, Stderr: f.out(),
-		Confined: true, Platform: f.CapturePlatform})
+		Confined: true, Platform: f.CapturePlatform, PlatformRecords: f.CaptureRecords})
 	endMaterialize()
 	if errors.Is(err, capture.ErrNotRelocatable) {
 		// The manifest said it may move, and a reference it lists cannot be honored: the same

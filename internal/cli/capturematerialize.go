@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
 )
 
@@ -206,6 +208,9 @@ func materializeCapture(a materializeArgs, errw io.Writer) int {
 		Entry:  entry,
 		Home:   a.home,
 		Stderr: errw,
+		// Selection chose this entry by its record for this platform; the manifest may name the
+		// platform the same bytes were captured for first (PlatformRecords).
+		PlatformRecords: captureRecords,
 	})
 	if err != nil {
 		// LOUD, unlike a miss. A miss means the store had nothing to offer; this means it
@@ -320,13 +325,20 @@ func materializeForkBuild(store *capture.Store, a materializeArgs, platform stri
 	}
 	if rec == nil {
 		fmt.Fprintf(errw, "  yolo: store entry %s records no build of %s for %s — refusing to put it "+
-			"in place of %s\n", a.key, a.bin, platform, a.bin)
+			"in place of %s\n  %s\n", a.key, a.bin, platform, a.bin, forkBuildPlatformStep(a.bin, a.declared, platform))
 		return 1
 	}
-	res, err := capture.Materialize(capture.MaterializeOptions{Entry: entry, Home: a.home, Stderr: errw})
+	// PLATFORM IS A RECORD'S, not the entry's (capture.MaterializeOptions.PlatformRecords): the
+	// record just found licenses this platform even when the manifest names the platform the same
+	// bytes were admitted for first.
+	res, err := capture.Materialize(capture.MaterializeOptions{Entry: entry, Home: a.home, Stderr: errw,
+		Platform: platform, PlatformRecords: captureRecords})
 	if err != nil {
 		fmt.Fprintf(errw, "  yolo: materializing fork build %s for %s FAILED: %v\n  (%s may hold a "+
 			"partial tree)\n", entry.Key, a.bin, err, a.home)
+		if errors.Is(err, capture.ErrWrongPlatform) {
+			fmt.Fprintf(errw, "  %s\n", forkBuildPlatformStep(a.bin, a.declared, platform))
+		}
 		return 1
 	}
 	if a.receipts != "" {
@@ -342,6 +354,21 @@ func materializeForkBuild(store *capture.Store, a materializeArgs, platform stri
 	fmt.Fprintf(errw, "  Materialized %s from fork build %s (commit %s) by %s (%d files, %s)\n",
 		a.bin, entry.Key, rec.Revision, res.Mechanism(), res.Files, humanBytes(res.Bytes))
 	return 0
+}
+
+// forkBuildPlatformStep is the next step when the store holds no build of bin this platform may
+// run: the host's build act records one — a new build, or, for bytes that are the same on every
+// platform, a record for this platform beside the entry that already holds them. A pack-tree
+// program (declared as packdecl.PackTreeBuildSource, "pack:<pack>/<from>") is `yolo pack build
+// <pack> --force`; a fork's explicit rebuild is `yolo capture <bin>`, as packbuild.go says.
+func forkBuildPlatformStep(bin, declared, platform string) string {
+	cmd := "yolo capture " + shquote.Quote(bin)
+	if rest, ok := strings.CutPrefix(declared, "pack:"); ok {
+		if pack, _, _ := strings.Cut(rest, "/"); pack != "" {
+			cmd = "yolo pack build " + shquote.Quote(pack) + " --force"
+		}
+	}
+	return fmt.Sprintf("run `%s` on the host, in this workspace, to build %s for %s, then relaunch", cmd, bin, platform)
 }
 
 // resolveCaptureFor answers the one question the content-addressed store cannot: WHICH ENTRY

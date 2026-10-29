@@ -67,8 +67,11 @@ var newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Flo
 		GOARCH: runtime.GOARCH,
 		// The identity ResolveCapture and floorForkBuild name, so the materialize checks the same.
 		CapturePlatform: hostFloorCapturePlatform(),
-		NodeFloor:       hostfloor.HighestNodeFloor(progs),
-		Include:         func(pack string) bool { return entrypoint.PackPolicyAllows(floorWire, pack) },
+		// The records that selection reads, so a materialize honors the platform a record names
+		// when the same bytes were admitted for another platform first.
+		CaptureRecords: captureRecords,
+		NodeFloor:      hostfloor.HighestNodeFloor(progs),
+		Include:        func(pack string) bool { return entrypoint.PackPolicyAllows(floorWire, pack) },
 		// The user's provisioner order (PS-D12): a program it gives to a manager on the launch PATH
 		// has no floor entry. The PATH is resolved only when an order names one.
 		Outranked: hostfloor.Outranker(hostProvisionerOrder, lazyLaunchLookup()),
