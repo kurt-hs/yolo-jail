@@ -34,8 +34,9 @@ import (
 // approval record's scope part held them (a `yolo check --accept-config-changes` recorded
 // it, so the launch itself passes no flag); the spawn handed the daemon that launch's scope
 // file; the jail's `gh` reached the broker; a read ran the host gh with the canonical argv;
-// a refused command, an out-of-scope one and a write never reached the host gh; and every
-// call is one `yolo audit` line.
+// a refused command and an out-of-scope one never reached the host gh; and every call is one
+// `yolo audit` line. Production write approval is exercised through the real service front and
+// host CLI in internal/cli/ghbrokerapproval_test.go, using fake host executables.
 //
 // > [!WARNING]
 // > Under podman-in-podman the CLI forces `--net=host`, the one mode in which a
@@ -286,12 +287,11 @@ func githubBrokerReadScript() string {
 		"gh pr list -R yolo-it/app --state all",  // B: a read, explicit -R
 		"gh auth token",                          // C: refused
 		"gh pr view 1 -R other/private",          // D: out of scope
-		"gh pr comment 32 --body hi",             // E: a write, exit 77
-		"gh api repos/yolo-it/app/leak",          // F: a read whose output carries the token
-		"type gh",                                // G: gh resolves to the intercept
-		"gh pr view 32 --json title --jq .title", // H: a filter runs on the host (BB-D64)
-		"gh auth status",                         // I: the broker answers it (BB-D65)
-		`head -4 "$(command -v gh)"`,             // J: the shim says it is a forwarder (BB-D67)
+		"gh api repos/yolo-it/app/leak",          // E: a read whose output carries the token
+		"type gh",                                // F: gh resolves to the intercept
+		"gh pr view 32 --json title --jq .title", // G: a filter runs on the host (BB-D64)
+		"gh auth status",                         // H: the broker answers it (BB-D65)
+		`head -4 "$(command -v gh)"`,             // I: the shim says it is a forwarder (BB-D67)
 	)
 }
 
@@ -364,8 +364,8 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 		t.Fatalf("the launch failed: rc %d\n%s%s", r.rc, r.combined(), brokerDaemonLog(t))
 	}
 	out := r.stdout
-	want := map[string]string{"RCA": "0", "RCB": "0", "RCC": "64", "RCD": "64", "RCE": "77", "RCF": "0", "RCG": "0",
-		"RCH": "0", "RCI": "0", "RCJ": "0"}
+	want := map[string]string{"RCA": "0", "RCB": "0", "RCC": "64", "RCD": "64", "RCE": "0", "RCF": "0", "RCG": "0",
+		"RCH": "0", "RCI": "0"}
 	for k, v := range want {
 		if got := kvLine(out, k); got != v {
 			t.Errorf("%s = %q, want %q", k, got, v)
@@ -390,12 +390,12 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 		t.Errorf("the host token crossed into the jail:\n%s", r.combined())
 	}
 	if !strings.Contains(out, "[redacted by yolo]") {
-		t.Errorf("the token in F's output was not redacted:\n%s", out)
+		t.Errorf("the token in E's output was not redacted:\n%s", out)
 	}
 	if !strings.Contains(out, "block/gh") {
 		t.Errorf("`type gh` did not resolve to the intercept in the block dir:\n%s", out)
 	}
-	// H, I and J: the filter reached the host gh in the canonical argv; the broker's own
+	// G, H and I: the filter reached the host gh in the canonical argv; the broker's own
 	// answer to `auth status` names the login and the scope and none of the host's facts;
 	// the shim's first lines say what it is.
 	for _, s := range []string{
@@ -408,16 +408,16 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 			t.Errorf("stdout lacks %q:\n%s", s, out)
 		}
 	}
-	// I's own output: what the jail printed between H's exit code and I's.
-	if h, i := strings.Index(out, "RCH="), strings.Index(out, "RCI="); h >= 0 && i > h {
-		status := out[h:i]
+	// H's own output: what the jail printed between G's exit code and H's.
+	if g, h := strings.Index(out, "RCG="), strings.Index(out, "RCH="); g >= 0 && h > g {
+		status := out[g:h]
 		for _, host := range []string{"hosts.yml", "read:org", argvLog} {
 			if strings.Contains(status, host) {
 				t.Errorf("`gh auth status` in the jail carried the host's %q:\n%s", host, status)
 			}
 		}
 	} else {
-		t.Errorf("no RCH= and RCI= markers to find `gh auth status`'s output by:\n%s", out)
+		t.Errorf("no RCG= and RCH= markers to find `gh auth status`'s output by:\n%s", out)
 	}
 
 	// The host gh saw the reads and the broker's own start-up reads, and nothing else.
@@ -446,7 +446,7 @@ func assertGitHubBrokerRead(t *testing.T, r result, dir, argvLog, workspace stri
 		}
 		sets = append(sets, e.Set+"/"+e.Outcome)
 	}
-	for _, s := range []string{"read-only/ran", "refused/refused", "out-of-scope/refused", "read-write/denied"} {
+	for _, s := range []string{"read-only/ran", "refused/refused", "out-of-scope/refused"} {
 		if !strings.Contains(strings.Join(sets, " "), s) {
 			t.Errorf("no %s audit line for workspace %q; have %v (the log's workspaces: %v)",
 				s, workspace, sets, seen)

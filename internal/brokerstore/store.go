@@ -631,6 +631,20 @@ func (s *Store) ConsumeContext(ctx context.Context, workspace, jail, set, comman
 // so it must check the invocation being authorized against current host authority rather
 // than the parent's holder.
 func (s *Store) ConsumeDispatchContext(ctx context.Context, workspace, jail, set, commandDigest string, revalidate Revalidate, dispatch func() error) (Grant, bool, error) {
+	return s.consumeDispatchContext(ctx, workspace, jail, set, commandDigest, revalidate, dispatch, false)
+}
+
+// ConsumeExactDispatchContext spends only a nonempty digest-bound grant whose parent request
+// and granted digest match this invocation. Sources with legacy set-wide grants can opt into
+// this path without changing ConsumeDispatchContext semantics for other sources.
+func (s *Store) ConsumeExactDispatchContext(ctx context.Context, workspace, jail, set, commandDigest string, revalidate Revalidate, dispatch func() error) (Grant, bool, error) {
+	if commandDigest == "" {
+		return Grant{}, false, errors.New("spending an exact grant needs the canonical command digest")
+	}
+	return s.consumeDispatchContext(ctx, workspace, jail, set, commandDigest, revalidate, dispatch, true)
+}
+
+func (s *Store) consumeDispatchContext(ctx context.Context, workspace, jail, set, commandDigest string, revalidate Revalidate, dispatch func() error, exactOnly bool) (Grant, bool, error) {
 	var out Grant
 	found := false
 	if workspace == "" || jail == "" {
@@ -639,13 +653,13 @@ func (s *Store) ConsumeDispatchContext(ctx context.Context, workspace, jail, set
 	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
 		for i := range r.grants {
 			g := &r.grants[i]
-			if !SameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) {
+			if !SameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) || (exactOnly && g.Digest == "") {
 				continue
 			}
 			allowed := false
 			var parent Request
 			for _, q := range r.requests {
-				if q.ID == g.Request && q.State == "allowed" && SameWorkspace(q.Workspace, workspace) && q.Set == set {
+				if q.ID == g.Request && q.State == "allowed" && SameWorkspace(q.Workspace, workspace) && q.Set == set && (!exactOnly || q.Digest == commandDigest && q.Digest == g.Digest) {
 					current, err := currentPolicy(q, revalidate)
 					if err != nil {
 						return err

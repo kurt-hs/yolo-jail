@@ -4,11 +4,17 @@ The `github` pack lets an agent in a jail use `gh`, the GitHub command-line tool
 GitHub login on your machine**. The jail never holds a GitHub token. Instead, a small service on
 your machine, the **github-broker**, runs each command for the jail and sends back what it printed.
 
-This version is **read-only**. An agent can read pull requests, issues, workflow runs, releases and
-files in this project's own GitHub repositories. A command that would change something on GitHub
-does not run yet: it stops at once and says that writes need an approval step, which is still
-being built, so you run that command on your machine instead. The refusal prints a ready
-[`yolo host-run`](host-commands.md) line for that, which sends the output back to the agent.
+The broker supports **host-approved, exact, one-use writes** as well as reads. A write does not run
+until you approve its pending request with `yolo approve <id>` on the host. The approval binds the
+canonical command, repository and standard-input digest; it covers one use for up to 15 minutes.
+The jail waits briefly for your decision. If it times out, the request remains visible to the host
+and you can approve it before the agent retries the same command. GitHub does not accept set-wide
+`--for` or `--add` decisions. Standing `read-write` policy is refused; remove that entry from
+`brokered.github.sets` to require one Allow-once decision per write. Standing read access is unchanged.
+
+A configured `on_request` hook may notify you, but it is optional and its output is never consent.
+Pending writes are visible in the host broker log and `yolo approve`; without a hook, run
+`yolo approve <id>` on the host to Allow once or `yolo approve <id> --deny`.
 
 ## Turning it on
 
@@ -163,7 +169,7 @@ the entry to put in each project's `yolo-jail.local.jsonc` instead.
 | The agent runs | What happens |
 |---|---|
 | `gh pr view 32`, `gh issue list`, `gh run view --log`, `gh workflow list`, `gh repo view`, `gh release list`, `gh api repos/OWNER/REPO/...` and other reads | It runs with your login, and the output comes back as if it ran in the jail |
-| `gh pr comment`, `gh issue edit`, `gh pr merge`, `gh api -X POST ...` and other writes | Nothing runs, and nothing waits. It exits with code 77 at once: writes need an approval step, not built yet, so the agent asks you to run the command on your machine, with the [`yolo host-run`](host-commands.md) line the refusal prints |
+| `gh pr comment`, `gh issue edit`, `gh pr merge`, `gh api -X POST ...` and other in-scope writes | A request is filed and the broker waits briefly for host approval. Run `yolo approve <id>` on the host to allow that exact command once, or `yolo approve <id> --deny`; without a decision the command does not run and the agent can retry after approval |
 | `gh auth status` | Says which of your GitHub accounts the broker uses and which repositories the jail can reach. It never shows the token or its scopes |
 | `gh auth token`, `--web`, `gh api` to a full URL, a command that would read or write a file on your machine | Never runs, whatever else is allowed. It exits with code 64 and says why |
 | A repository outside this project, or a command across your whole account, such as a search with no `--repo` | Never runs. It exits with code 64 and names the repositories it can reach, and, for a repository, [where to add it](#adding-a-repository-the-project-has-no-remote-for) |
@@ -171,6 +177,12 @@ the entry to put in each project's `yolo-jail.local.jsonc` instead.
 
 The repository is the one `-R OWNER/REPO` names, or else the project's `origin` remote. To send
 text on standard input, pass `-`, as in `--body-file -`.
+
+`yolo approve` is the host answer path, with or without a configured notification hook. Each GitHub
+Allow once binds the canonical argv, resolved repository and stdin digest; it is one use and expires
+after 15 minutes. Set-wide `--for` and working-set `--add` are refused for GitHub writes. A legacy
+set-wide grant is not spent for a GitHub write. If the host config makes `read-write` standing, the
+broker refuses writes and tells you to remove that entry; ordinary standing reads continue to work.
 
 For output formatting, `--jq` and `--template` work as they do in `gh`, and so does piping
 `--json` output into `jq` inside the jail.

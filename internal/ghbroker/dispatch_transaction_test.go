@@ -16,7 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-func TestHandlerSerializesScopeRemovalThroughStandingAndWindowedDispatch(t *testing.T) {
+func TestHandlerSerializesWindowedDispatchAndRejectsStandingWrites(t *testing.T) {
 	for _, standing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "windowed", true: "standing"}[standing], func(t *testing.T) {
 			b, _ := windowFixture(t)
@@ -26,6 +26,10 @@ func TestHandlerSerializesScopeRemovalThroughStandingAndWindowedDispatch(t *test
 				if err := os.WriteFile(paths.UserConfigPath(), []byte(`{"brokered":{"github":{"sets":[{"name":"read-write","mode":"standing"}]}}}`), 0600); err != nil {
 					t.Fatal(err)
 				}
+				if code := callWindow(b, context.Background()); code != ExitNoPerm {
+					t.Fatalf("standing write escaped refusal: %d", code)
+				}
+				return
 			} else {
 				if callWindow(b, context.Background()) != ExitTempFail {
 					t.Fatal("not pending")
@@ -49,18 +53,14 @@ func TestHandlerSerializesScopeRemovalThroughStandingAndWindowedDispatch(t *test
 				if err != syscall.EWOULDBLOCK {
 					entered <- fmt.Errorf("executor-start has no shared authorization lock: %v", err)
 				} else {
-					if !standing {
-						data, e := os.ReadFile(filepath.Join(b.store.Dir, "grants", grant.ID+".json"))
-						var saved brokerstore.Grant
-						if e != nil {
-							entered <- e
-						} else if e = json.Unmarshal(data, &saved); e != nil {
-							entered <- e
-						} else if saved.Uses != 0 {
-							entered <- fmt.Errorf("dispatch before durable spend: %d", saved.Uses)
-						} else {
-							entered <- nil
-						}
+					data, e := os.ReadFile(filepath.Join(b.store.Dir, "grants", grant.ID+".json"))
+					var saved brokerstore.Grant
+					if e != nil {
+						entered <- e
+					} else if e = json.Unmarshal(data, &saved); e != nil {
+						entered <- e
+					} else if saved.Uses != 0 {
+						entered <- fmt.Errorf("dispatch before durable spend: %d", saved.Uses)
 					} else {
 						entered <- nil
 					}

@@ -12,9 +12,9 @@ import (
 
 // THE GITHUB PACK TELLS EVERY AGENT HOW `gh` BEHAVES IN A JAIL (docs/design/boundary-broker.md
 // BB-D68), so an agent does not learn each rule by failing once: `gh` is a forwarder at
-// ~/.yolo/bin/block/gh and not a blocker, filters work, a write exits 77 at once, raw GraphQL
-// is refused while gh's own commands work, and how a branch with a slash goes into a `gh api`
-// path. Driven through the production staging and briefing refresh with the REAL official
+// ~/.yolo/bin/block/gh and not a blocker, filters work, an in-scope write waits for one exact
+// host Allow-once decision, raw GraphQL is refused while gh's own commands work, and a branch
+// with a slash goes into a `gh api` path. Driven through the production staging and briefing
 // packs, so deleting the file or the convention that delivers it fails here.
 func TestTheGitHubPackBriefsEveryAgentOnGHInTheJail(t *testing.T) {
 	shipped, err := officialpacks.FS.ReadFile("github/briefing/gh.md")
@@ -26,8 +26,10 @@ func TestTheGitHubPackBriefsEveryAgentOnGHInTheJail(t *testing.T) {
 	for _, want := range []string{
 		"`gh` here is `~/.yolo/bin/block/gh`, the github pack's forwarder, not a blocker.",
 		"`--jq` and `--template` work as in `gh`",
-		"exits 77 at once",
-		"The refusal prints a `yolo host-run` line for the user to run on the host, which sends the output back here; if their yolo has no `host-run`, ask the user to run it on the host.",
+		"files a pending request and waits briefly for the host",
+		"exact host approval",
+		"`--for` and `--add` are refused for GitHub writes",
+		"A configured `on_request` hook is optional; its output is never consent.",
 		"Raw `gh api graphql` is always refused; `gh`'s own commands",
 		"`repos/OWNER/REPO/branches/MS%2Fmain`",
 		"`gh auth status` names the login",

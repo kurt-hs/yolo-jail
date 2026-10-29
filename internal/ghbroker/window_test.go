@@ -5,11 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
-	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
-	"github.com/mschulkind-oss/yolo-jail/internal/frameproto"
-	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
-	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,8 +16,13 @@ import (
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerlock"
+	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
+	"github.com/mschulkind-oss/yolo-jail/internal/frameproto"
+	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
 
 func windowFixture(t *testing.T) (*Broker, *atomic.Int32) {
@@ -56,6 +56,71 @@ func writeReq() Request {
 func callWindow(b *Broker, ctx context.Context) int {
 	return b.ServeContext(ctx, writeReq(), paths.JailShortHash(b.authority.scope.Container), func([]byte) {}, func([]byte) {})
 }
+func TestWindowedWriteDoesNotSpendLegacySetWideGrant(t *testing.T) {
+	b, executed := windowFixture(t)
+	if code := callWindow(b, context.Background()); code != ExitTempFail {
+		t.Fatalf("first write did not file a pending request: %d", code)
+	}
+	requests, _, err := b.store.List()
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("requests: %+v, %v", requests, err)
+	}
+	legacy, err := b.store.Decide(requests[0].ID, "pending", brokerstore.Decision{For: time.Minute})
+	if err != nil || legacy.Digest != "" {
+		t.Fatalf("legacy timed grant: %+v, %v", legacy, err)
+	}
+	if code := callWindow(b, context.Background()); code != ExitTempFail {
+		t.Fatalf("legacy set-wide grant authorized write: %d", code)
+	}
+	if executed.Load() != 0 {
+		t.Fatalf("legacy set-wide grant dispatched %d times", executed.Load())
+	}
+	requests, grants, err := b.store.List()
+	var replacementPending bool
+	for _, request := range requests {
+		replacementPending = replacementPending || request.ID != legacy.Request && request.State == "pending"
+	}
+	if err != nil || len(requests) != 2 || !replacementPending || len(grants) != 1 || grants[0].Uses != legacy.Uses {
+		t.Fatalf("legacy grant was spent or no replacement request filed: requests=%+v grants=%+v err=%v", requests, grants, err)
+	}
+}
+
+func TestWindowedGitHubGrantBindsStdinDigest(t *testing.T) {
+	b, executed := windowFixture(t)
+	jail := paths.JailShortHash(b.authority.scope.Container)
+	req := Request{Argv: []string{"pr", "comment", "1", "--body-file", "-"}, Repo: "o/r", Stdin: []byte("approved body"), StdinSent: true}
+	call := func() int {
+		return b.ServeContext(context.Background(), req, jail, func([]byte) {}, func([]byte) {})
+	}
+	if code := call(); code != ExitTempFail {
+		t.Fatalf("write did not file pending request: %d", code)
+	}
+	requests, _, err := b.store.List()
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("requests: %+v, %v", requests, err)
+	}
+	grant, err := b.store.Decide(requests[0].ID, "pending", brokerstore.Decision{})
+	if err != nil || grant.Digest == "" {
+		t.Fatalf("exact grant: %+v, %v", grant, err)
+	}
+	req.Stdin = []byte("changed body")
+	if code := call(); code != ExitTempFail {
+		t.Fatalf("changed stdin used an exact grant: %d", code)
+	}
+	requests, grants, err := b.store.List()
+	var originalAllowed, changedPending bool
+	for _, request := range requests {
+		if request.Digest == grant.Digest {
+			originalAllowed = request.State == "allowed"
+		} else {
+			changedPending = request.State == "pending"
+		}
+	}
+	if err != nil || len(requests) != 2 || !originalAllowed || !changedPending || len(grants) != 1 || grants[0].Uses != 1 || executed.Load() != 0 {
+		t.Fatalf("changed stdin spent or dispatched the grant: requests=%+v grants=%+v calls=%d err=%v", requests, grants, executed.Load(), err)
+	}
+}
+
 func TestWindowHandlerRequiredDeliveryAndAuditOrdering(t *testing.T) {
 	b, n := windowFixture(t)
 	b.delivery = nil
@@ -150,7 +215,7 @@ func TestWindowHandlerNarrowingTeardownExpiryAndRevocation(t *testing.T) {
 			}
 			rs, _, _ := b.store.List()
 			q := rs[0]
-			g, err := b.store.Decide(q.ID, "pending", brokerstore.Decision{For: time.Minute})
+			g, err := b.store.Decide(q.ID, "pending", brokerstore.Decision{})
 			if err != nil {
 				t.Fatal(err)
 			}

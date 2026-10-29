@@ -73,61 +73,33 @@ func TestServeRunsAReadAndAuditsIt(t *testing.T) {
 	}
 }
 
-// §11 step 1: every read-write command exits 77, runs nothing, and is audited. BB-D66: the
-// answer says why (a write needs the host user's approval, not built yet), that nothing is
-// waiting, and the next step, which is the host's.
-func TestServeAnswersEveryWrite77AndRunsNothing(t *testing.T) {
+// Without a production host delivery path, a write fails closed and runs nothing.
+func TestServeRefusesWriteWithoutHostDelivery(t *testing.T) {
 	f := newBrokerFixture(t, "2.101.0")
 	code, _, errOut := f.serve(t, Request{Argv: []string{"pr", "comment", "32", "-R", "o/r", "--body-file", "-"},
 		Stdin: []byte("hi"), StdinSent: true})
-	if code != ExitNoPerm {
+	if code != ExitNoPerm || !strings.Contains(errOut, "required request notice and answer delivery are unavailable") ||
+		!strings.Contains(errOut, "ask the user to run the command on the host") {
 		t.Fatalf("code %d err %q", code, errOut)
-	}
-	for _, want := range []string{"`gh pr comment` is a write", "no write runs from a jail yet",
-		"with the host user's login", "approval step is not built yet", "Nothing ran and nothing is waiting (exit 77)",
-		"ask the user to run it on the host", "this call sent standard input", "`--body-file <a file in the workspace>`",
-		"If their yolo has no `host-run`, ask them to run the `gh` command there and paste the output;",
-		"`yolo audit --set read-write`"} {
-		if !strings.Contains(errOut, want) {
-			t.Errorf("the write's answer lacks %q:\n%s", want, errOut)
-		}
-	}
-	if strings.Contains(errOut, "yolo host-run -C") {
-		t.Errorf("a call that sent stdin got a host-run line it cannot carry:\n%s", errOut)
 	}
 	if entries, _ := os.ReadDir(filepath.Join(f.fakeDir, "calls")); len(entries) != 0 {
 		t.Fatalf("a write ran gh")
 	}
 	ev := lastAudit(t)
-	if ev.Set != SetReadWrite || ev.Outcome != "denied" || *ev.Exit != ExitNoPerm || ev.Stdin == nil ||
+	if ev.Set != SetReadWrite || ev.Outcome != "refused" || *ev.Exit != ExitNoPerm || ev.Stdin == nil ||
 		ev.Stdin.Bytes != 2 {
 		t.Fatalf("audit line %+v", ev)
 	}
 }
 
-// HX-D48: a write with no stdin prints the ready `yolo host-run` line from the workspace and
-// the canonical argv, keeping the old instruction as the fallback; a word the rune check
-// refuses gets no line.
-func TestServeWrite77PrintsAHostRunLine(t *testing.T) {
+func TestServeRefusesWriteWithoutDeliveryRatherThanOfferingHostRun(t *testing.T) {
 	f := newBrokerFixture(t, "2.101.0")
 	code, _, errOut := f.serve(t, Request{Argv: []string{"pr", "merge", "42", "-R", "o/r"}})
-	if code != ExitNoPerm {
+	if code != ExitNoPerm || !strings.Contains(errOut, "required request notice and answer delivery are unavailable") || strings.Contains(errOut, "yolo host-run") {
 		t.Fatalf("code %d err %q", code, errOut)
 	}
-	flat := strings.Join(strings.Fields(errOut), " ")
-	for _, want := range []string{
-		"give the user this line to run in a terminal on the host; its output comes back to this workspace (`yolo host-run wait` waits for it):",
-		"`yolo host-run -C /home/u/code/app -- gh pr merge --repo=o/r 42`",
-		"If their yolo has no `host-run`, ask them to run the `gh` command there and paste the output;",
-		"`yolo audit --set read-write`",
-	} {
-		if !strings.Contains(flat, want) {
-			t.Errorf("the write's answer lacks %q:\n%s", want, errOut)
-		}
-	}
-	code, _, errOut = f.serve(t, Request{Argv: []string{"pr", "comment", "42", "-R", "o/r", "--body", "a\u202eb"}})
-	if code != ExitNoPerm || strings.Contains(errOut, "yolo host-run -C") || !strings.Contains(errOut, "move that text to a file") {
-		t.Fatalf("code %d err %q", code, errOut)
+	if entries, _ := os.ReadDir(filepath.Join(f.fakeDir, "calls")); len(entries) != 0 {
+		t.Fatalf("a write ran gh")
 	}
 }
 
@@ -397,18 +369,18 @@ func TestForwardThroughTheFront(t *testing.T) {
 		t.Fatalf("the audit line must carry the preamble's jail id: %+v", ev)
 	}
 
-	// stdin crosses when the argv reads it, and a write answers 77 through the front, at once:
-	// step 1 has no approval to wait for, so nothing holds the call (BB-D66).
+	// This transport fixture has no production request store or delivery, so the write fails
+	// closed immediately. The separate production-caller tests exercise the manual host path.
 	out.Reset()
 	errOut.Reset()
 	start := time.Now()
 	code = Forward([]string{"pr", "comment", "1", "--body-file", "-"}, ForwardEnv{Getenv: env,
 		Stdin: strings.NewReader("body"), Stdout: &out, Stderr: &errOut, OriginRepo: func() string { return "o/r" }})
-	if code != ExitNoPerm || !strings.Contains(errOut.String(), "nothing is waiting") {
-		t.Fatalf("a forwarded write: code %d err %q", code, errOut.String())
+	if code != ExitNoPerm || !strings.Contains(errOut.String(), "required request notice and answer delivery are unavailable") {
+		t.Fatalf("a forwarded write without required delivery: code %d err %q", code, errOut.String())
 	}
 	if took := time.Since(start); took > 5*time.Second {
-		t.Fatalf("a forwarded write took %s; it must answer at once", took)
+		t.Fatalf("a write without delivery took %s", took)
 	}
 	if ev := lastAudit(t); ev.Stdin == nil || ev.Stdin.Bytes != 4 {
 		t.Fatalf("stdin was not forwarded: %+v", ev)

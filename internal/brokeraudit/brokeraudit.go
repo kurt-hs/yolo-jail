@@ -72,6 +72,10 @@ type Event struct {
 	// not parse, the argv the jail sent.
 	Argv  []string `json:"argv"`
 	Stdin *Stdin   `json:"stdin,omitempty"`
+	// CommandDigest binds a request or grant-use event to the canonical argv/repository/stdin
+	// action digest held by the broker store. StdinDigest names the exact stdin bytes' digest.
+	CommandDigest string `json:"command_digest,omitempty"`
+	StdinDigest   string `json:"stdin_digest,omitempty"`
 	// Repo is the repository the command touched, when it names one. For git it is the
 	// repository identity (host/path, docs/design/git-broker-plan.md ID-3).
 	Repo string `json:"repo,omitempty"`

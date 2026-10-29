@@ -15,10 +15,11 @@ import (
 
 // The broker's own process runs the user's on_request (BB-D75): with the key in the user
 // config, a request this broker lifetime files runs the hook with the request on stdin and
-// YOLO_BIN naming the broker's own executable, with no watch kept open. The hook only
-// notifies, so the request is still pending after it ran. It runs the real daemon process
-// (Main, through brokercore.Daemon.Main), so deleting the daemon's brokercore.StartOnRequest
-// call, or Main's handing it the broker's store and start id, fails this test.
+// YOLO_BIN naming the broker's own executable, with no watch kept open. A trusted hook may run
+// the host CLI itself, but its output or exit status is not consent; this hook only prints
+// "approve", so the request stays pending. It runs the real daemon process (Main, through
+// brokercore.Daemon.Main), so deleting the daemon's brokercore.StartOnRequest call, or Main's
+// handing it the broker's store and start id, fails this test.
 func TestTheBrokerRunsTheUsersOnRequest(t *testing.T) {
 	dir := resolvedDir(t)
 	stdin := filepath.Join(dir, "stdin.json")

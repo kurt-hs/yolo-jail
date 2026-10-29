@@ -11,10 +11,13 @@ GitHub repositories. The jail holds no GitHub token; `gh auth status` names the 
   grant it from the jail.
 - With the read grant, reads run, and their output and exit codes are `gh`'s own. `--jq` and `--template` work as in
   `gh`, and so does piping `--json` output into `jq`.
-- A write (`gh pr comment`, `gh issue edit`, `gh api -X POST …`) runs nothing and exits 77 at
-  once: writes from a jail need an approval step that is not built yet. The refusal prints a
-  `yolo host-run` line for the user to run on the host, which sends the output back here; if
-  their yolo has no `host-run`, ask the user to run it on the host.
+- An in-scope write files a pending request and waits briefly for the host. Tell the user to run
+  `yolo approve <id>` on the host to allow that exact command once, or `yolo approve <id> --deny`.
+  The approval binds command, repository and stdin digest, is one use, and expires after 15 minutes.
+  `--for` and `--add` are refused for GitHub writes; a legacy set-wide grant is not spent. If the
+  request times out, it remains visible in the host broker log and `yolo approve`, and the same
+  command can be retried after approval. A configured `on_request` hook is optional; its output
+  is never consent.
 - Exit 64 is a refusal, and its message says why and what to do instead. Refused: anything that
   could print the credential or reach the host, a repository outside this workspace's scope, and
   every call across the account. Raw `gh api graphql` is always refused; `gh`'s own commands
@@ -29,9 +32,9 @@ GitHub repositories. The jail holds no GitHub token; `gh auth status` names the 
   Nothing changes before that y.
 - A wildcard entry reaches more than one repository: `*/*` is every repository the host login can
   reach, `OWNER/*` is one owner's, `*/REPO` is that name under any owner. A whole segment is the
-  only wildcard form. Use one only when the user asks for that reach; it goes through the same
-  approval and stays read-only, and it still does not admit a command that acts across the
-  account (a search with no `--repo`, `gh repo list`, `gh status`).
+  only wildcard form. Use one only when the user asks for that reach; it widens only the repository
+  scope. Writes still require exact host approval, and commands that act across the account remain
+  refused (a search with no `--repo`, `gh repo list`, `gh status`).
 - In a `gh api` path, percent-encode a slash in a branch name as usual:
   `repos/OWNER/REPO/branches/MS%2Fmain`.
 - Exit 69: no broker in this jail, or no `gh` login on the host.

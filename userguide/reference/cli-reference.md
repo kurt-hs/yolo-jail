@@ -117,6 +117,13 @@ revoke it. `yolo approve <request> --for <duration>` sets how long; `--for sessi
 whatever restarts in between. Removing a repository from the project's approved scope ends what
 an approval on that repository covers.
 
+GitHub writes use only Allow once: the exact command, resolved repository and stdin digest, one
+use within 15 minutes. `--for` and `--add` are refused for GitHub requests, and a legacy set-wide
+grant does not authorize a write. A configured `on_request` hook may notify or run the host CLI,
+but is optional and its output alone is never consent. Without a hook, the broker log and host
+`yolo approve` command remain available for manual decisions.
+
+
 `yolo approve`, on the host, lists the broker's requests and grants and each project's git
 working set (the branches the agent created under a create-branch grant, and, marked
 `from config`, those a branch grant in a running project's config declares; see

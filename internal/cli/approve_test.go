@@ -24,6 +24,49 @@ func approvalFixture(t *testing.T) (*brokerstore.Store, brokerstore.Request) {
 	}
 	return s, r
 }
+func TestGitHubApproveRefusesSetWideDecisionsButOtherSourcesKeepThem(t *testing.T) {
+	newRequest := func(t *testing.T, source string) (*brokerstore.Store, brokerstore.Request) {
+		t.Helper()
+		s := &brokerstore.Store{Dir: t.TempDir(), Source: source, Revalidate: func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }}
+		q, err := s.File(brokerstore.Request{Jail: "j", Start: "s", Workspace: "/code/app", Argv: []string{"pr", "merge", "1"}, Repo: "o/r", StdinDigest: "stdin", Set: "read-write", Policy: brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: time.Hour, Uses: 25}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s, q
+	}
+
+	gh, request := newRequest(t, ghbroker.Source)
+	for _, args := range [][]string{{request.ID, "--for", "15m"}, {request.ID, "--add"}} {
+		var out, errs bytes.Buffer
+		if rc := approveMain(context.Background(), args, false, gh, &out, &errs); rc != approveExitPolicy || !strings.Contains(errs.String(), "Allow once") || !strings.Contains(errs.String(), "yolo approve "+request.ID) {
+			t.Fatalf("GitHub set-wide decision %v: rc %d, out %q, err %q", args, rc, out.String(), errs.String())
+		}
+	}
+	requests, grants, err := gh.List()
+	if err != nil || len(requests) != 1 || requests[0].State != "pending" || len(grants) != 0 {
+		t.Fatalf("GitHub request changed after refused decisions: requests=%+v grants=%+v err=%v", requests, grants, err)
+	}
+	var out, errs bytes.Buffer
+	if rc := approveMain(context.Background(), []string{request.ID}, false, gh, &out, &errs); rc != 0 {
+		t.Fatalf("GitHub Allow once: rc %d, err %q", rc, errs.String())
+	}
+	_, grants, err = gh.List()
+	if err != nil || len(grants) != 1 || grants[0].Digest != request.Digest || grants[0].Uses != 1 {
+		t.Fatalf("GitHub Allow once was not exact: %+v err=%v", grants, err)
+	}
+
+	git, gitRequest := newRequest(t, "git")
+	out.Reset()
+	errs.Reset()
+	if rc := approveMain(context.Background(), []string{gitRequest.ID, "--for", "15m"}, false, git, &out, &errs); rc != 0 {
+		t.Fatalf("other source --for semantics changed: rc %d, err %q", rc, errs.String())
+	}
+	_, grants, err = git.List()
+	if err != nil || len(grants) != 1 || grants[0].Digest != "" {
+		t.Fatalf("other source set-wide grant changed: %+v err=%v", grants, err)
+	}
+}
+
 func TestApproveOperatorPaths(t *testing.T) {
 	s, r := approvalFixture(t)
 	var out, errs bytes.Buffer

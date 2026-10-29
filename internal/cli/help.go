@@ -59,7 +59,7 @@ var commandHelp = []struct{ name, blurb string }{
 	{"claude-auth", "Manage the machine-wide Claude login: 'status', 'inspect', 'refresh', 'logout'"},
 	{"loopholes", "List and self-check host-capability loopholes"},
 	// The github-broker's two ends, together: what a jail runs, and what the host kept.
-	{"gh", "In a jail: run gh through the github-broker, with the host's login (read-only for now)"},
+	{"gh", "In a jail: run gh through the github-broker, with the host's login (host-approved exact writes)"},
 	{"git-remote", "In a jail: git's remote helper for the git-broker"},
 	{"audit", "List every brokered call (e.g. the jail's gh commands) and what became of it"},
 	{"approve", "Host request and grant decisions, and the git working set"},

@@ -1,13 +1,13 @@
 ---
-title: "GitHub write approval Stage 1 QA evidence"
+title: "GitHub write approval Stage 2 QA evidence"
 status: accepted
 stage: CURRENT
-next: "Append Stage 2 implementation and combined-tree validation evidence as it is completed"
+next: "Commit the private candidate, rerun clean-tree integration and dev-bundle checks, then obtain independent review"
 tags: [qa, github, approvals, evidence]
 summary: "Recorded Stage 1 baseline and intentionally red production-caller evidence for exact GitHub write approval."
 ---
 
-# GitHub write approval Stage 1 QA evidence
+# GitHub write approval Stage 2 QA evidence
 
 **Written against:** `b8a32ac0ff0a06d417ed5725a1e62239afd505e0` (2026-10-28). The private worktree
 and `main` both had this commit at task admission; Stage 1 did not write to `main`. The governing
@@ -16,7 +16,7 @@ rulings remain [`BB-D77`](../design/boundary-broker.md#BB-D77) (exact Allow once
 [`BB-D99`](../design/boundary-broker.md#BB-D99) (workspace-held, restart-safe grants). This page
 records evidence; it does not replace those decisions.
 
-## Stage 1 checks
+## Stage 1 checks (historical)
 
 | Command / evidence | Result |
 | :--- | :--- |
@@ -36,7 +36,21 @@ credential change, user-config edit or production implementation was performed. 
 places the endpoint under `paths.JailShortHash("approval-fixture")`, matching the scope container's
 host-asserted identity; no production identity check was weakened.
 
-The tracked source map, future exact-only window-test correction, conditional completion census,
-full final integration suite, durable-workspace nested bundle check, and clean `just done` gate are
-specified in the [implementation plan](../design/github-write-approval-plan.md). Record final Stage 2
-commands and outcomes here after running them.
+## Stage 2 candidate checks (2026-10-28)
+
+| Command / evidence | Result |
+| :--- | :--- |
+| `go test -short -count=1 -timeout 0 ./internal/brokerstore ./internal/brokercore ./internal/ghbroker ./internal/cli ./internal/cli/run` | Passed after rewriting GitHub timed-grant tests for exact, one-use grants; generic brokerstore behavior remains covered. |
+| `go test -count=1 -run '^TestProductionGitHubWriteApprovalFlow$' ./internal/cli` | Passed against production daemon/front/host CLI with fake host `gh`, both with and without the optional hook; hook output alone did not approve. |
+| `go test -count=1 -run '^TestGitHubBrokerRunsAReadAgainstTheHostGH$' ./integration` | Passed; this used the real jail test harness and fake host `gh`. |
+| `python3 scripts/completion-census.py` | Passed; updated `scripts/completion-readers.json` for the added exact-consume and production-caller tests. |
+| `just check-ci` | Failed in unrelated environment-sensitive tests: `internal/cli/check/TestASignalToCheckStopsItsNix` could not ready after podman connection failures, and `internal/macosuser/TestStageFontCopyConcurrentLaunchesAgree` plus a macOS-only `chmod +a` test failed on Linux. The changed packages passed in this run. |
+| `go test -count=1 -timeout 0 ./integration` | All but `TestTheJailsYoloCarriesItsMatchedBundleStamp` completed successfully; it failed because the uncommitted candidate's binary version had a `.dirty` suffix. Rerun after candidate commit before acceptance. |
+| `just format` | Passed. |
+| Merge of `d159a57f03310f3da5ed49dda7546763361e9a38` | Merged by normal ancestry into this private branch; `main` remains unchanged. |
+
+Still outstanding: clean-candidate `just check-ci`/full integration follow-up, absolute-path
+`just build-dev-bundle` invocation from the durable scratch workspace, `just done`, and independent
+review. The integration run takes approximately 13 minutes here. The nested preflight is podman
+rootful (`false` for `.Host.Security.Rootless`) with `slirp4netns`; nested evidence will not establish
+rootless-only or real reachability behavior.

@@ -17,9 +17,9 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// onRequestExample is config-ref's worked example, word for word: the three buttons of
-// OQ-BB3, each calling plain `yolo approve`, which the broker's private `yolo` link resolves.
-const onRequestExample = `a=$(notify-send -A once="Allow once" -A rw="Read-write 15 min" -A deny=Deny "$YOLO_REQUEST_SUMMARY"); case "$a" in once) yolo approve "$YOLO_REQUEST_ID";; rw) yolo approve "$YOLO_REQUEST_ID" --for 15m;; deny) yolo approve "$YOLO_REQUEST_ID" --deny;; esac`
+// onRequestExample is config-ref's optional notification example. It runs the existing host CLI;
+// the hook's output is never consent.
+const onRequestExample = `a=$(notify-send -A once="Allow once" -A deny=Deny "$YOLO_REQUEST_SUMMARY"); case "$a" in once) yolo approve "$YOLO_REQUEST_ID";; deny) yolo approve "$YOLO_REQUEST_ID" --deny;; esac`
 
 // A click does exactly what the CLI does, because it IS the CLI (BB-D75): the documented
 // example, with a stand-in notify-send answering each button in turn, runs the real
@@ -78,7 +78,7 @@ func TestTheOnRequestExampleDecidesThroughTheCLI(t *testing.T) {
 	write(yolo, "exec '"+exe+"' "+testAsYoloArg+" \"$@\"\n")
 	write(filepath.Join(bin, "notify-send"), `case "$*" in
   *"o/r 1") echo once ;;
-  *"o/r 2") echo rw ;;
+  *"o/r 2") echo once ;;
   *"o/r 3") echo deny ;;
   *) touch "$HOME/asked-4"; echo "maybe later" ;;
 esac
@@ -107,7 +107,8 @@ esac
 		}
 		return q
 	}
-	once, rw, deny := file("1"), file("2"), file("3") // three: the pending limit per jail
+	// Allow once, Allow once, Deny: three decisions within the pending limit per jail.
+	once, second, deny := file("1"), file("2"), file("3")
 	state := func(id string) string {
 		rs, _, err := s.List()
 		if err != nil {
@@ -121,14 +122,14 @@ esac
 		return ""
 	}
 	deadline := time.Now().Add(60 * time.Second)
-	for state(once.ID) == "pending" || state(rw.ID) == "pending" || state(deny.ID) == "pending" {
+	for state(once.ID) == "pending" || state(second.ID) == "pending" || state(deny.ID) == "pending" {
 		if time.Now().After(deadline) {
-			t.Fatalf("the clicks did not decide: once %s, rw %s, deny %s", state(once.ID), state(rw.ID), state(deny.ID))
+			t.Fatalf("the clicks did not decide: once %s, second %s, deny %s", state(once.ID), state(second.ID), state(deny.ID))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if state(once.ID) != "allowed" || state(rw.ID) != "allowed" || state(deny.ID) != "denied" {
-		t.Fatalf("once %s, rw %s, deny %s", state(once.ID), state(rw.ID), state(deny.ID))
+	if state(once.ID) != "allowed" || state(second.ID) != "allowed" || state(deny.ID) != "denied" {
+		t.Fatalf("once %s, second %s, deny %s", state(once.ID), state(second.ID), state(deny.ID))
 	}
 	_, gs, err := s.List()
 	if err != nil {
@@ -138,12 +139,12 @@ esac
 	for _, g := range gs {
 		byRequest[g.Request] = g
 	}
-	// Allow once: that one command, one use. Read-write 15 min: the whole set, its use cap.
+	// Each Allow once creates one exact use for the request's command.
 	if g := byRequest[once.ID]; g.Digest != once.Digest || g.Uses != 1 {
-		t.Fatalf("Allow once issued %+v", g)
+		t.Fatalf("first Allow once issued %+v", g)
 	}
-	if g := byRequest[rw.ID]; g.Digest != "" || g.Uses != rw.Policy.Uses || time.Until(g.Expires) > 15*time.Minute {
-		t.Fatalf("Read-write 15 min issued %+v", g)
+	if g := byRequest[second.ID]; g.Digest != second.Digest || g.Uses != 1 {
+		t.Fatalf("second Allow once issued %+v", g)
 	}
 	garbage := file("4")
 	for {

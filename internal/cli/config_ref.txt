@@ -499,18 +499,16 @@
     YOLO_REQUEST_SUMMARY is one line of at most 2048 bytes: the request id, the
     set, the repository and the jail first, then the command, each value over
     60 characters cut to its first 40 with its length and a short hash.
-    IT ONLY NOTIFIES.  yolo reads nothing back from the command.  To decide,
-    the command runs `yolo approve` itself, so a button does exactly what that
-    command does, with its checks, refusals and audit.
+    IT ONLY NOTIFIES.  yolo reads nothing back from the command, and no hook is
+    required: a pending request is also visible in the background broker log and
+    can be answered manually with `yolo approve` on the host.  When configured,
+    the hook runs the CLI itself, so its buttons get the same checks, refusals and audit.
     Example (~/.config/yolo-jail/config.jsonc), a desktop notification with
-    the three buttons Allow once, Read-write 15 min and Deny:
-      "on_request": "a=$(notify-send -A once=\"Allow once\" -A rw=\"Read-write 15 min\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) yolo approve \"$YOLO_REQUEST_ID\";; rw) yolo approve \"$YOLO_REQUEST_ID\" --for 15m;; deny) yolo approve \"$YOLO_REQUEST_ID\" --deny;; esac"
-    Allow once is `yolo approve <id>`: that one command, once.  Read-write 15
-    min is `--for 15m`: the whole requested set for 15 minutes, within its
-    ceiling.  The same lines can live in a script the key names instead.
-    These buttons are provisional: grants are being reworked per resource,
-    and the example will follow.  "$YOLO_BIN" approve works wherever plain
-    yolo approve does.
+    Allow once and Deny buttons (GitHub writes accept Allow once only):
+      "on_request": "a=$(notify-send -A once=\"Allow once\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) yolo approve \"$YOLO_REQUEST_ID\";; deny) yolo approve \"$YOLO_REQUEST_ID\" --deny;; esac"
+    Allow once is `yolo approve <id>`: the exact command, once.  `--for` and
+    `--add` are refused for GitHub writes.  The same lines can live in a script
+    the key names instead.  `"$YOLO_BIN" approve` works wherever plain yolo approve does.
     • A run may take as long as its request waits, one hour, so a notification
       left on screen can still be answered; several requests run several
       commands at once.  As soon as the request stops waiting, whichever way

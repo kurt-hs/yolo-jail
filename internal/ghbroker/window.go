@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -16,12 +17,29 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// RequiredDelivery is deliberately not provided by production yet. Ready means
-// both request delivery (including the no-notifier launch notice) and later answer
-// delivery are available. OQ-BB10 and yolo notify are not waived by manual discovery.
+// RequiredDelivery is the host-side visibility path for a pending request. The background
+// broker log points to the existing host yolo approve command; a configured on_request hook
+// may complement it, but manual host approval is always available.
 type RequiredDelivery interface {
 	Ready() bool
 	Request(context.Context, brokerstore.Request) error
+}
+
+type logRequestDelivery struct {
+	log io.Writer
+}
+
+func (d *logRequestDelivery) Ready() bool { return d != nil && d.log != nil }
+
+func (d *logRequestDelivery) Request(ctx context.Context, q brokerstore.Request) error {
+	if !d.Ready() {
+		return errors.New("host broker log is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(d.log, "github-broker: request %s is pending; run `yolo approve %s` on the host\n", q.ID, q.ID)
+	return err
 }
 
 // StoreAudit is the github store's required audit hook (brokercore.StoreAudit).
@@ -74,6 +92,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	sum := sha256.Sum256(req.Stdin)
 	q := brokerstore.Request{Jail: jail, Start: b.startID, Workspace: b.workspace, LaunchID: b.authority.scope.LaunchID, Argv: d.Argv, Repo: strings.Join(d.Repos, ","), Set: d.Set, Policy: p, StdinDigest: hex.EncodeToString(sum[:])}
 	q.Digest = brokerstore.CommandDigest(q)
+	ev.CommandDigest, ev.StdinDigest = q.Digest, q.StdinDigest
 	// A grant is held by its workspace (boundary-broker.md BB-D99), so its parent request may
 	// come from a jail or broker lifetime that is gone. The gate checks that the parent is this
 	// workspace's, then revalidates BOTH the parent's command and the ACTUAL invocation against
@@ -99,10 +118,13 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 			return true, ExitTempFail, "caller disconnected or broker stopped; nothing ran; run the same command again: a grant approved for it is kept across a broker or jail restart and covers the retry"
 		}
 		code := ExitTempFail
-		_, ok, err := b.store.ConsumeDispatchContext(ctx, b.workspace, jail, d.Set, q.Digest, gate, func() error {
+		used, ok, err := b.store.ConsumeExactDispatchContext(ctx, b.workspace, jail, d.Set, q.Digest, gate, func() error {
 			code = b.dispatch(ctx, req, d, stdout, stderr, ev)
 			return nil
 		})
+		if ok {
+			ev.Request, ev.Grant = used.Request, used.ID
+		}
 		if err != nil {
 			return true, ExitUnavailable, "authorization or required audit failed: " + err.Error() + "; retry after repairing the host authority"
 		}
@@ -129,6 +151,7 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		}
 		return ExitUnavailable, "request filing failed: " + err.Error() + "; repair the host policy/audit and retry"
 	}
+	ev.Request = q.ID
 	if err = b.delivery.Request(ctx, q); err != nil {
 		return ExitTempFail, fmt.Sprintf("%s remains pending; delivery failed; run `yolo approve %s` on the host", q.ID, q.ID)
 	}

@@ -2,7 +2,7 @@
 title: "Implementation plan: production GitHub Allow once"
 status: accepted
 stage: DECIDED
-next: "Implement Stage 2 tasks 1–7 under the lead's authorization"
+next: "Commit the Stage 2 candidate, rerun final validation on the clean candidate, and obtain independent review"
 tags: [implementation-plan, github, approvals, security]
 summary: "A source-grounded hand-off to wire one exact host-approved GitHub write without changing other broker sources or enabling standing writes."
 ---
@@ -192,6 +192,7 @@ Before final combined-tree gates, merge the exact root-authorized docs-only comm
 ## Stage boundary
 
 Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead has
-authorized Stage 2 under this bounded contract. Continue from the private Stage 1 history, keep
-Issue 65 open as an upstream wait, and do not change user config, credentials, repository grants or
-main. Run and record every Stage 2 gate in the named [QA evidence](../research/github-write-approval-qa.md).
+authorized Stage 2 under this bounded contract. Tasks 1–6 are implemented in the current private
+candidate; tasks 7's final clean-tree gates and independent review remain. Keep Issue 65 open as an
+upstream wait, and do not change user config, credentials, repository grants or main. Record final
+Stage 2 commands and outcomes in the named [QA evidence](../research/github-write-approval-qa.md).

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mschulkind-oss/yolo-jail/internal/hostrun"
 	"io"
 	"os"
 	"slices"
@@ -31,10 +30,8 @@ import (
 // behind yolo's own loopback-TLS front, so every connection carries the host-asserted jail
 // id in its preamble (BB-D1).
 //
-// Step 1 is the read path: a command in the standing `read-only` set, in scope, runs the
-// host's gh and its stdout, stderr and exit code cross verbatim (OQ-C); a refused or
-// out-of-scope command exits 64; every read-write command exits 77, "writes need approval,
-// which this version cannot ask for". Every call is audited.
+// The read path is standing within host scope; an in-scope write files a pending request and
+// waits for an exact host Allow-once decision before required audit and dispatch.
 
 // Source is the GitHub broker's source name: the approval record's scope key, the store's
 // directory and the audit log's `service`. It is also what packs/github's manifest declares
@@ -149,8 +146,11 @@ func newBroker(sf brokerscope.File, spawnCwd string, log io.Writer) (*Broker, fu
 		audit: brokeraudit.Open(paths.BrokerAuditLog(), func(msg string) {
 			fmt.Fprintln(log, "github-broker:", msg)
 		}),
-		log: log,
-		now: time.Now,
+		// Production requests are surfaced in the host broker log; a configured on_request hook
+		// may notify the user, while manual yolo approve remains the answer path without one.
+		delivery: &logRequestDelivery{log: log},
+		log:      log,
+		now:      time.Now,
 	}
 	cleanup := func() {
 		_ = b.authority.Close()
@@ -380,11 +380,8 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 			say("current host authority refused: " + err.Error() + "; repair the host policy or relaunch the jail")
 			return finish(ExitNoPerm)
 		}
-		// A configured standing write still passes through required delivery and
-		// transaction-audit dispatch; it cannot escape via the standing read branch.
-		if d.Outcome == OutcomeWindowed && current.Outcome == OutcomeStanding {
-			current.Outcome = OutcomeWindowed
-		}
+		// Authority.Classify rejects a standing read-write policy before reaching this point;
+		// standing reads keep their original path and windowed writes stay request-gated.
 		d = current
 	}
 	ev.Repo = strings.Join(d.Repos, ",")
@@ -401,34 +398,22 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		say("out of scope: " + d.Reason)
 		return finish(ExitUsage)
 	case OutcomeWindowed:
-		if b.delivery != nil && b.delivery.Ready() {
-			bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-			ctx = bounded
-			code, msg := b.window(ctx, req, jail, d, stdout, stderr, &ev)
-			ev.Set = d.Set
-			if ev.Outcome != "ran" {
-				ev.Outcome = "refused"
-				if code == ExitTempFail {
-					ev.Outcome = "pending"
-				}
+		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		ctx = bounded
+		code, msg := b.window(ctx, req, jail, d, stdout, stderr, &ev)
+		ev.Set = d.Set
+		if ev.Outcome != "ran" {
+			ev.Outcome = "refused"
+			if code == ExitTempFail {
+				ev.Outcome = "pending"
 			}
-			ev.Reason = msg
-			if msg != "" {
-				say(msg)
-			}
-			return finish(code)
 		}
-		// BB-D66: at once, never a wait. Step 1 has no request store and no notifier, so
-		// there is nothing to wait for; the 30-second wait of §3.2 arrives with them.
-		ev.Set, ev.Outcome = d.Set, "denied"
-		ev.Reason = "writes need approval, which this version cannot ask for"
-		say("`gh " + d.Path + "` is a write (the " + d.Set + " set), and no write runs from a jail yet: " +
-			"a write acts on GitHub with the host user's login, so it needs that user's approval on the " +
-			"host, and that approval step is not built yet. Nothing ran and nothing is waiting (exit " +
-			"77). " + hostRunHandoff(b.workspace, d.Argv, req.StdinSent) + " `yolo audit --set read-write` " +
-			"there shows the exact command.")
-		return finish(ExitNoPerm)
+		ev.Reason = msg
+		if msg != "" {
+			say(msg)
+		}
+		return finish(code)
 	}
 
 	// A standing read.
@@ -551,27 +536,4 @@ func agentName(s string) string {
 		}
 	}
 	return s
-}
-
-// hostRunHandoff is the write's next step: a `yolo host-run` line for the user to run on the
-// host, which sends the output back to this workspace (docs/design/host-run-mailbox.md,
-// HX-D48), with the old instruction as the fallback. A call that sent standard input, or holds
-// a word the host form's rune check refuses, gets no line: the line could not carry it.
-func hostRunHandoff(workspace string, argv []string, stdinSent bool) string {
-	const fallback = "If their yolo has no `host-run`, ask them to run the `gh` command there and paste the output;"
-	if stdinSent {
-		return "To make the change, ask the user to run it on the host: this call sent standard input, " +
-			"which a `yolo host-run` line cannot carry, so put that text in a file in the workspace, pass " +
-			"`--body-file <a file in the workspace>` instead, and give the user that `yolo host-run` line " +
-			"(`yolo host-run --help`). " + fallback
-	}
-	l := hostrun.Line{Dir: workspace, Argv: append([]string{"gh"}, argv...)}
-	if hostrun.CheckLine(l) != nil {
-		return "To make the change, ask the user to run it on the host: a word of this command holds a " +
-			"character a `yolo host-run` line refuses, so move that text to a file in the workspace the " +
-			"command reads, and give the user the line then. " + fallback
-	}
-	return "To make the change, give the user this line to run in a terminal on the host; its output " +
-		"comes back to this workspace (`yolo host-run wait` waits for it): `" + hostrun.FormatLine(l) +
-		"`. " + fallback
 }

@@ -23,16 +23,14 @@ In a jail: run a gh command through the github-broker, which runs the host's own
 gh login on this jail's behalf and returns its output. The jail holds no GitHub
 credential. With the ` + "`github`" + ` pack selected, a bare ` + "`gh`" + ` in the jail is this.
 
-This version is read-only: commands in the read-only set (pr view, pr list,
-issue view, run view, workflow list, api GET under repos/OWNER/REPO, …) run
-against this workspace's repositories: its GitHub remotes, and any repository
-its config lists under ` + "`brokered.github.repos`" + `, as the user approved them at
-the jail's launch. Every write exits 77 at once: it needs the host user's
-approval, and that step is not built yet, so nothing runs and nothing waits; ask
-the user to run it on the host. Commands that could print the credential or
-reach the host (auth token, --web, api to a URL, a host file, …) are refused
-with exit 64, as is anything outside the workspace's repositories.
---jq and --template work as they do in gh.
+This version supports host-approved writes. A write in the windowed ` + "`read-write`" + ` set files a pending request; run ` + "`yolo approve <id>`" + ` on the host to allow that exact
+command once, bound to its repository and stdin digest. The jail waits briefly; if no one answers,
+the command does not run and the request stays visible in the host broker log and ` + "`yolo approve`" + `.
+GitHub refuses ` + "`--for`" + ` and ` + "`--add`" + ` set-wide decisions. A standing ` + "`read-write`" + ` policy is also refused;
+remove it from ` + "`brokered.github.sets`" + ` to require Allow once. A configured ` + "`on_request`" + ` hook is optional
+and its output alone is never consent. Commands that could print the credential or reach the host
+(auth token, --web, api to a URL, a host file, …) are refused with exit 64, as is anything outside
+the workspace's repositories. --jq and --template work as they do in gh.
 
 A repository joins the scope through the workspace config: add it to the
 ` + "`repos`" + ` list under ` + "`brokered.github`" + `, run ` + "`yolo check --no-build`" + `, and ask the user to
@@ -42,7 +40,8 @@ The repository is -R OWNER/REPO, or this workspace's origin remote. Standard
 input is sent when the arguments read it (` + "`--body-file -`" + `).
 
 Exit codes: gh's own, plus 64 refused or out of scope, 69 no broker or no
-host login, 77 a write, which this version runs only on the host.
+host login, 75 the exact write awaits host approval and did not run, 77 host
+policy refused or denied the write.
 
 Flags:
   --help, -h    Show this help (as the first argument, before any ` + "`--`" + `).

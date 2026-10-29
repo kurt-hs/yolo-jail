@@ -94,6 +94,9 @@ func (a *Authority) Classify(argv []string, repo string) (Decision, brokerstore.
 			}
 			d.Set = s.Name
 			if mode == "standing" {
+				if base == SetReadWrite && s.Name == SetReadWrite {
+					return d, brokerstore.Policy{}, errors.New("host brokered.github.sets makes GitHub writes standing; remove the read-write entry to require Allow once before retrying")
+				}
 				d.Outcome = OutcomeStanding
 				return d, brokerstore.Policy{}, nil
 			}

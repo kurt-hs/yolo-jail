@@ -57,6 +57,9 @@ func TestFakeSourceFilesGrantsAndAuditsThroughTheCore(t *testing.T) {
 	if g.ID == "" {
 		t.Fatal("allowing the request issued no grant")
 	}
+	if _, found, err := store.ConsumeExactDispatchContext(context.Background(), q.Workspace, q.Jail, q.Set, q.Digest, store.Revalidate, func() error { return nil }); err != nil || !found {
+		t.Fatalf("exact grant spend: found=%t err=%v", found, err)
+	}
 	if got := filepath.Dir(filepath.Dir(RunRoot(source))); got != paths.BrokerDir() {
 		t.Fatalf("run root %s is not under the broker dir", RunRoot(source))
 	}
@@ -64,16 +67,17 @@ func TestFakeSourceFilesGrantsAndAuditsThroughTheCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var filed, allowed bool
+	var filed, allowed, spent bool
 	for _, ev := range events {
 		if ev.Service != source || ev.Request != q.ID {
 			continue
 		}
-		filed = filed || ev.Event == "request"
-		allowed = allowed || (ev.Event == "decision" && ev.Grant == g.ID && ev.Outcome == "allowed")
+		bound := ev.CommandDigest == q.Digest && ev.StdinDigest == q.StdinDigest
+		filed = filed || (ev.Event == "request" && bound)
+		allowed = allowed || (ev.Event == "decision" && ev.Grant == g.ID && ev.Outcome == "allowed" && bound)
+		spent = spent || (ev.Event == "grant-used" && ev.Grant == g.ID && ev.Outcome == "spent-before-dispatch" && bound)
 	}
-	if !filed || !allowed {
-		t.Fatalf("audit log lacks the fake source's filing (%v) or its allowed decision naming grant %s (%v):\n%+v",
-			filed, g.ID, allowed, events)
+	if !filed || !allowed || !spent {
+		t.Fatalf("audit log lacks linked exact request/decision/spend: filed=%t allowed=%t spent=%t grant=%s events=%+v", filed, allowed, spent, g.ID, events)
 	}
 }

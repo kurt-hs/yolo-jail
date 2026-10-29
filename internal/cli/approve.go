@@ -39,8 +39,9 @@ request once, grant its requested set for a bounded duration, deny it, or
 revoke a grant or a working-set entry. Without --for, Allow once covers that
 exact command for one use, for at most 15 minutes and never beyond its set's
 ceiling. --for hands over the whole requested set, within its policy ceiling
-and use cap; session is 12 hours. A grant belongs to the request's workspace:
-every jail of that project may use it, and it lasts through broker and jail
+and use cap; session is 12 hours. GitHub write requests accept Allow once only;
+--for and --add are refused for them. Other registered sources keep their existing
+decision semantics. A grant belongs to the request's workspace: every jail of that project may use it, and it lasts through broker and jail
 restarts and relaunches until it expires, its uses run out, or it is revoked.
 
 The working set is the branches a workspace's git-broker pushes unasked: each
@@ -78,10 +79,10 @@ in config); 6 the host can no longer confirm
 the request (its jail's launch is gone or its scope changed), so it cannot be
 allowed. A request whose jail stopped normally is already refused, which is 3.
 
-No broker files requests yet: a GitHub write, and a git push that neither a
-create-branch grant nor the working set covers, refuse immediately; nothing
-waits for approval. The answer ping is not built either; a desktop notification
-is the user's own on_request command (see yolo config-ref).
+No requests, grants or working-set entries. A GitHub write can file a pending
+approval request while its host broker runs; git pushes not covered by a branch
+grant or working set refuse without a request. Run yolo approve --help for the
+host store commands.
 
 Examples:
   yolo approve
@@ -160,7 +161,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 	}
 	var request, revoke, workspace string
 	var d brokerstore.Decision
-	forSeen, asJSON, watch, workspaceSeen := false, false, false, false
+	forSeen, addSeen, asJSON, watch, workspaceSeen := false, false, false, false, false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		name, value, eq := strings.Cut(a, "=")
@@ -200,6 +201,11 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 				}
 				d.For = duration
 			}
+		case "--add":
+			if eq || addSeen {
+				return fail(fmt.Errorf("specify --add once, without a value"))
+			}
+			addSeen = true
 		case "--deny":
 			if eq || d.Deny {
 				return fail(fmt.Errorf("specify --deny once, without a value"))
@@ -221,7 +227,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 			request = a
 		}
 	}
-	if (d.Deny && forSeen) || (revoke != "" && (request != "" || d.Deny || forSeen)) || ((d.Deny || forSeen) && request == "") {
+	if (d.Deny && (forSeen || addSeen)) || (forSeen && addSeen) || (revoke != "" && (request != "" || d.Deny || forSeen || addSeen)) || ((d.Deny || forSeen || addSeen) && request == "") {
 		return fail(fmt.Errorf("choose one request decision, or --revoke"))
 	}
 	if workspaceSeen && revoke != "all" {
@@ -229,6 +235,23 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 	}
 	if (asJSON || watch) && (request != "" || revoke != "") {
 		return fail(fmt.Errorf("decide or revoke without --json or --watch, which only list or follow the store"))
+	}
+	if request != "" && (forSeen || addSeen) {
+		source, found, err := pendingRequestSource(stores, request)
+		if err != nil {
+			return approveFailure(err, errs)
+		}
+		if found && source == ghbroker.Source {
+			flag := "--for"
+			if addSeen {
+				flag = "--add"
+			}
+			fmt.Fprintf(errs, "yolo approve: %s is not available for GitHub writes. Next: run `yolo approve %s` with no flags to Allow once.\\n", flag, termsafe.Visible(request))
+			return approveExitPolicy
+		}
+		if addSeen {
+			return fail(fmt.Errorf("unexpected argument %q", "--add"))
+		}
 	}
 	if watch {
 		return approveWatch(ctx, stores, asJSON, out, errs)
@@ -284,7 +307,22 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 	return 0
 }
 
-// eachStore runs fn on each store in turn until one holds the id: the first result that is not
+// pendingRequestSource returns the source owning a currently visible pending request.
+func pendingRequestSource(stores []*brokerstore.Store, id string) (string, bool, error) {
+	for _, s := range stores {
+		snap, err := s.Snapshot()
+		if err != nil {
+			return "", false, err
+		}
+		for _, q := range snap.Requests {
+			if q.ID == id {
+				return s.SourceName(), true, nil
+			}
+		}
+	}
+	return "", false, nil
+}
+
 // ErrUnknownID, or the last unknown-id error when none holds it.
 func eachStore(stores []*brokerstore.Store, fn func(*brokerstore.Store) error) error {
 	var err error

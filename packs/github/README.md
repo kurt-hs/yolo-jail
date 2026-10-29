@@ -6,10 +6,14 @@ approved them at launch. The jail holds no GitHub credential. Every call
 the broker is sent is recorded on the host, and `yolo audit` lists them.
 
 Design: [`boundary-broker.md`](../../docs/design/boundary-broker.md), and for the repositories a
-project lists, [`workspace-widening.md`](../../docs/design/workspace-widening.md). This is step 1 of its
-[§11](../../docs/design/boundary-broker.md#11-the-build-in-the-maintainers-five-steps): **read-only**. A write (`gh pr comment`, `gh issue edit`, `gh api -X POST …`) exits 77
-at once: writes need an approval step that is not built yet, so nothing runs and nothing waits,
-and the message says to run the command on the host.
+project lists, [`workspace-widening.md`](../../docs/design/workspace-widening.md). See
+[§11](../../docs/design/boundary-broker.md#11-the-build-in-the-maintainers-five-steps) for its read and
+write paths, including exact host approval. A write files a pending request; `yolo approve <id>` on the host allows
+that canonical command, repository and stdin digest once, for up to 15 minutes. `--for` and `--add`
+are refused for GitHub writes, and legacy set-wide grants do not authorize them. The broker waits
+briefly; without a host decision nothing runs and the agent can retry after approval. Pending
+requests are visible in the host broker log and `yolo approve`, whether or not `on_request` is
+configured.
 
 ## Three contributions
 
@@ -74,7 +78,7 @@ run: account-wide commands stay refused.
 | | |
 | :--- | :--- |
 | Runs | the read-only set, against an approved repository: `pr view/list/diff/status/checks`, `issue view/list/status`, `run view/list/watch`, `workflow view/list`, `repo view/read-file/read-dir`, `release view/list`, `label list`, `secret list`, `search` with an in-scope `--repo`, `api` GET under `repos/OWNER/REPO`, and more |
-| Exit 77 | every write, at once: it needs an approval step that is not built yet; run it on the host, where `yolo audit --set read-write` shows the exact command |
+| Pending write | Filed for exact host approval; see `yolo approve <id>` in the broker log or host CLI; `on_request` is optional |
 | Exit 64 | anything that could print the credential or reach the host (`auth token`, `--web`, `api` to a URL, host-file arguments, …), and anything outside the repository scope, including account-wide commands such as an unqualified `search` or any GraphQL call, which no `brokered.github.repos` entry admits |
 | Exit 69 | no broker in this jail, or no `gh` or login on the host |
 

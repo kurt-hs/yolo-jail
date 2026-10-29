@@ -28,6 +28,6 @@ func StoreAudit(log *brokeraudit.Log, service string) func(context.Context, stri
 				jail = g.UsedBy
 			}
 		}
-		return log.RequiredContext(ctx, brokeraudit.Event{Event: kind, Service: service, Jail: jail, Workspace: q.Workspace, Argv: q.Argv, Repo: q.Repo, Set: q.Set, Request: q.ID, Grant: g.ID, Outcome: outcome})
+		return log.RequiredContext(ctx, brokeraudit.Event{Event: kind, Service: service, Jail: jail, Workspace: q.Workspace, Argv: q.Argv, Repo: q.Repo, CommandDigest: q.Digest, StdinDigest: q.StdinDigest, Set: q.Set, Request: q.ID, Grant: g.ID, Outcome: outcome})
 	}
 }

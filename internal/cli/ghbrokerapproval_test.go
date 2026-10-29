@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
@@ -33,12 +35,35 @@ func TestGitHubApprovalBrokerHelper(t *testing.T) {
 	os.Exit(2)
 }
 
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *lockedBuffer) Contains(s string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.Contains(b.b.String(), s)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
 type githubApprovalBroker struct {
 	cmd      *exec.Cmd
 	done     chan struct{}
 	endpoint string
 	stop     chan struct{}
-	logs     bytes.Buffer
+	logs     lockedBuffer
 }
 
 func startGitHubApprovalBroker(t *testing.T, home, workspace, fakeGH, ghConfig, sfPath, userConfig string) *githubApprovalBroker {
@@ -58,12 +83,16 @@ func startGitHubApprovalBroker(t *testing.T, home, workspace, fakeGH, ghConfig, 
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(sockDir) })
 	socket := filepath.Join(sockDir, "broker.sock")
+	tmpDir := filepath.Join(home, "tmp")
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	p := &githubApprovalBroker{done: make(chan struct{}), stop: make(chan struct{})}
 	p.cmd = exec.Command(os.Args[0], "-test.run=^TestGitHubApprovalBrokerHelper$", "-test.count=1", "--",
 		"--socket", socket, "--scope-file", sfPath)
 	p.cmd.Dir = workspace
 	p.cmd.Env = append(os.Environ(), "YOLO_GH_APPROVAL_BROKER_HELPER=1", "YOLO_VERSION=", "YOLO_USER_LAYER=",
-		"HOME="+home, "GH_CONFIG_DIR="+ghConfig, "PATH="+filepath.Dir(fakeGH)+":/usr/bin:/bin",
+		"HOME="+home, "TMPDIR="+tmpDir, "GH_CONFIG_DIR="+ghConfig, "PATH="+filepath.Dir(fakeGH)+":/usr/bin:/bin",
 		svcendpoint.AdvertiseHostEnv+"=127.0.0.1")
 	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	p.cmd.Stdout, p.cmd.Stderr = &p.logs, &p.logs
@@ -72,8 +101,13 @@ func startGitHubApprovalBroker(t *testing.T, home, workspace, fakeGH, ghConfig, 
 	}
 	go func() { _ = p.cmd.Wait(); close(p.done) }()
 	t.Cleanup(func() {
-		_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
-		<-p.done
+		_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGTERM)
+		select {
+		case <-p.done:
+		case <-time.After(2 * time.Second):
+			_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+			<-p.done
+		}
 		close(p.stop)
 		if t.Failed() {
 			t.Logf("github-broker output:\n%s", p.logs.String())
@@ -231,16 +265,16 @@ func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {
 }
 
 func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
-	fixture := newProductionGitHubFixture(t, "", true)
-
 	for _, tc := range []struct {
 		name, command, receipt string
 		argv                   []string
+		withHook               bool
 	}{
-		{name: "PR comment", command: "comment", argv: []string{"pr", "comment", "41", "--repo", "o/r", "--body", "approved-comment"}, receipt: "pr comment --repo=o/r --body=approved-comment 41"},
-		{name: "issue close", command: "close", argv: []string{"issue", "close", "7", "--repo", "o/r"}, receipt: "issue close --repo=o/r 7"},
+		{name: "PR comment manual approval without on_request", command: "comment", argv: []string{"pr", "comment", "41", "--repo", "o/r", "--body", "approved-comment"}, receipt: "pr comment --repo=o/r --body=approved-comment 41"},
+		{name: "issue close despite on_request output", command: "close", argv: []string{"issue", "close", "7", "--repo", "o/r"}, receipt: "issue close --repo=o/r 7", withHook: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fixture := newProductionGitHubFixture(t, "", tc.withHook)
 			type result struct {
 				code        int
 				out, stderr string
@@ -288,10 +322,15 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 
-			waitGitHubApproval(t, "the host on_request receipt", 3*time.Second, func() bool {
-				data, err := os.ReadFile(fixture.hookLog)
-				return err == nil && bytes.Contains(data, []byte(request.ID))
+			waitGitHubApproval(t, "the host broker-log request", 3*time.Second, func() bool {
+				return fixture.broker.logs.Contains(request.ID)
 			})
+			if tc.withHook {
+				waitGitHubApproval(t, "the host on_request receipt", 3*time.Second, func() bool {
+					data, err := os.ReadFile(fixture.hookLog)
+					return err == nil && bytes.Contains(data, []byte(request.ID))
+				})
+			}
 			status, err := fixture.store.Status(request.Jail, request.Start, request.ID)
 			if err != nil || status.State != "pending" {
 				t.Fatalf("on_request output was interpreted as consent: %+v %v", status, err)
@@ -313,6 +352,21 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 			}
 			if !strings.Contains(string(data), tc.receipt) {
 				t.Fatalf("fake host gh receipt lacks exact approved action %q: %q", tc.receipt, data)
+			}
+			events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var spent, dispatched bool
+			for _, event := range events {
+				if event.Request != request.ID || event.Grant == "" || event.CommandDigest != request.Digest || event.StdinDigest != request.StdinDigest {
+					continue
+				}
+				spent = spent || event.Event == "grant-used" && event.Outcome == "spent-before-dispatch"
+				dispatched = dispatched || event.Event == "call" && event.Outcome == "ran"
+			}
+			if !spent || !dispatched {
+				t.Fatalf("audit did not link exact request, grant and dispatched action: spent=%t dispatched=%t events=%+v", spent, dispatched, events)
 			}
 		})
 	}

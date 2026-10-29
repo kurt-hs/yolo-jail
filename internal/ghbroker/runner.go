@@ -47,7 +47,7 @@ const (
 	ExitUsage       = brokercore.ExitUsage       // 64, EX_USAGE: refused, or out of scope
 	ExitUnavailable = brokercore.ExitUnavailable // 69, EX_UNAVAILABLE: no broker, no host gh, or no host login
 	ExitTempFail    = brokercore.ExitTempFail    // 75, EX_TEMPFAIL: pending a human (step 2)
-	ExitNoPerm      = brokercore.ExitNoPerm      // 77, EX_NOPERM: denied, or a write this version cannot ask for (at once: BB-D66)
+	ExitNoPerm      = brokercore.ExitNoPerm      // 77, EX_NOPERM: host policy refusal or denial
 	ExitTimeout     = brokercore.ExitTimeout     // 124
 	ghExitAuth      = 4                          // gh's own "authentication required"
 )

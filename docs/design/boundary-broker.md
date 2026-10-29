@@ -3,7 +3,7 @@ title: "Reads run, writes ring the doorbell: GitHub access across the jail bound
 date: 2026-09-28
 status: in-review
 stage: DESIGN
-next: "Build step 1's broker-core factoring in git-broker.md, then the four user grants OQ-BB19 ruled (read, create-branch, create-pr, create-issue) and the git source's sets. Production writes remain refused; gated handler integration is built."
+next: "Complete review and land the bounded GitHub exact-Allow-once request-path candidate; continue BB-D76/79 afterward"
 depends-on:
   - agent-event-watchers.md
 tags: [design, credentials, github, gh, git, approvals, notifications, loopholes, audit, broker]
@@ -24,9 +24,11 @@ sections verified against `f9fcd599a`; **the GitHub read path, step 1's first so
 **the widening entry built 2026-10-01** ([BB-D33](#BB-D33), [BB-D52](#BB-D52); the
 `brokered` key in `internal/config/brokered.go`, run end to end against a fake host `gh` by
 `integration/githubbroker_test.go`), and **the user-scope sets and host store/`yolo approve` slice built 2026-10-13**.
-The real handler has host authority adapters and a delivery-gated request/wait/status/consume
-path, tested through the transport with a fake executor. Production still provides no delivery
-readiness, so writes refuse immediately without filing requests. See [§7](#7-grants-and-the-request-store).
+The bounded GitHub exact-Allow-once slice is implemented in the private Stage2 candidate: production
+writes file a request, the host log exposes its id and `yolo approve`, and the handler spends only a
+digest-bound one-use grant before dispatch. A configured `on_request` hook is optional, and its
+output alone is not consent. This does not implement BB-D76/79's timed-resource grants or working-set
+Add, and the broader resource model remains the next design step. See [§7](#7-grants-and-the-request-store).
 Notifications, explicit admission rules, macOS and the git source are not built. Revised
 around the maintainer's brief of that day; first sketched
 2026-08-05. [OQ-BB1](#15-decision-ledger), [OQ-BB2](#15-decision-ledger), [OQ-BB3](#15-decision-ledger), [OQ-BB4](#15-decision-ledger),
@@ -395,8 +397,8 @@ are stable and the lines are not.
 | A connection audit | `internal/crossaudit`: one line per jail-to-host connection, accepted or rejected, to `GLOBAL_STORAGE/logs/crossings.log`, `0600`, 4 MiB plus one archive | **shipped** 2026-08-15. It records that a connection happened, never what it asked |
 | Jail-side interception of a command name | the `intercept` contribution kind (`packdecl.KindIntercept`), which `packs/github` uses to put `yolo gh --` in front of `gh` | **shipped** ([OQ-BB8](#15-decision-ledger)) |
 | The GitHub source: classifier, executor, daemon, forwarder | `internal/ghbroker`, `internal/brokerscope`, `packs/github`; `yolo gh status` and `yolo gh wait` in the forwarder | **shipped** for reads. One package holds both the source-neutral machinery and the gh-specific part, which [`git-broker.md` §3](git-broker.md#3-the-broker-core-what-step-1-factors-out) factors apart |
-| A request that outlives its connection, and grants | `internal/brokerstore`, one directory per source (`paths.BrokerSourceDir`) | **built**; production files nothing into it yet, since the handler waits on a delivery dependency no production code supplies (`ghbroker.RequiredDelivery`) |
-| A human in the answer path | `yolo approve` (`internal/cli/approve.go`): list, allow once, `--for`, `--deny`, `--revoke`, `--json`, `--watch` | **built**, for the `github` store only, with the stable surface of [§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship) |
+| A request that outlives its connection, and grants | `internal/brokerstore`, one directory per source (`paths.BrokerSourceDir`) | **built**; production GitHub files requests and the exact-consume path ignores legacy empty-digest set grants |
+| A human in the answer path | `yolo approve` (`internal/cli/approve.go`): list, allow once, `--for` (other sources only), deny, revoke, JSON and watch | **built**; GitHub writes accept Allow once only, and deny remains available |
 | The audit log and its viewer | `internal/brokeraudit`, whose events carry a `service`; `yolo audit` with `--since`, `--jail`, `--workspace`, `--set`, `--grant` and `--json` | **shipped**, with `--service` |
 | A running jail's scope widened without a restart | `yolo config apply` ([`live-config-apply.md`](live-config-apply.md)) | **shipped** |
 | An agent-agnostic doorbell into the session | `yolo notify` and the per-launch ping box ([`agent-event-watchers.md`](agent-event-watchers.md)) | **designed, not built**: no `notify` verb in `internal/cli` or `cmd/` |
@@ -1593,16 +1595,16 @@ reference). The spellings above stand. The fields are the ones the store holds:
   config can set it: a workspace config naming it is refused, as for long-lived access
   ([§5.8](#58-long-lived-access-and-temporary-access)).
 
-  **As built** (2026-10-23; `yolo config-ref` is the reference): the key is `on_request`, and
-  one line in the user config can be the whole front end:
+  **As built** (2026-10-28; `yolo config-ref` is the reference): the key is `on_request`, and
+  one line in the user config can be the whole notification front end:
 
   ```jsonc
-  "on_request": "a=$(notify-send -A once=\"Allow once\" -A rw=\"Read-write 15 min\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) yolo approve \"$YOLO_REQUEST_ID\";; rw) yolo approve \"$YOLO_REQUEST_ID\" --for 15m;; deny) yolo approve \"$YOLO_REQUEST_ID\" --deny;; esac"
+  "on_request": "a=$(notify-send -A once=\"Allow once\" -A deny=Deny \"$YOLO_REQUEST_SUMMARY\"); case \"$a\" in once) yolo approve \"$YOLO_REQUEST_ID\";; deny) yolo approve \"$YOLO_REQUEST_ID\" --deny;; esac"
   ```
 
-  The three buttons are provisional: they are the built store's answers, and become
-  [BB-D80](#BB-D80)'s once the resource-scoped grant model ([§1.6](#16-the-grant-model-2026-10-23))
-  is built.
+  GitHub writes accept Allow once or Deny only; the on_request example is a notification front end,
+  and `--for`/`--add` are refused for these writes. The broader resource-scoped model remains
+  unfinished, including timed-resource grants and working-set Add.
 
   It is a **request hook**: each jail's host broker runs it once per request that jail files,
   and for no other event, since a notifier that ran per event would show one toast per change
@@ -1620,14 +1622,13 @@ reference). The spellings above stand. The fields are the ones the store holds:
   recorded on its request, which `yolo approve` lists (`hook exited 127: sh: notify-send: not
   found`) and `--json` carries as `hook_failure` and `hook_output`; a refusing `yolo approve`
   the command ran is part of that output. The agent's pending message adds that the user's
-  notifier failed. **The hook only notifies**: yolo reads nothing back from it, and a
-  decision is the user's command running `yolo approve "$YOLO_REQUEST_ID"` (with `--for 15m`
-  or `--deny`) on the host, so a button click does exactly what the CLI does, with its own
-  checks, refusals and audit. A run may last until its request would expire, and is killed
-  with its process group, a child it left running after its shell exited included, as soon as the request stops waiting, whichever way (its own
-  `yolo approve`, one elsewhere, expiry, or refusal because its jail stopped), or its broker
-  stops. Nothing runs it today: the broker files no requests until writes are turned on
-  ([§11.3](#113-step-3-the-cli-the-answer-path-and-writes) step 3). [BB-D75](#BB-D75) records who runs it and why.
+  notifier failed. **The hook's output is not consent**: yolo reads nothing back from it. A trusted
+  configured command may call the host `yolo approve` CLI, but only the CLI's stored decision is
+  consent; the request remains answerable manually without configuring a hook. A run may last until
+  its request stops waiting and is killed with its process group, a child it left running after its
+  shell exited included. The GitHub exact-Allow-once path now files pending requests; an approved
+  exact grant can be used on the same action when the agent retries. [BB-D75](#BB-D75) records who
+  runs the optional hook and why.
 - **`yolo audit --json` is the audit half of the surface**, unchanged, with the `--service`
   filter the second source needs (built 2026-10-23).
 
@@ -2046,15 +2047,15 @@ of unYOLO's ideas behind triggers. The asynchronous ruling fires three of them:
 ## 11. The build, in the maintainer's five steps
 
 **Build A**, in the order the maintainer set on 2026-10-23
-([§1.5](#15-the-maintainers-path-2026-10-23)). Each step ships alone; production writes stay
-refused with exit 77 until step 3 ends. Ledger rows written before 2026-10-23 number the old
-plan's steps: its step 1 was the GitHub read path, step 2 writes on Linux, step 3 macOS.
+([§1.5](#15-the-maintainers-path-2026-10-23)). The 2026-10-23 sequence kept production writes
+refused until step 3; the private Stage2 candidate now implements the bounded GitHub exact-Allow-once
+path. Full resource-scoped grants and working-set Add remain future work.
 
 | Step | His words | What yolo builds | Exists at `f9fcd599a` | New |
 | :--- | :--- | :--- | :--- | :--- |
 | 1 | *"support for whatever loopholes you need/want with rw and ro support, maybe factoring out the CLI wrapping/proxy stuff"* | Brokered sources with read and write sets on a shared core | The GitHub source's read path, scope, audit, mount fence, the `intercept` kind, the host store and `yolo approve`, the delivery-gated write handler | The broker-core factoring and the git source ([`git-broker.md`](git-broker.md)); write kinds, user grants and the working set ([§5.7](#57-permission-sets), [§5.8](#58-long-lived-access-and-temporary-access)) |
 | 2 | *"generic support for yolo-jail sending (actionable) toasts on linux/mac"* | The toast notifier, a store front-end for every source ([§6](#6-the-doorbell-a-persistent-desktop-notification)) | Nothing: no notification code | All of it: D-Bus on Linux, terminal-notifier on macOS, the formula dependency and `yolo check` row |
-| 3 | *"host-side machinery as a CLI that can view/approve these access requests"* | `yolo approve` across sources, with `--json` and `--watch` ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)); the answer path; then writes turned on | `yolo approve` for the github store, as text; `yolo gh status` and `wait` | The surface; the delivery dependency supplied in production; the answer path ([OQ-BB17](#OQ-BB17)) |
+| 3 | *"host-side machinery as a CLI that can view/approve these access requests"* | `yolo approve` across sources, with `--json` and `--watch` ([§6.6](#66-one-store-several-front-ends-and-a-stable-surface-for-the-ones-yolo-does-not-ship)); the answer path; then writes turned on | `yolo approve` for the github store, as text; `yolo gh status` and `wait` | The broad cross-source surface; the answer path ([OQ-BB17](#OQ-BB17)); exact Allow once is implemented for GitHub writes in the private Stage2 candidate |
 | 4 | *"build your proposed web UI out of tree, and plug into the CLI"* | Nothing in the tree: the surface step 3 fixed, and its documentation | — | The CLI's documentation of the JSON contract and of the loopback warning |
 | 5 | *"talk about merging the web UI at this point"* | A conversation, with a UI that exists | — | — |
 
