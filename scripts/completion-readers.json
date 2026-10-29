@@ -5409,6 +5409,7 @@
 "internal/brokerscope/brokerscope_test.go",
 "internal/brokerscope/display_test.go",
 "internal/brokerscope/limits_test.go",
+"internal/brokerscope/remote_match_test.go",
 "internal/brokerstore/exact_consume_test.go",
 "internal/brokerstore/limits_test.go",
 "internal/brokerstore/policy_test.go",
@@ -7928,6 +7929,8 @@
 "TestTheNextStartCollectsARunDirADeadOwnerLeft": 31
 },
 "internal/gitbroker": {
+"TestApprovedGitHubSSHAlternateClonesThroughBroker": 68,
+"TestApprovedGitHubScopeAcceptsSSHSpellings": 68,
 "TestBrokerLogNamesNoRepository": 68,
 "TestConfigBranchCoversOnlyItsBranch": 68,
 "TestConfigBranchDeleteAndRecreate": 68,
@@ -7994,6 +7997,9 @@
 "TestReadableNewBranchWithdrawalDoesNotResurrectLegacyGrant": 68,
 "TestReadableRequestedBranchUpdateUsesCanonicalCeiling": 68,
 "TestReadableRequestedNewBranchUsesCanonicalCeiling": 68,
+"TestRealGitDeniesRevokedSSHEndpointBeforeStartingSSH": 68,
+"TestRealGitPushRejectionPhases": 68,
+"TestRealGitRoutedEndpointDenialsHaveNoUpstreamOrPendingRequest": 68,
 "TestRealGitRoutesBracketedIPv6ScpThroughBroker": 68,
 "TestRefusedCredentialIsRejected": 68,
 "TestRejectedCreationRecordsNothing": 68,
