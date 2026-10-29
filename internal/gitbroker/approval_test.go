@@ -145,3 +145,51 @@ func TestAskForPushWaitsForTheAnswer(t *testing.T) {
 		}
 	}
 }
+
+// An Allow once is spent only on the exact push it approved: the same push with only the old
+// id, only the repository, or only the workspace changed spends nothing, and the exact push
+// then still spends it.
+func TestAllowOnceSpendsOnlyOnItsExactPush(t *testing.T) {
+	f := newFixture(t, "")
+	f.broker.waitLimit = 50 * time.Millisecond
+	cmds := refusedPushCommands(t, f)
+	repo, _ := gitproto.Identity(origin)
+	ctx := context.Background()
+	needs := []string{"refs/heads/main"}
+	_, first, _ := f.broker.askForPush(ctx, repo, cmds, nil, needs, &brokeraudit.Event{})
+	g, err := ApprovalStore().Decide(pendingID(t, first.reason), "pending", brokerstore.Decision{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unspent := func(what string) {
+		t.Helper()
+		_, gs, err := ApprovalStore().List()
+		if err != nil || len(gs) != 1 || gs[0].ID != g.ID || gs[0].Uses != 1 {
+			t.Fatalf("%s: the grant was spent: %v %+v", what, err, gs)
+		}
+	}
+
+	otherOld := []gitproto.Command{{Old: strings.Repeat("a", 40), New: cmds[0].New, Ref: cmds[0].Ref}}
+	if _, _, ok := f.broker.askForPush(ctx, repo, otherOld, nil, needs, &brokeraudit.Event{}); ok {
+		t.Fatal("a push with another old id spent the Allow once")
+	}
+	unspent("only the old id differs")
+
+	if _, _, ok := f.broker.askForPush(ctx, "fixture.test/o/other", cmds, nil, needs, &brokeraudit.Event{}); ok {
+		t.Fatal("a push to another repository spent the Allow once")
+	}
+	unspent("only the repository differs")
+
+	bound := f.broker.bound
+	f.broker.bound.Workspace = bound.Workspace + "-other"
+	_, _, ok := f.broker.askForPush(ctx, repo, cmds, nil, needs, &brokeraudit.Event{})
+	f.broker.bound = bound
+	if ok {
+		t.Fatal("a push from another workspace spent the Allow once")
+	}
+	unspent("only the workspace differs")
+
+	if spent, why, ok := f.broker.askForPush(ctx, repo, cmds, nil, needs, &brokeraudit.Event{}); !ok || spent.ID != g.ID {
+		t.Fatalf("the exact push did not spend the Allow once: %+v %+v", spent, why)
+	}
+}

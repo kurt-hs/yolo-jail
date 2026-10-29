@@ -306,3 +306,23 @@ func TestPushOptionsAreBoundIntoTheAllowOnce(t *testing.T) {
 		t.Fatalf("the approved push with its option did not land: %q", got)
 	}
 }
+
+// Over HTTPS too, a push allowed while it waits goes through in the same call.
+func TestHTTPSPushAllowedDuringTheWaitGoesThrough(t *testing.T) {
+	h := newHTTPSFixture(t, httpsOpts{})
+	h.broker.waitLimit = 15 * time.Second
+	h.localCommit()
+	answered := answerFirstPending(t, brokerstore.Decision{})
+	if out, err := h.git("push", "origin", "HEAD:main"); err != nil {
+		t.Fatalf("the push allowed during its wait: %v\n%s\n%s", err, out, h.srv.log(t))
+	}
+	if err := <-answered; err != nil {
+		t.Fatal(err)
+	}
+	if got, want := mustGit(t, h.bare, "rev-parse", "main"), mustGit(t, h.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("bare main %s, local HEAD %s", got, want)
+	}
+	if p := lastPush(t); p.Set != setPush || p.Grant == "" {
+		t.Fatalf("the allowed push's audit %+v", p)
+	}
+}
