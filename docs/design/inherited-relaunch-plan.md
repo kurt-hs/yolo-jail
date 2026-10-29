@@ -1,8 +1,8 @@
 ---
 title: "Inherited account relaunch implementation plan"
 status: private-candidate
-stage: IMPLEMENTED_PRIVATE
-next: "Root review; then Root-owned combined landing and launch gates"
+stage: BUILT
+next: "Root review; then Root-owned serial landing and combined launch gates"
 ---
 
 # Inherited account relaunch
