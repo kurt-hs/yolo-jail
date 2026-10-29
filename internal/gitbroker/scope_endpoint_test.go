@@ -142,6 +142,13 @@ func TestRealGitDeniesRevokedSSHEndpointBeforeStartingSSH(t *testing.T) {
 			t.Fatalf("revoked endpoint was not refused: %v\n%s", err, out)
 		}
 		assertNoNewSSH(t, f, before)
+		requests, _, err := f.broker.store.List()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(requests) != 0 {
+			t.Fatalf("revoked endpoint created approval requests: %+v", requests)
+		}
 	})
 	t.Run("read grant", func(t *testing.T) {
 		f := setup(t)
@@ -162,6 +169,13 @@ func TestRealGitDeniesRevokedSSHEndpointBeforeStartingSSH(t *testing.T) {
 			t.Fatalf("revoked read grant was not enforced: %v\n%s", err, out)
 		}
 		assertNoNewSSH(t, f, before)
+		requests, _, err := f.broker.store.List()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(requests) != 0 {
+			t.Fatalf("revoked read grant created approval requests: %+v", requests)
+		}
 	})
 }
 
