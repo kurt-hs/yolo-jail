@@ -2,19 +2,15 @@
 title: "mise cannot reach HTTPS inside macos-user, and the keychain deny is why"
 date: 2026-10-23
 status: accepted
-stage: BUILT
-next: "Graduate into docs/reference/ as a system doc"
+stage: DECIDED
+next: "Complete the [Mac-side SecurityServer boundary audit](#mac-side-follow-up--audit-the-securityserver-boundary); then graduate the settled record into [docs/reference/](../reference/)"
 tags: [design, macos, macos-user, seatbelt, tls, mise, ca-trust]
 summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails every HTTPS call with 'bad certificate format'. It is built with native-tls, whose SecureTransport handshake reads the server key through Apple's old CDSA code, which checks in with securityd (com.apple.SecurityServer). The profile denies that service on purpose because it fronts the login keychain. The proposal keeps the deny and ships a mise build that verifies through rustls-platform-verifier, which talks to trustd only. Measured on the maintainer's Mac 2026-10-23."
 ---
 
 # mise cannot reach HTTPS inside macos-user, and the keychain deny is why
 
-**Status:** 2026-10-23. **Built:** the macos-user tool profile's mise is nixpkgs mise built with
-rustls (`noncontainerFloorSubstitutes` in `flake.nix`, from a colleague's pull request), and a
-run-as-you launch installs a repo's mise tools under the unchanged profile, measured on a Mac. The
-cause is measured too ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)). The user guide
-states account mode's CA gap (MT-D2). Option F is not pursued (MT-D6).
+**Status:** 2026-10-28. The mise fix remains measured on a Mac ([the Mac run](#measured-on-the-maintainers-mac-2026-10-23)); the Mac-side boundary audit below is new and pending. No Copilot-native result is claimed.
 
 > **In short.** Keep securityd denied and change mise, the same way the Go fix changed Go: ship
 > a mise build whose TLS verifies through the trust daemon the profile already allows, so
@@ -28,12 +24,15 @@ the cause in [§2](#2-the-cause) predicts every Mac.
 
 **Start at [§2](#2-the-cause).**
 
+**Mac-side follow-up:** [Audit the SecurityServer boundary](#mac-side-follow-up--audit-the-securityserver-boundary) before this design graduates.
+
 **Needs your ruling:** none. **Ruled 2026-10-23:** [OQ-MT1](#OQ-MT1) (a mise yolo installs,
 ideally from Nix, no maintained patches; never securityd), [OQ-MT2](#OQ-MT2) (account mode may
 miss login-keychain CAs; documented).
 
 **Reads with:** [`provisioner-sets.md`](provisioner-sets.md) (the CA trust rulings, PS-D10 and
-PS-D14), [`macos-user-model.md`](macos-user-model.md) (the profile and its keychain promise).
+PS-D14), [`macos-user-model.md`](macos-user-model.md) (the profile and its keychain promise),
+[`copilot-native-networking.md`](../research/copilot-native-networking.md) (bounded Copilot TLS research; not a native reproduction).
 
 ---
 
@@ -104,7 +103,7 @@ should be trusted with no bundle at all.
 | :--- | :--- | :--- | :--- |
 | **A — release mise on darwin** | A second version pin; nixpkgs patches lost | The keychain deny stays | Fallback if B compiles too slowly |
 | **B — rebuild nixpkgs mise with `rustls-native-roots`** | No binary cache: mise compiles on each Mac after every nixpkgs bump, and its TLS crate may need cmake | Same as A | Chosen bridge ([§3](#3-the-proposal), MT-D5) |
-| **C — allow `com.apple.SecurityServer`** | One line | **Breaks run-as-you's promise**: with the login keychain unlocked, the agent could list item attributes, add items, and read any item whose access list admits it without a prompt. Seatbelt filters this service by name only, so no narrower allow exists | Rejected outright (MT-D4) |
+| **C — allow `com.apple.SecurityServer`** | One line | **Weakens run-as-you's boundary:** a Mach service lookup is not blanket authorization; per-item access controls still apply. But an unlocked item that admits this same-UID caller without prompting may be readable, and the service may perform operations on the caller's behalf. The name-only filter cannot distinguish TLS requests from keychain operations; audit the exact exposure before considering a narrower mechanism | Rejected under the existing ruling (MT-D4); no boundary change is proposed here |
 | **D — no mise in the sandbox** | Repos' tools missing on macos-user | None | Rejected; it is today's failure |
 | **E — ask upstream to make rustls the macOS default** | Slow; not in our hands | — | Worth filing; not a fix |
 | **F — ask nixpkgs to build mise with `rustls-native-roots`** | One nixpkgs pull request; yolo then keeps nixpkgs mise everywhere | Same as A | Not pursued (MT-D6) |
@@ -166,12 +165,37 @@ tools installed, with no profile change.
 
 ## 6. What this does not cover
 
-- **Other native macOS programs** that use SecureTransport. Each would fail the same way; this doc
-  fixes mise because it is the one reported. Witness B's method finds the next.
+- **Other native macOS programs** may use SecureTransport, but only a client that reaches the same CDSA path has the measured `SecurityServer` dependency described here. This is not a claim about every Apple HTTPS API; audit the client's actual path before generalizing.
 - **Account mode's login-keychain CAs.** A corporate CA kept only in the user's own login keychain
   is not trusted by mise in the separate-account mode. Ruled acceptable and documented for users
   ([MT-D2](#decision-ledger)).
 - **Container backends.** Their mise is Linux and reads the bundle file.
+
+## Mac-side follow-up — audit the SecurityServer boundary
+
+**Pending as of 2026-10-28.** The current profile denies Mach lookups to
+`com.apple.SecurityServer` and related security services by name; this is a coarse service boundary,
+not an item-level keychain policy. A file-read denial does not stop a service from acting for its
+caller. Conversely, permission to look up a service does not erase per-item access controls or prove
+access to every secret. In run-as-you mode the agent has the owner's UID, so an unlocked item whose
+ACL admits that caller without prompting remains a threat; enumeration or write operations must be
+assessed from the actual API and item behavior, not assumed or ruled out from the service name alone.
+
+The measured mise result covers its SecureTransport/CDSA path only. The separate [Copilot TLS
+research](../research/copilot-native-networking.md) records bounded documentation findings and public
+issue #5085, not the current CLI's implementation or a native reproduction. Keep the shipped
+`SecurityServer` deny unchanged throughout this follow-up; this is verification, not approval to
+narrow the policy.
+
+1. **Audit the actual boundary and existing evidence.** Inspect the generated self-mode profile, the exact `mach-lookup` service rules and relevant service/API call paths. Read [prototype check b4](../plans/runbooks/macos-user-model-prototype/run-checks.sh) and its [measured rerun](macos-user-model.md#self-mode-rerun-2026-10-23): b4 temporarily adds a synthetic generic-password item to the owner's login keychain, grants `/usr/bin/security` a no-prompt item control, and checks whether the secret is returned inside; b5 separately denies reading the keychain file. That historical fixture is not permission to repeat a real-login-keychain test. Record exactly which protected operations these controls establish as denied. They do not by themselves prove enumeration, attribute queries, writes, or every keychain API is denied.
+2. **Use disposable fixtures for new tests.** Create any test keychain and synthetic item outside the sandbox in a disposable location, and establish that the exact item/API is accessible outside before checking that it fails inside the unchanged profile. Never read or print real credentials, or modify the real login keychain, its search list, global trust settings, security policy, or production profile. Explain what disposable-keychain results do and do not say about login-keychain behavior; do not claim equivalent semantics without evidence. If a valid control requires user-state changes, stop and specify the smallest additional controlled test instead.
+3. **Compare documented certificate-only mechanisms in a throwaway harness.** Investigate supported macOS mechanisms for certificate validation without granting keychain metadata, write, or nonprompt secret operations. For each candidate, state the exact API and fixture, its expected positive HTTPS and negative keychain outcomes, and the observed evidence. Compare it with the existing deny only in the disposable harness; preserve certificate validation and all keychain negative controls. A result for mise or a separate HTTP client does not establish a general mechanism.
+4. **Inspect the exact current Copilot CLI.** Record its version, documented help, and packaged runtime evidence for any supported TLS-backend selector. Treat `COPILOT_ENABLE_HTTP2` as a protocol negotiation setting, not evidence of a TLS backend; editor/Node-fetcher settings do not establish a CLI option. Use static inspection and small public-HTTPS clients only—no interactive agent, API-call automation, credentials, or real user keychain. Any native Copilot run is a separately authorized manual test, not an automated credential-sharing test.
+5. **Report the outcome without changing the boundary.** Either identify a supported approach that completes HTTPS with certificate verification enabled while the keychain negative controls still pass, or record why the current deny must remain and what evidence/upstream fix is still needed. Keep issue #5085 open; this follow-up does not perform GitHub operations or prescribe a downgrade.
+
+After this audit, preserve the existing intent to graduate the settled design into
+[`docs/reference/`](../reference/) as a system document; do not graduate it while this follow-up
+remains pending.
 
 ## 7. Open questions
 
