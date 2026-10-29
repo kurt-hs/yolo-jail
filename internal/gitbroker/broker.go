@@ -28,7 +28,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -277,11 +276,11 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
 			brokercore.ExitUsage)
 	}
-	if !httpsFetch && !slices.Contains(f.Repos, req.URL) {
+	if !httpsFetch && !scopeContains(f, req.URL) {
 		return refuse("out-of-scope", "remote not in the approved scope", outOfScope(req.URL, f), brokercore.ExitUsage)
 	}
 	if !httpsFetch {
-		if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
+		if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentSSHEndpoint); err != nil {
 			return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
 		}
 	}
@@ -304,10 +303,10 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		if !brokerscope.HoldsRead(live.Grants) {
 			return false, config.BrokerNoReadRefusal(Source, req.URL, live.LiveScope), nil
 		}
-		if !slices.Contains(live.Repos, req.URL) {
+		if !scopeContains(live, req.URL) {
 			return false, outOfScope(req.URL, live), nil
 		}
-		if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
+		if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentSSHEndpoint); err != nil {
 			return false, "", err
 		}
 		if !brokerscope.ReadCovers(live.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
@@ -319,8 +318,8 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		// A URL that is already in scope must pass the same current-scope check even for an
 		// anonymous request. An out-of-scope public URL may be tried without credentials, but
 		// cannot become approved by that attempt.
-		if slices.Contains(f.Repos, req.URL) {
-			if err := brokerscope.ValidateCurrent(b.scopeFile, b.bound, req.URL); err != nil {
+		if scopeContains(f, req.URL) {
+			if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentSSHEndpoint); err != nil {
 				return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
 			}
 		}

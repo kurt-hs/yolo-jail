@@ -9,9 +9,9 @@ summary: "Grounded audit and bounded repair of Git URL forms crossing the host b
 
 **Checked against:** `5594d2d68` at task start; the broker, protocol, remote helper, pack and existing broker authorities had no intervening changes from that audit base. The confirmed bracketed-IPv6 scp defect and two Git SSH aliases matched the audit packet.
 
-**Finding:** `git@[::1]:o/r.git` was rewritten by the shipped `git@` rule, but the broker split at the first colon inside `[::1]` and refused it. Git's `git+ssh://` and `ssh+git://` URL schemes are valid SSH aliases, but neither was rewritten or accepted. The owner's particular `ssh://` failure is still unidentifiable: no URL or error was supplied, so this repair does not claim to explain it.
+**Finding at that audit:** `git@[::1]:o/r.git` was rewritten by the shipped `git@` rule, but the broker split at the first colon inside `[::1]` and refused it. Git's `git+ssh://` and `ssh+git://` URL schemes are valid SSH aliases, but neither was rewritten or accepted. At that audit the owner's reported SSH failure was unidentifiable because no URL or error had been supplied. The later owner-provided approved/request URL pair identified a separate literal-scope mismatch; ITEM18's narrow endpoint matcher is recorded below, without changing the earlier parser RED or QA history.
 
-**Boundary:** an SSH or credentialed HTTPS request still needs the exact remote URL in the live approved scope and an applicable read grant. Repository identity groups grants; it does not approve another URL spelling. The existing anonymous public HTTPS fetch exception remains unchanged. This document supplements [`git-broker.md`](../design/git-broker.md) and [`git-broker-plan.md`](../design/git-broker-plan.md); it does not widen their trust boundary.
+**Boundary:** SSH requests still need a live approved remote endpoint and read grant. Exact URLs match as before; additionally, Git's broker accepts SSH scheme aliases only when parsed destination, explicit port and effective path match, and the exact `git@github.com` no-port two-segment relative scp path may match the corresponding absolute SSH URL path. Host case/aliases, user, port, generic relative/absolute paths, suffixes and HTTPS remain distinct. The original request URL remains in the remote helper, upstream SSH argv and audit. Repository identity groups grants; it does not itself approve another spelling. The existing anonymous public HTTPS fetch exception remains unchanged. This document supplements [`git-broker.md`](../design/git-broker.md) and [`git-broker-plan.md`](../design/git-broker-plan.md); it does not widen their trust boundary.
 
 ## URL coverage
 
@@ -19,15 +19,21 @@ summary: "Grounded audit and bounded repair of Git URL forms crossing the host b
 
 | Input | Result | Scope and safety |
 | :--- | :--- | :--- |
-| `ssh://[user@]host[:port]/path`, including bracketed IPv6 address authorities and a `/~/` path | Routed to SSH broker | Exact URL approval and read grant; user, port and path retain the existing constrained SSH argv rules. |
-| `git@host:path`, including `git@[IPv6]:path` | Routed to SSH broker | Exact URL approval and read grant. Bracketed IPv6 scp parsing now skips the address's internal colons. |
-| `git+ssh://…`, `ssh+git://…` | Routed to SSH broker | Newly rewritten and accepted only as these two SSH aliases; the original alias URL itself must be approved. |
+| `ssh://[user@]host[:port]/path`, including bracketed IPv6 address authorities and a `/~/` path | Routed to SSH broker | Exact approval plus read grant, with only bounded SSH endpoint equivalence: same parsed destination/explicit port/path across SSH schemes, or GitHub's two-segment relative/absolute exception. |
+| `git@host:path`, including `git@[IPv6]:path` | Routed to SSH broker | Exact approval plus read grant; only `git@github.com:owner/repo` has the corresponding absolute GitHub SSH URL path equivalence. |
+| `git+ssh://…`, `ssh+git://…` | Newly rewritten SSH aliases | Match the same SSH endpoint when destination, explicit port and effective path are identical; original request URL is retained. |
 | `https://host[:port]/path` | Routed to HTTPS broker | Credentialed access requires exact URL approval and read grant. Public fetch may retain the existing anonymous out-of-scope path. URL user-info remains excluded from scope and is not a credential hint. |
 | Valid scp forms such as `host:path` or `alice@host:path` | Direct in ordinary Git: no pack rewrite | A direct call does not reach the broker. If explicitly sent through the broker helper, scp-style parsing is available, but exact URL scope and read-grant checks still apply. |
 | `http://`, `git://`, `file://`, local paths, or Windows-shaped local paths | Direct, not brokered | No host-file forwarding or new transport is introduced. A URL manually presented to the broker is refused unless it is one of the supported SSH/HTTPS forms. |
 | `ext::`, `fd::`, other `<transport>::` helpers, option-shaped remotes, malformed URL/path forms, query/fragment, or SSH percent escapes | Refused if submitted to the broker | The broker does not execute host helpers, accept host options, or relax path parsing. Percent-escaped SSH input remains refused because Git's decoding and broker identity/argv interpretations can differ. |
 
 Git itself may use SSH URL percent escapes differently from the old parser comment's claim; the comment now explains why the broker still refuses them. No blanket percent-decoding or identity canonicalization was added.
+
+## ITEM18 — narrow SSH endpoint equivalence
+
+The earlier repair above fixed parser and transport coverage while retaining literal scope checks. A later owner-provided request demonstrated a distinct mismatch: approval `git@github.com:mschulkind/dotfiles` and request `ssh://git@github.com/mschulkind/dotfiles` should reach the same GitHub endpoint. The Git broker now uses its existing SSH parser at the scope boundary; generic scope consumers still default to exact matching. The matcher adds only identical parsed SSH destinations, explicit ports and paths across `ssh`, `git+ssh` and `ssh+git`, plus GitHub's exact `git@github.com`, no-port, two-segment relative-scp/absolute-URL path pair. It never drops username, host case, port, `.git`, trailing slash, `~/` or escapes, and generic scp-relative versus URL-absolute paths remain distinct. HTTPS remains literal.
+
+Permanent real-Git tests cover successful `ls-remote` and clone through guarded local fake SSH/bare repositories, original URL audit retention, routed negative endpoints with no SSH dispatch or approval request, and live scope/read-grant revocation. URL comparison tests cover HTTPS, aliases, path and encoding boundaries without making public network requests. These results belong to this candidate only, not Main acceptance.
 
 ## Bounded implementation plan and result
 

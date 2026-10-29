@@ -176,16 +176,21 @@ Each is the planner's, decided within the design's behavior. Each is reversible;
    `internal/gitproto`, shared by both. *Why:* the client runs in the jail and must not import the
    daemon's upstream code; the protocol code is the one thing both halves need. *Reverse by:*
    merging packages, no behavior change.
-2. **ID-2 — The git scope is the workspace's remote URLs, exactly.** A manifest declaring
+2. **ID-2 — The git scope records the workspace's remote URLs verbatim.** A manifest declaring
    `"remote_host": "*"` makes core read every remote of the workspace on any host, `url` and
    `pushurl` alike, and put each URL in front of the human at the config-change gate, verbatim. The
-   scope file records them with `"form": "remote-url"`. A request matches only a URL string equal
-   to an approved one, and the broker connects to the approved string, never one the jail sent.
-   An `https://` URL whose user-info carries a password is left out of the scope, with a gate line
-   saying why. `brokered.git.repos` is refused by `yolo check`: a git remote is added with
-   `git remote add`, which reaches the gate as a new remote. *Why:* the design says the upstream
-   comes from the scope ([§7](git-broker.md#7-security)), and an exact match gives the jail nothing
-   to steer. *Reverse by:* a pattern form later; the `form` field is what makes that additive.
+   scope file records them with `"form": "remote-url"`. Requests match the exact URL by default.
+   The Git broker also admits only these bounded SSH equivalences: SSH schemes with identical
+   parsed destination, explicit port and path, and (only for `git@github.com` without a port) the
+   two-segment relative scp path versus the corresponding absolute SSH URL path. It preserves the
+   request URL for its SSH argv and audit; it does not strip `.git`, trailing slashes, case, `~/`
+   or encoding, nor equate usernames, hosts, ports or generic relative/absolute paths. HTTPS and
+   all other callers remain exact. An `https://` URL whose user-info carries a password is left out
+   of the scope, with a gate line saying why. `brokered.git.repos` is refused by `yolo check`: a
+   git remote is added with `git remote add`, which reaches the gate as a new remote. *Why:* the
+   design says the upstream comes from the scope ([§7](git-broker.md#7-security)), and this narrow
+   matcher gives the jail no choice of upstream endpoint. *Reverse by:* a pattern form later; the
+   `form` field is what makes that additive.
 3. **ID-3 — Repository identity.** Grants and working-set entries name a repository as
    `host/path`: the host lower-cased, a port kept as `host:port`, the user-info dropped, a leading
    `/` or `~/` stripped from the path, a trailing `/` then a trailing `.git` stripped. So

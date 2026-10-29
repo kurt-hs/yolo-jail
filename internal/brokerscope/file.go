@@ -34,9 +34,10 @@ import (
 const FileVersion = 1
 
 // The remote-url scope form (coined in docs/design/git-broker-plan.md, ID-2): a scope whose
-// entries are exact remote URLs rather than OWNER/REPO. A source declares it with a manifest
-// `brokered.remote_host` of AnyRemoteHost; the gate reads it with ReadAllRemotes, and a request
-// matches only a URL string equal to an approved one.
+// entries are remote URLs rather than OWNER/REPO. A source declares it with a manifest
+// `brokered.remote_host` of AnyRemoteHost; the gate reads it with ReadAllRemotes and presents
+// each URL verbatim. Brokers compare exact strings by default; a source may explicitly supply
+// a narrower endpoint matcher for its request checks.
 const (
 	FormRemoteURL = "remote-url"
 	// AnyRemoteHost is loopholedecl.AnyRemoteHost, the `remote_host` that selects the form.
@@ -53,7 +54,8 @@ func FormFor(remoteHost string) string {
 
 // EntryKey is the spelling a scope entry of form is compared by wherever two scopes are diffed
 // (the gate, `yolo config apply`): lower case for OWNER/REPO, as GitHub compares names, and the
-// entry exactly in the remote-url form, whose broker matches a URL string exactly.
+// entry verbatim in the remote-url form. A broker's explicit request matcher does not change
+// how scope entries are presented or diffed.
 func EntryKey(form, entry string) string {
 	if form == FormRemoteURL {
 		return entry
@@ -90,8 +92,10 @@ type File struct {
 	Container string `json:"container"`
 	Workspace string `json:"workspace"`
 	// Form is how Repos' entries read: "" for OWNER/REPO entries and whole-segment wildcards
-	// (ValidPattern, Admits), FormRemoteURL for exact remote URLs (ValidRemoteURL, compared as
-	// strings). Every reader branches on it, never on Source.
+	// (ValidPattern, Admits), FormRemoteURL for remote URLs (ValidRemoteURL, exact by default).
+	// A source may explicitly supply a narrower matcher for a broker request; entry validation,
+	// gate comparison and scope-file contents remain verbatim. Every reader branches on Form,
+	// never on Source.
 	Form string `json:"form,omitempty"`
 	// Repos is the approved scope: the workspace's remotes on the forge and its
 	// `brokered.<source>.repos` entry, as a human approved them in this launch's config-change
@@ -248,7 +252,15 @@ func Remove(path string) error {
 
 // ValidateCurrent is a non-locking gate read, for use inside a store transaction.
 // The caller must additionally validate its current policy and broker start identity.
+// Matching is exact unless the caller explicitly uses ValidateCurrentWithMatcher.
 func ValidateCurrent(path string, expected File, repo string) error {
+	return ValidateCurrentWithMatcher(path, expected, repo, nil)
+}
+
+// ValidateCurrentWithMatcher performs the same current-file, identity, entry and request
+// validation as ValidateCurrent. matcher is consulted only for FormRemoteURL requests, after an
+// exact comparison fails; nil preserves the default exact-match behavior for every other caller.
+func ValidateCurrentWithMatcher(path string, expected File, repo string, matcher func(entry, request string) bool) error {
 	if expected.Source == "" || expected.LaunchID == "" || expected.Workspace == "" || expected.Container == "" || expected.PID <= 0 {
 		return errors.New("scope identity unavailable; relaunch the jail")
 	}
@@ -274,7 +286,7 @@ func ValidateCurrent(path string, expected File, repo string) error {
 		return errors.New("invalid repository; use an approved owner/repo")
 	}
 	for _, r := range append(append([]string(nil), f.Repos...), f.Widened...) {
-		if admits(f.Form, r, repo) {
+		if admits(f.Form, r, repo) || f.Form == FormRemoteURL && matcher != nil && matcher(r, repo) {
 			return nil
 		}
 	}
