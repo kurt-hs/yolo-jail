@@ -296,17 +296,17 @@ func isHelpToken(tok string) bool {
 }
 
 // colorForWriter is THE color decision for every command in this package, and it
-// is made through the one gate, tty.Color: ANSI only when out is an *os.File that
-// is a real terminal AND NO_COLOR is unset or empty (https://no-color.org). A
-// bytes.Buffer (tests) or a pipe/redirect yields false, so the rendered/explain
-// output stays plain and byte-stable off a TTY.
+// is made through the one gate, tty.Color: ANSI only when out is a file or a
+// transparent writer that exposes its terminal destination, that destination is
+// a real terminal, AND NO_COLOR is unset or empty (https://no-color.org). A
+// bytes.Buffer or ordinary pipe/redirect yields false, so output stays plain.
 //
 // Every entry point that writes to os.Stdout asks colorForWriter(os.Stdout) —
 // never isTTYStdout(), which answers "is this interactive?" and knows nothing of
 // NO_COLOR. TestEveryCommandHonorsNoColor drives each of those entry points.
 func colorForWriter(out io.Writer) bool {
-	f, ok := out.(*os.File)
-	return tty.Color(nil, true, ok && fileIsTerminal(f))
+	f := tty.FileForTTY(out)
+	return tty.Color(nil, true, f != nil && fileIsTerminal(f))
 }
 
 // fileIsTerminal is the terminal probe behind colorForWriter. A var so a test can

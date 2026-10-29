@@ -386,8 +386,8 @@ func (f *Floor) writePatchFailure(p Program, pf *packsrc.PatchFailure, recipe pa
 
 // colorFor is the one color gate (tty.Color) for a block written to w: a terminal, and NO_COLOR unset.
 func colorFor(w io.Writer) bool {
-	file, ok := w.(*os.File)
-	return tty.Color(nil, true, ok && tty.IsTerminalFile(file))
+	file := tty.FileForTTY(w)
+	return tty.Color(nil, true, file != nil && tty.IsTerminalFile(file))
 }
 
 // ensurePatched is Ensure for a patched fork's program: the advance first, outside the floor's lock

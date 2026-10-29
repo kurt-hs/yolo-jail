@@ -254,6 +254,13 @@ type teeLog struct {
 	log io.Writer
 }
 
+// TerminalFile exposes the tee's destination only when it writes directly to a file.
+// The log is not a terminal destination and must never affect the color decision.
+func (t teeLog) TerminalFile() *os.File {
+	f, _ := t.w.(*os.File)
+	return f
+}
+
 func (t teeLog) Write(p []byte) (int, error) {
 	n, err := t.w.Write(p)
 	if n > 0 {

@@ -10,6 +10,7 @@
 package tty
 
 import (
+	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -25,6 +26,19 @@ func IsTerminalFile(f *os.File) bool {
 		return false
 	}
 	return IsTerminal(f.Fd())
+}
+
+// FileForTTY returns the destination file for a writer that is a file or explicitly
+// exposes its terminal destination. It does not probe the file; callers use the
+// shared IsTerminalFile probe and color gate after resolving the destination.
+func FileForTTY(w io.Writer) *os.File {
+	if f, ok := w.(*os.File); ok {
+		return f
+	}
+	if source, ok := w.(interface{ TerminalFile() *os.File }); ok {
+		return source.TerminalFile()
+	}
+	return nil
 }
 
 // Width reports the column count of the terminal on fd, or 0 when fd is not a

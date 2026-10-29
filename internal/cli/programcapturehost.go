@@ -187,6 +187,6 @@ func hostAdmittedRecovery(f *hostfloor.Floor, p hostfloor.Program, in npmCapture
 
 // floorOutColor is the floor's color decision for its Out (hostfloor's colorFor).
 func floorOutColor(w io.Writer) bool {
-	file, ok := w.(*os.File)
-	return tty.Color(nil, true, ok && tty.IsTerminalFile(file))
+	file := tty.FileForTTY(w)
+	return tty.Color(nil, true, file != nil && tty.IsTerminalFile(file))
 }
