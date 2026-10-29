@@ -343,6 +343,7 @@ lint-ci: lint
     # including their production call sites.
     python3 scripts/test-go-packages.py
     python3 scripts/test-completion-check.py
+    python3 scripts/test_completion_census.py
     # The matched launcher snapshot, install-publication and wrapper regressions are permanent
     # lint-ci coverage, and therefore run under check-ci too.
     python3 scripts/test_matched_bundle.py

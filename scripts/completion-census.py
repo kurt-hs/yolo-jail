@@ -15,6 +15,14 @@ Run it after adding or changing a test that reads outside its package directory:
 It runs every test of every package once, one process per test function, so it takes minutes,
 not seconds. It writes only the readers file. Reads by a test's SUBPROCESSES (git, go build) are
 not in the log; that is the same limit Go's own test cache has.
+
+A `stat` of the repository root directory, by any spelling, records nothing; an `open` of it (a
+listing) is still recorded as `.`. The output must not depend on where the checkout lives, and
+production code stats the jail's own workspace path, the literal `/workspace`, which names the
+repository root only in the checkout that IS `/workspace`. The other root stats in a test log
+are incidental too: `os.StartProcess` stats a subprocess's working directory, and resolving a
+path stats each of its ancestors. Neither reads the root's contents, and a test that does read
+them opens the root or the paths under it, which are recorded.
 """
 import concurrent.futures as cf
 import json
@@ -146,6 +154,9 @@ def parse_log(text, pkgdir, pkg_dirs, visibility=None):
             continue
         r = rel(path, pkgdir)
         if r is None or r == ".git" or r.startswith(".git" + os.sep):
+            continue
+        if r == "." and op == "stat":
+            # A stat of the root itself is not a read of the repository (module docstring).
             continue
         if owner(r, pkg_dirs) == own:
             continue
