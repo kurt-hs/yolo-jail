@@ -220,7 +220,7 @@ func SelfCheck(w io.Writer) int {
 
 // Handle is the hostservice handler: one frame in, gh's output and an exit code out.
 func (b *Broker) Handle(s *hostservice.Session) {
-	b.trackJail(s.JailID)
+	b.trackJail(b.holder(s.JailID))
 	req := requestFrom(s)
 	req.writeDeadline = func(deadline time.Time) { _ = s.Conn().SetWriteDeadline(deadline) }
 	ctx := b.shutdown
@@ -239,6 +239,37 @@ func (b *Broker) Handle(s *hostservice.Session) {
 }
 
 func (b *Broker) trackJail(jail string) { b.lifetimes.Track(jail) }
+
+// holder is the request holder for a connection whose host-asserted jail identity is crossing
+// (docs/design/github-write-approval.md GWA-D1). The holder the request store, Authority.Revalidate
+// and the standing check compare is paths.JailShortHash of the launch's container, taken from
+// the scope file this broker bound; the crossing identity is the BASE NAME of the dir the
+// launch published its endpoint in (svcendpoint's crossingIdentity), which is never that hash.
+// So the crossing identity only GATES the holder: when it names a dir this launch publishes
+// in — its container dir or one of its macos-user/`yolo host` session dirs — the holder is
+// this launch's; any other value is returned unchanged, and since it is not this launch's
+// holder, a connection through another launch's endpoint files, waits on and spends nothing
+// for this one. The audit line keeps the crossing identity as its attribution.
+func (b *Broker) holder(crossing string) string {
+	if b.authority == nil {
+		return crossing
+	}
+	return launchHolder(b.authority.scope.Container, crossing)
+}
+
+// launchHolder maps crossing to paths.JailShortHash(container) when it is one of the endpoint
+// dir names a launch of container publishes under, and returns it unchanged otherwise.
+func launchHolder(container, crossing string) string {
+	if container == "" {
+		return crossing
+	}
+	hash := paths.JailShortHash(container)
+	dir := paths.HostServicesDirName(hash)
+	if crossing == dir || (strings.HasPrefix(crossing, paths.HostServicesSessionPrefix(container)) && paths.IsHostServicesSessionDirName(crossing)) {
+		return hash
+	}
+	return crossing
+}
 
 // endLifetimes refuses every request still pending from a jail served by this broker process;
 // it ends no grant (brokercore.Lifetimes.EndAll).
@@ -344,7 +375,7 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 			say("unknown operation; use `yolo gh status <request>`")
 			return finish(ExitUsage)
 		}
-		return finish(b.requestStatus(ctx, req, jail, stdout, stderr))
+		return finish(b.requestStatus(ctx, req, b.holder(jail), stdout, stderr))
 	}
 
 	if len(req.Stdin) > StdinCap {
@@ -409,7 +440,7 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		ctx = bounded
-		code, msg := b.window(ctx, req, jail, d, stdout, stderr, &ev)
+		code, msg := b.window(ctx, req, b.holder(jail), d, stdout, stderr, &ev)
 		ev.Set = d.Set
 		if ev.Outcome != "ran" {
 			ev.Outcome = "refused"

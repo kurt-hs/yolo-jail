@@ -268,8 +268,22 @@ func TestHostPolicyExplicitAdmitFailsClosedIncludingEmpty(t *testing.T) {
 		})
 	}
 }
-func TestWindowThroughRealForwarderHandlerAndStatus(t *testing.T) {
-	b, n := windowFixture(t)
+
+// productionEndpointDirs are the base names a launch publishes its endpoint under: a
+// container backend's cname-keyed dir and a macos-user (or `yolo host`) session's dir. The
+// front derives the connection's jail identity from that base name, so a test that publishes
+// anywhere else hides how the broker turns it into a request holder.
+func productionEndpointDirs(container string) map[string]string {
+	return map[string]string{
+		"container":     filepath.Base(paths.HostServicesDir(container, false)),
+		"macos-session": paths.HostServicesSessionPrefix(container) + "q7Zx01",
+	}
+}
+
+// frontedEndpoint stands b up behind the real fronted daemon socket and loopback-TLS front,
+// publishing the endpoint in a dir named dirName, and returns the forwarder env that dials it.
+func frontedEndpoint(t *testing.T, b *Broker, dirName string) (ForwardEnv, string) {
+	t.Helper()
 	t.Setenv(svcendpoint.AdvertiseHostEnv, "127.0.0.1")
 	dir, err := os.MkdirTemp("/tmp", "pile7-front-")
 	if err != nil {
@@ -277,7 +291,7 @@ func TestWindowThroughRealForwarderHandlerAndStatus(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "d.sock")
-	epDir := filepath.Join(dir, paths.JailShortHash(b.authority.scope.Container))
+	epDir := filepath.Join(dir, dirName)
 	if err := os.Mkdir(epDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -310,12 +324,33 @@ func TestWindowThroughRealForwarderHandlerAndStatus(t *testing.T) {
 		}
 		return ""
 	}, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, OriginRepo: func() string { return "o/r" }}
-	if got := Forward(writeReq().Argv, env); got != ExitTempFail {
-		t.Fatal(got)
+	return env, endpoint
+}
+
+// TestWindowThroughRealForwarderHandlerAndStatus drives the forwarder, the front and the
+// handler with the endpoint published where a production launch publishes it, so the
+// request holder is whatever the production crossing identity makes it.
+func TestWindowThroughRealForwarderHandlerAndStatus(t *testing.T) {
+	for form, dirName := range productionEndpointDirs(authorityContainer) {
+		t.Run(form, func(t *testing.T) { windowThroughRealForwarder(t, dirName) })
+	}
+}
+
+func windowThroughRealForwarder(t *testing.T, dirName string) {
+	b, n := windowFixture(t)
+	env, endpoint := frontedEndpoint(t, b, dirName)
+	var filing bytes.Buffer
+	first := env
+	first.Stderr = &filing
+	if got := Forward(writeReq().Argv, first); got != ExitTempFail {
+		t.Fatalf("write through the production endpoint dir %q: exit %d, %s", dirName, got, filing.String())
 	}
 	rs, _, _ := b.store.List()
 	if len(rs) != 1 {
 		t.Fatal(rs)
+	}
+	if want := paths.JailShortHash(b.authority.scope.Container); rs[0].Jail != want {
+		t.Fatalf("request holder %q, want this launch's %q", rs[0].Jail, want)
 	}
 	if got := Forward([]string{"status", rs[0].ID}, env); got != ExitTempFail {
 		t.Fatal(got)
