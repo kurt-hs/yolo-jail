@@ -2,7 +2,7 @@
 title: "Implementation plan: production GitHub Allow once"
 status: accepted
 stage: DECIDED
-next: "Commit final validation evidence, run just done, and obtain independent review on the private candidate"
+next: "Obtain independent review on the private candidate; do not land without separate authority"
 tags: [implementation-plan, github, approvals, security]
 summary: "A source-grounded hand-off to wire one exact host-approved GitHub write without changing other broker sources or enabling standing writes."
 ---
@@ -193,7 +193,7 @@ Before final combined-tree gates, merge the exact root-authorized docs-only comm
 
 Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead has
 authorized Stage 2 under this bounded contract. Tasks 1–6 are implemented and committed in the private Stage2 candidate; the affected-package tests,
-`just check-ci`, the clean full integration suite and a nested absolute-path dev-bundle launch have
-passed. Tasks 7's final `just done` and independent review remain. Keep Issue 65 open as an upstream
+`just check-ci`, the clean full integration suite, the absolute-path dev-bundle launch, and `just done`
+have passed. Independent review is the remaining acceptance gate. Keep Issue 65 open as an upstream
 wait, and do not change user config, credentials, repository grants or main. Record final Stage 2
 commands and outcomes in the named [QA evidence](../research/github-write-approval-qa.md).

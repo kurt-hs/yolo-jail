@@ -2,7 +2,7 @@
 title: "GitHub write approval Stage 2 QA evidence"
 status: accepted
 stage: CURRENT
-next: "Run just done from the clean candidate and obtain independent review"
+next: "Obtain independent review on the private candidate; do not land without separate authority"
 tags: [qa, github, approvals, evidence]
 summary: "Recorded Stage 1 baseline and intentionally red production-caller evidence for exact GitHub write approval."
 ---
@@ -49,10 +49,13 @@ host-asserted identity; no production identity check was weakened.
 | `go test -count=1 -timeout 0 ./integration -run '^TestTheJailsYoloCarriesItsMatchedBundleStamp$'` | Passed after candidate commit; the earlier `.dirty` suffix was caused by testing before the implementation commit. |
 | `just build-dev-bundle` + absolute launcher from `/workspace/.yolo/durable/github-write-approval-item5/stage2-nested-workspace` | Passed on the nested podman path with a fake host `gh`; `gh pr view 1` reached fake host `gh` as `pr view --repo=yolo-it/app 1` and returned 0. `yolo check --no-build` validated the temporary user/workspace config. This nested environment is not evidence for rootless-only or reachability behavior. |
 | `uvx vantage-check docs/design/boundary-broker.md docs/design/github-write-approval-plan.md docs/research/github-write-approval-qa.md userguide/guides/github.md userguide/reference/cli-reference.md packs/github/README.md packs/github/briefing/gh.md` | Passed: 7 files checked, no findings. |
+| `just done` | Passed on candidate `bb0f02e6a67d` with a clean worktree; selective vet, staticcheck, short tests, reader tests, docs checks and formatting all passed. Rerun after this QA update is committed. |
 | `just format` | Passed. |
 | Merge of `d159a57f03310f3da5ed49dda7546763361e9a38` | Merged by normal ancestry into this private branch; `main` remains unchanged. |
 
-Still outstanding: final QA-evidence commit, clean `just done`, and independent review. The clean
-candidate is commit `a71c83693` atop the merge commit for exact root-approved `d159a57f03310f3da5ed49dda7546763361e9a38`; local `main` remains at that approved commit.
+Still outstanding: final QA-evidence commit, rerun `just done` after it, and independent review. The
+implementation candidate is commit `a71c83693`, the QA evidence is in `bb0f02e6a67d`, and the current
+branch remains private; local `main` remains at the approved docs-only commit
+`d159a57f03310f3da5ed49dda7546763361e9a38`.
 The nested preflight is podman rootful (`false` for `.Host.Security.Rootless`) with `slirp4netns`;
 nested evidence does not establish rootless-only or real reachability behavior.
