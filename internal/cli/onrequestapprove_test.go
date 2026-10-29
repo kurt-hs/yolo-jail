@@ -77,9 +77,9 @@ func TestTheOnRequestExampleDecidesThroughTheCLI(t *testing.T) {
 	}
 	write(yolo, "exec '"+exe+"' "+testAsYoloArg+" \"$@\"\n")
 	write(filepath.Join(bin, "notify-send"), `case "$*" in
-  *"o/r 1") echo once ;;
-  *"o/r 2") echo once ;;
-  *"o/r 3") echo deny ;;
+  *comment*' 1 '*) echo once ;;
+  *comment*' 2 '*) echo once ;;
+  *comment*' 3 '*) echo deny ;;
   *) touch "$HOME/asked-4"; echo "maybe later" ;;
 esac
 `)

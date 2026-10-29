@@ -168,7 +168,7 @@ func TestTheHookGetsTheEventAndOnlyItsOwnLifetime(t *testing.T) {
 	}
 	fields := strings.Split(lines[1], "|")
 	if fields[0] != "request-filed" || fields[1] != q.ID || fields[2] != "github" || fields[3] != "/project" ||
-		fields[4] != "github "+q.ID+": set read-write on o/r for jail jail, to run: pr comment 1 --body hi" {
+		fields[4] != "github "+q.ID+": set read-write on o/r for jail jail, to run: pr comment 1 --body '[redacted]' [command SHA-256 "+q.Digest+"; stdin SHA-256 "+q.StdinDigest+"]" {
 		t.Fatalf("env %q", lines[1])
 	}
 }
