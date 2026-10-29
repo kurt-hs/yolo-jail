@@ -5,7 +5,7 @@ status: in-review
 tags: [research, macos, seatbelt, macos-user, packs, threat-model, comparison]
 summary: "Agent Safehouse confines an agent that runs AS YOU, by enumerating what it may touch; yolo-jail gives the agent a different machine and a different identity, so there is nothing of yours to enumerate. On the one axis where they build the same artifact — the macos-user Seatbelt profile — theirs is decisively tighter and ours is barely tested, and that is the adoption surface. Their per-agent prose is the better human artifact and the worse machine one: measured on their own repo, the enforced half moved 106 commits to the documented half's 3, and their opencode investigation documents a program three major versions and one whole reimplementation behind the profile that ships beside it."
 stage: DESIGN
-next: "Rule OQ-AS3 — a workspace config's env_sources and read-only mounts still pass with no scope refusal"
+next: "Build OQ-AS3: refuse a workspace env_sources file outside the workspace; then rule OQ-AS2"
 vantage:
   status-chip: true
 ---
@@ -49,7 +49,7 @@ re-gathered, is in git history as the deleted `sandbox-comparison.md`.
 
 | Axis | Who is ahead | Confidence |
 | :--- | :--- | :--- |
-| Precision of the Seatbelt policy | **Safehouse, decisively** | High — read both sources |
+| Precision of the Seatbelt policy | **Even since 2026-10-22**: the self-mode profile is now deny-default, adapted from Safehouse ([OQ-AS1](#OQ-AS1)) | High — read both sources |
 | Evidence the Seatbelt policy works | **Safehouse, still ahead** | High — 389 policy assertions on macOS CI against our 15 runtime cases, which [§8.1](#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost) added on 2026-09-18 and which now run green on the `macos-user` CI job (checked on the 2026-09-24 run) |
 | Structural strength of the credential boundary | **yolo** | High — separate account and separate home vs. grants inside your own |
 | Predictable tooling inside the boundary | **yolo** | High — their own docs concede the category |
@@ -925,24 +925,14 @@ Re-check these before quoting them; everything here moved within the last six mo
 
 ## 12. Open questions
 
-1. <a id="OQ-AS1"></a>💬 **OQ-AS1: How far should `macos-user`'s Seatbelt profile move toward deny-default?**
+1. <a id="OQ-AS1"></a>✅ **OQ-AS1: How far should `macos-user`'s Seatbelt profile move toward deny-default?**
 
-   <!-- vantage: question id=OQ-AS1 leaning="Take the incremental denies now, and only consider the full inversion once a policy-assertion suite exists to catch what it breaks." -->
-
-   Stakes: the profile is a short deny list against Safehouse's 2,919 lines, and the
-   difference is not cosmetic — network, exec, mach lookup, signals and IOKit are all open on
-   our side. (Cross-process argv inspection was on that list until `474f68a0` closed it.) The full inversion is a large, ongoing enumeration cost against a
-   nix substrate theirs does not share; the incremental denies in
-   [§8.2](#82-tighten-the-profile-toward-deny-default--highest-ceiling-highest-cost) are cheap
-   and independently revertible. This is a ruling about how much this backend is meant to
-   promise, which is why it is not a task. Where the leaning's preconditions stand:
-   [§8.2](#82-tighten-the-profile-toward-deny-default--highest-ceiling-highest-cost).
-
-   _Leaning:_ Incremental denies now; the full inversion only after
-   [§8.1](#81-a-policy-assertion-suite-for-macos-user--highest-value-moderate-cost) exists.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
+   **Overtaken, 2026-10-29.** The run-as-you (self-mode) profile has been `(deny default)` since
+   `a84a18ca3` (2026-10-22), adapted from Safehouse's layered profiles with their attribution in
+   its header (`denyDefaultHeader`, [`seatbeltdeny.go`](../../internal/macosuser/seatbeltdeny.go)).
+   This comparison predates it, so its "theirs is decisively tighter" verdict describes the old
+   `(allow default)` self profile. Account mode keeps `(allow default)`; its boundary is the
+   separate `_yolojail` account, not the profile.
 
 2. <a id="OQ-AS2"></a>💬 **OQ-AS2: Does yolo want a published per-agent investigation series at all?**
 
@@ -962,24 +952,13 @@ Re-check these before quoting them; everything here moved within the last six mo
    **Answer:**
    > _(empty — fill in when decided)_
 
-3. <a id="OQ-AS3"></a>💬 **OQ-AS3: Should `mounts` and `env_sources` become user-scope-only?**
+3. <a id="OQ-AS3"></a>✅ **OQ-AS3: Should `mounts` and `env_sources` become user-scope-only?**
 
-   <!-- vantage: question id=OQ-AS3 leaning="Yes for env_sources at least — source-bearing host_files is already user-scope-only for exactly this reason, and env_sources reaches the same host files by another name." -->
-
-   Stakes: a repo-committed config can name a host directory to mount at `/ctx` and a host
-   dotenv whose values become the jail's environment, disclosed only by the config-change diff.
-   The evidence, the narrower refusals since, and the counter-argument are in
-   [§9.1](#91-the-scope-rule-applied-unevenly-mounts-and-env_sources).
-
-   _Leaning:_ Yes for `env_sources`, on the `host_files` precedent — the same authority under a
-   different key name should not have a different scope. Less certain for `mounts`, where the
-   host path is visible in the diff and the jail gets it read-only; that one may be genuinely
-   fine as disclosure.
-
-   **Answer:**
-   > _(empty — fill in when decided)_
-
----
+   **Ruled 2026-10-29:** *"env sources in a workspace should not be able to specify outside the
+   workspace, no. read only mounts are there by design."* A workspace config's `env_sources` file
+   entry must resolve inside the workspace, and a path outside it is refused, naming user config
+   as the place for it. Read-only `mounts` stay allowed from a workspace config, by design.
+   Not yet built. Evidence: [§9.1](#91-the-scope-rule-applied-unevenly-mounts-and-env_sources).
 
 ## 13. Sources
 
