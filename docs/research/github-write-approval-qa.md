@@ -95,15 +95,14 @@ each records its exact command and HEAD. Source tests used the standard `/home/a
 | Targeted `go test -race` cancellation/audit, brokerstore/brokeraudit, and exact production CLI caller commands | All passed; `race-cancel-audit-06.log`, `race-store-audit-07.log`, `race-prod-cli-08.log`, `race-caller-final-13.log`, `race-caller-final-26.log`, and `race-header-final-37.log`. |
 | `python3 scripts/completion-census.py` | Passed; generated `scripts/completion-readers.json` cleanup is committed; `completion-census-final-14.log`, `completion-census-after-target-27.log`, and `completion-census-after-header-38.log`. |
 | `just format` and `git diff --check` | Passed before source commits; `format-15.log` records `just format`. `git diff --check` returned 0 in the clean source diff check. |
-| `scripts/vantage-check.sh docs/design/github-write-approval-plan.md docs/research/github-write-approval-qa.md` | First caught the unsupported custom `stage` vocabulary; metadata was corrected to `CURRENT`. The rerun passed, 2 files checked; `docs-vantage-30.log`. |
-| `just done` | Passed on evidence commit `137e02ea8ea0209b7e6aaf694b4ccd37a7b0917e`; 11 paths, selective vet/staticcheck/tests/readers/docs checks, then clean tree. Capture: `just-done-initial-31.log`. A later run after the first final-QA commit passed at `0fbcbaca0d7a13be8e281ff41ea7f7bf612eae27`; this header-test commit and its QA update require another final run, recorded at `just-done-after-header-40.log`. |
+| `scripts/vantage-check.sh docs/design/github-write-approval-plan.md docs/research/github-write-approval-qa.md` | First caught the unsupported custom `stage` vocabulary; metadata was corrected to `CURRENT`. Later checks passed, including after the unsafe-header status update; latest capture `docs-vantage-after-header-39.log`. |
 | `just check-ci` at source commit `5eff5aca0cf4e956c76c2505201cd9caca58fc59` | First attempt failed only at `internal/cli` `TestBackgroundAdvanceRepairCoordinationIsNoWaitAndConservative/observe`: producer did not reach `repair.observe` within the test's 7.09s wait (`check-ci-final-16.log`). The exact test passed isolated (`flaky-test-isolated-17.log`). The final-candidate run below passed. |
 | `just build-dev-bundle` at `5eff5aca0cf4e956c76c2505201cd9caca58fc59` | Passed; absolute launcher `/home/agent/.local/share/yolo-jail/dev-bundles/964b31d4339f87a0-90084bccea1f45fc8466b3d7188ceb23/bin/yolo`; `build-dev-bundle-18.log`. |
 | Absolute emitted launcher `check --no-build` from a fresh isolated workspace/home with fake host `gh` | Passed: 17 passed, 3 warnings, 5 skipped; `nested-check-no-build-19.log`. No installed launcher, host config or credential was changed. |
 | `podman info --format '{{.Host.Security.Rootless}}'; podman info --format '{{.Host.RootlessNetworkCmd}}'` | Measured `false` and `slirp4netns`; `podman-host-boundaries-20.log`. Nested verification proves only the launcher/preflight path, not rootless-only or real reachability behavior. |
 | `go test -count=1 -timeout 0 ./integration` | Passed at `5eff5aca0cf4e956c76c2505201cd9caca58fc59`: `ok .../integration 746.133s`; `integration-full-21.log`. The follow-up commit changed tests only, not production code. |
 | `just check-ci` at final source candidate `5a5ad6c990e010968496da898f4883f9a52daff3` | Passed; includes lint, Linux/Darwin vet/staticcheck, short tests and docs checks; `check-ci-final-candidate-28.log`. This is the one passing whole-tree check-ci on the final source candidate. |
-| `just done` after this evidence change | **Pending after the latest header-test and QA commits**; fresh `just done` capture will be `just-done-after-header-40.log`. |
+| `just done` after this evidence change | **Passed at `27de5719b79586339c77411e5c3ed43b40965719`**; 3 changed paths, clean tree; `just-done-after-header-40.log`. The final documentation-only amendment is followed by a fresh run. |
 
 The full integration and nested runs used rootful podman. They do not prove rootless podman, host-loopback
 reachability, macOS, real credentials or live GitHub effects. No additional issue was closed and no
@@ -111,9 +110,9 @@ deployment or land/merge claim is made.
 
 ## Current candidate status
 
-Current candidate branch tip is `64c065b92e0d5fa50b1e9c08776674c21e908d7e`; the substantive
-feature-source commit remains `5a5ad6c990e010968496da898f4883f9a52daff3`. The required production caller
-test matrix above is not complete, so the frozen reviewer's full P1 caller-proof finding remains open
-and **candidate handoff remains blocked**. `main` remains at `d159a57f03310f3da5ed49dda7546763361e9a38`;
-the full source diff is private and unlanded. A later review should be the same existing independent
-reviewer narrowed to the remaining Task 5 matrix, not a new review panel.
+The source/test candidate remains private through `64c065b92e0d5fa50b1e9c08776674c21e908d7e`; subsequent
+commits only maintain this evidence page. The required production caller test matrix above is not complete,
+so the frozen reviewer's full P1 caller-proof finding remains open and **candidate handoff remains blocked**.
+`main` remains at `d159a57f03310f3da5ed49dda7546763361e9a38`; the full source diff is private and unlanded.
+A later review should be the same existing independent reviewer narrowed to the remaining Task 5 matrix,
+not a new review panel.
