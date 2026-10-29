@@ -434,12 +434,22 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 			if tc.command == "comment" {
 				wantReceipt := append([]byte(strings.Join(tc.hostArgv, "\x00")), 0, 0)
 				seenIDs := map[string]bool{request.ID: true}
-				for i, body := range []string{tc.stdin, "changed body after approval\n"} {
+				mutations := []struct {
+					argv, wantArgv []string
+					body           string
+					wantDigest     string
+				}{
+					{argv: tc.argv, wantArgv: tc.hostArgv, body: tc.stdin, wantDigest: request.Digest},
+					{argv: tc.argv, wantArgv: tc.hostArgv, body: "changed body after approval\n"},
+					{argv: []string{"pr", "comment", "42", "--repo", "o/r", "--body-file", "-"},
+						wantArgv: []string{"pr", "comment", "--repo=o/r", "--body-file=-", "42"}, body: tc.stdin},
+				}
+				for _, mutation := range mutations {
 					replayFinished := make(chan result, 1)
-					go func(body string) {
-						code, out, stderr := fixture.forwardInput(body, tc.argv...)
+					go func(argv []string, body string) {
+						code, out, stderr := fixture.forwardInput(body, argv...)
 						replayFinished <- result{code: code, out: out, stderr: stderr}
-					}(body)
+					}(mutation.argv, mutation.body)
 					var next brokerstore.Request
 					deadline := time.Now().Add(3 * time.Second)
 					for next.ID == "" {
@@ -466,14 +476,15 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 						}
 						time.Sleep(10 * time.Millisecond)
 					}
-					bodySum := sha256.Sum256([]byte(body))
-					if next.StdinDigest != hex.EncodeToString(bodySum[:]) || next.Digest == request.Digest && i == 1 ||
-						next.Digest != request.Digest && i == 0 {
-						t.Fatalf("production replay identity did not distinguish exact and mutated bodies: %+v", next)
+					bodySum := sha256.Sum256([]byte(mutation.body))
+					if !slices.Equal(next.Argv, mutation.wantArgv) || next.StdinDigest != hex.EncodeToString(bodySum[:]) ||
+						(mutation.wantDigest != "" && next.Digest != mutation.wantDigest) ||
+						(mutation.wantDigest == "" && next.Digest == request.Digest) {
+						t.Fatalf("production replay identity did not bind argv and body exactly: original=%+v next=%+v", request, next)
 					}
 					seenIDs[next.ID] = true
 					if rc := Main([]string{"yolo", "approve", next.ID, "--deny"}); rc != 0 {
-						t.Fatalf("deny replay request %s returned %d", next.ID, rc)
+						t.Fatalf("deny replay/mutated request %s returned %d", next.ID, rc)
 					}
 					select {
 					case got := <-replayFinished:
