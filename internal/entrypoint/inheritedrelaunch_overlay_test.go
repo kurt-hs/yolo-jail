@@ -141,6 +141,14 @@ func TestInheritedCoreOverlayRefusesExistingOwnerEntries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newInheritedCoreOverlayFixture(t)
 			before, preservePath := create(t, f)
+			var beforeBody []byte
+			if before.Mode().IsRegular() {
+				body, err := os.ReadFile(preservePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				beforeBody = body
+			}
 			if err := f.install(); err == nil {
 				t.Fatal("install replaced an existing owner entry")
 			}
@@ -149,10 +157,6 @@ func TestInheritedCoreOverlayRefusesExistingOwnerEntries(t *testing.T) {
 				t.Fatalf("refusal changed owner entry: before %v, after %v", before, after)
 			}
 			if before.Mode().IsRegular() {
-				beforeBody, err := os.ReadFile(preservePath)
-				if err != nil {
-					t.Fatal(err)
-				}
 				afterBody, err := os.ReadFile(preservePath)
 				if err != nil || string(beforeBody) != string(afterBody) {
 					t.Fatalf("refusal changed owner bytes: before %q, after %q, err %v", beforeBody, afterBody, err)
