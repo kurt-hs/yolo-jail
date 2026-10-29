@@ -32,15 +32,20 @@ package run
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // The in-jail names of the two generated files. Both live in the jail's own
@@ -492,12 +497,46 @@ func (o *Options) userConfigMountArgsForHome(rt, wsState string, selectLegacy fu
 func (o *Options) macosUserInheritedScope(rt string) ([]overlayFile, error) {
 	var core []overlayFile
 	wsState := paths.WorkspaceHomeState(o.Workspace)
+	preserve := map[string]bool{}
+	delivered := map[string][]byte{}
 	selectLegacy := func(scope config.InheritScope, format configdoc.Format) (bool, error) {
-		return refuseExistingScopeDestination(wsState, func(rel string) (string, error) {
+		forceLegacy, err := selectInheritedJSONCRoute(wsState, func(rel string) (string, error) {
 			// DeriveDarwinHomeLayout lays ~/.config as the `config` subtree of this sidecar.
-			// The installer follows exactly this link into the workspace's sidecar.
 			return filepath.FromSlash(strings.TrimPrefix(rel, ".")), nil
-		}, scope, "macos-user", "the home-overlay installer cannot prove this file is its prior delivery")
+		}, scope, format)
+		if err != nil {
+			return false, err
+		}
+		legacy, toml := inheritScopeFamily(scope)
+		selected := toml
+		if forceLegacy || format != configdoc.TOML {
+			selected = legacy
+		}
+		selectedStorage := filepath.FromSlash(strings.TrimPrefix(selected, "."))
+		var existing []string
+		for _, rel := range []string{legacy, strings.TrimSuffix(legacy, ".jsonc") + ".json", toml} {
+			storageRel := filepath.FromSlash(strings.TrimPrefix(rel, "."))
+			_, exists, err := lstatHomeFile(wsState, storageRel)
+			if err != nil {
+				return false, err
+			}
+			if exists {
+				existing = append(existing, rel)
+			}
+		}
+		if len(existing) == 0 {
+			return forceLegacy, nil
+		}
+		if len(existing) != 1 || existing[0] != selected {
+			return false, refuseInheritedOverwrite(wsState, scope)
+		}
+		body, admitted := o.priorInheritedDelivery(wsState, selected)
+		if !admitted {
+			return false, refuseInheritedOverwrite(wsState, scope)
+		}
+		preserve[selectedStorage] = true
+		delivered[selected] = body
+		return forceLegacy, nil
 	}
 	files, err := o.inheritedScopeWithSelector(rt, false, selectLegacy)
 	if err != nil {
@@ -507,14 +546,119 @@ func (o *Options) macosUserInheritedScope(rt string) ([]overlayFile, error) {
 	// (buildMacosHomeOverlayTreeIDs). A launch time in this header moved the overlay's digest on
 	// every launch, so every relaunch rebuilt, re-staged and re-installed all of it.
 	for _, f := range files {
+		if prior, ok := delivered[f.rel]; ok && !bytes.Equal(prior, []byte(f.body)) {
+			return nil, refuseInheritedOverwrite(wsState, f.scope)
+		}
 		core = append(core, overlayFile{Rel: f.rel, Body: []byte(f.body)})
 	}
 	if !o.DryRun {
-		// Remove only known generated copies before applying the new overlay. In particular,
-		// a legacy config.jsonc beside a new config.toml would trigger the sibling refusal.
-		removeStaleInheritedScope(wsState)
+		// Preserve an unchanged, admitted hardlink until the installer sees the same inode.
+		removeStaleInheritedScope(wsState, preserve)
 	}
 	return core, nil
+}
+
+// inheritedScopeStagingRoot is private so tests can use an isolated staging tree; production
+// always asks macos-user for its established root.
+var inheritedScopeStagingRoot = macosuser.StagingRoot
+
+func refuseInheritedOverwrite(wsState string, scope config.InheritScope) error {
+	_, err := refuseExistingScopeDestination(wsState, func(rel string) (string, error) {
+		return filepath.FromSlash(strings.TrimPrefix(rel, ".")), nil
+	}, scope, "macos-user", "the home-overlay installer cannot prove this file is its prior delivery")
+	return err
+}
+
+// priorInheritedDelivery proves that rel is the unchanged, sealed source file hardlinked into
+// the sidecar by an earlier installer run. A writable receipt or matching bytes alone is not proof.
+func (o *Options) priorInheritedDelivery(wsState, rel string) ([]byte, bool) {
+	rootPath := inheritedScopeStagingRoot()
+	probes := o.MacosUserLaunchProbes
+	if probes == nil {
+		probes = macosuser.RealLaunchProbes
+	}
+	launchProbes := probes()
+	if launchProbes.Geteuid == nil || launchProbes.StagingRoot == nil {
+		return nil, false
+	}
+	euid := launchProbes.Geteuid()
+	if macosuser.JudgeStagingRoot(launchProbes.StagingRoot(rootPath), euid) != macosuser.StagingRootOK {
+		return nil, false
+	}
+	root, err := paths.OpenStateDirRoot(rootPath)
+	if err != nil {
+		return nil, false
+	}
+	defer root.Close()
+	category, err := paths.OpenStateSubdirRoot(root, "home-overlay", filepath.Join(rootPath, "home-overlay"))
+	if err != nil {
+		return nil, false
+	}
+	defer category.Close()
+	if info, err := category.Stat("."); err != nil || info.Mode().Perm() != 0o755 {
+		return nil, false
+	}
+	cname := yoloruntime.FromWorkspace(o.Workspace)
+	tree, err := paths.OpenStateSubdirRoot(category, cname, filepath.Join(rootPath, "home-overlay", cname))
+	if err != nil {
+		return nil, false
+	}
+	defer tree.Close()
+	if info, err := tree.Stat("."); err != nil || info.Mode().Perm() != 0o555 {
+		return nil, false
+	}
+	clean := filepath.Clean(strings.TrimLeft(filepath.FromSlash(rel), "/"))
+	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return nil, false
+	}
+	parts := strings.Split(clean, string(filepath.Separator))
+	parent := tree
+	opened := []*os.Root{}
+	defer func() {
+		for _, r := range opened {
+			_ = r.Close()
+		}
+	}()
+	for _, part := range parts[:len(parts)-1] {
+		next, err := paths.OpenStateSubdirRoot(parent, part, filepath.Join(rootPath, "home-overlay", cname, filepath.Join(parts[:len(opened)+1]...)))
+		if err != nil {
+			return nil, false
+		}
+		if info, err := next.Stat("."); err != nil || info.Mode().Perm() != 0o555 {
+			_ = next.Close()
+			return nil, false
+		}
+		opened = append(opened, next)
+		parent = next
+	}
+	sourceName := parts[len(parts)-1]
+	sourceInfo, err := parent.Lstat(sourceName)
+	if err != nil || !sourceInfo.Mode().IsRegular() || sourceInfo.Mode().Perm() != 0o444 || !inheritedFileOwnedBy(sourceInfo, euid) {
+		return nil, false
+	}
+	source, err := parent.OpenFile(sourceName, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, false
+	}
+	defer source.Close()
+	openedInfo, err := source.Stat()
+	if err != nil || !os.SameFile(sourceInfo, openedInfo) || openedInfo.Mode().Perm() != 0o444 {
+		return nil, false
+	}
+	body, err := io.ReadAll(source)
+	if err != nil {
+		return nil, false
+	}
+	destInfo, exists, err := lstatHomeFile(wsState, filepath.FromSlash(strings.TrimPrefix(rel, ".")))
+	if err != nil || !exists || destInfo.Mode().Perm() != 0o444 || !os.SameFile(sourceInfo, destInfo) {
+		return nil, false
+	}
+	return body, true
+}
+
+func inheritedFileOwnedBy(info os.FileInfo, uid int) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && uid >= 0 && uint32(uid) == stat.Uid
 }
 
 // removeStaleInheritedScope removes only the generated user-scope files a previous macos-user
@@ -525,10 +669,10 @@ func (o *Options) macosUserInheritedScope(rt string) ([]overlayFile, error) {
 // so a link it planted above the file would otherwise take the removal to whatever it names.
 // Best-effort: a stale file left behind costs a stale user scope, never a launch.
 //
-// ⚠ RESIDUAL, stated rather than fixed: a launch that DOES render the file replaces an agent's
-// own config.jsonc at the path, where podman's bind only hides it until the next launch without
-// one. The agent's place for its own user-scope config is a --user-layer file beside it.
-func removeStaleInheritedScope(sidecar string) {
+// ⚠ RESIDUAL: stale cleanup still recognizes only the legacy generated header for an undelivered
+// file. This slice preserves a destination only when its unchanged sealed hardlink is proven; it
+// does not extend ownership proof or alter cleanup for old header-only artifacts.
+func removeStaleInheritedScope(sidecar string, preserve map[string]bool) {
 	// No sidecar, no files: and openStateRoot would create the directories it opens.
 	if _, err := os.Lstat(sidecar); err != nil {
 		return
@@ -546,6 +690,9 @@ func removeStaleInheritedScope(sidecar string) {
 		{inheritPreflightRel, inheritTOMLHeaderFirstLine()},
 	} {
 		rel := filepath.FromSlash(strings.TrimPrefix(candidate.rel, "."))
+		if preserve[rel] {
+			continue
+		}
 		if fi, err := r.Lstat(rel); err != nil || !fi.Mode().IsRegular() {
 			continue
 		}

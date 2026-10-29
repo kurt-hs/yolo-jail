@@ -59,6 +59,9 @@ func TestPiExtensionsReachAMacosUserHome(t *testing.T) {
 	if err := entrypoint.InstallDarwinHomeLayout(e, []*packload.Pack{pi}); err != nil {
 		t.Fatalf("home layout: %v", err)
 	}
+	if err := os.Chmod(filepath.Join(got.Tree, ".config", "yolo-jail", "config.toml"), 0o444); err != nil {
+		t.Fatalf("seal the inherited core config source like the production staged overlay: %v", err)
+	}
 	if err := entrypoint.InstallHomeOverlay(e, []*packload.Pack{pi}); err != nil {
 		t.Fatalf("overlay install: %v", err)
 	}

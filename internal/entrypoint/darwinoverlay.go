@@ -75,6 +75,18 @@ const (
 	overlayAsideSuffix  = ".yolo-overlay-old"
 )
 
+// inheritedCoreConfigDestination matches only the four core files whose staged source is sealed
+// and whose owner destination must not be refreshed by the general home overlay.
+func inheritedCoreConfigDestination(dest string) bool {
+	switch dest {
+	case ".config/yolo-jail/config.toml", ".config/yolo-jail/config.jsonc",
+		".config/yolo-jail/inherited-launch.toml", ".config/yolo-jail/inherited-launch.jsonc":
+		return true
+	default:
+		return false
+	}
+}
+
 // WriteHomeOverlayManifest records dests as the overlay's destination list and returns the
 // list it wrote. The host calls it once, after laying every destination out under overlay.
 // Duplicates collapse (two packs may declare one skills destination), a destination inside
@@ -806,6 +818,22 @@ func installOverlayDestination(overlay, home string, roots []overlayRoot, links 
 		return curErr
 	}
 
+	inheritedConfig := inheritedCoreConfigDestination(dest)
+	if inheritedConfig {
+		if !srcInfo.Mode().IsRegular() || srcInfo.Mode().Perm() != 0o444 {
+			return fmt.Errorf("refusing to install inherited core config ~/%s: its staged source is not a sealed 0444 regular file; repair the staged overlay and relaunch", dest)
+		}
+		if curErr == nil {
+			stagedInfo, stagedErr := os.Lstat(src)
+			if cur.Mode().IsRegular() && cur.Mode().Perm() == 0o444 && stagedErr == nil &&
+				stagedInfo.Mode().IsRegular() && stagedInfo.Mode().Perm() == 0o444 &&
+				os.SameFile(srcInfo, stagedInfo) && os.SameFile(srcInfo, cur) {
+				return nil
+			}
+			return fmt.Errorf("refusing to install inherited core config ~/%s: an existing destination is not the unchanged sealed hardlink; preserve it, inspect the path, then relaunch", dest)
+		}
+	}
+
 	staged := "." + base + overlayStagedSuffix
 	aside := "." + base + overlayAsideSuffix
 	// Leftovers of an install that crashed. Both hold only overlay content — the staged copy
@@ -844,6 +872,23 @@ func installOverlayDestination(overlay, home string, roots []overlayRoot, links 
 	}
 	if overlayInstallHook != nil {
 		overlayInstallHook(dest, "staged")
+	}
+
+	if inheritedConfig {
+		parent, err := dir.Open(".")
+		if err != nil {
+			_ = dir.RemoveAll(staged)
+			return fmt.Errorf("opening checked parent of inherited core config ~/%s: %w; inspect the path and relaunch", dest, err)
+		}
+		defer parent.Close()
+		if err := renameNoReplaceBetweenAt(int(parent.Fd()), staged, int(parent.Fd()), base); err != nil {
+			_ = dir.RemoveAll(staged)
+			if errors.Is(err, os.ErrExist) {
+				return fmt.Errorf("refusing to replace inherited core config ~/%s: a file appeared during installation; preserve it, inspect the path, then relaunch", dest)
+			}
+			return fmt.Errorf("installing inherited core config ~/%s without replacement: %w; inspect the path and relaunch", dest, err)
+		}
+		return nil
 	}
 
 	// Swap. A file over a file (or over nothing) is one atomic rename. A directory cannot be

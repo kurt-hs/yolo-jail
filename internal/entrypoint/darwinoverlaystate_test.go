@@ -281,18 +281,22 @@ func TestDarwinOverlayInstallsTheInheritedUserScopeBesideTheAgentsOwnFiles(t *te
 	packRoot := stageWholePackForBootstrap(t, claude)
 	const dest = ".config/yolo-jail/config.jsonc"
 
-	// Boot 1 lays the layout; then the agent writes its own files beside the destination, and a
-	// previous launch's copy of the file is there to be replaced.
+	// Boot 1 lays the layout; then the agent writes its own files beside the destination. The
+	// inherited destination itself starts absent: independent owner files are preserved, not refreshed.
 	bootDarwinForPack(t, home, ws, packRoot, "")
 	dir := filepath.Join(home, ".config", "yolo-jail")
 	layer := filepath.Join(dir, "layer.jsonc")
 	local := filepath.Join(dir, "local", "pack.json")
 	writeTreeFile(t, layer, `{"packs": ["mine"]}`)
 	writeTreeFile(t, local, `{"name": "local"}`)
-	writeTreeFile(t, filepath.Join(home, filepath.FromSlash(dest)), "previous launch's user scope")
 
-	// Boot 2 with the overlay carrying the file, as a file destination.
-	stderr := bootDarwinForPack(t, home, ws, packRoot, stageHostShapedOverlay(t, nil, []string{dest}))
+	// Boot 2 with the overlay carrying the file, as a file destination. Its staged source is
+	// sealed read-only before the installer receives it.
+	overlay := stageHostShapedOverlay(t, nil, []string{dest})
+	if err := os.Chmod(filepath.Join(overlay, ".config", "yolo-jail", "config.jsonc"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	stderr := bootDarwinForPack(t, home, ws, packRoot, overlay)
 
 	if got, err := os.ReadFile(filepath.Join(home, filepath.FromSlash(dest))); err != nil || string(got) != "delivered briefing" {
 		t.Errorf("the inherited user scope did not arrive at ~/%s: %q, %v\n%s", dest, got, err, stderr)
