@@ -27,6 +27,9 @@ package entrypoint
 // destination, with or without its parent directories, is created. Only the case the writer cannot
 // complete without inventing a directory is refused.
 //
+// THE THIRD SHAPE IS LoopingLink, below the read side: a cycle, which a writer repairs rather
+// than refuses.
+//
 // THE READ SIDE IS FindDanglingLink, in this file because it takes the same walk up the path
 // (unresolvedLinkOnPath) and along the same chain (linkChainEnd), and a second walker is what
 // docs/design/agent-directory-map.md AM-D5 rules out. A file yolo
@@ -35,9 +38,11 @@ package entrypoint
 // dangling link, a non-regular file, a read error — for both notches.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -192,26 +197,102 @@ func UnreadHostSource(src string) *HostSourceSkip {
 	}
 }
 
+// LoopingLink reports the symlink on path's way to the filesystem whose chain never ends — a
+// loop, or a chain longer than the kernel follows — or "" when nothing on the way is one.
+//
+// It is the third shape of link this file rules on, and the one a WRITER may repair. A broken
+// link (FindBrokenLink) is refused because it is the user's dotfiles layout, and replacing it
+// would detach the destination from whatever manages it. A loop is not a layout: nothing can
+// read through it, hold bytes behind it, or mean anything by it, so a writer that owns the
+// destination replaces it with the file it was asked to write, and says so.
+//
+// Measured 2026-10-29: agy rewrites its DECLARED mcp_config.json into a link into
+// ~/.gemini/config, and a second link back at that end made ~/.gemini/antigravity-cli/
+// mcp_config.json a cycle, so open(2) answered ELOOP and the whole jail refused to boot on one
+// boot step (configure_agy_mcp) — an agent's config-layout accident costing the launch every
+// other agent too. ~/.gemini is workspace state, so it came back on every launch in that
+// workspace until the link was removed by hand.
+//
+// THE WALK IS unresolvedLinkOnPath's, with one difference that walk cannot cover: Lstat follows
+// the directories ABOVE the path, so a cycle one directory up surfaces as ELOOP rather than as
+// a link to be examined, and this walk steps up a level until it holds the link itself.
+//
+// IT RETURNS THE MEMBER TO REMOVE, and the choice matters: when the repeat is a link OTHER than
+// the destination, that link is the one taken away and the destination keeps its link, so the
+// writer still lands where the agent pointed it. The measured case is exactly that —
+// ~/.gemini/config/mcp_config.json, a link to its own in-jail path, at the far end of agy's own
+// link — and removing it leaves agy's declared link resolving to the file the render writes.
+func LoopingLink(path string) (link, target string, looped bool) {
+	p, found := firstLinkOnPath(path)
+	if !found {
+		return "", "", false
+	}
+	end, cycle := linkChainWalk(p)
+	if end != "" {
+		return "", "", false // a chain that ENDS is the agent's own redirection
+	}
+	if cycle == "" {
+		cycle = p // a chain longer than the kernel follows: nothing repeats, so the path goes
+	}
+	return cycle, firstHop(cycle), true
+}
+
+// firstLinkOnPath is the first entry on path's way to the filesystem that exists, when it is a
+// symlink: path itself, or the nearest existing directory above it. found is false when that
+// entry is a real file or directory, when the walk cannot read it for a reason of its own
+// (EACCES), and when nothing on the way exists at all — a plain missing file, which the writer
+// creates.
+func firstLinkOnPath(path string) (string, bool) {
+	p := filepath.Clean(path)
+	for {
+		fi, err := os.Lstat(p)
+		if err == nil {
+			return p, fi.Mode()&os.ModeSymlink != 0
+		}
+		if !os.IsNotExist(err) && !errors.Is(err, syscall.ELOOP) {
+			return "", false
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return "", false
+		}
+		p = parent
+	}
+}
+
 // linkChainEnd follows the symlink chain starting at link to the first path that is not itself an
 // existing symlink, resolving relative targets against each link's directory. ok is false for a
 // loop or an over-long chain.
 func linkChainEnd(link string) (string, bool) {
+	end, cycle := linkChainWalk(link)
+	return end, cycle == "" && end != ""
+}
+
+// linkChainWalk is linkChainEnd's walk, reporting WHICH member repeats when the chain never ends
+// (cycle), so the one walk can also answer LoopingLink's question. cycle is "" for an over-long
+// chain, which repeats nothing.
+func linkChainWalk(link string) (end, cycle string) {
+	seen := map[string]bool{}
 	cur := link
 	for i := 0; i < maxLinkHops; i++ {
 		fi, err := os.Lstat(cur)
 		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
-			return cur, true
+			return cur, ""
 		}
+		if seen[cur] {
+			return "", cur
+		}
+		seen[cur] = true
 		target, err := os.Readlink(cur)
 		if err != nil {
-			return cur, true
+			return cur, ""
 		}
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(filepath.Dir(cur), target)
 		}
 		cur = filepath.Clean(target)
 	}
-	return "", false
+	return "", ""
 }
 
 // firstHop is link's own raw target, resolved against its directory — what a loop is reported as.

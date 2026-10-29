@@ -667,10 +667,28 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 		return fmt.Errorf("%s", refusal)
 	}
 
+	// A symlink LOOP on the way to the surface file is replaced before anything is written
+	// (LoopingLink, hostbrokenlink.go states why a loop and not a broken link). It has to
+	// happen here, ahead of the MkdirAll below and of every mechanism's writer, because a
+	// loop at the destination or at one of its directories makes open(2) answer ELOOP: the
+	// stateful and rmw arms would refuse to read the file, and the computed arm — agy's
+	// mcp_config.json is one — would fail the boot step outright. A loop holds no bytes and
+	// no layout anyone can read, so the render replaces it rather than stopping the jail.
+	surfacePath := expandHomePath(e, surface.Path)
+	if link, target, looped := LoopingLink(surfacePath); looped {
+		if err := os.Remove(link); err != nil {
+			return fmt.Errorf("surface %s/%s: %s is a symlink loop (%s) and cannot be removed: %w",
+				surface.Agent, surface.Name, link, target, err)
+		}
+		e.warn(fmt.Sprintf("%s/%s: %s was a symlink loop (%s) — the chain names no file, so it was "+
+			"replaced with a regular file", surface.Agent, surface.Name, link, target))
+	}
+
 	// The config dir. Was an os.MkdirAll per agent in the six Go functions; the surface
 	// path already says where the file goes, so the directory is derivable rather than
-	// declared.
-	if err := os.MkdirAll(filepath.Dir(expandHomePath(e, surface.Path)), 0o755); err != nil {
+	// declared. After the loop repair: removing a looping DIRECTORY on the way leaves it
+	// to be created here.
+	if err := os.MkdirAll(filepath.Dir(surfacePath), 0o755); err != nil {
 		return err
 	}
 
