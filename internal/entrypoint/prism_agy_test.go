@@ -1,8 +1,10 @@
 package entrypoint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,7 +75,7 @@ func TestConfigureAgyPrismManagedReverts(t *testing.T) {
 
 // agyMCPLoop lays the cycle measured on 2026-10-29: agy's DECLARED mcp_config.json links into
 // ~/.gemini/config, and the file at that end links to ITS OWN in-jail path, so the declared path
-// answers ELOOP. LoopingLink's comment carries what that cost (the whole boot refused on
+// answers ELOOP. The loop inspector carries what that cost (the whole boot refused on
 // configure_agy_mcp).
 func agyMCPLoop(t *testing.T, e *Env) (declared, other string) {
 	t.Helper()
@@ -143,6 +145,136 @@ func TestConfigureAgyMCPReplacesALoopAboveTheFile(t *testing.T) {
 	mcp := decodeJSONFile(t, filepath.Join(e.AgyDir(), "mcp_config.json"))
 	if _, ok := mcp["mcpServers"]; !ok {
 		t.Errorf("mcp_config.json missing mcpServers key after the repair: %v", mcp)
+	}
+}
+
+func TestConfigureAgyMCPWritesThroughFortyLinkFiniteRedirect(t *testing.T) {
+	e := siblingEnv(t, nil)
+	declared := filepath.Join(e.AgyDir(), "mcp_config.json")
+	chainDir := filepath.Join(e.GeminiDir(), "config")
+	if err := os.MkdirAll(chainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(e.AgyDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := []string{declared}
+	for i := 1; i < 40; i++ {
+		links = append(links, filepath.Join(chainDir, fmt.Sprintf("redirect-%02d", i)))
+	}
+	terminal := filepath.Join(chainDir, "mcp_config.json")
+	for i, link := range links {
+		target := terminal
+		if i+1 < len(links) {
+			target = links[i+1]
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(terminal, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ConfigurePackByName(e, "agy"); err != nil {
+		t.Fatalf("ConfigureAgyPrism through a finite 40-link redirect: %v", err)
+	}
+	if fi, err := os.Lstat(declared); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the first valid redirect was removed: %v, %v", fi, err)
+	}
+	mcp := decodeJSONFile(t, terminal)
+	if _, ok := mcp["mcpServers"]; !ok {
+		t.Errorf("the finite chain's target did not receive the render: %v", mcp)
+	}
+}
+
+func TestConfigureAgyMCPRefusesUnprovenLongFiniteRedirect(t *testing.T) {
+	e := siblingEnv(t, nil)
+	declared := filepath.Join(e.AgyDir(), "mcp_config.json")
+	chainDir := filepath.Join(e.GeminiDir(), "config")
+	if err := os.MkdirAll(chainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(e.AgyDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := []string{declared}
+	for i := 1; i < 41; i++ {
+		links = append(links, filepath.Join(chainDir, fmt.Sprintf("redirect-%02d", i)))
+	}
+	terminal := filepath.Join(chainDir, "mcp_config.json")
+	for i, link := range links {
+		target := terminal
+		if i+1 < len(links) {
+			target = links[i+1]
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(terminal, []byte("preserve me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ConfigurePackByName(e, "agy")
+	if err == nil || !strings.Contains(err.Error(), "cannot prove") {
+		t.Fatalf("ConfigureAgyPrism error = %v, want an explicit refusal for an unproven chain", err)
+	}
+	if fi, err := os.Lstat(declared); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the first unproven redirect was changed: %v, %v", fi, err)
+	}
+	if got, err := os.ReadFile(terminal); err != nil || string(got) != "preserve me\n" {
+		t.Errorf("the terminal file was changed: %q, %v", got, err)
+	}
+}
+
+func TestConfigureAgyMCPRefusesLoopOutsideJailHome(t *testing.T) {
+	e := siblingEnv(t, nil)
+	e.Workspace = t.TempDir()
+	declared := filepath.Join(e.AgyDir(), "mcp_config.json")
+	outside := filepath.Join(e.Workspace, "mcp_config.json")
+	if err := os.MkdirAll(e.AgyDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, declared); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, outside); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ConfigurePackByName(e, "agy")
+	if err == nil || !strings.Contains(err.Error(), "left untouched") {
+		t.Fatalf("ConfigureAgyPrism error = %v, want an explicit outside-home refusal", err)
+	}
+	if fi, err := os.Lstat(outside); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the host-visible looping link was changed: %v, %v", fi, err)
+	}
+}
+
+func TestConfigureAgyMCPReplacesIndirectParentLoop(t *testing.T) {
+	e := siblingEnv(t, nil)
+	declared := filepath.Join(e.AgyDir(), "mcp_config.json")
+	loopDir := filepath.Join(e.Home, "loopdir")
+	if err := os.MkdirAll(e.AgyDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(loopDir, "mcp_config.json"), declared); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(loopDir, loopDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ConfigurePackByName(e, "agy"); err != nil {
+		t.Fatalf("ConfigureAgyPrism with an indirect target-parent loop: %v", err)
+	}
+	if fi, err := os.Lstat(loopDir); err != nil || !fi.IsDir() {
+		t.Fatalf("loop target parent after repair: %v, %v (want a real directory)", fi, err)
+	}
+	mcp := decodeJSONFile(t, declared)
+	if _, ok := mcp["mcpServers"]; !ok {
+		t.Errorf("indirect parent loop target did not receive the render: %v", mcp)
 	}
 }
 

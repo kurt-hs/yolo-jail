@@ -301,14 +301,15 @@ target is missing but whose target's *directory* exists is not broken: it is wri
 dotfiles checkout that has not created the file yet expects. Measured on the maintainer's host
 2026-09-28, where a link into a deleted `~/.dotfiles/pi` used to fail the whole pi pack.
 
-A link **cycle** is the other shape, and the jail does not refuse it: a chain that never ends holds
-no bytes and describes no layout, so the jail's surface render replaces the link with the file it
-was asked to write and warns, naming the link, its first target, and the surface
-(`entrypoint.LoopingLink`). It is not a broken link and takes no `--assert`: nothing is lost, and
-the agent that laid the cycle lays it again if it wants it. Measured 2026-10-29, where agy's
-declared `mcp_config.json` and its `~/.gemini/config` twin linked to each other and the resulting
-`ELOOP` refused a whole jail launch on that one boot step. At the host notch a cycle is still a
-destination that cannot be written, so it is refused there like any other unwritable destination.
+A link **cycle** is the other shape. The jail repairs one only when the walk proves a repeated symlink,
+all of its chain stays within the jail home, and the exact entry can be quarantined and revalidated
+under that home without crossing a linked parent. The warning says the verified loop was removed
+and the render is starting; it does not claim the surface write succeeded. A finite chain is not a
+cycle, even at the walk limit. An outside-home loop or a chain whose status cannot be proved is left
+untouched and refused with a next step. Measured 2026-10-29, where agy's declared `mcp_config.json`
+and its `~/.gemini/config` target self-looped and the resulting `ELOOP` refused a whole jail launch
+on that one boot step. At the host notch a cycle is still a destination that cannot be written, so
+it is refused there like any other unwritable destination.
 
 ## Detail on demand
 

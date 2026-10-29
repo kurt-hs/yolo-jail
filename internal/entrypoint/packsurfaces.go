@@ -667,27 +667,43 @@ func renderPlannedSurface(e *Env, pl surfacePlan, src jailLayerSource) error {
 		return fmt.Errorf("%s", refusal)
 	}
 
-	// A symlink LOOP on the way to the surface file is replaced before anything is written
-	// (LoopingLink, hostbrokenlink.go states why a loop and not a broken link). It has to
-	// happen here, ahead of the MkdirAll below and of every mechanism's writer, because a
-	// loop at the destination or at one of its directories makes open(2) answer ELOOP: the
-	// stateful and rmw arms would refuse to read the file, and the computed arm — agy's
-	// mcp_config.json is one — would fail the boot step outright. A loop holds no bytes and
-	// no layout anyone can read, so the render replaces it rather than stopping the jail.
+	// A symlink cycle is repaired only when it is proven, stays inside this jail's home, and
+	// the exact inspected link can be quarantined without replacing a concurrent entry. An
+	// exhausted walk is not proof, and a loop through a writable workspace or other host-visible
+	// path is refused untouched. The target-side directory is recreated for ELOOP parent paths.
 	surfacePath := expandHomePath(e, surface.Path)
-	if link, target, looped := LoopingLink(surfacePath); looped {
-		if err := os.Remove(link); err != nil {
-			return fmt.Errorf("surface %s/%s: %s is a symlink loop (%s) and cannot be removed: %w",
-				surface.Agent, surface.Name, link, target, err)
+	loop := inspectLoopingLink(e.Home, surfacePath)
+	if loop.uncertain {
+		return fmt.Errorf("surface %s/%s: cannot prove whether the symlink chain to %s loops; it was left untouched, so inspect and shorten or repair the chain, then relaunch", surface.Agent, surface.Name, surfacePath)
+	}
+	if loop.cycle {
+		if !loop.inHome {
+			return fmt.Errorf("surface %s/%s: symlink loop at %s leaves the jail home; it was left untouched, so repair or remove that link yourself, then relaunch", surface.Agent, surface.Name, loop.link)
 		}
-		e.warn(fmt.Sprintf("%s/%s: %s was a symlink loop (%s) — the chain names no file, so it was "+
-			"replaced with a regular file", surface.Agent, surface.Name, link, target))
+		if err := removeLoopingLink(e.Home, loop); err != nil {
+			return fmt.Errorf("surface %s/%s: %w", surface.Agent, surface.Name, err)
+		}
+		root, err := os.OpenRoot(e.Home)
+		if err != nil {
+			return fmt.Errorf("surface %s/%s: the verified loop at %s was removed, but its target directory cannot be opened: %w; inspect the path and relaunch", surface.Agent, surface.Name, loop.link, err)
+		}
+		for _, dir := range loop.recreateDirs {
+			rel, err := relativeHomePath(e.Home, dir)
+			if err != nil {
+				_ = root.Close()
+				return fmt.Errorf("surface %s/%s: the verified loop at %s was removed, but its target directory is outside the jail home: %w", surface.Agent, surface.Name, loop.link, err)
+			}
+			if err := root.MkdirAll(rel, 0o755); err != nil {
+				_ = root.Close()
+				return fmt.Errorf("surface %s/%s: the verified loop at %s was removed, but its target directory %s could not be recreated; inspect it and relaunch: %w", surface.Agent, surface.Name, loop.link, dir, err)
+			}
+		}
+		_ = root.Close()
+		e.warn(fmt.Sprintf("%s/%s: verified symlink loop at %s (%s) was removed; rendering the surface now", surface.Agent, surface.Name, loop.link, loop.target))
 	}
 
 	// The config dir. Was an os.MkdirAll per agent in the six Go functions; the surface
-	// path already says where the file goes, so the directory is derivable rather than
-	// declared. After the loop repair: removing a looping DIRECTORY on the way leaves it
-	// to be created here.
+	// path already says where the file goes, so the directory is derivable rather than declared.
 	if err := os.MkdirAll(filepath.Dir(surfacePath), 0o755); err != nil {
 		return err
 	}
