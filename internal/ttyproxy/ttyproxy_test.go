@@ -1103,7 +1103,9 @@ func runSuspendResumePreservesOutputQueueOrder(t *testing.T, backgroundChildExit
 		t.Fatalf("proxy did not process the repeated request while drain was pending: %v", err)
 	}
 	startDrain()
-	stoppedDeadline := time.Now().Add(3 * time.Second)
+	// The proxy must drain the whole queued output before it resets and stops, which takes
+	// longer than three seconds under a loaded whole-tree gate; the ordering is asserted below.
+	stoppedDeadline := time.Now().Add(childDeadline)
 	for time.Now().Before(stoppedDeadline) && !ownedProcessStopped(cmd.Process.Pid) {
 		select {
 		case err := <-waitResult:
