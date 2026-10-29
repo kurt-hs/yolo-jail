@@ -293,6 +293,82 @@ func (f *productionGitHubFixture) forwardInput(stdin string, argv ...string) (in
 	return code, out.String(), stderr.String()
 }
 
+func stdinSHA256(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
+}
+
+func requireProductionSpendAudit(t *testing.T, request brokerstore.Request, grant brokerstore.Grant, stdin []byte) {
+	t.Helper()
+	if len(stdin) == 0 || request.StdinDigest != stdinSHA256(stdin) {
+		t.Fatalf("spend request does not bind the nonempty submitted stdin: request=%+v stdin_sha256=%s", request, stdinSHA256(stdin))
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decisions, spends, calls int
+	for _, event := range events {
+		if event.Service != ghbroker.Source || event.Request != request.ID || event.Grant != grant.ID ||
+			event.CommandDigest != request.Digest || event.StdinDigest != request.StdinDigest || !slices.Equal(event.Argv, request.Argv) {
+			continue
+		}
+		switch event.Event {
+		case "decision":
+			if event.Outcome == "allowed" {
+				decisions++
+			}
+		case "grant-used":
+			if event.Outcome == "spent-before-dispatch" {
+				spends++
+			}
+		case "call":
+			if event.Outcome == "ran" && event.Stdin != nil && event.Stdin.Bytes == len(stdin) && event.Stdin.SHA256 == request.StdinDigest {
+				calls++
+			}
+		}
+	}
+	if decisions != 1 || spends != 1 || calls != 1 {
+		t.Fatalf("audit must link one allowed decision, required spend and final stdin-identified dispatch: decisions=%d spends=%d calls=%d request=%s grant=%s digest=%s stdin=%s events=%+v", decisions, spends, calls, request.ID, grant.ID, request.Digest, request.StdinDigest, events)
+	}
+}
+
+func requireProductionDeniedRequestAudit(t *testing.T, request brokerstore.Request, stdin []byte) {
+	t.Helper()
+	if len(stdin) == 0 || request.StdinDigest != stdinSHA256(stdin) {
+		t.Fatalf("denied request does not bind its nonempty submitted stdin: request=%+v stdin_sha256=%s", request, stdinSHA256(stdin))
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var filed, denied, refused int
+	for _, event := range events {
+		if event.Service != ghbroker.Source || event.Request != request.ID || event.CommandDigest != request.Digest ||
+			event.StdinDigest != request.StdinDigest || !slices.Equal(event.Argv, request.Argv) {
+			continue
+		}
+		switch event.Event {
+		case "request":
+			if event.Outcome == "pending" && event.Grant == "" {
+				filed++
+			}
+		case "decision":
+			if event.Outcome == "denied" && event.Grant == "" {
+				denied++
+			}
+		case "call":
+			if event.Outcome == "refused" && event.Grant == "" && event.Stdin != nil &&
+				event.Stdin.Bytes == len(stdin) && event.Stdin.SHA256 == request.StdinDigest {
+				refused++
+			}
+		}
+	}
+	if filed != 1 || denied != 1 || refused != 1 {
+		t.Fatalf("audit must link one exact filed, denied and refused action: filed=%d denied=%d refused=%d request=%s digest=%s stdin=%s events=%+v", filed, denied, refused, request.ID, request.Digest, request.StdinDigest, events)
+	}
+}
+
 func seedUnusedProductionGrant(t *testing.T, f *productionGitHubFixture, body, seedTarget, grantTarget string) brokerstore.Request {
 	t.Helper()
 	finished := make(chan productionForwardResult, 1)
@@ -534,26 +610,14 @@ func TestProductionUnusedExactGrantSurvivesBodyMismatch(t *testing.T) {
 		t.Fatalf("exact action receipt differs or dispatched more than once: got %q want %q err=%v", gotReceipt, wantReceipt, err)
 	}
 	gotStdin, err := os.ReadFile(fixture.stdin)
-	if err != nil || !bytes.Equal(gotStdin, []byte(approvedBody)) {
-		t.Fatalf("exact action stdin differs: %q err=%v", gotStdin, err)
+	if err != nil || !bytes.Equal(gotStdin, []byte(approvedBody)) || stdinSHA256(gotStdin) != grantRequest.StdinDigest {
+		t.Fatalf("exact action stdin differs from approved bytes and digest: got %q digest=%s want=%q digest=%s err=%v", gotStdin, stdinSHA256(gotStdin), approvedBody, grantRequest.StdinDigest, err)
 	}
 	_, grants, err = fixture.store.List()
 	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
 		t.Fatalf("exact authority was not spent exactly once: %+v err=%v", grants, err)
 	}
-	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
-	if err != nil {
-		t.Fatal(err)
-	}
-	spent := 0
-	for _, event := range events {
-		if event.Request == grantRequest.ID && event.Grant == grants[0].ID && event.Event == "grant-used" && event.Outcome == "spent-before-dispatch" {
-			spent++
-		}
-	}
-	if spent != 1 {
-		t.Fatalf("audit does not record exactly one spend for the approved production identity: %d %+v", spent, events)
-	}
+	requireProductionSpendAudit(t, grantRequest, grants[0], []byte(approvedBody))
 }
 
 func TestProductionConcurrentForwardersSpendOneExactGrantOnce(t *testing.T) {
@@ -599,6 +663,9 @@ func TestProductionConcurrentForwardersSpendOneExactGrantOnce(t *testing.T) {
 	if loser.ID == "" {
 		t.Fatal("the losing contender did not wait for new consent")
 	}
+	if loser.Digest != request.Digest || loser.StdinDigest != stdinSHA256([]byte(body)) || !slices.Equal(loser.Argv, request.Argv) {
+		t.Fatalf("losing production request does not bind the exact attempted action: winner=%+v loser=%+v", request, loser)
+	}
 	if rc := Main([]string{"yolo", "approve", loser.ID, "--deny"}); rc != 0 {
 		t.Fatalf("denying concurrent loser returned %d", rc)
 	}
@@ -630,23 +697,16 @@ func TestProductionConcurrentForwardersSpendOneExactGrantOnce(t *testing.T) {
 	if err != nil || !bytes.Equal(gotReceipt, wantReceipt) {
 		t.Fatalf("contenders dispatched other than exactly one invocation: %q want %q err=%v", gotReceipt, wantReceipt, err)
 	}
+	gotStdin, err := os.ReadFile(fixture.stdin)
+	if err != nil || !bytes.Equal(gotStdin, []byte(body)) || stdinSHA256(gotStdin) != request.StdinDigest {
+		t.Fatalf("concurrent winner received different stdin bytes or digest: got=%q digest=%s want=%q digest=%s err=%v", gotStdin, stdinSHA256(gotStdin), body, request.StdinDigest, err)
+	}
 	_, grants, err := fixture.store.List()
 	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
 		t.Fatalf("concurrent callers did not spend the one-use grant exactly once: %+v err=%v", grants, err)
 	}
-	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
-	if err != nil {
-		t.Fatal(err)
-	}
-	spends := 0
-	for _, event := range events {
-		if event.Request == request.ID && event.Grant == grants[0].ID && event.Event == "grant-used" {
-			spends++
-		}
-	}
-	if spends != 1 {
-		t.Fatalf("concurrent use audit count %d, want one: %+v", spends, events)
-	}
+	requireProductionSpendAudit(t, request, grants[0], []byte(body))
+	requireProductionDeniedRequestAudit(t, loser, []byte(body))
 }
 
 func TestProductionExactGrantSurvivesBrokerRestartAndScopeFences(t *testing.T) {
@@ -746,10 +806,15 @@ func TestProductionExactGrantSurvivesBrokerRestartAndScopeFences(t *testing.T) {
 	if err != nil || !bytes.Equal(gotReceipt, wantReceipt) {
 		t.Fatalf("restart grant receipt differs or repeated: got %q want %q err=%v", gotReceipt, wantReceipt, err)
 	}
+	gotStdin, err := os.ReadFile(fixture.stdin)
+	if err != nil || len(gotStdin) == 0 || !bytes.Equal(gotStdin, []byte(body)) || stdinSHA256(gotStdin) != grantRequest.StdinDigest {
+		t.Fatalf("restart grant stdin differs from the approved bytes and SHA-256: got=%q digest=%s want=%q digest=%s err=%v", gotStdin, stdinSHA256(gotStdin), body, grantRequest.StdinDigest, err)
+	}
 	_, grants, err = fixture.store.List()
 	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
 		t.Fatalf("restart did not consume the one-use authority once: %+v err=%v", grants, err)
 	}
+	requireProductionSpendAudit(t, grantRequest, grants[0], []byte(body))
 }
 
 func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
@@ -790,6 +855,9 @@ func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if approved.StdinDigest != stdinSHA256([]byte(body)) || approved.Digest != brokerstore.CommandDigest(approved) || approved.Repo != "o/r" {
+		t.Fatalf("audit-fault grant request is not the exact submitted action: %+v", approved)
+	}
 	if rc := Main([]string{"yolo", "approve", approved.ID}); rc != 0 {
 		t.Fatalf("allowing exact audit-fault grant returned %d", rc)
 	}
@@ -818,8 +886,12 @@ func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
 		t.Fatalf("required spend-audit failure dispatched fake gh: %v", err)
 	}
 	_, grants, err := fixture.store.List()
-	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed {
-		t.Fatalf("failed predispatch audit refunded or lost durable spend: %+v err=%v", grants, err)
+	if err != nil || len(grants) != 1 || grants[0].Uses != 0 || grants[0].EndedBy() != brokerstore.EndUsed ||
+		grants[0].Request != approved.ID || grants[0].Digest != approved.Digest {
+		t.Fatalf("failed predispatch audit refunded or unlinked the durable spend: %+v err=%v", grants, err)
+	}
+	if _, err := os.Stat(fixture.stdin); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("required spend-audit failure left a fake gh stdin receipt: %v", err)
 	}
 	if err := os.Remove(lock); err != nil {
 		t.Fatal(err)
@@ -831,10 +903,21 @@ func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var allowed int
 	for _, event := range events {
-		if event.Request == approved.ID && event.Event == "grant-used" {
-			t.Fatalf("failed required audit unexpectedly left a spend record: %+v", event)
+		if event.Request != approved.ID || event.Grant != grants[0].ID || event.CommandDigest != approved.Digest ||
+			event.StdinDigest != approved.StdinDigest || !slices.Equal(event.Argv, approved.Argv) {
+			continue
 		}
+		if event.Event == "decision" && event.Outcome == "allowed" {
+			allowed++
+		}
+		if event.Event == "grant-used" || event.Event == "call" && event.Outcome == "ran" {
+			t.Fatalf("failed required append unexpectedly persisted a spend/dispatch event: %+v", event)
+		}
+	}
+	if allowed != 1 {
+		t.Fatalf("durable allowed decision audit lost its exact action linkage: allowed=%d events=%+v", allowed, events)
 	}
 
 	// A later explicit invocation cannot retry the spent grant; it needs a fresh decision.
@@ -857,6 +940,9 @@ func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
 		}
 		return false
 	})
+	if refiled.StdinDigest != approved.StdinDigest || refiled.Digest != approved.Digest || !slices.Equal(refiled.Argv, approved.Argv) {
+		t.Fatalf("fresh consent request after durable spend lost exact action identity: approved=%+v retry=%+v", approved, refiled)
+	}
 	if rc := Main([]string{"yolo", "approve", refiled.ID, "--deny"}); rc != 0 {
 		t.Fatalf("denying fresh retry request returned %d", rc)
 	}
@@ -868,6 +954,7 @@ func TestProductionSpendAuditFailureSpendsWithoutDispatchOrRetry(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("freshly denied retry did not return")
 	}
+	requireProductionDeniedRequestAudit(t, refiled, []byte(body))
 	if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("retry reached fake gh without fresh approval: %v", err)
 	}
@@ -952,6 +1039,9 @@ func TestProductionUnusedGrantExpiryAndRevocation(t *testing.T) {
 			}
 			attempt := start("41")
 			refiled := pending(attempt, "41")
+			if refiled.Digest != approved.Digest || refiled.StdinDigest != stdinSHA256([]byte("expiry and revoke body\n")) || !slices.Equal(refiled.Argv, approved.Argv) {
+				t.Fatalf("expired/revoked refusal does not record the exact attempted action: approved=%+v refiled=%+v", approved, refiled)
+			}
 			_, grants, err := fixture.store.List()
 			if err != nil || len(grants) != 1 || grants[0].Uses != 1 || grants[0].EndedBy() != tc.wantReason {
 				t.Fatalf("production attempt spent or revived unavailable authority: %+v err=%v", grants, err)
@@ -963,6 +1053,26 @@ func TestProductionUnusedGrantExpiryAndRevocation(t *testing.T) {
 				t.Fatalf("denying re-filed caller returned %d", rc)
 			}
 			finish(attempt, ghbroker.ExitNoPerm)
+			requireProductionDeniedRequestAudit(t, refiled, []byte("expiry and revoke body\n"))
+			events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var allowed, spends int
+			for _, event := range events {
+				if event.Request != approved.ID || event.Grant != grants[0].ID || event.CommandDigest != approved.Digest || event.StdinDigest != approved.StdinDigest || !slices.Equal(event.Argv, approved.Argv) {
+					continue
+				}
+				if event.Event == "decision" && event.Outcome == "allowed" {
+					allowed++
+				}
+				if event.Event == "grant-used" && event.Outcome == "spent-before-dispatch" {
+					spends++
+				}
+			}
+			if allowed != 1 || spends != 0 {
+				t.Fatalf("expired/revoked grant audit must retain its exact decision without a spend: allowed=%d spends=%d events=%+v", allowed, spends, events)
+			}
 		})
 	}
 }

@@ -3,15 +3,16 @@ package cli
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
+	"github.com/mschulkind-oss/yolo-jail/internal/ghbroker"
 )
 
 // `--json` is one document of pending requests and live grants, with "schema": 1.
@@ -177,10 +178,135 @@ func TestApproveWatchText(t *testing.T) {
 	}
 }
 
-// `--watch --json` over several stores opens with ONE "state" object holding every store's
-// records (boundary-broker.md BB-D72, §6.6), then each store's events.
-// Live text events identify both the command and stdin bytes, even when argv is long enough
-// to push trailing fields past the bounded summary's display budget.
+// approvalWatchOutput wakes a test when approveWatch writes, so the test can wait for its
+// opening snapshot and each subsequent event without scheduling sleeps.
+type approvalWatchOutput struct {
+	mu      sync.Mutex
+	b       bytes.Buffer
+	changed chan struct{}
+}
+
+func newApprovalWatchOutput() *approvalWatchOutput {
+	return &approvalWatchOutput{changed: make(chan struct{}, 1)}
+}
+
+func (o *approvalWatchOutput) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	n, err := o.b.Write(p)
+	o.mu.Unlock()
+	select {
+	case o.changed <- struct{}{}:
+	default:
+	}
+	return n, err
+}
+
+func (o *approvalWatchOutput) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.b.String()
+}
+
+func waitApprovalWatchOutput(t *testing.T, out *approvalWatchOutput, want func(string) bool) string {
+	t.Helper()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	for {
+		if got := out.String(); want(got) {
+			return got
+		}
+		select {
+		case <-out.changed:
+		case <-timer.C:
+			t.Fatalf("timed out waiting for approval watch output: %q", out.String())
+		}
+	}
+}
+
+// Live text events identify the command and actual stdin bytes submitted through the real
+// forwarder and production broker, without exposing either body.
+func TestApproveWatchTextLiveProductionRequestsIncludeCompleteActionIdentity(t *testing.T) {
+	fastWatch(t)
+	fixture := newProductionGitHubFixture(t, "", false)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := newApprovalWatchOutput()
+	done := make(chan int, 1)
+	go func() {
+		done <- approveAll(ctx, []string{"--watch"}, false, []*brokerstore.Store{fixture.store}, out, out)
+	}()
+	watchStopped := false
+	defer func() {
+		cancel()
+		if !watchStopped {
+			<-done
+		}
+	}()
+	initial := waitApprovalWatchOutput(t, out, func(got string) bool {
+		return strings.Contains(got, "Watching the store; one line per event.")
+	})
+
+	bodies := []string{"private production body one\n", "private production body two\n"}
+	requests := make([]brokerstore.Request, 0, len(bodies))
+	for _, body := range bodies {
+		finished := make(chan productionForwardResult, 1)
+		go func(body string) {
+			code, stdout, stderr := fixture.forwardInput(body, "pr", "comment", "41", "--repo", "o/r", "--body-file", "-")
+			finished <- productionForwardResult{code: code, out: stdout, stderr: stderr}
+		}(body)
+
+		waitApprovalWatchOutput(t, out, func(got string) bool {
+			return strings.Contains(got[len(initial):], "request-filed")
+		})
+		current, _, err := fixture.store.List()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var request brokerstore.Request
+		for _, q := range current {
+			if q.State == "pending" && q.StdinDigest == stdinSHA256([]byte(body)) {
+				request = q
+				break
+			}
+		}
+		if request.ID == "" {
+			t.Fatalf("watch observed request-filed but no matching production request: %+v", current)
+		}
+		requests = append(requests, request)
+		live := out.String()
+		if !strings.Contains(live[len(initial):], "command SHA-256 "+request.Digest) ||
+			!strings.Contains(live[len(initial):], "stdin SHA-256 "+request.StdinDigest) ||
+			strings.Contains(live[len(initial):], body) {
+			t.Fatalf("new live text event omits exact identity or exposes the body: %q", live[len(initial):])
+		}
+		initial = live
+		if rc := Main([]string{"yolo", "approve", request.ID, "--deny"}); rc != 0 {
+			t.Fatalf("denying live-watch request returned %d", rc)
+		}
+		select {
+		case got := <-finished:
+			if got.code != ghbroker.ExitNoPerm {
+				t.Fatalf("denied production request returned %d: %q", got.code, got.stderr)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("denied production request did not drain")
+		}
+		if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("live-watch denied request dispatched fake gh: %v", err)
+		}
+	}
+	cancel()
+	if rc := <-done; rc != 0 {
+		t.Fatalf("host approval watch returned %d: %s", rc, out.String())
+	}
+	watchStopped = true
+	if len(requests) != 2 || requests[0].StdinDigest == requests[1].StdinDigest {
+		t.Fatalf("live watch did not distinguish both production bodies: %+v", requests)
+	}
+}
+
+// This isolated-store case pins bounded long-command summary rendering; production caller
+// coverage with actual stdin is in TestApproveWatchTextLiveProductionRequestsIncludeCompleteActionIdentity.
 func TestApproveWatchTextLiveRequestsIncludeCompleteActionIdentity(t *testing.T) {
 	fastWatch(t)
 	s := &brokerstore.Store{Dir: t.TempDir(), Source: "github"}
@@ -200,11 +326,10 @@ func TestApproveWatchTextLiveRequestsIncludeCompleteActionIdentity(t *testing.T)
 
 	requests := make([]brokerstore.Request, 2)
 	for i, body := range []string{"private body one", "private body two"} {
-		stdinHash := sha256.Sum256([]byte(body))
 		q, err := s.File(brokerstore.Request{
 			Jail: "jail", Start: "start", Workspace: "/workspace", Set: "read-write",
 			Argv: []string{"pr", "comment", "41", "--body", strings.Repeat("long-argument-", 200)},
-			Repo: "o/r", StdinDigest: fmt.Sprintf("%x", stdinHash),
+			Repo: "o/r", StdinDigest: stdinSHA256([]byte(body)),
 			Policy: brokerstore.Policy{Window: time.Minute, MaxWindow: time.Minute, Uses: 1},
 		})
 		if err != nil {

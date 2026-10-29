@@ -2,7 +2,7 @@
 title: "Implementation plan: production GitHub Allow once"
 status: accepted
 stage: DECIDED
-next: "Obtain independent review on the private candidate; do not land without separate authority"
+next: "Root to inspect the private candidate; do not land without separate authority"
 tags: [implementation-plan, github, approvals, security]
 summary: "A source-grounded hand-off to wire one exact host-approved GitHub write without changing other broker sources or enabling standing writes."
 ---
@@ -191,39 +191,37 @@ Before final combined-tree gates, merge the exact root-authorized docs-only comm
 
 ## Current proof-matrix status
 
-The original Stage 2 candidate at `f94aa9b13534b998aa3d77200a4488369b3adf74` received a frozen
-end-review BLOCK; its earlier completion paragraph below was the candidate author's status, not final
-acceptance. Bounded repairs are in private commits `5eff5aca0cf4e956c76c2505201cd9caca58fc59`,
-`5a5ad6c990e010968496da898f4883f9a52daff3` and
-`64c065b92e0d5fa50b1e9c08776674c21e908d7e`. Fresh affected-package/race tests, the full integration
-run, nested preflight and final `just check-ci` are recorded in the [QA evidence](../research/github-write-approval-qa.md).
+This bounded final refinement starts from the exact private successor candidate
+`417dc70de05fa26ecccfcee3585172c9b67b2b2e` and changes only tests and evidence. The frozen independent
+review of original candidate `f94aa9b13534b998aa3d77200a4488369b3adf74`
+remains **BLOCK** as historical evidence; its RED report and findings remain preserved. The confirmed
+findings were repaired in descendants and checked by the lead against the production diff and actual
+normal/race tests. The only later production delta was bounded request-summary formatting/redaction;
+Root policy treated that as minor, so this test/documentation-only successor does not request another
+independent reviewer. No new independent review is claimed. Root retains private-candidate inspection
+and landing authority.
 
-- Production `Forward`/front/daemon/host-CLI proof now covers approved PR comment and issue close,
-  exact NUL-boundary argv receipts, actual stdin-byte digest, request/grant/audit linkage, pending
-  no-dispatch, manual approval without a hook, hook-output-alone not being consent, standing read/write,
-  out-of-scope, secret-command and hostile API-header refusal, and spent replay/body/target mutation
-  non-dispatch. The bounded successor adds production before-consumption body/target mismatch, unused
-  grant expiry/revoke, restart with repository/workspace fences, required spend-audit failure, and
-  concurrent one-use contender cases; each uses the same real caller path and fake host `gh`.
-- The added successor proofs pass in targeted normal and race runs at private source/test candidate
-  `398ad02298add896acd4aaacddca2f40066efea2`; `just check-ci`, matching `just build-dev-bundle` and an
-  actual emitted-launcher nested jail command also passed there. The full slow integration suite was
-  not reached by this host-summary/test-only delta; check-ci exercised its short package. The original
-  frozen reviewer BLOCK remains until the same independent reviewer follows up; no acceptance claim is
-  made from tests or the whole-tree gate alone.
-- The rootful podman nested run reports `Rootless=false`, `slirp4netns`, and host-network sharing. It
-  cannot establish rootless-only or host-loopback reachability behavior; native macOS and live GitHub
-  remain untested. No live credentials or GitHub API were used.
+- Production `Forward`/front/daemon/host-CLI coverage remains the exact PR comment and issue-close
+  path, with NUL-delimited argv receipts, actual stdin bytes/digests, pending no-dispatch, host approval,
+  required audit links, body/target mismatch without spending, expiry/revoke, restart and workspace / repo
+  fences, audit-append failure, and concurrent one-use callers. The final test refinement adds live
+  `approve --watch` output for two real forwarded `--body-file -` requests and strengthens applicable
+  lifecycle receipt, stdin-hash and linked-audit assertions. Fake host `gh` is the only receiver; no
+  real GitHub operation or credential use occurred.
+- Targeted normal/race verification for this final test delta and `just check-ci` are captured in the
+  [QA evidence](../research/github-write-approval-qa.md). The final full integration suite passed on
+  source/test candidate 417 in 766.416s; the runtime production source is unchanged by this refinement.
+  The matching actual nested jail launch passed earlier at 398, whose only difference from 417 was
+  documentation. No full integration or nested runtime rerun is needed for this test/docs-only delta.
+- The nested run was rootful podman (`Rootless=false`, `slirp4netns`) and proves neither rootless-only
+  nor host-loopback reachability behavior. Native macOS and live GitHub remain untested. Timed-resource
+  and working-set Add remain unfinished; this is not a claim that the whole boundary broker is complete.
 
 ## Stage boundary
 
-Stage 1 established the source audit, complete plan and caller-path RED baseline. The lead authorized
-Stage 2 under this bounded contract. The original Stage 2 implementation and its historic package,
-check-ci, integration, bundle and done claims were recorded above; the later end-review found specific
-P1/P2 omissions, so those historic claims do not constitute acceptance. The private successor adds
-removal-sensitive caller-level regressions for every remaining end-review proof hole. Targeted normal
-runs pass; final race, repository gates, nested invocation and the same independent end-review remain
-required before acceptance. The original `f94aa9b` verdict remains **BLOCK** until those are complete.
-Timed-resource/Add remain ruled unfinished backlog, and this page makes no claim that the whole boundary
-broker is complete. Keep Issue 65 open as an upstream wait; do not change user config, credentials,
-repository grants or main. Record current commands/outcomes in the named [QA evidence](../research/github-write-approval-qa.md).
+Stage 1 established the source audit, complete plan and caller-path RED baseline. The original `f94aa9b`
+review BLOCK remains preserved, while the successor repairs are separately tied to the production path
+and verified tests. The current work adds only caller-level assertions and evidence updates; it does not
+change production behavior or policy. Keep Issue 65 open as an upstream wait. Do not change user config,
+credentials, repository grants or main. Root inspects the private candidate and controls any eventual
+Primary landing.
