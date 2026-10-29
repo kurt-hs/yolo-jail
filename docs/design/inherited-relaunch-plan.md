@@ -1,8 +1,8 @@
 ---
 title: "Inherited account relaunch implementation plan"
-status: accepted
-stage: DECIDED
-next: "Implement unchanged sealed-hardlink admission and run the targeted regression green"
+status: private-candidate
+stage: IMPLEMENTED_PRIVATE
+next: "Root review; then Root-owned combined landing and launch gates"
 ---
 
 # Inherited account relaunch
@@ -20,6 +20,9 @@ Precedence: settled behavior wins; the tree wins on cosmetic facts; this plan is
 exact bytes and sealed `0444` mode through the second Run and installer. No refresh or ownership claim.
 Independent matching user inodes, copies, edited bodies/modes, links and ambiguous siblings remain
 refused and preserved. No writable receipt, generated header or digest-only comparison proves ownership.
+After Run admission, the installer must also preserve an owner replacement arriving at the effect
+boundary: no-write reuse requires unchanged sealed-source identity; otherwise create atomically with
+no-replace semantics and refuse if any destination appeared. Do not displace any late occupant.
 
 ## Map and reuse
 
@@ -27,7 +30,8 @@ refused and preserved. No writable receipt, generated header or digest-only comp
 | :--- | :--- |
 | [inheritscope.go](../../internal/cli/run/inheritscope.go) | Native selector admission, validated sealed-source lookup, preserve delivered paths in stale cleanup |
 | [inheritscope_relaunch_test.go](../../internal/cli/run/inheritscope_relaunch_test.go) | New permanent production Run regression; extend with negative admission cases |
-| [macosoverlaydispatch_test.go](../../internal/cli/run/macosoverlaydispatch_test.go) | Only minimal stale-cleanup expectation rewrite if required; ordinary owner refusals stay |
+| [darwinoverlay.go](../../internal/entrypoint/darwinoverlay.go) | Inherited config destination no-replace creation/refusal at install effect boundary |
+| [inheritedrelaunch_overlay_test.go](../../internal/entrypoint/inheritedrelaunch_overlay_test.go) | New permanent installer late-replacement and creation-race witnesses |
 
 - Reuse `dispatchOptions`, `fakeMacosUserRun`, `overlayFileInfo` and `treeLaunchHome` from
   [dispatch fixtures](../../internal/cli/run/packstagedispatch_test.go),
@@ -44,8 +48,11 @@ refused and preserved. No writable receipt, generated header or digest-only comp
 ## Implementation task — after this planning commit
 
 **Constraint:** limit production changes to the native inherited-scope path in
-[inheritscope.go](../../internal/cli/run/inheritscope.go). No generic selector signature change,
-container route change, new manifest, environment/config authority, installer behavior or shared Run edits.
+[inheritscope.go](../../internal/cli/run/inheritscope.go) and inherited-core installation in
+[darwinoverlay.go](../../internal/entrypoint/darwinoverlay.go). The separate installer regression is
+[inheritedrelaunch_overlay_test.go](../../internal/entrypoint/inheritedrelaunch_overlay_test.go).
+No generic skill/file behavior change, generic selector signature change, container route change,
+new manifest, environment/config authority or shared Run edit. Preserve generic skills/files behavior.
 
 **Advice:** a tiny package-private staging-root lookup defaults to `macosuser.StagingRoot`;
  derive the sealed source using `StagedHomeOverlay(runtime.FromWorkspace(ws), root)`.
@@ -69,10 +76,16 @@ Keep JSON/JSONC/TOML ambiguity checks and the existing safe next-step refusal.
 using the existing route helper, then compare returned rendered files before cleanup.
 This avoids a second renderer and changing container consumers. Factoring is cheap; safety is mandatory.
 
-**Constraint:** `removeStaleInheritedScope` must not remove any kept/delivered rel;
-restrict cleanup to undelivered paths. Admitting then deleting the file defeats inode preservation.
-The existing installer already takes its hardlink no-op; do not broaden generic overlay handling.
-Its [receipt digest](../../internal/entrypoint/darwinoverlay.go) excludes modes and is agent-writable.
+**Constraint:** the installer recognizes only the inherited core config destinations. If a destination
+is already the exact staged source hardlink with the inherited `0444` type/mode invariants, perform no
+write; otherwise a present destination is refused. For an absent destination, stage beside it and use
+`renameNoReplaceBetweenAt` with directory handles (`root.Open(".")`); an entry created/replaced after
+inspection must make the atomic create fail without touching it. Do not apply this policy to skills or
+other overlay files. Reuse the existing Linux/Darwin no-replace helper; no new syscall layer.
+
+**Tests:** preserve the end-to-end second-Run GREEN; make late replacement a permanent production caller
+test. Add installer tests for late replacement and creation at the staged hook boundary, plus caller
+refusal/preservation of independent matching owner inode. Generic overlay tests must remain unchanged.
 
 ### Tests and gates
 
@@ -87,11 +100,12 @@ backend callback, reporting `refusing macos-user inherited preflight scope` and
 `could overwrite existing user file` at the sidecar config JSONC destination.
 Delivered bytes, mode and inode remained intact. This is Linux synthetic caller proof, not native execution.
 
-Add negative cases in the new test file: independent exact-body/mode inode, changed body,
-header-preserving edit, changed mode (including same hardlink), final/parent link,
-JSONC+TOML ambiguity, unsafe/foreign/missing staging root and missing/corrupt/forged writable receipt.
-All refuse without modifying owner inode/bytes/mode/link. Dry-run mutates nothing.
-Copied/cross-volume delivery remains conservatively refused, not claimed as fixed.
+The retained Run and installer regressions cover independent matching copies despite missing, corrupt or forged
+real install records; changed-mode hardlinks; header-preserving edits at the production Run caller; destination and
+parent links; unsealed/foreign staging roots; installer refusal of independent files, links, modes and types; and
+atomic no-replace creation at the staged hook boundary. The unchanged sealed hardlink remains a no-write reuse.
+JSONC/TOML ambiguity, missing/unsafe staging roots, dry-run behavior and cross-volume copied delivery are not
+claimed as covered or fixed by this bounded slice.
 
 ```bash
 go test -short ./internal/cli/run ./internal/entrypoint
@@ -100,18 +114,22 @@ python3 scripts/completion-census.py
 ```
 
 The [native integration witnesses](../../integration/macosusercontent_test.go) and
-[overlay-state witness](../../integration/macosuseroverlaystate_test.go) may skip on Linux;
-record the skip, never native success. Root owns combined landing gates and full launch integration.
-Planning census was attempted and refused this intentionally permanent RED; rerun and commit census
-output after GREEN, without weakening or skipping the regression. Shared Go caches remain unchanged.
+[overlay-state witness](../../integration/macosuseroverlaystate_test.go) were run on Linux and each skipped because
+macos-user requires Darwin; this is not native success. Root owns combined landing gates and full launch integration.
+The historical baseline RED command and output above remain labeled as the baseline artifact. After the regression
+went green, `python3 scripts/completion-census.py` updated `scripts/completion-readers.json`; the short package gate
+passed on the candidate. Shared Go caches were unchanged.
+
+**Candidate boundary:** this private bounded candidate measures synthetic Linux Run-caller and installer effect-boundary
+behavior only. Native macOS execution and cross-volume copy fallback remain unmeasured. Root review and Root-owned
+combined landing/full launch gates are pending.
 
 **Stop:** unexpected RED mechanism, dirty owned file, missing named symbol, required production
 change outside the fence, or unrelated failing gate: report rather than expand scope.
 
 Planning commit: `test(run): reproduce inherited account scope relaunch refusal`.
-Implementation report: exact RED→GREEN command/results, changed paths, census receipt,
-owner-file preservation negatives, and missing native/cross-volume witnesses.
-No agents, login, API, keychain or owner-session actions.
+Implementation evidence is recorded in the lane's external evidence receipt. No agents, login, API, keychain or
+owner-session actions were performed.
 
 ## Permanent regression in full
 
