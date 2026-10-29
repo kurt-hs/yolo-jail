@@ -103,13 +103,13 @@ func TestAssembleEmitsComposedProvidersTable(t *testing.T) {
 
 // A launch with no provider from either side still emits `{}` — the golden argv's
 // byte-for-byte shape must not change because the kind exists. The pack here is one that
-// ships no provider on purpose: packs/claude now always ships one (bedrock's shape), so
-// a claude launch can never be the empty case again.
+// ships no provider on purpose: packs/claude now always ships one (bedrock's shape), and
+// packs/pi ships `github-copilot`, so neither launch can be the empty case again; agy ships none.
 func TestAssembleEmitsEmptyProvidersTableWithoutProviders(t *testing.T) {
 	sec := jsonx.NewOrderedMap()
 	sec.Set("blocked_tools", []any{})
-	la := assembleWithPacksAndConfigAssembled(t, packsFixture(t, "pi"),
-		newConfig("agents", []any{"pi"}, "security", sec))
+	la := assembleWithPacksAndConfigAssembled(t, packsFixture(t, "agy"),
+		newConfig("agents", []any{"agy"}, "security", sec))
 	got := la.channelEnv(t, "YOLO_PROVIDERS")
 	if len(got) != 1 || got[0] != "YOLO_PROVIDERS={}" {
 		t.Errorf("an unprofiled, provider-less launch must carry YOLO_PROVIDERS={}; got %q", got)

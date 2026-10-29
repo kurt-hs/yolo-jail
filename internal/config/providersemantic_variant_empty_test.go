@@ -88,13 +88,10 @@ func TestReadableTOMLVariantCapabilitiesResetAndUnionReachSelectedConsumer(t *te
 			if err != nil {
 				t.Fatalf("provider declaration and configured consumer composition: %v", err)
 			}
-			if len(inputs.ProviderInput.Declarations) != 1 {
-				t.Fatalf("decoded provider declarations = %#v, want one", inputs.ProviderInput.Declarations)
-			}
+			declaration := declarationNamed(t, inputs.ProviderInput.Declarations, "p.with.dot")
 			if inputs.ProviderConsumer.Readable == nil {
 				t.Fatalf("configured provider consumer was not selected: %#v", inputs.ProviderConsumer)
 			}
-			declaration := inputs.ProviderInput.Declarations[0]
 			variant := declaration.Variants["v.with.dot"]
 			if !reflect.DeepEqual(variant.Capabilities, tc.want) || variant.Capabilities == nil {
 				t.Fatalf("typed variant capabilities = %#v, want non-nil %#v", variant.Capabilities, tc.want)
@@ -230,10 +227,7 @@ func TestReadableTOMLVariantCapabilitiesReplaceProviderCapabilitiesAtSelectedCon
 			if err != nil {
 				t.Fatalf("provider declaration and configured consumer composition: %v", err)
 			}
-			if len(inputs.ProviderInput.Declarations) != 1 {
-				t.Fatalf("provider declarations = %#v, want one decoded TOML provider", inputs.ProviderInput.Declarations)
-			}
-			variant := inputs.ProviderInput.Declarations[0].Variants["v"]
+			variant := declarationNamed(t, inputs.ProviderInput.Declarations, "p").Variants["v"]
 			if (variant.Capabilities == nil) != tc.wantVariantNil || !reflect.DeepEqual(variant.Capabilities, tc.wantVariant) {
 				t.Fatalf("TOML provider declaration variant capabilities = %#v, want %#v (nil=%t)", variant.Capabilities, tc.wantVariant, tc.wantVariantNil)
 			}
@@ -257,4 +251,20 @@ func TestReadableTOMLVariantCapabilitiesReplaceProviderCapabilitiesAtSelectedCon
 			}
 		})
 	}
+}
+
+// declarationNamed is the one provider declaration named name: the user's TOML provider, beside
+// whatever the selected packs ship (packs/pi ships `github-copilot`).
+func declarationNamed(t *testing.T, declarations []packdecl.ProviderContribution, name string) packdecl.ProviderContribution {
+	t.Helper()
+	var found []packdecl.ProviderContribution
+	for _, d := range declarations {
+		if d.Name == name {
+			found = append(found, d)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("provider declarations = %#v, want exactly one named %q", declarations, name)
+	}
+	return found[0]
 }

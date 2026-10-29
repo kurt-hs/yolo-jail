@@ -177,6 +177,27 @@
       ],
       "via": "npm"
     },
+    // PI'S OWN GITHUB COPILOT, SELECTABLE WITH NO DECLARATION (providers.md, "A provider the
+    // agent has built in"): the provider and a profile over it, the way packs/openai-auth ships
+    // `openai-codex` and `codex`, so `-p pi=github-copilot` and the mixed set
+    // `"profile": {"pi": ["bedrock", "github-copilot"]}` need nothing in the user's config. The
+    // provider names no endpoint and no credential: it is in `built_in_providers` above, so the
+    // derive writes it no row and pi runs it on its own client, list and `/login` (pi's own, not
+    // the Copilot CLI's). Its `platform` is the one fact it offers about itself, so an agent with
+    // no GitHub Copilot client of its own (claude, codex, the Copilot CLI) is told a bare
+    // `-p github-copilot` reaches nothing for it, rather than staying on its own login as if the
+    // profile re-pointed it. The profile is `github-copilot`, not `copilot`, which names the
+    // Copilot CLI agent in `-p copilot=...`.
+    {
+      "kind": "provider",
+      "name": "github-copilot",
+      "platform": "github-copilot"
+    },
+    {
+      "kind": "profile",
+      "name": "github-copilot",
+      "provider": "github-copilot"
+    },
     {
       "after": "host:.pi/agent/AGENTS.md",
       "agent": "pi",
