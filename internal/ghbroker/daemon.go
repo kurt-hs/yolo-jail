@@ -315,7 +315,15 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 	finish := func(code int) int {
 		ev.Exit = &code
 		ev.ElapsedMs = b.now().Sub(start).Milliseconds()
-		b.audit.AppendContext(ctx, ev)
+		// A canceled host command may have partially completed. Record that terminal state
+		// without implying it is safe to retry, using a bounded context for this audit only.
+		if ctx.Err() != nil && ev.Outcome == "ran" && ev.Request != "" && ev.Grant != "" {
+			ev.Outcome = "canceled"
+			ev.Reason = "caller canceled while the host command was running; inspect its effect before any retry"
+		}
+		auditCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		defer cancel()
+		b.audit.AppendContext(auditCtx, ev)
 		return code
 	}
 

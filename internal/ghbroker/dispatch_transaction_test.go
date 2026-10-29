@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/brokeraudit"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerstore"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
@@ -139,6 +140,110 @@ func TestHandlerCanceledBoundedDispatchReleasesAuthorityLock(t *testing.T) {
 	_, gs, err := b.store.List()
 	if err != nil || len(gs) != 1 || gs[0].Uses != 0 {
 		t.Fatal("canceled dispatch refunded", gs, err)
+	}
+	requests, _, err := b.store.List()
+	if err != nil || len(requests) != 1 {
+		t.Fatal("canceled request missing", requests, err)
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal("read canceled dispatch audit", err)
+	}
+	var finalCalls int
+	for _, event := range events {
+		if event.Event != "call" || event.CommandDigest != requests[0].Digest {
+			continue
+		}
+		finalCalls++
+		if event.Outcome != "canceled" || event.Exit == nil || *event.Exit != ExitTimeout ||
+			event.Request != requests[0].ID || event.Grant != gs[0].ID || event.StdinDigest != requests[0].StdinDigest {
+			t.Fatalf("canceled final audit is not linked to the spent action: %+v", event)
+		}
+		if !strings.Contains(event.Reason, "inspect its effect before any retry") {
+			t.Fatalf("canceled final audit omitted retry warning: %+v", event)
+		}
+	}
+	if finalCalls != 1 {
+		t.Fatalf("canceled dispatch wrote %d final call audits, want exactly one", finalCalls)
+	}
+}
+
+func TestHandlerFinalAuditFailureDoesNotRetryCanceledAction(t *testing.T) {
+	b, _ := windowFixture(t)
+	b.delivery = &fakeDelivery{ready: true, request: func(q brokerstore.Request) error {
+		_, err := b.store.Decide(q.ID, "pending", brokerstore.Decision{})
+		return err
+	}}
+	if err := os.MkdirAll(filepath.Dir(paths.BrokerAuditLog()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	entered, locked := make(chan struct{}), make(chan struct{})
+	calls := 0
+	var held *os.File
+	b.execute = func(ctx context.Context, _ []string, _ []byte, _, _ func([]byte)) RunResult {
+		calls++
+		close(entered)
+		<-ctx.Done()
+		var err error
+		held, err = os.OpenFile(filepath.Join(filepath.Dir(paths.BrokerAuditLog()), ".audit.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			t.Errorf("open audit lock during finalization: %v", err)
+			close(locked)
+			return RunResult{Exit: ExitTimeout}
+		}
+		if err := syscall.Flock(int(held.Fd()), syscall.LOCK_EX); err != nil {
+			t.Errorf("hold audit lock during finalization: %v", err)
+			_ = held.Close()
+			held = nil
+			close(locked)
+			return RunResult{Exit: ExitTimeout}
+		}
+		close(locked)
+		return RunResult{Exit: ExitTimeout}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer func() {
+		if held != nil {
+			_ = syscall.Flock(int(held.Fd()), syscall.LOCK_UN)
+			_ = held.Close()
+		}
+	}()
+	returned := make(chan int, 1)
+	go func() { returned <- callWindow(b, ctx) }()
+	<-entered
+	cancel()
+	<-locked
+	select {
+	case code := <-returned:
+		if code != ExitTimeout {
+			t.Fatalf("canceled dispatched action returned %d", code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("failed final audit held the canceled call open")
+	}
+	if held != nil {
+		if err := syscall.Flock(int(held.Fd()), syscall.LOCK_UN); err != nil {
+			t.Fatal(err)
+		}
+		_ = held.Close()
+		held = nil
+	}
+	if calls != 1 {
+		t.Fatalf("a final audit failure retried the executed action %d times", calls)
+	}
+	requests, grants, err := b.store.List()
+	if err != nil || len(requests) != 1 || len(grants) != 1 || grants[0].Uses != 0 {
+		t.Fatalf("failed final audit altered the executed one-use grant: requests=%+v grants=%+v err=%v", requests, grants, err)
+	}
+	events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if event.Event == "call" && event.Request == requests[0].ID && event.Grant == grants[0].ID && event.Outcome == "canceled" {
+			t.Fatal("final audit unexpectedly succeeded while its lock was held")
+		}
 	}
 }
 

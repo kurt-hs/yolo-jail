@@ -246,7 +246,7 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 			if addSeen {
 				flag = "--add"
 			}
-			fmt.Fprintf(errs, "yolo approve: %s is not available for GitHub writes. Next: run `yolo approve %s` with no flags to Allow once.\\n", flag, termsafe.Visible(request))
+			fmt.Fprintf(errs, "yolo approve: %s is not available for GitHub writes. Next: run `yolo approve %s` with no flags to Allow once.\n", flag, termsafe.Visible(request))
 			return approveExitPolicy
 		}
 		if addSeen {
@@ -300,9 +300,9 @@ func approveAll(ctx context.Context, args []string, inJail bool, stores []*broke
 		empty = empty && len(snaps[i].Requests) == 0 && len(snaps[i].Grants) == 0 && !anyLive(snaps[i].Working) && len(declared) == 0
 	}
 	if empty {
-		fmt.Fprintln(out, "No requests, grants or working-set entries. Brokers do not file requests yet: a GitHub write, and a git push nothing covers, refuse without one. Run `yolo approve --help` for the host store commands.")
+		fmt.Fprintln(out, "No requests, grants or working-set entries. A windowed GitHub write can file a pending Allow-once request; decide it with `yolo approve <id>`. Run `yolo approve --help` for the host store commands.")
 	} else {
-		fmt.Fprintln(out, "Decide with `yolo approve <request>` (once), `--for <duration>` (whole set), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|c-entry|all> [--workspace <path>]` (a c- entry is declared in config and is removed there).")
+		fmt.Fprintln(out, "Decide pending requests with `yolo approve <id>` (GitHub writes are Allow once; `--for <duration>` grants a whole set only where supported), or `--deny`; revoke with `yolo approve --revoke <grant|w-entry|c-entry|all> [--workspace <path>]` (a c- entry is a working-set branch declared in config and is removed there).")
 	}
 	return 0
 }
@@ -526,6 +526,9 @@ func anyLive(ws []brokerstore.WorkingEntry) bool {
 func printApproveList(out io.Writer, snap brokerstore.Snapshot) {
 	for _, r := range snap.Requests {
 		fmt.Fprintf(out, "%s  %s  jail %s  set %s  [%s]  repo %s: %s\n", termsafe.Visible(r.ID), termsafe.Visible(r.State), termsafe.Visible(r.Jail), termsafe.Visible(r.Set), termsafe.Visible(r.Workspace), termsafe.Visible(r.Repo), shquote.JoinDisplay(r.Argv))
+		if r.Digest != "" || r.StdinDigest != "" {
+			fmt.Fprintf(out, "    action identity: command %s; stdin SHA-256 %s\n", termsafe.Visible(r.Digest), termsafe.Visible(r.StdinDigest))
+		}
 		if r.HookFailure != "" {
 			fmt.Fprintf(out, "    your on_request failed, so you may not have been notified: %s (its output: `yolo approve --json`)\n", termsafe.Visible(r.HookFailure))
 		}

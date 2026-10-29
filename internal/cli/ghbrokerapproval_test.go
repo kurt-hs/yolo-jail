@@ -2,11 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -151,6 +155,7 @@ type productionGitHubFixture struct {
 	broker  *githubApprovalBroker
 	store   *brokerstore.Store
 	calls   string
+	stdin   string
 	hookLog string
 }
 
@@ -176,8 +181,11 @@ func newProductionGitHubFixture(t *testing.T, userConfig string, withHook bool) 
 		t.Fatal(err)
 	}
 	calls := filepath.Join(fakeDir, "calls")
+	stdinReceipt := filepath.Join(fakeDir, "stdin")
 	fakeGH := filepath.Join(fakeDir, "gh")
-	script := fmt.Sprintf("#!/bin/sh\ncase \"$1\" in\n  --version) echo 'gh version 2.101.0 (fake)' ;;\n  auth) echo 'fake-token-1234567890' ;;\n  *) printf '%%s\\n' \"$*\" >> %q; echo 'fake GitHub receipt' ;;\nesac\n", calls)
+	script := "#!/bin/sh\ncase \"$1\" in\n  --version) echo 'gh version 2.101.0 (fake)' ;;\n  auth) echo 'fake-token-1234567890' ;;\n  *) printf '%s\\000' \"$@\" >> " + shquote.Quote(calls) +
+		"; printf '\\000' >> " + shquote.Quote(calls) + "; cat > " + shquote.Quote(stdinReceipt) +
+		"; echo 'fake GitHub receipt' ;;\nesac\n"
 	if err := os.WriteFile(fakeGH, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +227,16 @@ func newProductionGitHubFixture(t *testing.T, userConfig string, withHook bool) 
 		broker:  startGitHubApprovalBroker(t, home, workspace, fakeGH, ghConfig, scopeFile, userConfig),
 		store:   &brokerstore.Store{Dir: paths.BrokerSourceDir(ghbroker.Source), Source: ghbroker.Source},
 		calls:   calls,
+		stdin:   stdinReceipt,
 		hookLog: hookLog,
 	}
 }
 
 func (f *productionGitHubFixture) forward(argv ...string) (int, string, string) {
+	return f.forwardInput("", argv...)
+}
+
+func (f *productionGitHubFixture) forwardInput(stdin string, argv ...string) (int, string, string) {
 	var out, stderr bytes.Buffer
 	code := ghbroker.Forward(argv, ghbroker.ForwardEnv{
 		Getenv: func(key string) string {
@@ -232,7 +245,7 @@ func (f *productionGitHubFixture) forward(argv ...string) (int, string, string) 
 			}
 			return os.Getenv(key)
 		},
-		Stdin: strings.NewReader(""), Stdout: &out, Stderr: &stderr,
+		Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &stderr,
 		OriginRepo: func() string { return "o/r" },
 	})
 	return code, out.String(), stderr.String()
@@ -247,6 +260,16 @@ func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {
 	code, _, stderr := fixture.forward("pr", "comment", "41", "--repo", "o/r", "--body", "must-not-run")
 	if code != ghbroker.ExitNoPerm || !strings.Contains(stderr, "brokered.github.sets") || !strings.Contains(stderr, "remove") {
 		t.Fatalf("standing write policy was not refused with a repair step: exit %d, stderr %q", code, stderr)
+	}
+	for _, argv := range [][]string{
+		{"pr", "view", "41", "--repo", "outside/secret"},
+		{"auth", "token"},
+	} {
+		if code, _, stderr := fixture.forward(argv...); code == 0 {
+			t.Fatalf("out-of-scope or secret command was not refused: %v", argv)
+		} else if strings.Contains(stderr, "fake GitHub receipt") {
+			t.Fatalf("refused command reached fake host gh: %v: %q", argv, stderr)
+		}
 	}
 	requests, _, err := fixture.store.List()
 	if err != nil {
@@ -266,12 +289,17 @@ func TestProductionStandingWritePolicyRefusesWritesAndKeepsReads(t *testing.T) {
 
 func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 	for _, tc := range []struct {
-		name, command, receipt string
-		argv                   []string
-		withHook               bool
+		name, command  string
+		argv, hostArgv []string
+		stdin          string
+		withHook       bool
 	}{
-		{name: "PR comment manual approval without on_request", command: "comment", argv: []string{"pr", "comment", "41", "--repo", "o/r", "--body", "approved-comment"}, receipt: "pr comment --repo=o/r --body=approved-comment 41"},
-		{name: "issue close despite on_request output", command: "close", argv: []string{"issue", "close", "7", "--repo", "o/r"}, receipt: "issue close --repo=o/r 7", withHook: true},
+		{name: "PR comment manual approval without on_request", command: "comment",
+			argv:     []string{"pr", "comment", "41", "--repo", "o/r", "--body-file", "-"},
+			hostArgv: []string{"pr", "comment", "--repo=o/r", "--body-file=-", "41"}, stdin: "stdin-approval-body\n"},
+		{name: "issue close despite on_request output", command: "close",
+			argv:     []string{"issue", "close", "7", "--repo", "o/r"},
+			hostArgv: []string{"issue", "close", "--repo=o/r", "7"}, withHook: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := newProductionGitHubFixture(t, "", tc.withHook)
@@ -281,18 +309,8 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 			}
 			finished := make(chan result, 1)
 			go func() {
-				var out, stderr bytes.Buffer
-				code := ghbroker.Forward(tc.argv, ghbroker.ForwardEnv{
-					Getenv: func(key string) string {
-						if key == ghbroker.EndpointEnv {
-							return fixture.broker.endpoint
-						}
-						return os.Getenv(key)
-					},
-					Stdin: strings.NewReader(""), Stdout: &out, Stderr: &stderr,
-					OriginRepo: func() string { return "o/r" },
-				})
-				finished <- result{code: code, out: out.String(), stderr: stderr.String()}
+				code, out, stderr := fixture.forwardInput(tc.stdin, tc.argv...)
+				finished <- result{code: code, out: out, stderr: stderr}
 			}()
 
 			var request brokerstore.Request
@@ -322,6 +340,29 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 				time.Sleep(10 * time.Millisecond)
 			}
 
+			stdinSum := sha256.Sum256([]byte(tc.stdin))
+			wantStdinDigest := hex.EncodeToString(stdinSum[:])
+			if !slices.Equal(request.Argv, tc.hostArgv) || request.Repo != "o/r" || request.StdinDigest != wantStdinDigest ||
+				request.Digest != brokerstore.CommandDigest(request) {
+				t.Fatalf("filed production action identity differs from the requested exact action: %+v", request)
+			}
+			view := fixture.store.RequestView(request)
+			encodedView, err := json.Marshal(view)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.CommandDigest != request.Digest || view.StdinDigest != request.StdinDigest ||
+				(tc.stdin != "" && bytes.Contains(encodedView, []byte(tc.stdin))) {
+				t.Fatalf("request JSON does not expose only the action digests: %s", encodedView)
+			}
+			var listed bytes.Buffer
+			printApproveList(&listed, brokerstore.Snapshot{Requests: []brokerstore.Request{request}})
+			if !strings.Contains(listed.String(), "command "+request.Digest) ||
+				!strings.Contains(listed.String(), "stdin SHA-256 "+request.StdinDigest) ||
+				(tc.stdin != "" && strings.Contains(listed.String(), tc.stdin)) {
+				t.Fatalf("host text listing does not identify the exact body without exposing it: %q", listed.String())
+			}
+
 			waitGitHubApproval(t, "the host broker-log request", 3*time.Second, func() bool {
 				return fixture.broker.logs.Contains(request.ID)
 			})
@@ -330,10 +371,19 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 					data, err := os.ReadFile(fixture.hookLog)
 					return err == nil && bytes.Contains(data, []byte(request.ID))
 				})
+				hookView, err := os.ReadFile(fixture.hookLog)
+				if err != nil || !bytes.Contains(hookView, []byte(`"command_digest":"`+request.Digest+`"`)) ||
+					!bytes.Contains(hookView, []byte(`"stdin_digest":"`+request.StdinDigest+`"`)) ||
+					(tc.stdin != "" && bytes.Contains(hookView, []byte(tc.stdin))) {
+					t.Fatalf("hook request summary lacks safe exact action identity: %s, %v", hookView, err)
+				}
 			}
 			status, err := fixture.store.Status(request.Jail, request.Start, request.ID)
 			if err != nil || status.State != "pending" {
 				t.Fatalf("on_request output was interpreted as consent: %+v %v", status, err)
+			}
+			if _, err := os.Stat(fixture.calls); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("a pending request reached host gh before host approval: stat err %v", err)
 			}
 			if rc := Main([]string{"yolo", "approve", request.ID}); rc != 0 {
 				t.Fatalf("host yolo approve exited %d for %s", rc, request.ID)
@@ -350,23 +400,94 @@ func TestProductionGitHubWriteApprovalFlow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(data), tc.receipt) {
-				t.Fatalf("fake host gh receipt lacks exact approved action %q: %q", tc.receipt, data)
+			wantReceipt := append([]byte(strings.Join(tc.hostArgv, "\x00")), 0, 0)
+			if !bytes.Equal(data, wantReceipt) {
+				t.Fatalf("fake host gh argv receipt differs at argument boundaries or was dispatched more than once: got %q want %q", data, wantReceipt)
+			}
+			gotStdin, err := os.ReadFile(fixture.stdin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotStdinSum := sha256.Sum256(gotStdin)
+			if hex.EncodeToString(gotStdinSum[:]) != request.StdinDigest || !bytes.Equal(gotStdin, []byte(tc.stdin)) {
+				t.Fatalf("fake host gh received stdin other than the approved bytes: sha=%x bytes=%d", gotStdinSum, len(gotStdin))
 			}
 			events, _, err := brokeraudit.Read(paths.BrokerAuditLog())
 			if err != nil {
 				t.Fatal(err)
 			}
 			var spent, dispatched bool
+			dispatchCount := 0
 			for _, event := range events {
 				if event.Request != request.ID || event.Grant == "" || event.CommandDigest != request.Digest || event.StdinDigest != request.StdinDigest {
 					continue
 				}
 				spent = spent || event.Event == "grant-used" && event.Outcome == "spent-before-dispatch"
-				dispatched = dispatched || event.Event == "call" && event.Outcome == "ran"
+				if event.Event == "call" && event.Outcome == "ran" {
+					dispatchCount++
+					dispatched = true
+				}
 			}
-			if !spent || !dispatched {
-				t.Fatalf("audit did not link exact request, grant and dispatched action: spent=%t dispatched=%t events=%+v", spent, dispatched, events)
+			if !spent || !dispatched || dispatchCount != 1 {
+				t.Fatalf("audit did not link exactly one exact request, grant and dispatched action: spent=%t dispatched=%t count=%d events=%+v", spent, dispatched, dispatchCount, events)
+			}
+			if tc.command == "comment" {
+				wantReceipt := append([]byte(strings.Join(tc.hostArgv, "\x00")), 0, 0)
+				seenIDs := map[string]bool{request.ID: true}
+				for i, body := range []string{tc.stdin, "changed body after approval\n"} {
+					replayFinished := make(chan result, 1)
+					go func(body string) {
+						code, out, stderr := fixture.forwardInput(body, tc.argv...)
+						replayFinished <- result{code: code, out: out, stderr: stderr}
+					}(body)
+					var next brokerstore.Request
+					deadline := time.Now().Add(3 * time.Second)
+					for next.ID == "" {
+						requests, _, err := fixture.store.List()
+						if err != nil {
+							t.Fatal(err)
+						}
+						for _, candidate := range requests {
+							if candidate.State == "pending" && !seenIDs[candidate.ID] {
+								next = candidate
+								break
+							}
+						}
+						if next.ID != "" {
+							break
+						}
+						select {
+						case got := <-replayFinished:
+							t.Fatalf("production replay returned before a host decision: exit %d stderr %q", got.code, got.stderr)
+						default:
+						}
+						if time.Now().After(deadline) {
+							t.Fatal("production replay did not file a new exact request")
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
+					bodySum := sha256.Sum256([]byte(body))
+					if next.StdinDigest != hex.EncodeToString(bodySum[:]) || next.Digest == request.Digest && i == 1 ||
+						next.Digest != request.Digest && i == 0 {
+						t.Fatalf("production replay identity did not distinguish exact and mutated bodies: %+v", next)
+					}
+					seenIDs[next.ID] = true
+					if rc := Main([]string{"yolo", "approve", next.ID, "--deny"}); rc != 0 {
+						t.Fatalf("deny replay request %s returned %d", next.ID, rc)
+					}
+					select {
+					case got := <-replayFinished:
+						if got.code != ghbroker.ExitNoPerm {
+							t.Fatalf("denied production replay ran or returned %d", got.code)
+						}
+					case <-time.After(5 * time.Second):
+						t.Fatal("denied production replay did not return")
+					}
+					gotReceipt, err := os.ReadFile(fixture.calls)
+					if err != nil || !bytes.Equal(gotReceipt, wantReceipt) {
+						t.Fatalf("replay/mutated body reached host gh: %q err %v", gotReceipt, err)
+					}
+				}
 			}
 		})
 	}

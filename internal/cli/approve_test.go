@@ -38,7 +38,7 @@ func TestGitHubApproveRefusesSetWideDecisionsButOtherSourcesKeepThem(t *testing.
 	gh, request := newRequest(t, ghbroker.Source)
 	for _, args := range [][]string{{request.ID, "--for", "15m"}, {request.ID, "--add"}} {
 		var out, errs bytes.Buffer
-		if rc := approveMain(context.Background(), args, false, gh, &out, &errs); rc != approveExitPolicy || !strings.Contains(errs.String(), "Allow once") || !strings.Contains(errs.String(), "yolo approve "+request.ID) {
+		if rc := approveMain(context.Background(), args, false, gh, &out, &errs); rc != approveExitPolicy || !strings.Contains(errs.String(), "Allow once") || !strings.Contains(errs.String(), "yolo approve "+request.ID) || strings.Contains(errs.String(), `\\n`) || !strings.Contains(errs.String(), "\n") {
 			t.Fatalf("GitHub set-wide decision %v: rc %d, out %q, err %q", args, rc, out.String(), errs.String())
 		}
 	}
@@ -64,6 +64,18 @@ func TestGitHubApproveRefusesSetWideDecisionsButOtherSourcesKeepThem(t *testing.
 	_, grants, err = git.List()
 	if err != nil || len(grants) != 1 || grants[0].Digest != "" {
 		t.Fatalf("other source set-wide grant changed: %+v err=%v", grants, err)
+	}
+}
+
+func TestApproveEmptyListDescribesLiveGitHubRequestPath(t *testing.T) {
+	store := &brokerstore.Store{Dir: t.TempDir(), Source: ghbroker.Source}
+	var out, errs bytes.Buffer
+	if rc := approveMain(context.Background(), nil, false, store, &out, &errs); rc != 0 {
+		t.Fatalf("empty listing: rc %d, err %q", rc, errs.String())
+	}
+	if !strings.Contains(out.String(), "can file a pending Allow-once request") ||
+		strings.Contains(out.String(), "Brokers do not file requests") || strings.Contains(out.String(), "refuse without one") {
+		t.Fatalf("empty listing misstates the live GitHub request path: %q", out.String())
 	}
 }
 

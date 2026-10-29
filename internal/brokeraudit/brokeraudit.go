@@ -85,7 +85,8 @@ type Event struct {
 	Refs []RefUpdate `json:"refs,omitempty"`
 	// Set is the permission set the classifier assigned, or "refused" or "out-of-scope".
 	Set string `json:"set"`
-	// Outcome is `ran`, `pending`, `denied` or `refused`.
+	// Outcome is `ran`, `canceled` (the host command may have partially completed), `pending`,
+	// `denied` or `refused`.
 	Outcome string `json:"outcome"`
 	// Reason says why a call did not run.
 	Reason     string `json:"reason,omitempty"`

@@ -156,17 +156,18 @@ func TestApproveWatchText(t *testing.T) {
 	var out, errs syncBuffer
 	done := make(chan int)
 	go func() { done <- approveMain(ctx, []string{"--watch"}, false, s, &out, &errs) }()
-	waitLines(t, &out, 1)
+	waitLines(t, &out, 2)
 	if _, err := s.Decide(r.ID, "pending", brokerstore.Decision{Deny: true}); err != nil {
 		t.Fatal(err)
 	}
-	lines := waitLines(t, &out, 2)
+	lines := waitLines(t, &out, 3)
 	cancel()
 	if rc := <-done; rc != 0 {
 		t.Fatal(rc)
 	}
-	if !strings.Contains(lines[1], "request-decided") || !strings.Contains(lines[1], r.ID) ||
-		!strings.HasSuffix(lines[1], ": denied") || strings.Contains(out.String(), "\x1b") {
+	if !strings.Contains(lines[2], "request-decided") || !strings.Contains(lines[2], r.ID) ||
+		!strings.HasSuffix(lines[2], ": denied") || strings.Contains(out.String(), "\x1b") ||
+		!strings.Contains(lines[1], "action identity: command "+r.Digest) {
 		t.Fatalf("%q", out.String())
 	}
 	if !strings.Contains(errs.String(), "Ctrl-C") {

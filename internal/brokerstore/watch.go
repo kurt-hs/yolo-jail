@@ -185,19 +185,21 @@ func (s *Store) WatchFrom(ctx context.Context, prev Snapshot, interval time.Dura
 
 // RequestView is a request as the surface shows it.
 type RequestView struct {
-	Schema    int        `json:"schema"`
-	ID        string     `json:"id"`
-	Source    string     `json:"source"`
-	Jail      string     `json:"jail"`
-	Workspace string     `json:"workspace"`
-	Set       string     `json:"set"`
-	Argv      []string   `json:"argv"`    // the command the classifier rebuilt, after the program
-	Command   string     `json:"command"` // Argv quoted for reading
-	Repo      string     `json:"repo"`
-	Filed     time.Time  `json:"filed"`
-	Expires   time.Time  `json:"expires"`
-	Decided   *time.Time `json:"decided,omitempty"`
-	State     string     `json:"state"` // pending, allowed, denied, expired, refused
+	Schema        int        `json:"schema"`
+	ID            string     `json:"id"`
+	Source        string     `json:"source"`
+	Jail          string     `json:"jail"`
+	Workspace     string     `json:"workspace"`
+	Set           string     `json:"set"`
+	Argv          []string   `json:"argv"`    // the command the classifier rebuilt, after the program
+	Command       string     `json:"command"` // Argv quoted for reading
+	Repo          string     `json:"repo"`
+	CommandDigest string     `json:"command_digest,omitempty"`
+	StdinDigest   string     `json:"stdin_digest,omitempty"`
+	Filed         time.Time  `json:"filed"`
+	Expires       time.Time  `json:"expires"`
+	Decided       *time.Time `json:"decided,omitempty"`
+	State         string     `json:"state"` // pending, allowed, denied, expired, refused
 	// HookFailure and HookOutput say the user's on_request failed for this request
 	// (Request.HookFailure); absent when it did not.
 	HookFailure string `json:"hook_failure,omitempty"`
@@ -265,7 +267,8 @@ type EventView struct {
 
 func (s *Store) RequestView(q Request) RequestView {
 	v := RequestView{Schema: Schema, ID: q.ID, Source: s.SourceName(), Jail: q.Jail, Workspace: q.Workspace,
-		Set: q.Set, Argv: q.Argv, Command: shquote.JoinDisplay(q.Argv), Repo: q.Repo, Filed: q.Filed,
+		Set: q.Set, Argv: q.Argv, Command: shquote.JoinDisplay(q.Argv), Repo: q.Repo,
+		CommandDigest: q.Digest, StdinDigest: q.StdinDigest, Filed: q.Filed,
 		Expires: q.Expires(), State: q.State, HookFailure: q.HookFailure, HookOutput: q.HookOutput}
 	if v.Argv == nil {
 		v.Argv = []string{}
