@@ -2,9 +2,9 @@
 title: "Synthetic native macOS comparison runbook"
 status: accepted
 stage: DECIDED
-next: "Materialize the described temporary probes, compile and confirm selected-SDK APIs and fixture behavior, then run controls only in a wholly disposable synthetic-only UID/session"
+next: "Run each native witness below only in a wholly disposable synthetic-only UID/session, and record its outcome under its open question in macos-native-tls.md"
 tags: [runbook, macos, security, tls]
-summary: "Source-pinned instructions for the unrun Safehouse, restrictive-ACL and TLS controls; the yolo baseline is prior evidence, not a result of this runbook."
+summary: "Copy-pastable commands and decisive outputs for every outstanding native-macOS witness (Safehouse, restrictive ACL, P0/TLS negatives, MDM CA, the inherited relaunch, capture context and Claude view transitions, Apple Container JSON, Copilot native TLS); the yolo baseline is prior evidence, not a result of this runbook."
 ---
 
 # Synthetic native macOS comparison
@@ -13,8 +13,9 @@ summary: "Source-pinned instructions for the unrun Safehouse, restrictive-ACL an
 
 ## Scope and stop conditions
 
-The [design's settled scope](../design/macos-native-tls.md#mac-side-follow-up--audit-the-securityserver-boundary) owns behavior. This document prepares only the remaining Safehouse comparison, restrictive synthetic ACL, and native SSL-policy/hostname controls. Do not reopen the yolo baseline or claim current Copilot works.
+The [design's settled scope](../design/macos-native-tls.md#mac-side-follow-up--audit-the-securityserver-boundary) owns behavior. This document prepares the remaining Safehouse comparison, restrictive synthetic ACL, and native SSL-policy/hostname controls, and holds the commands for every other outstanding native witness. Each witness answers one open question in the design, listed under [Native witnesses, one per open question](#native-witnesses-one-per-open-question). Do not reopen the yolo baseline or claim current Copilot works.
 
+- **Every yolo macos-user launch is a Security.framework call too.** At each launch the host-side yolo exports certificates from the System keychain and from the launching user's login keychain with `/usr/bin/security find-certificate` ([`cabundle.go`](../../internal/macosuser/cabundle.go), the `ReadLoginKeychain` seam in [`orchestrator.go`](../../internal/macosuser/orchestrator.go)). So every launch, capture and integration run below happens only in the disposable account's own session, never the owner's.
 - Use a wholly disposable, synthetic-only macOS UID/session for **every** Security.framework call in this runbook, including fixture creation, setup, preflight, comparison rows, and cleanup. That session must not use or contain the owner's login keychains or credentials. A disposable workspace or separate `HOME` under the owner's UID/session is not sufficient.
 - The retained [`SecKeychainCreate` header](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_keychain/lib/SecKeychain.h) documents creation at a supplied file path but says nothing about whether creation changes the current user's default keychain or search list; no implementation source is retained here to settle that side effect. Treat it as **unknown**. Do not call `SecKeychainCreate` in an owner UID/session, even transiently. If a wholly disposable synthetic-only UID/session is unavailable, stop before setup; never snapshot/restore owner state as a workaround.
 - Keep the fixture database at an explicit path under the disposable workspace and open that path directly. Never pass a null keychain selector that falls back to a user's default/search list. Explicit path selection does not remove the isolation requirement above.
@@ -159,6 +160,216 @@ Separately use `URLSessionConfiguration.ephemeral` and, after SDK-checking the p
 
 Run the native TLS controls under unsandboxed and unchanged yolo P0 harness profiles. Safehouse rows may be useful comparison data but are not Copilot TLS evidence. Do not use SecureTransport success under an added SecurityServer allow as a control: that weakens the boundary and is out of scope.
 
+The TLS probe takes exactly two modes, so the witness commands below can call it:
+
+- `--mode sectrust --chain-dir DIR --host HOST` loads `DIR/chain-1.der`, `chain-2.der`, … in that order, leaf first, and evaluates them against `SecPolicyCreateSSL(true, HOST)`.
+- `--mode urlsession --url URL` makes the one credential-free GET described above.
+
+Each prints only the mode, the host, the trust result or HTTP status, and the error domain and code.
+
+## Native witnesses, one per open question
+
+Each subsection below answers one 🔒 open question in [the native TLS design](../design/macos-native-tls.md#7-open-questions). Run them in one sitting, in the disposable account. Record each outcome against its question; a row that could not run is **untested**, never a pass.
+
+**Common preamble, in every shell.** Each block is zsh. `DISPOSABLE` is the account name the owner chose for this run, and the guard stops the shell in any other session:
+
+```zsh
+DISPOSABLE='<the disposable account the owner chose>'
+[ "$(id -un)" = "$DISPOSABLE" ] || { echo "STOP: not the disposable account"; exit 1; }
+sw_vers; uname -m; yolo --version
+W=$(mktemp -d "$HOME/native-witness.XXXXXX") && cd "$W" && echo "W=$W"
+```
+
+**What no witness may do.** Read or change the owner's keychains, default keychain or search list, even transiently; snapshot or restore them; run `security lock-keychain -a` in the owner's session; add a `com.apple.SecurityServer` allow to any yolo profile; or log in to Copilot or Claude anywhere but a disposable account the owner chose separately for that login.
+
+### Safehouse effective policy
+
+Answers [OQ-MT3](../design/macos-native-tls.md#OQ-MT3). Needs the fixture from [Prepare an isolated fixture](#prepare-an-isolated-fixture) and the probe from [Build the disposable probes](#build-the-disposable-probes). Render both policies as in [Render and compare Safehouse policies](#render-and-compare-safehouse-policies), then:
+
+```zsh
+shasum -a 256 "$(command -v safehouse)" "$W/safehouse-copilot.sb" "$W/safehouse-no-keychain.sb"
+rg -n 'com\.apple\.(SecurityServer|securityd\.xpc|secd)|Library/Keychains' "$W/safehouse-copilot.sb"
+for P in safehouse-copilot safehouse-no-keychain; do
+  "$W/keychain-probe" --mode preflight --keychain "$W/fixture.keychain-db" --item synthetic-permissive
+  /usr/bin/sandbox-exec -f "$W/$P.sb" -- "$W/keychain-probe" --mode spawn-child --child-mode read \
+    --keychain "$W/fixture.keychain-db" --item synthetic-permissive
+done
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| `rg` over the Copilot policy | Lines granting the three service names and the home `Library/Keychains` path | No such line: the pinned renderer did not select the keychain module; stop, the row is untested |
+| `safehouse-copilot` child read | `match=true`, parent and child hashes equal | `match=true` is Safehouse's documented broadened access, as yolo's `p2` was; it is not a vulnerability by itself |
+| `safehouse-no-keychain` child read | Non-zero status, sandbox-deny category, `match=false` | `match=true`: the overlay did not take effect; record the policy hash and its rule order |
+
+### Restrictive keychain ACL
+
+Answers [OQ-MT4](../design/macos-native-tls.md#OQ-MT4). Same fixture and probe; the restrictive item's access list is the empty array from step 3 of the fixture.
+
+```zsh
+"$W/keychain-probe" --mode read --keychain "$W/fixture.keychain-db" --item synthetic-restricted
+for P in safehouse-copilot yolo-p0-harness; do
+  "$W/keychain-probe" --mode preflight --keychain "$W/fixture.keychain-db" --item synthetic-permissive
+  /usr/bin/sandbox-exec -f "$W/$P.sb" -- "$W/keychain-probe" --mode spawn-child --child-mode read \
+    --keychain "$W/fixture.keychain-db" --item synthetic-restricted
+done
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| Unsandboxed read | Non-zero status in the interaction or ACL category, `match=false` | `match=true`: the access list was not empty; the fixture is wrong, stop |
+| `safehouse-copilot` child read | Non-zero status in the interaction or ACL category, `match=false` | `match=true` is an item-ACL bypass inside a sandbox: a demonstrated violation; report it privately |
+| `yolo-p0-harness` child read | Non-zero status in the sandbox-deny category | An ACL-category status: the service deny did not stop the call first |
+
+### Current P0, hostname and URLSession negative controls
+
+Answers [OQ-MT5](../design/macos-native-tls.md#OQ-MT5). Render the current-source harness profile first, as in [Render yolo harness P0](#render-yolo-harness-p0-preserve-the-measured-baseline-separately); the TLS probe's two modes are listed under [Build the disposable probes](#build-the-disposable-probes).
+
+```zsh
+rg -c 'com\.apple\.(SecurityServer|securityd|securityd\.xpc|secd)"' "$W/yolo-p0-harness.sb"
+for I in synthetic-permissive synthetic-restricted; do
+  "$W/keychain-probe" --mode preflight --keychain "$W/fixture.keychain-db" --item synthetic-permissive
+  /usr/bin/sandbox-exec -f "$W/yolo-p0-harness.sb" -- "$W/keychain-probe" --mode spawn-child \
+    --child-mode read --keychain "$W/fixture.keychain-db" --item "$I"
+done
+for H in example.com self-signed.badssl.com wrong.host.badssl.com; do
+  mkdir -p "$W/chain-$H" && cd "$W/chain-$H"
+  openssl s_client -showcerts -connect "$H:443" -servername "$H" </dev/null 2>/dev/null >presented.pem
+  awk '/BEGIN CERTIFICATE/{n++} n{print > ("chain-" n ".pem")}' presented.pem
+  for f in chain-*.pem; do openssl x509 -in "$f" -outform DER -out "${f%.pem}.der"; done
+  cd "$W"
+done
+for S in "" "/usr/bin/sandbox-exec -f $W/yolo-p0-harness.sb --"; do
+  for H in example.com self-signed.badssl.com wrong.host.badssl.com; do
+    ${=S} "$W/tls-probe" --mode sectrust --chain-dir "$W/chain-$H" --host "$H"
+    ${=S} "$W/tls-probe" --mode urlsession --url "https://$H/"
+  done
+done
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| `rg -c` | `4` or more | Fewer: a mandatory deny is missing; stop and report, do not repair it here |
+| P0 keychain reads | Sandbox-deny category and `match=false`, for both items | `match=true` for either: the current tree lost the boundary the `d159a57f0` audit measured |
+| `example.com`, both modes, both columns | Trust succeeds; HTTP status 200 | A failure under P0 only: trustd evaluation is not reachable under the current profile |
+| `self-signed.badssl.com`, both modes | Trust fails with a `CFError`; URLSession fails certificate verification | Success: verification is not enforced; stop |
+| `wrong.host.badssl.com`, both modes | The hostname policy fails; URLSession fails certificate verification | Success: the hostname check is not enforced; stop |
+
+An unreachable host or a changed chain is **unknown** for that row.
+
+### MDM-installed CA under P0
+
+Answers [OQ-MT6](../design/macos-native-tls.md#OQ-MT6). Needs a managed Mac on a network that intercepts TLS with a CA only the MDM installed; without one, the row stays untested. The workspace runs in self mode, the mode [§5 of the design](../design/macos-native-tls.md#5-witnesses-for-the-mac) measured.
+
+```zsh
+echo | openssl s_client -connect nodejs.org:443 -servername nodejs.org 2>/dev/null | openssl x509 -noout -issuer
+printf '{"runtime": "macos-user", "macos_user_mode": "self"}\n' >"$W/yolo-jail.jsonc"
+yolo check --no-build
+yolo -- mise ls-remote node 2>&1 | tail -1
+/usr/bin/sandbox-exec -f "$W/yolo-p0-harness.sb" -- "$W/tls-probe" --mode urlsession --url https://nodejs.org/
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| `issuer` | Names the corporate CA | A public issuer: the network does not intercept; the row is untested |
+| `mise ls-remote node` | A Node version | `bad certificate format` or an unknown-issuer error: trustd under P0 does not trust the MDM CA, and the claim in [§3 of the design](../design/macos-native-tls.md#3-the-proposal) is wrong |
+| URLSession under P0 | HTTP status 200 | A trust failure: the same conclusion, without mise |
+
+### Inherited account relaunch
+
+Answers [OQ-MT7](../design/macos-native-tls.md#OQ-MT7), the native half of the [inherited account relaunch plan](../design/inherited-relaunch-plan.md). Account mode is the default `macos_user_mode`; the disposable account must pass the macos-user integration gate. `YOLO_SRC` is a checkout at the commit under test.
+
+```zsh
+git -C "$YOLO_SRC" rev-parse HEAD
+(cd "$YOLO_SRC" && go test -count=1 -v -run '^(TestMacosUserInheritedUserScopeArrivesReadOnly|TestMacosUserOverlayInstallKeepsTheAgentStateBesideItsSkills)$' ./integration 2>&1 | rg -- '^(--- |ok|FAIL)')
+mkdir -p "$HOME/.config/yolo-jail" && printf '{"packs": ["guardrails"]}\n' >"$HOME/.config/yolo-jail/config.jsonc"
+printf '{"runtime": "macos-user"}\n' >"$W/yolo-jail.jsonc"
+for N in 1 2; do
+  yolo -- sh -c 'test -f "$HOME/.config/yolo-jail/config.jsonc" && echo DELIVERED' 2>&1 \
+    | rg 'DELIVERED|refusing .*inherited|could overwrite existing user file'
+  echo "launch $N rc=${pipestatus[1]}"
+done
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| Both integration tests | `--- PASS` | `--- SKIP` is not native success: record its reason. `--- FAIL` is a native defect |
+| Launch 1 | `DELIVERED`, `rc=0` | No `DELIVERED`: the inherited scope did not arrive; the row is untested |
+| Launch 2 | `DELIVERED`, `rc=0`, no `refusing` line | `could overwrite existing user file` at the config JSONC: the relaunch repair does not hold natively |
+
+The `config.jsonc` written above is the disposable account's; remove it after the row.
+
+### Capture compatibility context
+
+Answers [OQ-MT8](../design/macos-native-tls.md#OQ-MT8), the native half of the [capture context plan](../design/native-capture-compatibility-context-plan.md). The capture runs Copilot's vendor installer once against an empty home; no login, prompt or API request follows.
+
+```zsh
+printf '{"runtime": "macos-user", "macos_user_mode": "self", "packs": ["copilot"]}\n' >"$W/yolo-jail.jsonc"
+yolo capture copilot >"$W/capture.log" 2>&1; echo "capture rc=$?"
+rg 'invalid macos-user launch context|cannot parse .*version probe' "$W/capture.log"
+yolo -- copilot --version >"$W/version.log" 2>&1; tail -3 "$W/version.log"
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| `capture rc` | `0` | Non-zero with neither line below: a different capture failure; keep `capture.log` |
+| `rg` over the capture log | Nothing | `invalid macos-user launch context`: the capture still lacks its resolved context |
+| `version.log` tail | A version line, or the native TLS stop of [OQ-MT11](../design/macos-native-tls.md#OQ-MT11) | `cannot parse copilot's declared version probe`: keep the raw `version.log`, the emitter output the plan still owes |
+
+### Claude credential view, On then Off
+
+Answers [OQ-MT9](../design/macos-native-tls.md#OQ-MT9), the native half of the [Claude view retirement plan](../design/claude-view-retirement-plan.md). The view switch is `YOLO_CLAUDE_CREDENTIAL_VIEW` ([`claudeview.go`](../../internal/claudeview/claudeview.go)). The On launch needs a Claude login, made only in a disposable account the owner chose for that login; without one, the row is untested.
+
+```zsh
+printf '{"runtime": "macos-user", "packs": ["claude"]}\n' >"$W/yolo-jail.jsonc"
+YOLO_CLAUDE_CREDENTIAL_VIEW=1 yolo -- true 2>&1 | rg -i 'claude'
+yolo claude-auth status >"$W/status-on.txt" 2>&1; cat "$W/status-on.txt"
+YOLO_CLAUDE_CREDENTIAL_VIEW=0 yolo -- true 2>&1 | rg -i 'claude'
+yolo claude-auth status >"$W/status-off.txt" 2>&1; cat "$W/status-off.txt"
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| On launch, then `status-on.txt` | No registration warning; the status lists this workspace's view | A registration failure: there is nothing to retire, and the row is untested |
+| Off launch | `Claude: disabled this workspace's credential view; the broker will no longer maintain its view.` | `could not retire this workspace's Claude credential view registration`: retirement fails natively |
+| `status-off.txt` | This workspace's view is gone; any other view is unchanged | Still listed: the Off transition does not retire natively |
+
+### Apple Container JSON and image prune
+
+Answers [OQ-MT10](../design/macos-native-tls.md#OQ-MT10), the native half of the [Apple Container image prune plan](../design/apple-container-image-prune-plan.md). Needs Apple Container started for the disposable account (`container system start`) with only yolo images in its store.
+
+```zsh
+container --version
+container image list --format json | jq -c '.[] | {name: .configuration.name, digest: .configuration.descriptor.digest}'
+container ls --all --format json | jq -c '.[] | {ref: .configuration.image.reference, digest: .configuration.image.descriptor.digest}'
+YOLO_RUNTIME=container yolo prune --no-containers >"$W/prune-dry.txt" 2>&1; rg 'FAILED' "$W/prune-dry.txt"
+YOLO_RUNTIME=container yolo prune --no-containers --apply >"$W/prune-apply.txt" 2>&1; rg 'FAILED' "$W/prune-apply.txt"
+container image list --format json | jq -c '.[] | .configuration.name'
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| `container --version` | 1.1.0, the release the plan read | Another release: the JSON shape is unverified for it; record the version |
+| Both `jq` lines | Every row has a non-null name or reference and a `sha256:` digest | `null` fields: the plan's source-derived shape is wrong natively |
+| Dry run and apply `rg` | Nothing | `FAILED — could not list this runtime's images`: the listing still declines natively |
+| Final image list | Every image a workspace's current pointer or a container names is still listed | One of them gone: a deletion the retention rules forbid; report it at once |
+
+### Copilot native TLS under the keychain deny
+
+Answers [OQ-MT11](../design/macos-native-tls.md#OQ-MT11), tracked as [yolo-jail #65](https://github.com/mschulkind-oss/yolo-jail/issues/65). Run it in a disposable account with **no** Copilot login: the request it makes is the credential-free release check the issue names. The SecurityServer deny stays.
+
+```zsh
+printf '{"runtime": "macos-user", "macos_user_mode": "self", "packs": ["copilot"]}\n' >"$W/yolo-jail.jsonc"
+yolo internal macos-user-profile --mode self --workspace "$W" --tmp "$W/tmp" | rg -c 'com\.apple\.SecurityServer'
+yolo -- copilot --version >"$W/copilot.log" 2>&1
+rg 'bad certificate format|Failed to fetch latest release|^[0-9]+\.[0-9]+\.[0-9]+' "$W/copilot.log"
+```
+
+| Output | Expected | Decisive |
+| :--- | :--- | :--- |
+| `rg -c` | `1` or more | `0`: the deny is gone from the profile; stop and report |
+| Launch, while #65 is open | `bad certificate format` for `api.github.com/repos/github/copilot-cli/releases/latest` | Copilot 1.0.93 or later with no TLS error: upstream moved this request off SecureTransport; record the version, keep the deny, and revisit #65's options |
+
 ## Record outcomes and report only what ran
 
 Store a redacted private run log with this schema; never commit fixture values or raw secrets:
@@ -179,10 +390,15 @@ No Mac execution or fixture operation occurred while preparing this runbook. The
 
 ## Still unexecuted
 
-- Safehouse permissive and restrictive ACL rows under the effective Copilot policy and final-deny overlay.
-- Current-source yolo P0 harness row; the existing real-launch baseline is from `d159a57f0` and is not replaced by it.
-- Native SSL-policy hostname-match/mismatch controls and URLSession default-verification negative controls under unchanged yolo P0.
-- Any pathless session or data-protection keychain operation; no owner/default/search-list operation is authorized.
-- Copilot native HTTP path, its selected TLS verifier and any current CLI success result; public release assets linking multiple TLS stacks do not identify the active caller. Require public/vendor callsite mapping and an independently authorized, credential-free native request before claiming that result.
+Every row is an open question in the design; its witness is the matching subsection of [Native witnesses, one per open question](#native-witnesses-one-per-open-question).
+
+- Safehouse permissive and overlay rows under the effective Copilot policy: [OQ-MT3](../design/macos-native-tls.md#OQ-MT3).
+- Restrictive ACL rows: [OQ-MT4](../design/macos-native-tls.md#OQ-MT4).
+- Current-source yolo P0 harness row, and the native SSL-policy hostname and URLSession negative controls under it: [OQ-MT5](../design/macos-native-tls.md#OQ-MT5). The existing real-launch baseline is from `d159a57f0` and is not replaced by it.
+- trustd trusting an MDM-only CA under P0: [OQ-MT6](../design/macos-native-tls.md#OQ-MT6).
+- The native transitions now on main: inherited account relaunch, [OQ-MT7](../design/macos-native-tls.md#OQ-MT7); capture context, [OQ-MT8](../design/macos-native-tls.md#OQ-MT8); Claude view On to Off, [OQ-MT9](../design/macos-native-tls.md#OQ-MT9).
+- Apple Container's emitted JSON and the prune that reads it: [OQ-MT10](../design/macos-native-tls.md#OQ-MT10).
+- Copilot's native HTTP path under the unchanged deny: [OQ-MT11](../design/macos-native-tls.md#OQ-MT11). Public release assets linking several TLS stacks do not identify the active caller; the credential-free release check is the one request this witness makes.
+- Any pathless session or data-protection keychain operation stays untested and has no question: no owner, default or search-list operation is authorized.
 
 **Gates for this document:** repository-pinned Vantage style-guide read; `scripts/vantage-check.sh docs/plans/macos-native-comparison-runbook.md`; `git diff --check`; manual API/source and safety review. No Go test, nested jail, Mac test or full integration gate applies to this docs-only edit.

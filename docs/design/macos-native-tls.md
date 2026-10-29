@@ -3,7 +3,7 @@ title: "mise cannot reach HTTPS inside macos-user, and the keychain deny is why"
 date: 2026-10-23
 status: accepted
 stage: DECIDED
-next: "Compare the still-untested Safehouse Copilot policy against the completed yolo synthetic baseline; leave SecurityServer denied while tracing the actual Copilot TLS path"
+next: "Run the native witnesses OQ-MT3 to OQ-MT11 in a wholly disposable synthetic-only account; leave SecurityServer denied"
 tags: [design, macos, macos-user, seatbelt, tls, mise, ca-trust]
 summary: "Inside the macos-user Seatbelt profile, yolo's nixpkgs mise fails every HTTPS call with 'bad certificate format'. It is built with native-tls, whose SecureTransport handshake reads the server key through Apple's old CDSA code, which checks in with securityd (com.apple.SecurityServer). The profile denies that service on purpose because it fronts the login keychain. The proposal keeps the deny and ships a mise build that verifies through rustls-platform-verifier, which talks to trustd only. Measured on the maintainer's Mac 2026-10-23."
 ---
@@ -25,6 +25,8 @@ the cause in [§2](#2-the-cause) predicts every Mac.
 **Start at [§2](#2-the-cause).**
 
 **Mac-side follow-up:** The yolo [SecurityServer boundary audit](../lab-reports/2026-10-29-mac-securityserver-audit.md) is measured; the Safehouse comparison and Copilot request path remain open before graduation.
+
+**Owed by the Mac agent:** the native witnesses [OQ-MT3](#OQ-MT3) to [OQ-MT11](#OQ-MT11), with their commands in the [comparison runbook](../plans/macos-native-comparison-runbook.md#native-witnesses-one-per-open-question).
 
 **Needs your ruling:** none. **Ruled 2026-10-23:** [OQ-MT1](#OQ-MT1) (a mise yolo installs,
 ideally from Nix, no maintained patches; never securityd), [OQ-MT2](#OQ-MT2) (account mode may
@@ -179,7 +181,7 @@ tools installed, with no profile change.
 
 **Remaining bounded handoff — no repeat of the yolo baseline.** The owner has authorized the synthetic-only security-envelope goal; the blocker is a Mac executor, not another owner policy decision. Use an available disposable account/workspace and *only* newly created synthetic keychain fixtures, no real login/default keychain item, owner credential, global search-list change, live Copilot login/prompt/API request or production-policy edit. The first comparison is an unsandboxed no-prompt read plus add/read-back positive control on one explicitly named fixture, then the **same UID, real HOME and exact fixture** under rendered Safehouse Copilot-selected policy, its no-keychain-profile baseline, and unchanged yolo `p0`. Pin effective policy hashes, selection, file/service grants and child inheritance. Run only a small harmless Security.framework probe and child, **not Copilot**: the outer profile's process capability is not proof of Copilot's optional inner shell-tool permissions or actual auth storage. Every query must explicitly bind the sole fixture keychain and fixed class/service/account using applicable documented API selectors; if an add/update cannot be scoped, mark untested. A fresh HOME without a new UID/search list is not isolation. Separately contrast a preexisting dedicated guest UID with its own *synthetic* keychain only if this can be done without owner-account changes. Verify restricted item/ACL behavior after the permissive control, then conditionally expand to attributes, fixture-only enumeration, update/delete, certificate and key operations as independently scoped. Identify file-byte reads separately from daemon item calls, and record prompts, sandbox denies, item ACL denies and missing items separately. No printing secrets. If a restrictive item can only be installed with an unexpected prompt, stop and mark it untested.
 
-**Never run the native report's proposed `security lock-keychain -a` on the owner's session/login keychain.** It is pathless and would touch real state. If a pathless operation must be tested, use a *separate* disposable UID whose sole default keychain is synthetic, without changing any owner search list; otherwise leave that class untested. Native TLS follow-up checks a valid peer **and hostname**, plus both invalid chain and hostname mismatch with verification enabled, while keeping the service deny. A miniature client does not prove Copilot's native caller. The next Copilot test requires a credential-free request via its actual native HTTP path or vendor callsite confirmation; an actual agent login/API request needs a separately human-chosen run. Keep the outcome private and distinguish intended Safehouse broadened access from a demonstrated policy/ACL violation. Only after both the Safehouse comparison and actual Copilot path are understood should this design graduate into [`docs/reference/`](../reference/).
+**Never run the native report's proposed `security lock-keychain -a` on the owner's session/login keychain.** It is pathless and would touch real state. If a pathless operation must be tested, use a *separate* disposable UID whose sole default keychain is synthetic, without changing any owner search list; otherwise leave that class untested. Native TLS follow-up checks a valid peer **and hostname**, plus both invalid chain and hostname mismatch with verification enabled, while keeping the service deny. A miniature client does not prove Copilot's native caller. The next Copilot test requires a credential-free request via its actual native HTTP path or vendor callsite confirmation; an actual agent login/API request needs a separately human-chosen run. Keep the outcome private and distinguish intended Safehouse broadened access from a demonstrated policy/ACL violation. Only after both the Safehouse comparison and actual Copilot path are understood should this design graduate into [`docs/reference/`](../reference/). Each remaining witness is an open question in [§7](#7-open-questions).
 
 ## 7. Open questions
 
@@ -218,6 +220,80 @@ tools installed, with no profile change.
    > **Ruled in review 2026-10-23, as leaned (A):** "I'm absolutely okay with having the corporate
    > CAs not work in some subset of the guest separate account mode. That's totally fine, and we'll
    > just document that."
+
+3. 🔒 **OQ-MT3: Does Safehouse's effective Copilot policy admit a synthetic keychain read that yolo's deny blocks?**
+
+   <!-- vantage: question id=OQ-MT3 -->
+
+   Safehouse's Copilot profile requires a keychain module that grants the services yolo denies. Only its rendered policy, run against a disposable fixture, says what that grant admits.
+
+   **Witness:** [Safehouse effective policy](../plans/macos-native-comparison-runbook.md#safehouse-effective-policy).
+
+4. 🔒 **OQ-MT4: Does an item whose access list trusts no application stay unreadable, with and without a sandbox?**
+
+   <!-- vantage: question id=OQ-MT4 -->
+
+   This is the control that separates an item-ACL decision from a sandbox deny, which the October 29 audit did not record.
+
+   **Witness:** [Restrictive keychain ACL](../plans/macos-native-comparison-runbook.md#restrictive-keychain-acl).
+
+5. 🔒 **OQ-MT5: Does the current tree's P0 still block the keychain, and still reject a bad chain and a wrong hostname?**
+
+   <!-- vantage: question id=OQ-MT5 -->
+
+   The audit measured `d159a57f0`, not the current tree, and recorded no hostname or URLSession negative control.
+
+   **Witness:** [Current P0, hostname and URLSession negative controls](../plans/macos-native-comparison-runbook.md#current-p0-hostname-and-urlsession-negative-controls).
+
+6. 🔒 **OQ-MT6: Does trustd under P0 trust a CA that only the MDM installed?**
+
+   <!-- vantage: question id=OQ-MT6 -->
+
+   [§3](#3-the-proposal) claims it does; [§5](#5-witnesses-for-the-mac) could not test it on a network that does not intercept TLS.
+
+   **Witness:** [MDM-installed CA under P0](../plans/macos-native-comparison-runbook.md#mdm-installed-ca-under-p0).
+
+7. 🔒 **OQ-MT7: Does a second account-mode launch reuse the inherited user config the first one delivered?**
+
+   <!-- vantage: question id=OQ-MT7 -->
+
+   The repair in the [inherited account relaunch plan](inherited-relaunch-plan.md) is proved on Linux only.
+
+   **Witness:** [Inherited account relaunch](../plans/macos-native-comparison-runbook.md#inherited-account-relaunch).
+
+8. 🔒 **OQ-MT8: Does a native capture carry its resolved launch context?**
+
+   <!-- vantage: question id=OQ-MT8 -->
+
+   The [capture context plan](native-capture-compatibility-context-plan.md) is proved on Linux only, and the raw output behind the old self-mode version-parse report is still missing.
+
+   **Witness:** [Capture compatibility context](../plans/macos-native-comparison-runbook.md#capture-compatibility-context).
+
+9. 🔒 **OQ-MT9: Does turning the Claude credential view Off retire the workspace's registration on a Mac?**
+
+   <!-- vantage: question id=OQ-MT9 -->
+
+   The [Claude view retirement plan](claude-view-retirement-plan.md) is proved with fake tokens on Linux only.
+
+   **Witness:** [Claude credential view, On then Off](../plans/macos-native-comparison-runbook.md#claude-credential-view-on-then-off).
+
+10. 🔒 **OQ-MT10: Does Apple Container emit the JSON the prune reads, and does the prune keep every image in use?**
+
+    <!-- vantage: question id=OQ-MT10 -->
+
+    The [Apple Container image prune plan](apple-container-image-prune-plan.md) reads shapes from Apple's source, not from captured output.
+
+    **Witness:** [Apple Container JSON and image prune](../plans/macos-native-comparison-runbook.md#apple-container-json-and-image-prune).
+
+11. 🔒 **OQ-MT11: Does current Copilot still fail native TLS under the unchanged SecurityServer deny?**
+
+    <!-- vantage: question id=OQ-MT11 -->
+
+    Tracked as [yolo-jail #65](https://github.com/mschulkind-oss/yolo-jail/issues/65), which is open. The deny stays whatever the answer.
+
+    **Witness:** [Copilot native TLS under the keychain deny](../plans/macos-native-comparison-runbook.md#copilot-native-tls-under-the-keychain-deny).
+
+Questions 3 to 11 are witnesses, not rulings. Each is blocked on one native run by the owner's Mac agent, in a wholly disposable synthetic-only account, under the runbook's [scope and stop conditions](../plans/macos-native-comparison-runbook.md#scope-and-stop-conditions). Record each outcome under its question; a row that could not run is untested, not answered.
 
 ## Decision Ledger
 
