@@ -235,35 +235,53 @@ func TestRealGitPushRejectionPhases(t *testing.T) {
 		before := mustGit(t, h.bare, "rev-parse", "main")
 		h.localCommit()
 		newID := mustGit(t, h.ws, "rev-parse", "HEAD")
+		ancestry, ancestryErr := run(t, h.ws, gitEnv(), "merge-base", "--is-ancestor", before, newID)
+		if ancestryErr != nil || strings.TrimSpace(ancestry) != "" {
+			t.Fatalf("HTTPS known-FF ancestry = %q, %v; want exit 0", ancestry, ancestryErr)
+		}
+
+		nBefore := countPushes(t)
+		postsBefore := len(h.pushPosts())
 		out, err := h.git("push", "origin", "HEAD:refs/heads/main")
 		if err == nil || !strings.Contains(out, reasonNeedsApproval) || strings.Contains(out, "needs force") {
 			t.Fatalf("HTTPS FF disposition: %v\n%s", err, out)
 		}
-		if len(h.pushPosts()) != 0 {
-			t.Fatalf("refused HTTPS push issued POST: %s", h.srv.log(t))
+		nAfter := countPushes(t)
+		if nAfter != nBefore+1 {
+			t.Fatalf("HTTPS normal FF receive-pack audit count %d -> %d, want one event\n%s", nBefore, nAfter, out)
+		}
+		if got := len(h.pushPosts()); got != postsBefore {
+			t.Fatalf("refused HTTPS push POST count %d -> %d, want no POST: %s", postsBefore, got, h.srv.log(t))
 		}
 		if got := mustGit(t, h.bare, "rev-parse", "main"); got != before {
 			t.Fatalf("HTTPS upstream moved %s -> %s", before, got)
 		}
 		e := lastPush(t)
-		if e.Remote != h.url || e.Set != "refused" || len(e.Refs) != 1 || e.Refs[0].Old != before || e.Refs[0].New != newID {
+		if e.Remote != h.url || e.Set != "refused" || len(e.Refs) != 1 || e.Refs[0].Ref != "refs/heads/main" || e.Refs[0].Old != before || e.Refs[0].New != newID {
 			t.Fatalf("HTTPS push audit: %+v", e)
 		}
-		t.Logf("HTTPS known FF normal old=%s new=%s remote=%q posts=%d: %s", before, newID, e.Remote, len(h.pushPosts()), out)
+		t.Logf("HTTPS known FF normal old=%s new=%s remote=%q audit events=%d->%d posts=%d: %s", before, newID, e.Remote, nBefore, nAfter, len(h.pushPosts()), out)
+
+		nBefore = countPushes(t)
+		postsBefore = len(h.pushPosts())
 		forceOut, forceErr := h.git("push", "--force", "origin", "HEAD:refs/heads/main")
 		if forceErr == nil || !strings.Contains(forceOut, reasonNeedsApproval) || strings.Contains(forceOut, "needs force") {
 			t.Fatalf("HTTPS forced FF disposition: %v\n%s", forceErr, forceOut)
 		}
-		if len(h.pushPosts()) != 0 {
-			t.Fatalf("refused forced HTTPS push issued POST: %s", h.srv.log(t))
+		nAfter = countPushes(t)
+		if nAfter != nBefore+1 {
+			t.Fatalf("HTTPS forced FF receive-pack audit count %d -> %d, want one event\n%s", nBefore, nAfter, forceOut)
+		}
+		if got := len(h.pushPosts()); got != postsBefore {
+			t.Fatalf("refused forced HTTPS push POST count %d -> %d, want no POST: %s", postsBefore, got, h.srv.log(t))
 		}
 		if got := mustGit(t, h.bare, "rev-parse", "main"); got != before {
 			t.Fatalf("HTTPS forced upstream moved %s -> %s", before, got)
 		}
 		e = lastPush(t)
-		if e.Remote != h.url || e.Set != "refused" || len(e.Refs) != 1 || e.Refs[0].Old != before || e.Refs[0].New != newID {
+		if e.Remote != h.url || e.Set != "refused" || len(e.Refs) != 1 || e.Refs[0].Ref != "refs/heads/main" || e.Refs[0].Old != before || e.Refs[0].New != newID {
 			t.Fatalf("HTTPS forced push audit: %+v", e)
 		}
-		t.Logf("HTTPS known FF force old=%s new=%s remote=%q posts=%d: %s", before, newID, e.Remote, len(h.pushPosts()), forceOut)
+		t.Logf("HTTPS known FF force old=%s new=%s remote=%q audit events=%d->%d posts=%d: %s", before, newID, e.Remote, nBefore, nAfter, len(h.pushPosts()), forceOut)
 	})
 }
