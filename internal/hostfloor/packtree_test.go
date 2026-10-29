@@ -294,11 +294,6 @@ func TestAPackTreeProgramWithNoSourceAndNoPrebuiltIsNoFloorEntry(t *testing.T) {
 	}
 }
 
-// ON A MAC (the plan's Task 10) the floor holds a pack-tree program as on Linux: resolved by digest,
-// built through the floor's resolver (the CLI's runs the macos-user sealed act), and installed. Where
-// the Mac's build act cannot run now, its own blocker (BuildActUnavailable) is the no-entry reason.
-// On any other platform there is still no entry, naming a jail and `host_floor`. No fork path is
-// reached on any platform.
 // THE PLATFORM IS A RECORD'S (install-capture.md#record-platform): the store keys by content alone,
 // so a script admitted first for a jail's platform keeps that manifest when this floor's platform
 // admits the same bytes. The floor's materialize takes its CapturePlatform from a record beside the
@@ -334,6 +329,11 @@ func TestAPackTreeEntryFirstAdmittedForAnotherPlatformInstallsByItsRecord(t *tes
 	}
 }
 
+// ON A MAC (the plan's Task 10) the floor holds a pack-tree program as on Linux: resolved by digest,
+// built through the floor's resolver (the CLI's runs the macos-user sealed act), and installed. Where
+// the Mac's build act cannot run now, its own blocker (BuildActUnavailable) is the no-entry reason.
+// On any other platform there is still no entry, naming a jail and `host_floor`. No fork path is
+// reached on any platform.
 func TestAPackTreeProgramOnAMacFloorIsBuiltAndInstalled(t *testing.T) {
 	digest := packTreeDigestOne
 	w, ps, resolves := packTreeWorld(t, &digest, nil)
