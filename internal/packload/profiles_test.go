@@ -280,12 +280,12 @@ func TestDeclaredProfileNamesIsTheUnionOfBothSides(t *testing.T) {
 	if strings.Join(declared, ",") != "bedrock,zai,zai-fast" {
 		t.Errorf("declared names should be the sorted union of both sides, got %v", declared)
 	}
-	msg := UndeclaredProfileMessage("zai-fst", declared)
+	msg := UndeclaredProfileMessage("zai-fst", declared, nil)
 	if !strings.Contains(msg, `no profile named "zai-fst" is declared`) ||
 		!strings.Contains(msg, "declared: bedrock, zai, zai-fast") {
 		t.Errorf("the undeclared-name refusal should name the typo and the real list, got %q", msg)
 	}
-	if none := UndeclaredProfileMessage("x", nil); !strings.Contains(none, "(declared: none)") {
+	if none := UndeclaredProfileMessage("x", nil, nil); !strings.Contains(none, "(declared: none)") {
 		t.Errorf("nothing declared should say so rather than print an empty list, got %q", none)
 	}
 }

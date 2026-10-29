@@ -6,16 +6,17 @@ import (
 )
 
 // pi_github_copilot_test.go pins pi on its own GitHub Copilot provider with NO user declaration:
-// packs/pi ships the `github-copilot` provider and the `github-copilot` profile over it, the way
-// packs/openai-auth ships `openai-codex` and `codex`, so selecting pi alone is enough. pi has the
+// packs/github-copilot ships the `github-copilot` provider and the `github-copilot` profile over
+// it, the way packs/openai-auth ships `openai-codex` and `codex`, so selecting pi and that pack,
+// with no copilot, is enough (BI-D14). pi has the
 // provider built in (`built_in_providers`), so yolo writes it no models.json row and pi runs it on
 // its own client and its own `/login`. The case the shipped profile exists for is the MIXED set,
 // `"profile": {"pi": ["bedrock", "github-copilot"]}`: Bedrock's scoped list and pi-subagents'
-// scope must not keep pi off Copilot's models. Over the real embedded packs (pi, bedrock and the
+// scope must not keep pi off Copilot's models. Over the real embedded packs (pi, github-copilot, bedrock and the
 // needs closure), through the boot render, with no user provider or profile.
 
 func TestPiRunsOnItsOwnGitHubCopilotWithNoDeclaration(t *testing.T) {
-	providersJSON, wire := bedrockTables(t, "pi", "", nil)
+	providersJSON, wire := bedrockTables(t, "pi", "", nil, "github-copilot")
 	r := newPioencodeRender(t, providersJSON)
 	r.wireProfiles(wire)
 	r.render(t, `{"pi":"github-copilot"}`)
@@ -46,7 +47,7 @@ func TestPiOnBedrockAndGitHubCopilotKeepsCopilotsModelsInScope(t *testing.T) {
 			if tc.list {
 				tables = bedrockListTables
 			}
-			providersJSON, wire := tables(t, "pi", "", nil)
+			providersJSON, wire := tables(t, "pi", "", nil, "github-copilot")
 			r := newPioencodeRender(t, providersJSON)
 			r.wireProfiles(wire)
 			r.render(t, `{"pi":["bedrock","github-copilot"]}`)

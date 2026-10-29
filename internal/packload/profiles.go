@@ -447,17 +447,50 @@ func DeclaredProfileNames(packs []*Pack, user map[string]UserProfile) []string {
 	return out
 }
 
+// ShippedProfileDeclarers returns, sorted, the names of the packs in universe (the caller passes
+// the shipped set, Embedded()) whose manifest declares a profile named name. It is the hint
+// UndeclaredProfileMessage gives when a name is undeclared only because the pack shipping it is
+// not selected: `-p pi=github-copilot` with pi alone (BI-D14). It reads manifests only, and
+// reserves nothing.
+func ShippedProfileDeclarers(name string, universe []*Pack) []string {
+	var out []string
+	for _, p := range universe {
+		if p == nil || p.Decl == nil {
+			continue
+		}
+		for _, prof := range p.Decl.Profiles() {
+			if prof.Name == name {
+				out = append(out, p.Name)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // UndeclaredProfileMessage explains a selected name nothing declares, listing what IS
 // declared — the same shape unknownProfileCLIMessage and unknownEmbeddedMessage take,
-// because a typo is the likely cause and the real list is the whole fix.
-func UndeclaredProfileMessage(name string, declared []string) string {
+// because a typo is the likely cause and the real list is the whole fix. When a pack yolo
+// ships declares the name (shippedBy, from ShippedProfileDeclarers), the message names adding
+// it instead, since then the name is right and the selection is what is missing.
+func UndeclaredProfileMessage(name string, declared, shippedBy []string) string {
 	have := "none"
 	if len(declared) > 0 {
 		have = strings.Join(declared, ", ")
 	}
-	return fmt.Sprintf("no profile named %q is declared — a profile name must be declared "+
+	msg := fmt.Sprintf("no profile named %q is declared — a profile name must be declared "+
 		"by a selected pack's manifest or by your config's `profiles` key (declared: %s)",
 		name, have)
+	if len(shippedBy) > 0 {
+		quoted := make([]string, len(shippedBy))
+		for i, p := range shippedBy {
+			quoted[i] = strconv.Quote(p)
+		}
+		msg += fmt.Sprintf("; the %s pack yolo ships declares it: add %s to your config's "+
+			"`packs` list", strings.Join(shippedBy, " or "), strings.Join(quoted, " or "))
+	}
+	return msg
 }
 
 // WireViaKey and WireViaBaseKey are ProfilesWireTable's reserved keys for a profile's

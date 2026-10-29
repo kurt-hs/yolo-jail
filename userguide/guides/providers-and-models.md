@@ -107,6 +107,12 @@ A launch where nothing was overridden prints no such line. See
 | `kilo` | [Kilo](https://kilo.ai) gateway | Claude Code and Copilot through the wire bridge; pi and opencode directly | `KILO_API_KEY` |
 | `cerebras` | [Cerebras](https://www.cerebras.ai) | Claude Code and Copilot through the wire bridge; pi and opencode directly | `CEREBRAS_API_KEY` |
 | `llamacpp` | a [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` you run on port 8080 | Claude Code, Copilot, pi, opencode | none |
+| `github-copilot` | [GitHub Copilot](https://github.com/features/copilot), on each agent's own GitHub login | Copilot, pi, opencode, oh-omp | none: each agent signs in itself |
+
+The `copilot` pack brings `github-copilot`; select it without `copilot` to run pi, opencode or oh-omp
+on GitHub Copilot, as `"packs": ["pi", "github-copilot"]` with `yolo -p pi=github-copilot -- pi`,
+or beside Bedrock as `"profile": {"pi": ["bedrock", "github-copilot"]}`. Claude Code and Codex
+have no GitHub Copilot client, and the launch says the profile reaches nothing for them.
 
 pi, opencode and oh-omp have zai, cerebras and openrouter built in, and opencode and oh-omp have
 kilo too, so on those providers each agent uses its own connection and its own model list. The

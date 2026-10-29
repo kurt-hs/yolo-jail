@@ -37,7 +37,7 @@
 // its mode on disk. So executables.txt, embedded below beside the packs, records every file
 // whose repository mode carries an exec bit, and the materializer restores it
 // (packload.EmbeddedExecutablesFile; a test fails when the list and the tree disagree).
-// `zai`, `cerebras`, `openrouter`, `kilo`, `llamacpp` and `bedrock` ship neither CLI nor
+// `zai`, `cerebras`, `openrouter`, `kilo`, `llamacpp`, `bedrock` and `github-copilot` ship neither CLI nor
 // loophole: provider/profile
 // packs. zai was the first pack whose whole content is declarative facts; cerebras was the
 // first to carry a `needs` entry — the wire-bridge it joins when claude or copilot is selected;
@@ -46,7 +46,9 @@
 // llama-server, whose Anthropic endpoint is the server's own rather than a bridge's. `bedrock`
 // is the first one the AGENT packs need rather than the other way round: every agent pack
 // whose derive binds Amazon Bedrock needs it, so selecting that agent is what brings the
-// provider (docs/design/bedrock-plumbing.md OQ-BR9). `guardrails` ships neither either: blocked-tool refusals and install
+// provider (docs/design/bedrock-plumbing.md OQ-BR9). `github-copilot` is the same shape again,
+// a provider and profile with no endpoint and no key, which `copilot` needs and a user may
+// select without it (docs/design/pi-codex-provider-shadowing.md BI-D14). `guardrails` ships neither either: blocked-tool refusals and install
 // requirements (9caba669 moved the blocked tools out of core — core blocks nothing by
 // default), the third kind of CLI-less pack. `wire-bridge` is the fourth kind and the
 // first of it: a `kind: "service"` pack, one in-jail daemon and its endpoint file,
@@ -87,5 +89,5 @@ package packs
 
 import "embed"
 
-//go:embed executables.txt all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:muse-planner all:git
+//go:embed executables.txt all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:muse-planner all:git all:github-copilot
 var FS embed.FS

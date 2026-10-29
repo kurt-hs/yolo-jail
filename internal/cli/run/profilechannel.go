@@ -414,7 +414,7 @@ func (o *Options) checkProfileDeclarations(fold config.ProfileFold,
 			}
 			reported[name] = true
 			problems = append(problems, fmt.Sprintf("profile %q selected for %s: %s",
-				name, agent, packload.UndeclaredProfileMessage(name, declared)))
+				name, agent, packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded()))))
 		}
 	}
 	// AND EVERY ENTRY OF A BARE LIST, whichever agents took it (OQ-AP3 read with AP-D3), the
@@ -434,7 +434,7 @@ func (o *Options) checkProfileDeclarations(fold config.ProfileFold,
 			}
 			reported[name] = true
 			problems = append(problems, fmt.Sprintf("profile %q (entry %d of %s): %s",
-				name, i+1, spelled, packload.UndeclaredProfileMessage(name, declared)))
+				name, i+1, spelled, packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded()))))
 		}
 	}
 	if len(problems) == 0 {

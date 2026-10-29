@@ -1337,16 +1337,19 @@ oh-omp and opencode, and `openai-codex`, the first case. For such a provider:
   the one list `packs/openai-auth` declares ([ML-D1](../design/model-lists-and-pickers.md#ML-D1)),
   which their packs say with `yolo_lists`, so its `YOLO_MODEL_<ROLE>` tiers are composed and the
   profile line names its `openai-responses` endpoint. oh-omp runs it on its own list.
-- **`github-copilot` ships with pi, provider and profile**, so pi on its own GitHub Copilot client
-  needs no declaration: `-p pi=github-copilot`, or beside Bedrock as
+- **`github-copilot` is its own pack, provider and profile, which `copilot` brings**
+  ([BI-D14](../design/pi-codex-provider-shadowing.md#BI-D14)). Selecting the `copilot` pack
+  brings `packs/github-copilot` by an unconditional `needs`; selecting it without `copilot`,
+  beside pi, is enough for `-p pi=github-copilot`, or beside Bedrock for
   `"profile": {"pi": ["bedrock", "github-copilot"]}`, whose scoped list and pi-subagents scope
-  then hold `github-copilot/**` and `github-copilot/*` beside Bedrock's
-  ([BI-D13](../design/pi-codex-provider-shadowing.md#BI-D13)). The provider names no endpoint
-  and no key: pi signs in with its own `/login`, which is not the Copilot CLI's. It names the
-  platform `github-copilot`, so opencode and oh-omp, which have it built in, run it on their own
-  clients, and for an agent with no client of its own (claude, codex, the Copilot CLI) a bare
-  `-p github-copilot` reaches nothing, which the launch's profile line says with the
-  `-p <agent>=` next step.
+  then hold `github-copilot/**` and `github-copilot/*` beside Bedrock's. With pi selected and
+  neither pack, `github-copilot` is undeclared, and the refusal names adding the pack. The
+  provider names no endpoint and no key: pi signs in with its own `/login`, which is not the
+  Copilot CLI's. It names the platform `github-copilot`, so opencode and oh-omp, which have it
+  built in, run it on their own clients; the Copilot CLI runs it on its own GitHub login, since
+  its pack needs a pack that ships a provider of that platform; and for an agent with no client
+  of its own (claude, codex) a bare `-p github-copilot` reaches nothing, which the launch's
+  profile line says with the `-p <agent>=` next step.
 - **A plan the agent has no provider of its own for** (a `null` plan) gets nothing written, and
   the launch's profile line says the profile reaches nothing for that agent, naming
   `-p <agent>=<name>`. No shipped pack declares one.

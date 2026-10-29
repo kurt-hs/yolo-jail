@@ -106,3 +106,15 @@ func TestHostLaunchNamesAnUnusablePackBeforeAnUndeclaredProfile(t *testing.T) {
 		}
 	}
 }
+
+// AN UNSELECTED SHIPPED PACK'S PROFILE: with pi alone, `yolo host -p pi=github-copilot` refuses,
+// and the refusal names the github-copilot pack to add (BI-D14, the Happy Path).
+func TestHostUndeclaredGitHubCopilotProfileNamesItsPack(t *testing.T) {
+	hostGateHomeRaw(t, `{"host_management":"none","packs":["pi"]}`, nil)
+	var out, errw bytes.Buffer
+	rc := hostMain([]string{"env", "--agent", "pi", "-p", "pi=github-copilot"}, &out, &errw, false, nil)
+	if rc == 0 || !strings.Contains(errw.String(), `no profile named "github-copilot" is declared`) ||
+		!strings.Contains(errw.String(), `add "github-copilot" to your config's `+"`packs`") {
+		t.Fatalf("rc=%d, want the refusal to name adding the github-copilot pack:\n%s", rc, errw.String())
+	}
+}

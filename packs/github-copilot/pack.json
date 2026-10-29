@@ -1,0 +1,31 @@
+{
+  "contributes": [
+    // GITHUB COPILOT AS A PROVIDER, SELECTABLE WITH NO DECLARATION (providers.md, "A provider the
+    // agent has built in"; docs/design/pi-codex-provider-shadowing.md BI-D14): the provider and a
+    // profile over it, the way packs/openai-auth ships `openai-codex` and `codex`. packs/copilot
+    // needs this pack, so selecting the Copilot CLI brings it; selected without copilot, beside
+    // pi, it makes `-p pi=github-copilot` and the mixed set
+    // `"profile": {"pi": ["bedrock", "github-copilot"]}` work with nothing in the user's config.
+    //
+    // The provider names no endpoint and no credential. An agent that has it built in (pi,
+    // opencode, oh-omp: their `built_in_providers`) runs it on its own client, list and login. The
+    // Copilot CLI runs it on its own GitHub login: its pack needs this one, and a pack binds a
+    // platform by needing a pack that ships a provider of it. The `platform` is the one fact the
+    // provider offers about itself, so an agent with no GitHub Copilot client of its own (claude,
+    // codex) is told a bare `-p github-copilot` reaches nothing for it, rather than staying on its
+    // own login as if the profile re-pointed it. The profile is `github-copilot`, not `copilot`,
+    // which names the Copilot CLI agent in `-p copilot=...`.
+    {
+      "kind": "provider",
+      "name": "github-copilot",
+      "platform": "github-copilot"
+    },
+    {
+      "kind": "profile",
+      "name": "github-copilot",
+      "provider": "github-copilot"
+    }
+  ],
+  "description": "GitHub Copilot as one provider and profile: the Copilot CLI's own login, and the GitHub Copilot client pi, opencode and oh-omp have built in. It installs nothing; the copilot pack brings it, and you may select it without copilot.",
+  "name": "github-copilot"
+}

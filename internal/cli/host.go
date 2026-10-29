@@ -583,7 +583,7 @@ func hostBareListUndeclared(agent string, entries []string) error {
 	for i, name := range entries {
 		if !slices.Contains(declared, name) {
 			return fmt.Errorf("packs: profile %q (entry %d of the bare -p list %s): %s", name, i+1,
-				strings.Join(entries, ","), packload.UndeclaredProfileMessage(name, declared))
+				strings.Join(entries, ","), packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded())))
 		}
 	}
 	return nil
@@ -2668,7 +2668,7 @@ func composeHostVarsWith(cfg *jsonx.OrderedMap, workspace, agent, command, profi
 		for _, name := range set {
 			if i := sort.SearchStrings(declared, name); i >= len(declared) || declared[i] != name {
 				c.err = fmt.Errorf("packs: profile %q selected for %s: %s", name, agent,
-					packload.UndeclaredProfileMessage(name, declared))
+					packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded())))
 				return c
 			}
 		}
@@ -2678,7 +2678,7 @@ func composeHostVarsWith(cfg *jsonx.OrderedMap, workspace, agent, command, profi
 		for i, name := range c.bareList {
 			if j := sort.SearchStrings(declared, name); j >= len(declared) || declared[j] != name {
 				c.err = fmt.Errorf("packs: profile %q (entry %d of the profile key's list %s): %s",
-					name, i+1, strings.Join(c.bareList, ","), packload.UndeclaredProfileMessage(name, declared))
+					name, i+1, strings.Join(c.bareList, ","), packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded())))
 				return c
 			}
 		}

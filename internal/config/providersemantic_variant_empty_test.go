@@ -254,7 +254,7 @@ func TestReadableTOMLVariantCapabilitiesReplaceProviderCapabilitiesAtSelectedCon
 }
 
 // declarationNamed is the one provider declaration named name: the user's TOML provider, beside
-// whatever the selected packs ship (packs/pi ships `github-copilot`).
+// whatever the selected packs ship (packs/github-copilot ships `github-copilot`).
 func declarationNamed(t *testing.T, declarations []packdecl.ProviderContribution, name string) packdecl.ProviderContribution {
 	t.Helper()
 	var found []packdecl.ProviderContribution

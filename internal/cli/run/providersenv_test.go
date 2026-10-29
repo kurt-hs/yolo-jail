@@ -103,8 +103,8 @@ func TestAssembleEmitsComposedProvidersTable(t *testing.T) {
 
 // A launch with no provider from either side still emits `{}` — the golden argv's
 // byte-for-byte shape must not change because the kind exists. The pack here is one that
-// ships no provider on purpose: packs/claude now always ships one (bedrock's shape), and
-// packs/pi ships `github-copilot`, so neither launch can be the empty case again; agy ships none.
+// ships no provider on purpose: packs/claude now always ships one (bedrock's shape), so a claude
+// launch can never be the empty case again; agy ships none.
 func TestAssembleEmitsEmptyProvidersTableWithoutProviders(t *testing.T) {
 	sec := jsonx.NewOrderedMap()
 	sec.Set("blocked_tools", []any{})

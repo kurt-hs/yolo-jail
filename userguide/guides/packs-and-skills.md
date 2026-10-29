@@ -42,7 +42,10 @@ with its permission prompts off, since the jail is the safety boundary.
 | `omp` | oh-omp, run as `oh-omp` | `yolo -- oh-omp` (not on Apple silicon or ARM Linux; its vendor publishes no build for them) |
 
 **Model providers.** Each adds a provider and a profile of the same name, so you can point an agent
-at it with `yolo -p <name> -- <agent>`: `zai`, `openrouter`, `kilo`, `cerebras` and `llamacpp`.
+at it with `yolo -p <name> -- <agent>`: `zai`, `openrouter`, `kilo`, `cerebras`, `llamacpp`,
+`bedrock` and `github-copilot`. The `copilot` pack brings `github-copilot`, and you can also select
+it without `copilot`, to run pi, opencode or oh-omp on the GitHub Copilot client they have built in:
+`"packs": ["pi", "github-copilot"]`, then `yolo -p pi=github-copilot -- pi`.
 [Providers and Models](providers-and-models.md) explains them.
 
 **Host connections.** Each ships a **loophole**, a named connection from the jail to one capability
@@ -54,9 +57,11 @@ your host's login.
 **Habits.** `guardrails` makes recursive `grep` and `find` refuse and point at `rg` and `fd`.
 [Packages and Tools](packages-and-tools.md#blocked-tools) covers blocking tools.
 
-Some packs bring others with them. The `claude`, `codex`, `opencode` and `pi` packs bring
-`openai-auth`, the shared ChatGPT login service, and `claude` also brings `aws-auth` and `wire-bridge`. The launch
-prints the full set it resolved, so what you see there can be longer than what you typed.
+Some packs bring others with them: `claude` brings `wire-bridge`, `copilot` brings
+`github-copilot`, `bedrock` brings `aws-auth`, and `cerebras` and `kilo` bring `wire-bridge` when
+`claude` or `copilot` is selected. The launch prints the full set it resolved, so what you see there
+can be longer than what you typed. A pack brought this way cannot be left out, but `github-copilot`
+only declares a provider and a profile: it runs nothing until you select that profile.
 
 ### Packs from elsewhere
 
