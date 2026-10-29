@@ -6,7 +6,7 @@ depends-on: []
 ---
 # Item18 — narrow SSH endpoint scope repair
 
-Written against 662d9103b677594de38e6f96f7a07ec693fbf28a, 2026-10-29. Owner's item18 ruling supersedes exact-string-only matching in git-broker-plan.md ID-2. Behavior ruling → actual tree → this plan. This is a candidate handoff, not Main acceptance.
+Written against 662d9103b677594de38e6f96f7a07ec693fbf28a, 2026-10-29. Owner's item18 ruling supersedes exact-string-only matching in [`git-broker-plan.md`](./git-broker-plan.md) ID-2. Behavior ruling → actual tree → this plan. This is a candidate handoff, not Main acceptance.
 
 ## Settled (do not reopen)
 One approved `git@github.com:mschulkind/dotfiles` permits requests `ssh://git@github.com/mschulkind/dotfiles` and `git+ssh://git@github.com/mschulkind/dotfiles`. Keep original request URL in remote helper, upstream argv path, and audit. No grant/remotes/approval changes. Never use gitproto.Identity as endpoint approval: it drops username/transport and collapses paths.
