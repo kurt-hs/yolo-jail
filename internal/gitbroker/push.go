@@ -160,11 +160,12 @@ func (b *Broker) readPush(in io.Reader, ev *brokeraudit.Event, cover coverer, sa
 func (b *Broker) refuseToClient(out io.Writer, in io.Reader, p pushRead, dest string, ev *brokeraudit.Event, say func(string)) int {
 	ev.Set, ev.Outcome, ev.Reason = "refused", "refused", refusalSummary(p.reasons)
 	say("this push was refused whole, so nothing reached " + dest + " and the remote is unchanged; each ref's " +
-		"reason is on its `! [remote rejected]` line. Without approval, which this version cannot ask for, the " +
-		"broker pushes only a new branch under a create-branch grant and the branches in this workspace's " +
-		"working set: those it created that way, and those a branch grant in the workspace config declares " +
-		"(`yolo approve` on the host lists both). Push anything else from the host instead (`git push` " +
-		"in this workspace there), where `yolo audit --service git` shows what was refused.")
+		"reason is on its `! [remote rejected]` line, and the lines above name the grant that covers each " +
+		"refused branch. Without approval, which this version cannot ask for, the broker pushes only a new " +
+		"branch under a create-branch grant and the branches in this workspace's working set: those it created " +
+		"that way, and those a branch grant in the workspace config declares (`yolo approve` on the host lists " +
+		"both). Push anything else from the host instead (`git push` in this workspace there), where " +
+		"`yolo audit --service git` shows what was refused.")
 	if !p.caps.Has("report-status") && !p.caps.Has("report-status-v2") {
 		for i, c := range p.cmds {
 			say(c.Ref + ": " + p.reasons[i])

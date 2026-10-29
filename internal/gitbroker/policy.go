@@ -1,6 +1,7 @@
 package gitbroker
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"slices"
@@ -92,6 +93,29 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			}
 		}
 	}
+	// unlisted is what a grant of kind also needs from the host user config before it covers
+	// anything, as the hint's clause; nothing when the config already allows the kind.
+	unlisted := func(kind string) string {
+		switch {
+		case authorityErr != nil:
+			return ", and repair `allow.git` in your user config on the host, which could not be validated"
+		case slices.Contains(kinds, kind):
+			return ""
+		case canonical:
+			return ", and add its capability to `allow.git.always` or `allow.git.on_request` in your user config on the host"
+		default:
+			return ", and list \"" + kind + "\" under `brokered.git.grant_kinds` in your user config on the host"
+		}
+	}
+	// hint is a refused ref's next step: the one grant that covers it, spelled as the workspace
+	// config takes it (docs/reference/happy-path-principle.md).
+	hint := func(ref, why string, g brokerscope.Grant) {
+		spelled, _ := json.Marshal(g)
+		say(ref + ": " + why + ". To let the broker push it, add " + string(spelled) +
+			" to `brokered.git.grants` in this workspace's yolo-jail.jsonc" + unlisted(g.Kind) +
+			", then run `yolo config apply` on the host, in this workspace, and approve the grant; " +
+			"or push it from the host (`git push` in this workspace there).")
+	}
 	warned := false
 	storeFailed := func(err error) {
 		if !warned {
@@ -104,6 +128,10 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 	return func(c gitproto.Command) (string, string, bool) {
 		branch, isBranch := strings.CutPrefix(c.Ref, "refs/heads/")
 		if !isBranch {
+			if strings.HasPrefix(c.Ref, "refs/tags/") {
+				say(c.Ref + ": the broker never pushes a tag, and no grant changes that; push it from the " +
+					"host (`git push origin " + c.Ref + "` in this workspace there).")
+			}
 			return "", "", false
 		}
 		declared := declaredBranch(f.Grants, repo, branch)
@@ -119,8 +147,20 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 		// the user config no longer lists says so only here, once the push is refused, so a
 		// push another grant covers prints no refusal line.
 		refused := func() (string, string, bool) {
-			if declared && !branchAllowed {
+			switch {
+			case declared && !branchAllowed:
 				kindMissing(grantBranch, "push to the branches it declares")
+			case c.Create() && granted:
+				// kindMissing already named what keeps the create-branch grant from covering it.
+			case c.Create():
+				hint(c.Ref, "a new branch needs a create-branch grant on "+repo+", which covers any new branch name",
+					brokerscope.Grant{Kind: grantCreateBranch, Repo: repo})
+			case brokerscope.ValidGrantBranch(branch):
+				hint(c.Ref, "not in this workspace's working set: the broker did not create it, and no branch grant declares it",
+					brokerscope.Grant{Kind: grantBranch, Repo: repo, Branch: branch})
+			default:
+				say(c.Ref + ": not in this workspace's working set, and no branch grant can name it; push it from the host " +
+					"(`git push` in this workspace there).")
 			}
 			return "", "", false
 		}
