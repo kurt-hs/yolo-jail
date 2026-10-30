@@ -211,16 +211,17 @@ func codexAuthForkAt(t *testing.T, upstream string) string {
 	if err := os.CopyFS(fork, tree); err != nil {
 		t.Fatalf("copying codex-auth: %v", err)
 	}
-	manifest := filepath.Join(fork, "pack.json")
+	manifest := filepath.Join(fork, "pack.toml")
 	raw, err := os.ReadFile(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const shipped = `"base_url": "https://chatgpt.com/backend-api/codex"`
+	const key = `endpoints.openai-responses.base_url = `
+	const shipped = key + `"https://chatgpt.com/backend-api/codex"`
 	if !strings.Contains(string(raw), shipped) {
 		t.Fatalf("codex-auth no longer declares %s; this fork no longer moves the endpoint", shipped)
 	}
-	moved := strings.Replace(string(raw), shipped, `"base_url": "`+upstream+`"`, 1)
+	moved := strings.Replace(string(raw), shipped, key+strconv.Quote(upstream), 1)
 	if err := os.WriteFile(manifest, []byte(moved), 0o644); err != nil {
 		t.Fatal(err)
 	}
