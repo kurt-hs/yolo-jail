@@ -19,8 +19,8 @@ The focused repeated-block run from the repository root was:
 ```bash
 node docs/research/fixtures/pi-paste-probe.mjs \
   --home "$HOME" \
-  --evidence-dir "$YOLO_DURABLE_DIR/handoff-20261026/pi-paste-evidence" \
-  > "$YOLO_DURABLE_DIR/handoff-20261026/pi-paste-evidence/pi-paste-probe-alt-screen-repaired.json"
+  --evidence-dir "<evidence-dir>" \
+  > "<evidence-dir>/pi-paste-probe-alt-screen-repaired.json"
 ```
 
 The preceding six-case result remains separately preserved as `pi-paste-probe.json`. The 11-case corrected repeated run is `pi-paste-probe-repeated-confirmed.json`; the final 12-case run adds active alternate-screen rendering in `pi-paste-probe-alt-screen-repaired.json`.
@@ -41,10 +41,10 @@ This separates the observed code paths in the installed runtime; it does **not**
 
 The clipboard method export keeps the installed method byte slice unchanged and adds only an import/class wrapper with throwing stubs for native fallback and image-file operations. Its provenance record distinguishes the complete source-file bytes, method bytes, wrapper/export bytes, and source hashes. The `runtimeBuildIdentity` is imported from the same matched `--home`; its compiled-input digest does not attest the whole dependency graph.
 
-The exact method export and JSON provenance are saved outside the cleanup-managed worktree under the lane-owned durable directory. The compact JSON run results are beside them. The TUI constructors also receive this external directory for diagnostic logging; no intentional crash is induced. No installed package file was modified.
+The exact method export and JSON provenance are saved in the evidence directory given by `--evidence-dir`, outside the repository; they were not committed. The compact JSON run results are beside them. The TUI constructors also receive this external directory for diagnostic logging; no intentional crash is induced. No installed package file was modified.
 
 ```text
-$YOLO_DURABLE_DIR/handoff-20261026/pi-paste-evidence/
+<evidence-dir>/
   pi-paste-probe.json
   pi-paste-probe-repeated.json
   pi-paste-probe-repeated-confirmed.json
@@ -70,7 +70,7 @@ The installed settings API declares fullscreen as the `getTuiMode` default, and 
 - In the batched comparison, all eight complete blocks arrived before the next event-loop turn. The parser/editor/listener counts stayed at eight, while the TUI coalesced output to one render, two writes, and one synchronized-output pair (812 bytes). These are mock-terminal writes that return immediately; they cannot represent kernel backpressure.
 - In the active alternate-screen case, the virtual terminal captured `TuiAltScreen.start()`'s input callback; the separate production `ProcessTerminal.setupStdinBuffer()` feeder dispatched into it. After starting `TuiAltScreen` and rendering its initial active frame, eight independently bracketed blocks yielded eight more render frames and writes (1,824 bytes), with eight synchronized-output begin/end pairs. The TUI mock's `start` and `stop` each ran once; `ProcessTerminal.start()` and any real terminal did not. This exercises alternate-screen activation and rendering, not the runtime mode selected for the incident.
 - The first expanded run, preserved as `pi-paste-probe-repeated.json`, failed only its contrived negative-control assertion: the fixture expected the unterminated paste to omit Enter, but the parser later delivered that buffered carriage return inside the paste and the editor normalized it to a trailing LF. The assertion was corrected to the observed editor result; this is a fixture expectation correction, not a production red/green result.
-- The first active alternate-screen run, preserved as `pi-paste-probe-alt-screen-confirmed.json`, reached teardown after the render case but failed because the fixture finalized its output hash before `TuiAltScreen.stop()` emitted cleanup writes. The fixture now snapshots with `Hash.copy().digest()`; the separate safe debug JSON remains in the durable evidence directory. This was a harness teardown error, not a runtime freeze; the final 12-case output records all cases passed.
+- The first active alternate-screen run, preserved as `pi-paste-probe-alt-screen-confirmed.json`, reached teardown after the render case but failed because the fixture finalized its output hash before `TuiAltScreen.stop()` emitted cleanup writes. The fixture now snapshots with `Hash.copy().digest()`; the separate safe debug JSON remains in the evidence directory. This was a harness teardown error, not a runtime freeze; the final 12-case output records all cases passed.
 - The 7-complete-plus-8th-unterminated case is a **contrived lost-end-marker control, not an incident replay**. Before its late end marker, seven events and renders had completed; Ctrl+C and Enter generated no parser data event, input dispatch, or change. After the end marker, the eighth event arrived. The buffered Enter was treated as paste content and normalized to one trailing LF; there was still no submit. This characterizes parser behavior and does not establish that a real paste lost its delimiter.
 - A separately reported independent synthetic comparison used 57,777 characters/201 lines and measured the full `ProcessTerminal` callback at 2.6 ms versus 15.7 ms for programmatic rendering. It is distinct from the current 57,199-character fixture run; retain it as supporting characterization, not as an incident reproduction.
 
@@ -98,7 +98,7 @@ The next useful evidence is an **unfiltered synthetic stdin capture at the Pi TT
 
 ## Sources
 
-The source evidence came from read-only inspection of the installed 1.4.0 artifacts and runtime metadata; no archive or source checkout was created. Source paths and byte identities are in the durable provenance JSON named above. The relevant production seams are:
+The source evidence came from read-only inspection of the installed 1.4.0 artifacts and runtime metadata; no archive or source checkout was created. Source paths and byte identities are in the provenance JSON named above, in the evidence directory. The relevant production seams are:
 
 ```text
 @earendil-works/pi-tui/dist/stdin-buffer.js: StdinBuffer.process(), paste event
