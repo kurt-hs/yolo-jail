@@ -86,7 +86,7 @@ class ParseLogTest(unittest.TestCase):
                  ("internal/y", "TestAlsoReadsIt"): {"/workspace/mise.toml"}})
         message = str(caught.exception)
         for part in ("internal/x TestReadsTheLiveCheckout", "internal/y TestAlsoReadsIt",
-                     "/workspace/mise.toml", "OverrideWorkspaceMisePath",
+                     "/workspace/mise.toml", "Env.Workspace",
                      "rerun scripts/completion-census.py"):
             self.assertIn(part, message)
 

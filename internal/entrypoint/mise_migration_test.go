@@ -172,14 +172,13 @@ func TestMisePrismRetiresWorkspaceTool(t *testing.T) {
 	e := newMiseEnv(t, nil)
 	writeMiseConfig(t, e.Home, "[tools]\n") // global config exists but is empty
 
-	// Point the retire surgery at a fixture workspace mise.toml.
-	prev := workspaceMisePath
-	t.Cleanup(func() { workspaceMisePath = prev })
-	ws := filepath.Join(t.TempDir(), "mise.toml")
+	// The fixture workspace mise.toml sits in the Env's own workspace dir, never /workspace. A test
+	// cannot read /workspace/mise.toml (the completion census refuses one that does); the surgery
+	// stripping THIS file shows it did not act on that one.
+	ws := filepath.Join(e.WorkspaceDir(), "mise.toml")
 	if err := os.WriteFile(ws, []byte("[tools]\n\"npm:@anthropic-ai/claude-code\" = \"latest\"\nnode = \"24\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	workspaceMisePath = ws
 
 	if err := ConfigureMisePrism(e); err != nil {
 		t.Fatal(err)

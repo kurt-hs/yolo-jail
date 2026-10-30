@@ -94,7 +94,6 @@ func renderJailMise(t *testing.T, argv []string, snap string) jailMiseView {
 	v.miseHides = strings.Split(vars["MISE_DISABLE_TOOLS"], ",")
 	t.Cleanup(packload.OverrideSkewTolerance(false))
 	t.Cleanup(entrypoint.OverrideImageProbeBase(t.TempDir()))
-	t.Cleanup(entrypoint.OverrideWorkspaceMisePath(filepath.Join(t.TempDir(), "mise.toml")))
 
 	// A THROWAWAY WORKSPACE TOO: the prism keeps its sidecars under <workspace>/.yolo/prism, and an
 	// Env with none names the container default, /workspace, which in this repository's own jail is

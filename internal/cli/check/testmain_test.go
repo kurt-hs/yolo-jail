@@ -46,9 +46,7 @@ func TestMain(m *testing.M) {
 		_ = os.Setenv("HOME", home)
 		_ = os.Unsetenv("XDG_CONFIG_HOME")
 	}
-	releaseWorkspaceMise := isolateWorkspaceMise()
 	code := m.Run()
-	releaseWorkspaceMise()
 	release()
 	if home != "" {
 		_ = os.RemoveAll(home)

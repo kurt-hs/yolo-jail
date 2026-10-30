@@ -31,6 +31,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	_ "github.com/mschulkind-oss/yolo-jail/internal/packreg" // registers the embedded packs with packload
 	"os"
+	"path/filepath"
 	"regexp"
 )
 
@@ -47,7 +48,7 @@ import (
 //     otherwise reach the TOML codec as an int and change the value's shape).
 //
 //  2. WORKSPACE retire surgery (bespoke) — retired agent tokens
-//     (packload.EmbeddedRetireMiseTools()) are stripped from /workspace/mise.toml in place.
+//     (packload.EmbeddedRetireMiseTools()) are stripped from <workspace>/mise.toml in place.
 //     This is a WORKSPACE-file mutation, which the prism must never own
 //     (migration doc §5.3: yolo owns only user-scope config, never /workspace).
 //     The `mise uninstall` subprocess side effect stays in boot.go
@@ -99,7 +100,7 @@ func ConfigureMisePrism(e *Env) error {
 // the workspace-scope half of the old GenerateMiseConfig, kept bespoke because
 // the prism never mutates /workspace files (migration doc §5.3).
 func retireWorkspaceMiseTools(e *Env) error {
-	wsMise := workspaceMisePath
+	wsMise := filepath.Join(e.WorkspaceDir(), "mise.toml")
 	raw, err := os.ReadFile(wsMise)
 	if err != nil {
 		return nil // absent/unreadable workspace mise.toml => nothing to retire
@@ -118,20 +119,4 @@ func retireWorkspaceMiseTools(e *Env) error {
 		return nil
 	}
 	return writeInPlaceString(wsMise, content)
-}
-
-// workspaceMisePath is the workspace mise.toml consulted for the retire surgery.
-// A package var so tests can point it at a fixture; production is the live bind
-// mount at /workspace/mise.toml.
-var workspaceMisePath = "/workspace/mise.toml"
-
-// OverrideWorkspaceMisePath points the retire surgery at p and returns the function that
-// restores the previous path. A TEST SEAM, for a test in another package that renders a jail's
-// mise config from a launch's argv (internal/cli/run's capture-jail cells): run on a host, the
-// default path is whatever /workspace/mise.toml that host has, which in this repository's own
-// jail is the live checkout's. Production code never calls it.
-func OverrideWorkspaceMisePath(p string) (restore func()) {
-	prev := workspaceMisePath
-	workspaceMisePath = p
-	return func() { workspaceMisePath = prev }
 }

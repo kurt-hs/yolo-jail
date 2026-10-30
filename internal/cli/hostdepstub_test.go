@@ -119,9 +119,7 @@ func TestMain(m *testing.M) {
 	// `yolo host-daemon`, `yolo broker` and host launches ensure real host singletons;
 	// they get a private directory, not the machine-wide /tmp/yolo-<name>.* (testsupport).
 	releaseSingletons := testsupport.IsolateHostSingletons()
-	releaseWorkspaceMise := isolateWorkspaceMise()
 	code := m.Run()
-	releaseWorkspaceMise()
 	removePatchedTemplate()
 	releaseSingletons()
 	releaseStagedTree()

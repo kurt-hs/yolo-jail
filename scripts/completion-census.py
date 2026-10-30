@@ -25,12 +25,10 @@ path stats each of its ancestors. Neither reads the root's contents, and a test 
 them opens the root or the paths under it, which are recorded.
 
 A test that OPENS a path under the literal `/workspace` outside the checkout stops the census.
-Production reads the jail's own workspace by that literal (the retire surgery's
-`/workspace/mise.toml`, internal/entrypoint), so such a test reads whatever file the machine has
+An Env that names no workspace defaults to the literal `/workspace` (`Env.WorkspaceDir`), so such a test reads whatever file the machine has
 there: in this repository's jail, the live checkout's. The census cannot tell that read from a
 real one when it runs from the checkout that IS `/workspace`, where it would record the file,
-while every other checkout drops it, so the two outputs differed until each package pointed the
-seam at a fixture (`entrypoint.OverrideWorkspaceMisePath` in its TestMain). So the census
+while every other checkout drops it, so the two outputs differ. So the census
 refuses, naming every such test, wherever it can see the leak: from any other checkout.
 """
 import concurrent.futures as cf
@@ -216,9 +214,8 @@ def refuse_jail_workspace_opens(leaks):
         "these tests open the machine's own /workspace, not this checkout or a fixture, which "
         "the census cannot tell from a repository read when it runs from the checkout that IS "
         "/workspace:\n" + "\n".join(lines) +
-        "\nPoint the production seam at a fixture in the package's TestMain (for the workspace "
-        "mise.toml, entrypoint.OverrideWorkspaceMisePath; internal/entrypoint/workspacemise_test.go "
-        "shows the shape), then rerun scripts/completion-census.py")
+        "\nGive the test's Env a workspace of its own (Env.Workspace, or YOLO_WORKSPACE for NewEnv) "
+        "so it stops defaulting to /workspace, then rerun scripts/completion-census.py")
 
 
 def tracked_dirs(root=ROOT):

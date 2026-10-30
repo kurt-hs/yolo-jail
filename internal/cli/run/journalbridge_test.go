@@ -96,9 +96,7 @@ func TestMain(m *testing.M) {
 	// real ~/.local/share/yolo-jail/logs, beside the shipped host-processes and journal
 	// loopholes' own logs, which two of them appended to.
 	releaseHome := testsupport.IsolateHome()
-	releaseWorkspaceMise := isolateWorkspaceMise()
 	code := m.Run()
-	releaseWorkspaceMise()
 	// EVERY SIGNAL ARM STOPS THE PROCESS'S NIX (launchSignalArm.terminate), and that stop is
 	// permanent: a test that drove an arm to its exit on the process's own set refused every later
 	// test's tracked nix, so the order the tests ran in decided whether those passed. A test that
