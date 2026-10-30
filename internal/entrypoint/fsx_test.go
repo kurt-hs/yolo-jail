@@ -40,7 +40,11 @@ func TestIsMountPointReadsTheProcessMountTable(t *testing.T) {
 	for _, line := range strings.Split(string(data), "\n") {
 		if f := strings.Fields(line); len(f) >= 5 && !strings.Contains(f[4], `\`) {
 			p := f[4]
-			if !IsMountPoint(p) {
+			// The table is shared with every process in this mount namespace, and a nested
+			// jail's container storage mounts and unmounts overlays under it at any moment, so a
+			// mount gone between this read and IsMountPoint's is not a miss: only one the table
+			// still lists after the call is.
+			if !IsMountPoint(p) && stillListed(t, p) {
 				t.Errorf("IsMountPoint(%q) = false for a line of the process's own table:\n%s", p, line)
 			}
 			n++
@@ -49,6 +53,22 @@ func TestIsMountPointReadsTheProcessMountTable(t *testing.T) {
 	if n == 0 {
 		t.Fatal("the process's mount table lists no mount point")
 	}
+}
+
+// stillListed reports whether a fresh read of the process's mount table still names p as a
+// mount point, compared as the kernel spells it.
+func stillListed(t *testing.T, p string) bool {
+	t.Helper()
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if f := strings.Fields(line); len(f) >= 5 && f[4] == p {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWriteInPlacePreservesInode(t *testing.T) {
