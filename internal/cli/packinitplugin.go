@@ -25,6 +25,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"io"
 	"os"
 	"path/filepath"
@@ -90,7 +91,20 @@ func packInitFromPlugin(pluginDir, packRoot, name string, out, errw io.Writer) i
 		fmt.Fprintf(errw, "yolo pack init: %v\n", err)
 		return 1
 	}
-	if rc := writeScaffoldFile(packRoot, "pack.json", string(body)+"\n", out, errw); rc != 0 {
+	// Written as pack.toml, the format `yolo pack init` scaffolds for a plain pack: the declaration
+	// is built as JSON above, then decoded and re-encoded through packdecl, so the file is the
+	// encoder's own and the strict TOML reader accepts it.
+	manifest, problems := packdecl.Decode(body)
+	if manifest == nil || len(problems) > 0 {
+		fmt.Fprintf(errw, "yolo pack init: the wrapper declaration is invalid: %v\n", problems)
+		return 1
+	}
+	tomlBody, err := packdecl.EncodeTOML(manifest)
+	if err != nil {
+		fmt.Fprintf(errw, "yolo pack init: %v\n", err)
+		return 1
+	}
+	if rc := writeScaffoldFile(packRoot, "pack.toml", string(tomlBody), out, errw); rc != 0 {
 		return rc
 	}
 
@@ -233,10 +247,11 @@ func pluginWrapperReadme(name, pluginName, packRoot, pluginAbs string) string {
 		"The plugin tree is delivered VERBATIM — manifest included — to a skills dir whose\n" +
 		"tool loads plugin manifests, so its skills invoke as `/" + pluginName + ":<skill>`\n" +
 		"and cannot collide with your own. Nothing beside it in that dir is touched.\n\n" +
-		"Consume it by adding to `~/.config/yolo-jail/config.jsonc`:\n\n" +
-		"```jsonc\n\"packs\": [\"file://" + packRoot + "\"]\n```\n\n" +
+		"Consume it by adding to `packs` in `~/.config/yolo-jail/config.toml`\n" +
+		"(`yolo pack add` takes a shipped name or `source/pack`, not a `file://` address):\n\n" +
+		"```toml\npacks = [\"file://" + packRoot + "\"]\n```\n\n" +
 		"## Two things to check\n\n" +
-		"1. **The destination.** `pack.json` targets `.claude/skills`. Change `into` if you\n" +
+		"1. **The destination.** `pack.toml` targets `.claude/skills`. Change `into` if you\n" +
 		"   want a different tool's dir — anything with `\"tier\": \"namespaced\"` must be a\n" +
 		"   dir whose tool reads `.claude-plugin/plugin.json`. A flat dir still gets the\n" +
 		"   plugin's skills; everything else it declares is refused by name.\n" +

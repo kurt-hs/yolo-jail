@@ -481,9 +481,9 @@ func scaffoldAddressedExample(name string) string {
 // scaffoldReadme is the scaffolded README: how to consume the pack, and how its prose is routed.
 func scaffoldReadme(name, abs, briefingRel string) string {
 	return "# " + name + "\n\n" +
-		"A yolo-jail agent config pack. Consume it by running\n" +
-		"`yolo pack add file://" + abs + "`, or by adding it to `packs` in\n" +
-		"`~/.config/yolo-jail/config.toml`:\n\n" +
+		"A yolo-jail agent config pack. Consume it by adding it to `packs` in\n" +
+		"`~/.config/yolo-jail/config.toml` (`yolo pack add` takes a shipped name or\n" +
+		"`source/pack`, not a `file://` address):\n\n" +
 		"```toml\npacks = [\"file://" + abs + "\"]\n```\n\n" +
 		"Validate changes with `yolo pack lint`, which lists every delivery.\n\n" +
 		"## Briefing prose\n\n" +

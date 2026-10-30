@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/pluginpack/pluginpacktest"
 )
 
@@ -63,7 +64,7 @@ func TestInitFromPluginProducesALintablePack(t *testing.T) {
 	// what a jail stages and what the host render reads, so anything missing here is missing
 	// everywhere.
 	for _, rel := range []string{
-		"pack.json",
+		"pack.toml",
 		"skills/acme-tools/.claude-plugin/plugin.json",
 		"skills/acme-tools/skills/review/SKILL.md",
 		"skills/acme-tools/agents/reviewer.md",
@@ -83,17 +84,35 @@ func TestInitFromPluginProducesALintablePack(t *testing.T) {
 
 	// The declared tier must be namespaced, or the plugin degrades to loose skills and every
 	// non-skill component it ships is refused — the exact thing wrapping it was meant to avoid.
-	decl, err := os.ReadFile(filepath.Join(packDir, "pack.json"))
+	if _, err := os.Stat(filepath.Join(packDir, "pack.json")); err == nil {
+		t.Error("the wrapper wrote a legacy pack.json; the scaffold is TOML")
+	}
+	decl, err := os.ReadFile(filepath.Join(packDir, "pack.toml"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if m, problems := packdecl.DecodeTOML(decl); m == nil || len(problems) > 0 {
+		t.Errorf("the strict TOML reader refuses the wrapper's pack.toml: %v\n%s", problems, decl)
+	}
+	readme, err := os.ReadFile(filepath.Join(packDir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"config.jsonc", "pack.json", "yolo pack add file://"} {
+		if strings.Contains(string(readme), bad) {
+			t.Errorf("the wrapper README still says %q:\n%s", bad, readme)
+		}
+	}
+	if !strings.Contains(string(readme), "~/.config/yolo-jail/config.toml") {
+		t.Errorf("the wrapper README does not name the TOML user config:\n%s", readme)
 	}
 	// MANIFEST-level `skills_tier` since S2, not a per-contribution `tier`: a wrapper is the case
 	// with the strongest claim to a namespace (the plugin's docs say `/<plugin>:<skill>`), and the
 	// key it opts in with moved.
-	if !strings.Contains(string(decl), `"skills_tier": "namespaced"`) {
-		t.Errorf("the scaffolded pack.json must declare skills_tier namespaced:\n%s", decl)
+	if !strings.Contains(string(decl), `skills_tier = "namespaced"`) {
+		t.Errorf("the scaffolded pack.toml must declare skills_tier namespaced:\n%s", decl)
 	}
-	if strings.Contains(string(decl), `"tier"`) {
+	if strings.Contains(string(decl), "\ntier =") {
 		t.Errorf("the scaffold still writes the retired per-contribution `tier`, which every "+
 			"manifest read now refuses by name:\n%s", decl)
 	}
@@ -220,5 +239,22 @@ func TestInitFromPluginNamesDefaultLocationCode(t *testing.T) {
 		if !found {
 			t.Errorf("init did not name %s as code at %s:\n%s", comp, where, out.String())
 		}
+	}
+}
+
+// The plain scaffold's README must not teach a verb that refuses: `yolo pack add` takes a shipped
+// name or source/pack, and a `file://` address is refused naming that.
+func TestPlainInitReadmeDoesNotTeachPackAddForAnAddress(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "plain-pack")
+	var out, errw bytes.Buffer
+	if rc := packMain([]string{"init", dir}, &out, &errw, false); rc != 0 {
+		t.Fatalf("rc = %d: %s", rc, errw.String())
+	}
+	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(readme), "yolo pack add file://") {
+		t.Errorf("the README teaches a `pack add` the verb refuses:\n%s", readme)
 	}
 }
