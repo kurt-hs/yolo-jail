@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
@@ -212,6 +213,41 @@ func TestRunInvokesUnknownYOLOEnvironmentWarningBeforeBackend(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("warning callback calls = %d, want exactly one", called)
+	}
+}
+
+// YOLO_JAIL is no yolo dial and no yolo code writes it, so it stays unrecognized as a fixed name
+// (above). It reaches a jail's environment through the user's own inline `env_sources`, which the
+// jail's inherited-launch file carries into every nested launch. So the launch recognizes it from
+// the env_sources it hydrates: a nested launch from such a jail does not warn about it, and a host
+// shell that sets YOLO_JAIL with no config behind it still does. This pins the call site handing
+// the composed channel to the warning; pass it nil and the name is warned about again.
+func TestALaunchRecognizesTheYOLONamesItsOwnEnvSourcesSet(t *testing.T) {
+	home := floortest.ResolvedTemp(t)
+	t.Setenv("HOME", home)
+	writeUserConfigJSON(t, home, `{"env_sources": [{"YOLO_JAIL": "1"}]}`)
+	var stdout, stderr bytes.Buffer
+	o := dispatchOptions(t, t.TempDir(), "macos-user", &stdout, &stderr, nil)
+	var names []string
+	called := 0
+	o.WarnUnknownYOLOEnv = func(known []string, _ io.Writer) {
+		called++
+		names = known
+	}
+	o.MacosUserRun = func(*jsonx.OrderedMap, string, []string, []string, string, string, macosuser.HomeOverlay, macosuser.HostContext, bool, *jsonx.OrderedMap, []packload.BlockedTool, macosuser.JailDaemons) int {
+		return 0
+	}
+	if rc := Run(*o); rc != 0 {
+		t.Fatalf("Run() = %d\nstdout:\n%s\nstderr:\n%s", rc, stdout.String(), stderr.String())
+	}
+	if called != 1 {
+		t.Fatalf("warning callback calls = %d, want exactly one", called)
+	}
+	if !slices.Contains(names, "YOLO_JAIL") {
+		t.Errorf("YOLO_JAIL, set by the user's env_sources, is warned about as unrecognized: %v", names)
+	}
+	if slices.Contains(names, "YOLO_ITEM100_INVENTED_UNKNOWN") {
+		t.Errorf("a name no config sets was recognized: %v", names)
 	}
 }
 
