@@ -7,6 +7,8 @@ the [`journal`](../journal/README.md) bridge's are. macOS only.
 
 ## Turning it on
 
+On your machine, `yolo pack add macos-log` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc — user scope
 {

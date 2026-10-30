@@ -53,6 +53,8 @@ Three flags are load-bearing for the values this pack declares:
 
 ## The user's entire setup
 
+On your machine, `yolo pack add llamacpp` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc
 {

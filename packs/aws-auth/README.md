@@ -26,6 +26,9 @@ host                                          jail
 
 Both halves go in your **user** config (`~/.config/yolo-jail/config.jsonc`), never in a
 workspace `yolo-jail.jsonc` — see [Why every key is user-scope](#why-every-key-is-user-scope).
+On your machine, `yolo pack add aws-auth` selects the pack, and in a TOML config a setting is
+`yolo config set allow.aws-auth.profile <value>` (and `.unnarrowed`, `.role_arn` and the rest the same
+way). The block below is the legacy JSONC spelling.
 
 ```jsonc
 {
@@ -116,7 +119,7 @@ alone too, because the JavaScript SDKs then skip the environment provider — bu
 Rust SDK does not, so do not lean on that exception to keep both.
 
 **yolo refuses the bearer and the pair at launch, and warns about `~/.aws`.** The pointer's
-`env` contribution in [`pack.json`](pack.json) declares all three under `overridden_by`.
+`env` contribution in [`pack.toml`](pack.toml) declares all three under `overridden_by`.
 Whenever the pointer is delivered (some agent's selected provider is Bedrock), a launch that also
 delivers the bearer or the pair stops before the jail starts, names both sides, and says to
 drop one. There is no escape hatch: proceeding would be proceeding into the wrong credential.

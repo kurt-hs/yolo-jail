@@ -9,15 +9,19 @@ To write a pack of your own, see [Writing your own pack](migrating-to-packs.md).
 
 ## Choose your packs
 
-Packs go in your **user config**, `~/.config/yolo-jail/config.jsonc`, under `packs`:
+Packs go in your **user config**, `~/.config/yolo-jail/config.toml`, under `packs`. Select one with
+a command, on your machine:
 
-```jsonc
-{
-  "packs": ["claude", "codex", "guardrails"]
-}
+```bash
+yolo pack add claude
+yolo pack add codex
+yolo pack remove codex        # and drop one again
 ```
 
-A project's `yolo-jail.jsonc` cannot select packs. The project folder is writable from inside the
+That leaves `packs = ["claude", "guardrails"]` in the file (in a legacy `config.jsonc`,
+`"packs": [...]`). `yolo pack ls` lists the packs you selected and what each delivers.
+
+A project's own config cannot select packs. The project folder is writable from inside the
 jail, so an agent could otherwise hand itself new skills, programs or host access. Run `yolo check`
 after you edit the list, and the next launch picks it up; an agent pack needs no image rebuild.
 

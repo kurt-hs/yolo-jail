@@ -38,8 +38,8 @@ Launch flags, placed before `--`:
 ## Set up and check
 
 ```bash
-yolo init-user-config        # create ~/.config/yolo-jail/config.jsonc, full of commented examples
-yolo init                    # create this project's yolo-jail.jsonc, and gitignore .yolo/
+yolo init-user-config        # create your user config in ~/.config/yolo-jail/, full of commented examples
+yolo init                    # write this project's yolo-jail.toml pointer file, and exclude .yolo/ from git
 yolo check                   # check Nix, the runtime, your config, and build the image
 yolo check --no-build        # the fast version; the one to run inside a jail
 yolo config-ref              # every config key, with types, defaults and examples
@@ -58,14 +58,33 @@ yolo describe --json         # the merged config, for a script or an agent
 yolo config ls               # every settings file yolo writes for your agents
 yolo config render claude    # what a launch would write for Claude, without writing it
 yolo config drift            # inside a jail: does the project config differ from the running one?
+yolo config why <key>        # the effective value, every file and line that sets it
 ```
 
 [Settings Across Agents](../guides/agent-settings.md) covers `yolo config diff`, `reset` and
 `promote`.
 
+## Change the config
+
+These write the right file, keep your comments, and run `yolo check` on the result.
+[Configuration](configuration.md#change-it-with-a-command) says which run on the host and which in
+a jail.
+
+```bash
+yolo allow git fetch                  # let every project's jail use your git login for this
+yolo allow git on_request push        # let a project ask for it
+yolo request git push main            # a project asks, in its own config
+yolo request github repos acme/lib   # ... for a repository beyond its own remotes
+yolo active-provider claude bedrock   # which provider an agent runs on
+yolo config set <key> <value> [--user|--project|--local]   # also: config add, config unset
+yolo config migrate [--dry-run]       # convert JSONC config files to TOML, once
+```
+
 ## Packs
 
 ```bash
+yolo pack add <name>         # select a pack in your user config (pack remove drops it)
+yolo pack migrate <dir>      # rewrite a pack of your own from pack.json to pack.toml
 yolo pack ls                 # the packs you selected, and what each delivers
 yolo pack footprint <pack>   # everything a pack claims, before you select it
 yolo pack install            # fetch every git pack now
@@ -133,8 +152,9 @@ ends one grant or working-set entry (`w-â€¦`); a branch declared in config (`c-â
 naming the file to remove it from. `--revoke all` ends every grant, and
 `--revoke all --workspace <path>` every grant and recorded working-set entry of that project; a
 path that matches nothing exits with an error. Neither ends a create-branch, branch or tag grant written in
-the project's config: remove it from `yolo-jail.jsonc` (`brokered.git.grants`), or remove the kind from
-`brokered.git.grant_kinds` in your user config. `--json` prints the same as one JSON document; a
+the project's config: remove it from the project's config (`requests.git`, or `brokered.git.grants` in a
+legacy JSONC file), or remove the capability from `allow.git` (`brokered.git.grant_kinds` in a legacy
+file) in your user config. `--json` prints the same as one JSON document; a
 branch declared in config is a working-set entry there with `"by": "config"` and a `"file"`
 naming the config that declares it.
 

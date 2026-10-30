@@ -16,6 +16,8 @@ delegate should be running.
 This is the sprint's one **accepted cost**, stated in the ruling rather than discovered
 afterwards ([`loophole-activation.md`](../../docs/reference/loophole-system.md) OQ-A4).
 
+On your machine, `yolo pack add cgroup-delegate` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc
 {

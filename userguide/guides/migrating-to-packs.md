@@ -57,8 +57,9 @@ inside a jail are the exception: `yolo config promote` moves them into your loca
 
 ### Step 2: add a manifest when you need more
 
-To carry settings, environment variables or a tool as well, add a `pack.json` with a `contributes`
-list: one entry per effect, each with a `kind`. The kinds you are most likely to want:
+To carry settings, environment variables or a tool as well, add a `pack.toml`
+with one `[[kind]]` table per effect (a legacy `pack.json` with a `contributes` list is still read,
+and `yolo pack migrate <dir>` converts it). The kinds you are most likely to want:
 
 | Kind | What it contributes |
 |---|---|

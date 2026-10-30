@@ -1,24 +1,75 @@
 # Configuration
 
-You describe an agent's environment in JSONC files: JSON that allows `// comments` and trailing
-commas. This page covers where those files live, which settings go in which file, and how a change
-reaches a jail. `yolo config-ref` is the complete reference for every key.
+You describe an agent's environment in TOML files. This page covers where those files live, which
+settings go in which file, the commands that edit them, and how a change reaches a jail.
+`yolo config-ref` is the complete reference for every key.
 
 ## The config files
 
 | File | Scope | Create it with |
 |---|---|---|
-| `~/.config/yolo-jail/config.jsonc` | **User**: your defaults for every project | `yolo init-user-config` |
-| `yolo-jail.jsonc` | **Workspace**: one project's settings, committed with it | `yolo init` |
-| `yolo-jail.local.jsonc` | Workspace, this machine only; keep it out of git | by hand |
+| `~/.config/yolo-jail/config.toml` | **User**: your defaults for every project | `yolo init-user-config` writes the commented JSONC form; `yolo config migrate` converts it |
+| `yolo-jail.toml` | **Workspace**: one project's settings, committed with it | `yolo init` writes a three-line pointer; a project needs no settings to run |
+| `yolo-jail.local.toml` | Workspace, this machine only; keep it out of git | `yolo config set <key> <value> --local` |
 
-Readable TOML files are an opt-in alternative: `~/.config/yolo-jail/config.toml`,
-`yolo-jail.toml`, and `yolo-jail.local.toml`. Existing JSONC/JSON files remain supported; do
-not keep a TOML file beside its legacy sibling for the same config role, because the reader
-refuses the pair rather than merging them. `yolo init` and `yolo init-user-config` still create
-JSONC, and there is no automatic conversion command: do not rename JSONC bytes to a `.toml`
-filename. After writing a TOML file in the accepted TOML schema, run `yolo check` as for any
-config edit.
+The older JSONC format (`config.jsonc`, `yolo-jail.jsonc`, `yolo-jail.local.jsonc`, and the `.json`
+spellings) is still read for a few releases, so a project you have not converted keeps working.
+Keep one format per file: a TOML file beside a legacy file for the same role is refused rather
+than merged. `yolo init-user-config` still writes the commented JSONC user file.
+
+**To convert, run `yolo config migrate`.** It rewrites the old files as TOML, proves the result
+means exactly what the old files did, and writes nothing otherwise. Each original is kept as
+`<name>.pre-migrate`. On the host it converts your user config and this project; in a jail only
+the project's files. Convert only once every machine that shares these files runs a yolo that
+reads TOML: an older yolo finds no `config.jsonc` and starts with no packs. A launch that finds an
+old file offers the conversion too, and `"convert_later": true` in your old user file stops the
+offer. `yolo pack migrate <path>` does the same for a pack you wrote (`pack.json` to `pack.toml`).
+
+## Change it with a command
+
+You rarely need to edit a file by hand. Each command writes the right file, keeps your comments,
+and runs the same checks as `yolo check`:
+
+| To | Run | Where |
+|---|---|---|
+| select or drop an agent or other pack | `yolo pack add claude`, `yolo pack remove claude` | host |
+| let every project's jail use a login | `yolo allow git fetch`, `yolo allow github always read` | host |
+| let a project ask for more than that | `yolo allow git on_request push` | host |
+| ask for it from a project | `yolo request git push main`, `yolo request github repos acme/lib` | host or jail |
+| choose which provider an agent runs on | `yolo active-provider claude bedrock` | host |
+| set, add to or remove any other key | `yolo config set machine.resources.cpus 4 --project`, `yolo config add`, `yolo config unset` | host (user scope), either (project) |
+| find which file set a key | `yolo config why <key>` | either |
+
+A project's `yolo request` is a request, not a grant: it takes effect only within what your user
+config allows, and you approve it on the host with `yolo config apply`.
+
+A project's TOML file reads like this:
+
+```toml
+# yolo-jail.toml
+mounts = ["~/code/shared-lib"]                   # read-only, under /ctx in the jail
+
+[install]
+nix = ["postgresql", "strace"]                   # Nix packages built into the jail
+mise = { node = "22", python = "3.13" }
+
+[machine]
+resources = { memory = "8g", cpus = 4 }
+ports = [{ host = 3000, jail = 3000 }]           # open the dev server from your host
+
+[env]
+set = { LOG_LEVEL = "debug" }
+unset = ["AWS_PROFILE"]
+
+[requests.git]
+push = ["main"]                                  # asks; your [allow.git] on_request decides
+```
+
+The settings in the rest of this page and the guides are written in the older JSONC spelling,
+which `yolo config migrate` converts: `packages` is `[install] nix`, `mise_tools` is `[install]
+mise`, `resources` is `[machine] resources`, `network.ports` is `machine.ports`, and a broker's
+`brokered` key is `[allow.<source>]` in your config and `[requests.<source>]` in a project's.
+`yolo config-ref` has the full table.
 
 The **workspace** is the folder you run `yolo` in, exactly: there is no search upward for a config
 file, and launching from a subfolder makes that subfolder its own workspace with its own jail.
@@ -47,7 +98,7 @@ fix every copy. The first file named is the one whose value takes effect.
 ## Which settings go where
 
 Most keys work in either file. Put personal defaults in your user config and what the project needs
-in `yolo-jail.jsonc`: its `packages`, `mise_tools`, MCP and language servers, `resources`, ports,
+in `yolo-jail.toml`: its `[install]` packages and tools, MCP and language servers, `[machine]` resources, ports,
 devices, and read-only `mounts`. A read-write `mounts` entry goes in your user config.
 
 Some keys work **only in your user config**. The project folder is writable from inside the jail,
@@ -89,31 +140,21 @@ remote joins with `git remote add`.
 
 A typical user config:
 
-```jsonc
-// ~/.config/yolo-jail/config.jsonc
-{
-  "packs": ["claude", "guardrails"],
-  "env_sources": ["~/.config/yolo-jail/secrets.env"]   // API keys; see Providers and Models
-}
+```toml
+# ~/.config/yolo-jail/config.toml
+packs = ["claude", "guardrails"]                 # yolo pack add claude; yolo pack add guardrails
+
+[env]
+files = ["~/.config/yolo-jail/secrets.env"]      # API keys; see Providers and Models
+
+[allow.git]
+always = ["fetch"]                               # yolo allow git fetch
 ```
 
-A typical project config:
+The project config above is the other half. Add `machine.forward = [5432]` to reach the host's
+Postgres from the jail.
 
-```jsonc
-// yolo-jail.jsonc
-{
-  "packages": ["postgresql", "strace"],          // Nix packages built into the jail
-  "mise_tools": { "node": "22", "python": "3.13" },
-  "network": {
-    "ports": ["3000:3000"],                      // open the dev server from your host
-    "forward_host_ports": [5432]                 // reach the host's Postgres from the jail
-  },
-  "mounts": ["~/code/shared-lib"],               // read-only, under /ctx ($YOLO_CONTEXT_DIR) in the jail
-  "resources": { "memory": "8g", "cpus": 4 }
-}
-```
-
-Not every key works on every setup; `forward_host_ports`, for example, stops a launch on Apple
+Not every key works on every setup; `machine.forward`, for example, stops a launch on Apple
 Container. [Settings per setup](settings-per-setup.md) has the per-key detail.
 
 To see the result of the merge, run `yolo describe --json`.
@@ -132,7 +173,7 @@ Accept this config? [y/N]:
 ```
 
 This is what stops an agent from quietly adding packages, mounts or devices by editing
-`yolo-jail.jsonc`: you approve every change. A project's first launch with a non-empty config asks
+`yolo-jail.toml` (or the legacy `yolo-jail.jsonc`): you approve every change. A project's first launch with a non-empty config asks
 too. The record of what you approved is kept on your host, under `~/.local/share/yolo-jail/approvals/`,
 where the jail cannot rewrite it. A project copied or moved to a new folder asks once more.
 
@@ -164,7 +205,7 @@ On `macos-user` every launch starts fresh, so there is no running jail to update
 
 **When an agent edits the config from inside the jail**, the workflow is:
 
-1. The agent edits `yolo-jail.jsonc` and runs `yolo check --no-build`, the fast check, to validate
+1. The agent makes the change with `yolo request` or `yolo config set --project` (or edits the file) and runs `yolo check --no-build`, the fast check, to validate
    it.
 2. The agent asks you to run `yolo config apply` on the host. Eligible mount and GitHub repository-
    scope changes can reach a supported running jail; the command names anything that still needs a

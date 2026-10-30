@@ -47,28 +47,29 @@ cat > ~/.config/yolo-jail/local/loopholes/hello/manifest.jsonc <<'EOF'
   ]
 }
 EOF
-cat > ~/.config/yolo-jail/local/pack.json <<'EOF'
-{
-  "name": "local",
-  "contributes": [
-    {"kind": "loophole", "from": "loopholes/hello"},
-    {"kind": "env", "vars": {"HELLO_FILE": "/opt/hello/greeting.txt"}}
-  ]
-}
+cat > ~/.config/yolo-jail/local/pack.toml <<'EOF'
+name = "local"
+
+[[loophole]]
+from = "loopholes/hello"
+
+[[env]]
+vars = { HELLO_FILE = "/opt/hello/greeting.txt" }
 EOF
 yolo pack lint ~/.config/yolo-jail/local       # checks the manifest
 yolo loopholes list                            # shows hello as active
 yolo -- bash -c 'cat "$HELLO_FILE"'            # prints the greeting
 ```
 
-If your local pack already has a `pack.json`, add the two `contributes` entries to it instead of
-replacing the file. To remove the loophole, delete its folder and its two entries.
+If your local pack already has a `pack.toml`, add the two entries to it instead of replacing the
+file. A local pack still written as `pack.json` is read too, and `yolo pack migrate
+~/.config/yolo-jail/local` converts it. To remove the loophole, delete its folder and its two entries.
 
 ## The files
 
 ```
 ~/.config/yolo-jail/local/
-├── pack.json                  # names the loophole: {"kind": "loophole", "from": "loopholes/<name>"}
+├── pack.toml                  # names the loophole: [[loophole]] from = "loopholes/<name>"
 └── loopholes/<name>/
     ├── manifest.jsonc         # required
     ├── ca.crt                 # optional; a certificate the jail trusts

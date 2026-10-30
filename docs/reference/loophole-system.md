@@ -93,7 +93,10 @@ missing should fail loudly at spawn, not vanish silently from a list.
 config only, install-shaped keys are refused in workspace scope, and
 `loopholes.<name>.enabled` is honored from both. So a workspace may switch on only what
 the user already installed — the weak, agent-editable scope is bounded by the strong one,
-which is what makes per-workspace enablement safe to offer at all.
+which is what makes per-workspace enablement safe to offer at all. In a TOML config the user's
+install is `yolo pack add <name>` and a brokered loophole's grant is `yolo allow <source>
+[always|on_request] <capability>` (the project's ask is `yolo request`), not an edit to `packs` or
+`brokered` by hand.
 
 > [!IMPORTANT]
 > **A brokered loophole is the exception to "either scope": it has no switch.** It runs
@@ -123,7 +126,7 @@ The OpenAI credential service was the complementary multi-agent case: one servic
 rotating grant that several agent packs use (`codex`, and the `codex` profiles `claude` and `pi`
 ship), so `openai-auth-broker` belongs to the separate `codex-auth` pack (named `openai-auth` until
 2026-10-29), and every agent pack that uses it declares it through `needs`
-(`rg -l '"pack": "codex-auth"' packs/*/pack.json` is the list). Selecting any of those agents therefore joins the same dependency automatically;
+(`rg -l 'pack = "codex-auth"' packs/*/pack.toml` is the list). Selecting any of those agents therefore joins the same dependency automatically;
 users still do not select an authentication implementation by hand, and selecting several does
 not declare several daemon owners.
 

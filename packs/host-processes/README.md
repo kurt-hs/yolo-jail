@@ -18,6 +18,8 @@ the move made were `default_enabled` and the file header.
 
 ## Three gates, and they are not ceremony
 
+On your machine, `yolo pack add host-processes` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc  — user scope
 {

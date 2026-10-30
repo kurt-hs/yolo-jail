@@ -253,7 +253,7 @@ A pack is a directory. Nothing in it is mandatory.
 
 ```
 my-pack/
-├── pack.json      # optional — the manifest
+├── pack.toml      # optional — the manifest (a legacy pack.json is still read; `yolo pack migrate` converts it)
 ├── briefing/      # optional — every *.md directly inside is prose for every agent
 │   └── house-rules.md
 ├── derive.lua     # optional — Lua producers for config dynamic layers
@@ -262,7 +262,7 @@ my-pack/
         └── SKILL.md
 ```
 
-The zero-ceremony pack — a `briefing/` directory plus a `skills/` tree, no `pack.json` — is a
+The zero-ceremony pack — a `briefing/` directory plus a `skills/` tree, no manifest — is a
 complete, useful pack: house rules and a skill corpus applied in every jail. `yolo pack
 init` scaffolds exactly this.
 
@@ -406,8 +406,9 @@ that merely leaves out a part it could ship never fails either check.
 
 ## The manifest
 
-`pack.json` carries a handful of per-pack facts plus one list of typed contributions. Every
-field is optional; a pack with no `pack.json` behaves as an empty manifest. The authoring decode
+`pack.toml` (or the legacy `pack.json`, still read) carries a handful of per-pack facts plus one list
+of typed contributions; `yolo pack migrate <path>` rewrites a local pack's `pack.json` as `pack.toml`.
+Every field is optional; a pack with no manifest behaves as an empty manifest. The authoring decode
 is strict (`DisallowUnknownFields`) and reports *every* problem, not the first, so a typo in
 one contribution does not mask a second; a launch skips what this build cannot read instead
 ([below](#unknown-kinds-across-the-version-boundary)).
@@ -3773,7 +3774,7 @@ the subset:
   them. At `d4e435a3`, (a) below admits only `guardrails`, and (b) also admits `copilot`, `omp`
   and `wire-bridge`. Every other shipped pack declares a `loophole`, `intercept`, `provider`,
   `profile`, `machine`-scope `state` or a cross-workspace hook. Re-derive it from the kinds
-  each `packs/*/pack.json` declares.
+  each `packs/*/pack.toml` declares.
 
 The options:
 
@@ -4476,8 +4477,10 @@ included, because a flat skills dir can carry none of them.
 
 | Verb | What it does |
 | :--- | :--- |
-| `yolo pack init [dir]` | scaffold a valid skeleton (`briefing/<pack>.md`, an example skill, `README.md`); never a `pack.json` |
+| `yolo pack init [dir]` | scaffold a valid skeleton (`briefing/<pack>.md`, an example skill, `README.md`); never a manifest |
 | `yolo pack lint [--online] [dir]` | run the real staging executor **and** validate the manifest — every problem, not the first — then print the pack's footprint and every delivery, implicit broadcasts included, plus an info line for each conventional-looking file it will not ship (a root `AGENTS.md`, a subdirectory or non-`.md` file in `briefing/`). It reads each patch series as a launch does, and `--online` checks each series' upstream in a scratch mirror ([`patched-forks.md` PF-D63, PF-D64](patched-forks.md#PF-D63)) |
+| `yolo pack add <handle>` / `yolo pack remove <handle>` | select or drop a pack in your user config's `packs` list, host only; `<handle>` is a shipped name, `local/<name>`, or a configured source's pack |
+| `yolo pack migrate <path> [--dry-run] [--yes]` | rewrite a local pack's `pack.json` as `pack.toml` and move its plain content into the conventional layout |
 | `yolo pack ls` | list configured packs and what each stages |
 | `yolo pack explain <name>` | stage one pack and show what it stages and what it dropped (`file://` local only) |
 | `yolo pack footprint [ref]` | claims + cross-pack collisions + review summary; `[ref]` may be an embedded pack name or a local path, so you can inspect a pack you are authoring |

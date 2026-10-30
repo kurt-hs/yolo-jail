@@ -34,6 +34,16 @@ Select the pack, and grant read access, in your user config (`~/.config/yolo-jai
 }
 ```
 
+> [!NOTE]
+> **With a TOML config, run commands instead of editing these blocks.** On your machine,
+> `yolo pack add git` selects the pack and `yolo allow git fetch` grants the read. To let a project
+> push, allow the capability once, `yolo allow git on_request push` (`new_branches` for creating
+> branches, `push_tags` for tags), and the project asks for what it needs with
+> `yolo request git push <branch>`, `yolo request git new_branches` or `yolo request git push_tags <tag>`;
+> the project's request is approved by `yolo config apply` on your machine. The JSON blocks in this
+> guide show the older `brokered` spelling, which `yolo config migrate` converts to `[allow.git]` and
+> `[requests.git]`.
+
 Selecting the pack starts the broker in every project, and on its own it **grants nothing**: an SSH
 fetch or any push without the read grant is refused, naming the grant to add. A public HTTPS fetch
 is tried anonymously and never uses a host credential; if that server asks for one, the fetch is

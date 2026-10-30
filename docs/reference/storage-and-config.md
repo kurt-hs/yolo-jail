@@ -80,13 +80,22 @@ Five sources, merged in order, later overriding earlier:
 
 | Scope | File | What may live here |
 | :--- | :--- | :--- |
-| User | `~/.config/yolo-jail/config.jsonc` | anything, including every install-shaped key |
-| Workspace | `<workspace>/yolo-jail.jsonc` | the repo's own needs; committed |
-| Workspace-local | `<workspace>/yolo-jail.local.jsonc` | per-machine tweaks; kept out of version control |
+| User | `~/.config/yolo-jail/config.toml` (legacy `config.jsonc`) | anything, including every install-shaped key |
+| Workspace | `<workspace>/yolo-jail.toml` (legacy `yolo-jail.jsonc`) | the repo's own needs; committed |
+| Workspace-local | `<workspace>/yolo-jail.local.toml` (legacy `yolo-jail.local.jsonc`) | per-machine tweaks; kept out of version control |
 | Per-workspace file | `~/.config/yolo-jail/workspaces/<folder>-<hash>.jsonc` | loophole switches for that one workspace, written by `yolo loopholes enable` and `disable`; never a broker's, which has no switch |
 | Environment | a small set of `YOLO_*` variables | last-resort overrides |
 
-`yolo-jail.local.jsonc` is auto-merged whenever it sits beside `yolo-jail.jsonc` — no
+TOML is the current format and the legacy JSONC files are still read for a few releases
+([RC-D19](../design/readable-config.md#decision-ledger)). A scope holds one format: a TOML file beside
+a legacy file of the same scope is refused, and a launch that finds a legacy file offers
+`yolo config migrate`, which converts them together and keeps each original as `<name>.pre-migrate`
+(`convert_later` in a legacy user file silences the offer). Edit with the named verbs
+(`yolo allow`, `yolo request`, `yolo active-provider`, `yolo pack add`, `yolo config set`) rather than by
+hand; `yolo config why <key>` says which file and line set a key.
+
+`yolo-jail.local.toml` is auto-merged whenever it sits beside `yolo-jail.toml` (likewise the
+legacy `.jsonc` pair) — no
 `include_if_found` entry needed. Any file at any scope may pull in more with
 `include_if_found`, resolved relative to the *including* file's directory; a missing
 include is skipped, later wins, and cycles are detected.
@@ -495,11 +504,11 @@ the only place the values themselves are stated.
 | Machine storage root | `~/.local/share/yolo-jail/` | `paths.GlobalStorage`, `paths.GlobalStorageUnder` |
 | Workspace state dir | `<workspace>/.yolo/` | `paths.WorkspaceStateDir` |
 | Workspace home overlays | `<workspace>/.yolo/home/` | `paths.WorkspaceHomeState` |
-| User config | `~/.config/yolo-jail/config.jsonc` | `paths.UserConfigPath` |
+| User config | `~/.config/yolo-jail/config.toml`, or the legacy `config.jsonc` | `config.UserConfigFile`, `paths.UserConfigPath` (legacy) |
 | Per-workspace files: folder 0700, each file 0600 | `~/.config/yolo-jail/workspaces/<folder>-<12 hex>.jsonc` | `paths.WorkspaceFilesDir`, `config.WorkspaceFilePath` |
 | Pack lock | `~/.config/yolo-jail/packs.lock.json` | `packsrc.LockPath` |
 | Fork lock: each fork's pinned commit, written by the first launch that carries the fork (or `yolo pack install`) and moved by explicit `yolo pack update` or host `--update` | `~/.config/yolo-jail/forks.lock.json` | `packsrc.ForkLockPath` |
-| Workspace config, and its local sibling | `yolo-jail.jsonc`, `yolo-jail.local.jsonc` | `internal/config/load.go` |
+| Workspace config, and its local sibling | `yolo-jail.toml`, `yolo-jail.local.toml` (legacy `.jsonc`) | `internal/config/load.go` |
 | Per-launch merged config | `<workspace>/.yolo/config-assembled.json` | `config.WorkspaceAssembledConfigPath` |
 | Frozen drift baseline | `<workspace>/.yolo/config-boot.json` | `config.WorkspaceConfigBootPath` |
 | Approval snapshot (host-only, never mounted) | `<machine storage>/approvals/<container-name>.json` | `paths.ApprovalsDir` |

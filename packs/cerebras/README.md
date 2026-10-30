@@ -37,6 +37,8 @@ pack ([OQ-3](../../docs/reference/providers.md#reach-oq-3)).
 
 ## The user's entire setup
 
+On your machine, `yolo pack add cerebras` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc
 {

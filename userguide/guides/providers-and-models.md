@@ -13,8 +13,8 @@ Two words do the work:
 
 ## Use a provider in three steps
 
-1. **Add the provider's pack** to your user config, `~/.config/yolo-jail/config.jsonc`, beside your
-   agent:
+1. **Add the provider's pack** to your user config, beside your agent: `yolo pack add zai`. In a
+   JSONC user config that is:
 
    ```jsonc
    {
@@ -34,8 +34,10 @@ Two words do the work:
    exporting it in your shell: inside a jail, pi, opencode and Codex see only the keys yolo
    delivers, so a launch that finds their key only in your shell stops and tells you to move it.
 
-3. **Select the profile** for one launch with `-p`, or make it your default with the `profile` key
-   in your user config:
+3. **Select the profile** for one launch with `-p`, or make it your default in your user config:
+   `yolo active-provider claude zai` (the TOML `[active_provider]` table; `yolo active-provider
+   default zai` covers every agent, and `native` leaves an agent to its own login). A legacy JSONC
+   config spells it with the `profile` key:
 
    ```bash
    yolo -p zai -- claude

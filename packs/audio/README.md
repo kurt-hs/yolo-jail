@@ -12,6 +12,8 @@ enumeration, its approval gate, its name pre-flight and its inert report.
 
 **Select it, and switch it on. Neither is implied by the other:**
 
+On your machine, `yolo pack add audio` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc
 {

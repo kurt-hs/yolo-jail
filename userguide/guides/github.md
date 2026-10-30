@@ -34,6 +34,14 @@ Then select the pack, and grant read access, in your user config
 }
 ```
 
+> [!NOTE]
+> **With a TOML config, run commands instead of editing these blocks.** On your machine,
+> `yolo pack add github` selects the pack and `yolo allow github read` grants the read. A project
+> asks for the other things with `yolo request github repos you/lib`, `yolo request github create_pr`
+> and so on, once your config allows them (`yolo allow github on_request create_pr`). The JSON
+> blocks in this guide show the older `brokered` spelling, which `yolo config migrate` converts to
+> `[allow.github]` and `[requests.github]`.
+
 Selecting the pack puts yolo's `gh` in front of the jail's own copy and starts the broker, in
 every project, and on its own it **grants nothing**: without the read grant, every call is
 refused, naming the grant to add. The read grant lets each project read its own repositories,
@@ -92,9 +100,11 @@ that launch with `--accept-config-changes`, or ahead of time on your machine wit
 
 ### Adding a repository the project has no remote for
 
-A project sometimes needs another repository, such as a library it depends on. List it in the
-project's `yolo-jail.jsonc`, or in `yolo-jail.local.jsonc` beside it for a repository the project
-should not commit:
+A project sometimes needs another repository, such as a library it depends on. Run
+`yolo request github repos you/lib` in the project (add `--dry-run` to see the edit first). It adds the
+repository to the project's config, runs `yolo check`, and names the host step, `yolo config apply`.
+In a legacy JSONC project you can list it by hand, in `yolo-jail.jsonc`, or in
+`yolo-jail.local.jsonc` beside it for a repository the project should not commit:
 
 ```jsonc
 {
@@ -105,7 +115,7 @@ should not commit:
 ```
 
 The agent can add it too. When it asks for a repository outside the list, the refusal tells it
-where to add the repository and to ask you to run `yolo config apply` on the host. Nothing changes
+to run `yolo request github repos <owner/repo>` and to ask you to run `yolo config apply` on the host. Nothing changes
 until you do: that command, or the next launch, shows the repository as a row of the prompt,
 naming the file it came from, and asks you to approve it. A running jail takes it at once, with no
 restart:

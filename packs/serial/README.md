@@ -4,7 +4,7 @@ The `serial` pack enables safe, scoped access to host USB serial devices (ESP32,
 
 ## Activation
 
-In `~/.config/yolo-jail/config.jsonc`:
+On your machine, `yolo pack add serial` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
 
 ```jsonc
 {

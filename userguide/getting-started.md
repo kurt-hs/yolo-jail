@@ -434,19 +434,16 @@ and chosen PATH name.
 ### Choose an agent
 
 No agent is selected by default, so first choose one. An agent arrives as a **pack**, an add-on you
-list in your user config at `~/.config/yolo-jail/config.jsonc`. Create the file, then add the pack
-line inside its outer braces:
+list in your user config in `~/.config/yolo-jail/`. Create that file if you have none, then select
+the pack with one command:
 
 ```bash
 yolo init-user-config    # writes the file, full of commented examples
+yolo pack add claude     # adds "claude" to its packs list
 ```
 
-```jsonc
-{
-  "packs": ["claude"],
-  // …the commented examples the file already holds…
-}
-```
+`yolo pack remove claude` takes it out again. A user config you convert with `yolo config migrate`
+becomes `config.toml`; the verbs edit whichever format you have.
 
 The shipped agent packs are `claude`, `copilot`, `codex`, `opencode`, `pi`, `agy` and `omp`; list as
 many as you like. `omp`'s vendor publishes no ARM Linux build, so it does not run in a jail on an Apple
@@ -465,8 +462,8 @@ yolo check
 `[PASS]`, `[WARN]` or `[FAIL]`, and the run ends with a Summary line. **Fix every `[FAIL]`**: a
 failure stops the check before it builds anything, and the row's note names the fix. The first run
 also builds the jail's image, which takes a while; `yolo check --no-build` is the fast version.
-Optionally, `yolo init` adds a commented `yolo-jail.jsonc` to the project for its own settings; you do
-not need one to start.
+Optionally, `yolo init` adds a small `yolo-jail.toml` pointer file to the project, which is where the
+project's own settings go later; you do not need one to start.
 
 A healthy fresh machine still shows a few warnings. These are expected:
 
@@ -606,7 +603,7 @@ reboot ends it too. `yolo host-daemon status` lists it as host-wide.
 yolo checks for a new release once a day and prints one line when there is one, and it tells you the
 first time, before it checks. A from-source install is never checked. When
 an update is waiting and you start a jail, yolo offers to install it and start again. To turn the
-check, the line and the offer off, add `"update_check": false` to `~/.config/yolo-jail/config.jsonc`.
+check, the line and the offer off, run `yolo config set update_check false --user`.
 
 On yolo 0.10.0, which has neither `yolo update` nor `yolo host-daemon`, run `brew upgrade yolo-jail`,
 or `git pull && just deploy` in your clone, and then `yolo broker restart`.

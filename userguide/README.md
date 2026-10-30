@@ -47,9 +47,10 @@ Install Nix, a container runtime and yolo: **[Getting Started](getting-started.m
 copy-paste steps for Mac and Linux. Then choose an agent, check the setup, and launch:
 
 ```bash
-yolo init-user-config      # creates ~/.config/yolo-jail/config.jsonc; add "packs": ["claude"] to it
+yolo init-user-config      # creates your user config in ~/.config/yolo-jail/
+yolo pack add claude       # selects Claude Code in it
 cd ~/code/my-project       # any repository
-yolo init                  # optional: a yolo-jail.jsonc for this project's own settings
+yolo init                  # optional: a yolo-jail.toml pointer file for this project
 yolo check                 # checks Nix, the runtime and your config, and builds the jail
 yolo -- claude             # start Claude Code in the jail
 ```

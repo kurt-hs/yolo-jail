@@ -24,6 +24,11 @@ Two properties make the promise hold rather than merely read well. The record of
 approved lives **host-side**, where nothing in the jail can rewrite it. And a launch with
 **no terminal to ask on refuses** rather than accepting silently.
 
+This page says `yolo-jail.jsonc` where the file is whichever the workspace holds: `yolo-jail.toml` and
+`yolo-jail.local.toml` are gated the same way, and a project's `requests` and a writable `mounts`
+entry are approved through this same prompt (the writable mount printed in red). The user config
+is `config.toml` (legacy `config.jsonc`).
+
 The gate is scoped to the **workspace** config. Editing `~/.config/yolo-jail/config.jsonc`
 takes host user authority, which is at least as much authority as the gate protects, so it
 is trusted on disk and prompts nowhere — see [Why user config never prompts](#why-user-config-never-prompts).

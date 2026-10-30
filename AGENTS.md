@@ -19,14 +19,14 @@ not here; see [Where things live](#where-things-live).
 ## Packs, and what core does not know
 
 **AGENTS ARE PACKS. Core does not know what an agent is.** No agent registry, no `agents` config key, no
-`YOLO_AGENTS`. Config carries ONE list of `packs`; shipped packs live in `packs/*/pack.json` and are
-selected by BARE NAME — `"packs": ["claude"]`.
+`YOLO_AGENTS`. Config carries ONE list of `packs`; shipped packs live in `packs/*/pack.toml` and are
+selected by BARE NAME — `packs = ["claude"]`, which `yolo pack add claude` writes.
 [`internal/config/validate.go`](internal/config/validate.go) hard-errors on `agents` on the host (and
 warns in-jail, where the config is the generated snapshot).
 
-**A pack that installs an agent is just one that declares a `kind: "program"` surface**, and most shipped
-packs install no CLI at all. `rg -l '"kind": "program"' packs/*/pack.json` lists the packs that install
-something and `rg -l loophole packs/*/pack.json` the loophole list; writing either membership down here is
+**A pack that installs an agent is just one that declares a `[[program]]` surface** (`kind: "program"` in the legacy `pack.json` spelling, which is
+still read), and most shipped packs install no CLI at all. `rg -l '^\[\[program\]\]' packs/*/pack.toml`
+lists the packs that install something and `rg -l loophole packs/*/pack.toml` the loophole list; writing either membership down here is
 what rots. Two structural facts, not guessable from a manifest:
 
 - `codex-auth` declares the `openai-codex` PROVIDER (its capabilities, its Responses endpoint and
@@ -233,9 +233,18 @@ The mechanics behind each of these are in
   it, asks, prints the one command, or names who can. A message that only reports is a defect
   ([`happy-path-principle.md`](docs/reference/happy-path-principle.md); not to be confused with
   [`fill-the-matrix-principle.md`](docs/reference/fill-the-matrix-principle.md)).
-- **Run `yolo check` after every edit** to [`yolo-jail.jsonc`](yolo-jail.jsonc) or
-  `~/.config/yolo-jail/config.jsonc`, before asking a human to restart. `yolo check --no-build` is the fast
-  in-jail preflight. The y/N startup diff prompt is not a substitute.
+- **Run `yolo check` after every edit** to [`yolo-jail.jsonc`](yolo-jail.jsonc) (`yolo-jail.toml` where a
+  workspace has converted) or `~/.config/yolo-jail/config.toml` (legacy `config.jsonc`), before asking a
+  human to restart. `yolo check --no-build` is the fast in-jail preflight. The y/N startup diff prompt is
+  not a substitute.
+- **Config is TOML; legacy JSONC is read for a few releases** ([RC-D19](docs/design/readable-config.md#decision-ledger)).
+  One format per scope, a TOML file beside a legacy one is refused, and a launch offers
+  `yolo config migrate` (`convert_later` in a legacy user file silences it). **Advice names a verb, not a
+  file to hand-edit** ([`config-commands.md`](docs/design/config-commands.md)): `yolo allow` (your
+  ceiling, host), `yolo request` (a project's ask, in a jail too), `yolo active-provider`,
+  `yolo pack add|remove|migrate`, `yolo config set|add|unset|why|migrate`. A new advice string names
+  one, or `yolo config set`; `TestConfigRefTOMLSectionNamesTheVerbsTheCLIHas` pins config-ref's list of
+  them to the dispatch registry. This repository's own [`yolo-jail.jsonc`](yolo-jail.jsonc) stays legacy until converted.
 - **Nothing is blocked by default; a generated shim is unconditional.** `defaultBlockedList()` is EMPTY;
   `grep -r` and `find` blocks live in the opt-in **`guardrails`** pack. A blocker is generated only when
   its `replacement` is on the agent's PATH (`agentPath`), and `YOLO_BYPASS_SHIMS=1` bypasses one. A user's

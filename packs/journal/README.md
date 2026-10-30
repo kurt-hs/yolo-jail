@@ -15,6 +15,8 @@ possible.
 
 ## Two gates
 
+On your machine, `yolo pack add journal` selects the pack. In a legacy JSONC user config the same selection, and the rest of this setup, reads:
+
 ```jsonc
 // ~/.config/yolo-jail/config.jsonc  — user scope
 {
