@@ -194,13 +194,9 @@ func OrdinaryRuntimeUnsupported(cfg *jsonx.OrderedMap, storePackages bool) strin
 			return "the configured Node toolchain is not the sealed producer's observed toolchain"
 		}
 	}
-	if sources, _ := cfg.Get("env_sources"); sources != nil {
-		if entries, ok := sources.([]any); ok {
-			for _, entry := range entries {
-				if _, file := entry.(string); file {
-					return "file-backed env_sources has no sealed runtime identity; retain its authorized installation route"
-				}
-			}
+	if config.HasEnvEntries(cfg) {
+		if config.HasEnvFileEntry(cfg) {
+			return "file-backed env_sources or env.files has no sealed runtime identity; retain its authorized installation route"
 		}
 		if env := config.ResolveEnvSources("", cfg, nil); env != nil {
 			for _, key := range env.Keys() {

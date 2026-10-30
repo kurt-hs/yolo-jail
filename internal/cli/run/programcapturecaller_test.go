@@ -9,11 +9,13 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 func TestOrdinaryProgramCaptureCallerClassifiesDecodedCAAndProxyInputs(t *testing.T) {
 	for _, tc := range []struct {
 		name, config, dotenv, wantKey, wantReason, wantMiseTools string
+		file                                                     string
 		wantUnsupported                                          bool
 	}{
 		{name: "no-profile-baseline", config: `{}`},
@@ -22,6 +24,10 @@ func TestOrdinaryProgramCaptureCallerClassifiesDecodedCAAndProxyInputs(t *testin
 		{name: "inline-mixed-case-ca", config: `{"env_sources":[{"sSl_CeRt_FiLe":"/fixture/custom-ca.pem"}]}`, wantKey: "sSl_CeRt_FiLe", wantUnsupported: true},
 		{name: "dotenv-proxy", config: `{"env_sources":[".capture.env"]}`, dotenv: "hTtPs_PrOxY=http://proxy.invalid:3128\n", wantKey: "hTtPs_PrOxY", wantUnsupported: true},
 		{name: "dotenv-source-classification", config: `{"env_sources":[".capture.env"]}`, dotenv: "ORDINARY_SETTING=value\n", wantReason: "file-backed env_sources", wantUnsupported: true},
+		// The readable spelling reaches the same classifier: a TOML project's [env] is env the
+		// launch resolves, so a proxy set there or a file named there customizes the runtime too.
+		{name: "toml-env-set-proxy", file: paths.WorkspaceConfigTOMLName, config: "[env]\nset = { https_proxy = \"http://proxy.invalid:3128\" }\n", wantKey: "https_proxy", wantUnsupported: true},
+		{name: "toml-env-files-classification", file: paths.WorkspaceConfigTOMLName, config: "[env]\nfiles = [\".capture.env\"]\n", dotenv: "ORDINARY_SETTING=value\n", wantReason: "env.files", wantUnsupported: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var called int
@@ -37,7 +43,11 @@ func TestOrdinaryProgramCaptureCallerClassifiesDecodedCAAndProxyInputs(t *testin
 						t.Fatal(err)
 					}
 				}
-				if err := os.WriteFile(filepath.Join(o.Workspace, config.WorkspaceConfigName), []byte(tc.config), 0o600); err != nil {
+				file := tc.file
+				if file == "" {
+					file = config.WorkspaceConfigName
+				}
+				if err := os.WriteFile(filepath.Join(o.Workspace, file), []byte(tc.config), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				if tc.dotenv != "" {

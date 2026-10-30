@@ -927,6 +927,64 @@ func TestHostEnvRefusesUnanchoredRelativeEntries(t *testing.T) {
 	}
 }
 
+// TestHostEnvResolvesTheReadableEnvTable: `yolo host` composes the user config.toml's [env]
+// table (files, set, unset) through the same resolver as env_sources, and its relative-entry
+// backstop covers env.files too. Fails if hostEnvVars stops reading the readable spelling.
+func TestHostEnvResolvesTheReadableEnvTable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("HOST_GONE", "inherited")
+	absEnv := filepath.Join(home, "absolute.env")
+	if err := os.WriteFile(absEnv, []byte("FROM_FILE=yes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	dir := filepath.Join(home, ".config", "yolo-jail")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[env]\nfiles = ['" + absEnv + "']\nset = { FROM_SET = 'yes' }\nunset = ['HOST_GONE']\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env, _, err := composeHostEnv("claude", "", func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"FROM_FILE=yes", "FROM_SET=yes"} {
+		if !hasEnv(env, want) {
+			t.Errorf("the user config.toml's [env] did not reach the host env: %s missing", want)
+		}
+	}
+	if hasEnv(env, "HOST_GONE=inherited") {
+		t.Error("env.unset did not remove an inherited variable")
+	}
+
+	ws := t.TempDir()
+	t.Chdir(ws)
+	if err := os.WriteFile(filepath.Join(ws, "rel.env"), []byte("PWNED=yes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := jsonx.NewOrderedMap()
+	table := jsonx.NewOrderedMap()
+	table.Set("files", []any{"rel.env"})
+	cfg.Set("env", table)
+	var warnings []string
+	vars, err := hostEnvVars(cfg, ws, "claude", "", func(msg string) { warnings = append(warnings, msg) })
+	if err != nil {
+		t.Fatalf("hostEnvVars: %v", err)
+	}
+	for _, v := range vars {
+		if v.Key == "PWNED" {
+			t.Error("an unanchored relative env.files entry resolved against the cwd")
+		}
+	}
+	if !strings.Contains(strings.Join(warnings, "\n"), `env.files: "rel.env" is relative`) {
+		t.Errorf("the backstop refusal must name env.files, got %q", warnings)
+	}
+}
+
 // TestHostEnvStillResolvesAbsoluteEnvSourceFiles: the refusal is about RELATIVE
 // resolution, not about files — an absolute path (and ~/…) in the user config names
 // where it names, independent of the cwd, and keeps working.

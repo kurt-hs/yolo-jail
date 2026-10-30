@@ -3647,38 +3647,70 @@ func macosUserGuestRuns(packs []*packload.Pack, service string) bool {
 // shares this map with composition steps that must keep seeing the original, and the
 // copy is throwaway.
 func hostScopedEnvSources(cfg *jsonx.OrderedMap, warn func(string)) *jsonx.OrderedMap {
-	entries, present := cfg.Get("env_sources")
-	if !present {
-		return cfg
-	}
-	list, ok := entries.([]any)
-	if !ok || len(list) == 0 {
-		return cfg
-	}
-	var kept []any
-	dropped := false
-	for _, e := range list {
-		if s, isStr := e.(string); isStr && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") {
-			dropped = true
-			if warn != nil {
-				warn("env_sources: \"" + s + "\" is relative and ignored by `yolo host` — it would " +
-					"resolve against the current directory, which a workspace controls. " +
-					"Use an absolute path or ~/…")
+	// Both spellings of a file entry: the legacy `env_sources` list and the readable
+	// `env.files` list, which config's one env resolver walks alike.
+	filter := func(label string, list []any) ([]any, bool) {
+		var kept []any
+		dropped := false
+		for _, e := range list {
+			if s, isStr := e.(string); isStr && !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "~") {
+				dropped = true
+				if warn != nil {
+					warn(label + ": \"" + s + "\" is relative and ignored by `yolo host` — it would " +
+						"resolve against the current directory, which a workspace controls. " +
+						"Use an absolute path or ~/…")
+				}
+				continue
 			}
-			continue
+			kept = append(kept, e)
 		}
-		kept = append(kept, e)
+		return kept, dropped
 	}
-	if !dropped {
+	var out *jsonx.OrderedMap
+	copied := func() *jsonx.OrderedMap {
+		if out == nil {
+			out = jsonx.NewOrderedMap()
+			for _, k := range cfg.Keys() {
+				v, _ := cfg.Get(k)
+				out.Set(k, v)
+			}
+		}
+		return out
+	}
+	if entries, present := cfg.Get("env_sources"); present {
+		if list, ok := entries.([]any); ok && len(list) > 0 {
+			if kept, dropped := filter("env_sources", list); dropped {
+				if len(kept) > 0 {
+					copied().Set("env_sources", kept)
+				} else {
+					copied().Delete("env_sources")
+				}
+			}
+		}
+	}
+	if envValue, present := cfg.Get("env"); present {
+		if env, ok := envValue.(*jsonx.OrderedMap); ok {
+			if files, present := env.Get("files"); present {
+				if list, ok := files.([]any); ok && len(list) > 0 {
+					if kept, dropped := filter("env.files", list); dropped {
+						narrowed := jsonx.NewOrderedMap()
+						for _, k := range env.Keys() {
+							v, _ := env.Get(k)
+							narrowed.Set(k, v)
+						}
+						if len(kept) > 0 {
+							narrowed.Set("files", kept)
+						} else {
+							narrowed.Delete("files")
+						}
+						copied().Set("env", narrowed)
+					}
+				}
+			}
+		}
+	}
+	if out == nil {
 		return cfg
-	}
-	out := jsonx.NewOrderedMap()
-	for _, k := range cfg.Keys() {
-		v, _ := cfg.Get(k)
-		out.Set(k, v)
-	}
-	if len(kept) > 0 {
-		out.Set("env_sources", kept)
 	}
 	return out
 }

@@ -102,18 +102,7 @@ func envSourceScopeRefusal(key, entry, real, root, userPath string, userTOML boo
 // hasEnvSourceFile reports whether cfg holds any env file entry, in either spelling — the
 // merged map holds every workspace entry, so without one there is nothing to re-read.
 func hasEnvSourceFile(cfg *jsonx.OrderedMap) bool {
-	lists := [][]any{getListOrNilFalsy(cfg, "env_sources")}
-	if env, ok := envTable(cfg); ok {
-		lists = append(lists, getListOrNilFalsy(env, "files"))
-	}
-	for _, list := range lists {
-		for _, entry := range list {
-			if _, ok := asStr(entry); ok {
-				return true
-			}
-		}
-	}
-	return false
+	return HasEnvFileEntry(cfg)
 }
 
 // resolveExistingPrefix resolves every symlink in p's longest existing ancestor and appends

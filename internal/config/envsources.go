@@ -109,6 +109,102 @@ func anchorEnvSourceList(cfg *jsonx.OrderedMap, key, dir string) {
 	}
 }
 
+// envEntry is one entry of the ordered list the env resolver walks, with the config key that
+// spelled it: a dotenv path (a string) or an inline table of assignments, a nil value being a
+// removal.
+type envEntry struct {
+	key   string
+	value any
+}
+
+func (e envEntry) describeInline(m *jsonx.OrderedMap) string {
+	label := "inline dict"
+	if e.key != "env_sources" {
+		label = e.key
+	}
+	return label + " (keys: " + strings.Join(m.Keys(), ", ") + ")"
+}
+
+// envEntries is the ONE ordered entry list every env reader walks, whichever spelling the
+// config used, so the legacy and readable forms cannot drift apart:
+//
+//  1. every `env_sources` entry, in order (the legacy JSONC spelling);
+//  2. every `env.files` path, in order (the readable spelling of its file entries);
+//  3. `env.set` as one inline table, applied after every file — the reading the migrator
+//     converts by (configmigrate.lowerEnvSources) and config-project.md §1 shows;
+//  4. `env.unset` as one inline table of removals, applied last, so an unset wins over a
+//     set of the same name from any layer (readable-config-plan.md's "unset precedence",
+//     RC-D23).
+//
+// The merge has already joined the layers: `env.files` is the user's entries then the
+// workspace's, `env.set` is later-wins per name, and `env.unset` is their union.
+func envEntries(cfg *jsonx.OrderedMap) []envEntry {
+	var out []envEntry
+	for _, entry := range getListOrNilFalsy(cfg, "env_sources") {
+		out = append(out, envEntry{key: "env_sources", value: entry})
+	}
+	env, ok := envTable(cfg)
+	if !ok || env == nil {
+		return out
+	}
+	for _, entry := range getListOrNilFalsy(env, "files") {
+		if _, isPath := asStr(entry); isPath {
+			out = append(out, envEntry{key: "env.files", value: entry})
+		}
+	}
+	if setValue, present := env.Get("set"); present {
+		if set, ok := asMap(setValue); ok {
+			assignments := jsonx.NewOrderedMap()
+			for _, k := range set.Keys() {
+				v, _ := set.Get(k)
+				if vs, ok := asStr(v); ok {
+					assignments.Set(k, vs)
+				}
+			}
+			if assignments.Len() > 0 {
+				out = append(out, envEntry{key: "env.set", value: assignments})
+			}
+		}
+	}
+	removals := jsonx.NewOrderedMap()
+	for _, name := range getListOrNilFalsy(env, "unset") {
+		if s, ok := asStr(name); ok {
+			removals.Set(s, nil)
+		}
+	}
+	if removals.Len() > 0 {
+		out = append(out, envEntry{key: "env.unset", value: removals})
+	}
+	return out
+}
+
+// EnvEntries is envEntries for a reader outside this package that must compare what the
+// launch resolves without reading any file — the migration's equality proof. Each entry is a
+// path string or an inline table whose nil values are removals.
+func EnvEntries(cfg *jsonx.OrderedMap) []any {
+	entries := envEntries(cfg)
+	out := make([]any, len(entries))
+	for i, e := range entries {
+		out[i] = e.value
+	}
+	return out
+}
+
+// HasEnvFileEntry reports whether cfg names any dotenv file, in either spelling.
+func HasEnvFileEntry(cfg *jsonx.OrderedMap) bool {
+	for _, e := range envEntries(cfg) {
+		if _, ok := asStr(e.value); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// HasEnvEntries reports whether cfg configures any environment, in either spelling.
+func HasEnvEntries(cfg *jsonx.OrderedMap) bool {
+	return len(envEntries(cfg)) > 0
+}
+
 // ResolveEnvSourcePath expands ~, passes absolute paths through, and resolves
 // relative paths against the workspace root — the FALLBACK for entries no loader
 // anchored (AnchorEnvSources); every config loaded from disk arrives anchored.
@@ -124,7 +220,8 @@ func ResolveEnvSourcePath(entry, workspace string) string {
 	return joined
 }
 
-// ResolveEnvSources iterates env_sources in order — inline dicts apply
+// ResolveEnvSources iterates the config's env entries in order (envEntries: env_sources, then
+// the readable [env] table's files, set and unset) — inline dicts apply
 // directly; string entries read as dotenv files; later
 // entries override earlier; missing/unreadable files warn (via warn) and skip.
 // Returns the final env map as an OrderedMap (later-wins on key, position kept).
@@ -162,7 +259,8 @@ func ResolveEnvSourcesFull(workspace string, config *jsonx.OrderedMap, warn Warn
 		merged.Set(k, v)
 	}
 
-	for _, entry := range getListOrNilFalsy(config, "env_sources") {
+	for _, e := range envEntries(config) {
+		entry := e.value
 		if em, ok := asMap(entry); ok {
 			for _, k := range em.Keys() {
 				v, _ := em.Get(k)
@@ -186,9 +284,9 @@ func ResolveEnvSourcesFull(workspace string, config *jsonx.OrderedMap, warn Warn
 			data, err := os.ReadFile(p)
 			if err != nil {
 				if os.IsNotExist(err) {
-					warn("env_sources file not found, skipping: " + s + " (resolved to " + p + ")")
+					warn(e.key + " file not found, skipping: " + s + " (resolved to " + p + ")")
 				} else {
-					warn("env_sources file unreadable, skipping: " + s + ": " + err.Error())
+					warn(e.key + " file unreadable, skipping: " + s + ": " + err.Error())
 				}
 				continue
 			}
@@ -260,9 +358,10 @@ func SplitHydratedEnvSources(m *jsonx.OrderedMap) (*jsonx.OrderedMap, []string) 
 // not only what failed.
 func DescribeEnvSources(workspace string, cfg *jsonx.OrderedMap) []string {
 	var out []string
-	for _, entry := range getListOrNilFalsy(cfg, "env_sources") {
+	for _, e := range envEntries(cfg) {
+		entry := e.value
 		if em, ok := asMap(entry); ok {
-			out = append(out, "inline dict (keys: "+strings.Join(em.Keys(), ", ")+")")
+			out = append(out, e.describeInline(em))
 			continue
 		}
 		if s, ok := asStr(entry); ok {

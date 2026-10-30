@@ -114,6 +114,10 @@ func (e *InequalityError) Error() string {
 // canonicalSet is one side of the equality check.
 type canonicalSet struct {
 	user, project, composed string
+	// env is the ordered entry list the launch's env resolver walks over the merged read
+	// (config.EnvEntries), whichever spelling carries it. The per-scope comparison above checks
+	// the lowered keys; this checks what the launch resolves from them, without reading a file.
+	env string
 }
 
 // Plan converts every old file of g and proves the result says what the old files say. A plan
@@ -175,6 +179,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	p.Differences = append(p.Differences, diffValues("user config", before.user, after.user)...)
 	p.Differences = append(p.Differences, diffValues("project config", before.project, after.project)...)
 	p.Differences = append(p.Differences, diffValues("user and project config merged", before.composed, after.composed)...)
+	p.Differences = append(p.Differences, diffValues("the environment the launch resolves", before.env, after.env)...)
 	p.Equal = before.set == after.set
 	if g.Request.Workspace != "" && len(g.project) > 0 {
 		p.Records = planRecords(g.Request.Workspace)
@@ -436,7 +441,18 @@ func writeMirror(root string, g *Graph, content map[*File][]byte) (userTop, work
 // sideRead is one side of the equality check, lowered and canonical.
 type sideRead struct {
 	user, project, composed *jsonx.OrderedMap
-	set                     canonicalSet
+	// env is {"entries": config.EnvEntries(merged read)}: the launch's env, in the one form
+	// both spellings resolve through.
+	env *jsonx.OrderedMap
+	set canonicalSet
+}
+
+// launchEnv is what the launch's env resolver walks over a merged read, as a map diffValues can
+// name a difference in.
+func launchEnv(composed *jsonx.OrderedMap) *jsonx.OrderedMap {
+	out := jsonx.NewOrderedMap()
+	out.Set("entries", config.EnvEntries(composed))
+	return out
 }
 
 // loweredRoots are the roots the comparison checks per scope only: their lowering depends on the
@@ -456,10 +472,14 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, mirror
 		s.user, _ = canonicalOld(read.User, loweringContext{scope: ScopeUser, remotes: remotes})
 		s.project, _ = canonicalOld(read.Workspace, loweringContext{scope: ScopeProject, remotes: remotes})
 		s.composed, _ = canonicalOld(read.Composed, loweringContext{scope: ScopeProject, remotes: remotes})
+		// The OLD spelling as the launch reads it, not its lowering: the proof is that the
+		// converted files resolve to the env the old ones resolve to.
+		s.env = launchEnv(read.Composed)
 	} else {
 		s.user = unmirror(read.User, mirror).(*jsonx.OrderedMap)
 		s.project = unmirror(read.Workspace, mirror).(*jsonx.OrderedMap)
 		s.composed = unmirror(read.Composed, mirror).(*jsonx.OrderedMap)
+		s.env = launchEnv(s.composed)
 	}
 	for _, m := range []*jsonx.OrderedMap{s.user, s.project, s.composed} {
 		m.Delete(convertLaterKey)
@@ -470,7 +490,7 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, mirror
 	for _, pair := range []struct {
 		m   *jsonx.OrderedMap
 		out *string
-	}{{s.user, &s.set.user}, {s.project, &s.set.project}, {s.composed, &s.set.composed}} {
+	}{{s.user, &s.set.user}, {s.project, &s.set.project}, {s.composed, &s.set.composed}, {s.env, &s.set.env}} {
 		text, err := config.SnapshotJSON(pair.m)
 		if err != nil {
 			return nil, err

@@ -202,7 +202,6 @@ func TestInitLeavesTheGitignoreAlone(t *testing.T) {
 
 // A TOML [env] set variable reaches the jail's environment.
 func TestATOMLEnvSetReachesTheJail(t *testing.T) {
-	t.Skip("defect: launch resolves env only from the legacy env_sources key (config.ResolveEnvSourcesFull), so [env] set/files/unset in TOML are read by `config why` but never delivered; see the lane report for the reproduction")
 	requireJail(t)
 
 	writeUserTOML(t, "packs = []\n")
