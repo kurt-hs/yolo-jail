@@ -2,7 +2,7 @@
 title: "Build a matched launcher bundle without changing the install"
 status: accepted
 stage: DESIGN
-next: "Owner rules OQ-MDB1: whether a development launcher that fails to build may recover through the installed launcher. The plan's paired build, source selection and no-launch-build tests are otherwise as stated."
+next: "Build OQ-MDB1's ruling: a development launcher whose build fails runs the newest development bundle it already has, and with none it fails."
 tags: [development, builds, launch]
 summary: "A build-only development artifact pairs the host launcher with every helper and flake it will run."
 ---
@@ -21,7 +21,7 @@ summary: "A build-only development artifact pairs the host launcher with every h
 
 **Start at [§2](#2-the-matched-artifact-contract)** — every later behavior follows from it.
 
-**Needs your ruling:** [OQ-MDB1](#OQ-MDB1), the recovery path for a development launcher that fails to build. Earlier owner rulings are recorded below.
+**Needs your ruling:** None. The owner ruled [OQ-MDB1](#OQ-MDB1) on 2026-10-30; it is recorded with the earlier rulings below.
 
 **Reads with:** [`matched-development-bundles-plan.md`](matched-development-bundles-plan.md) (completed implementation map and gates), [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (the existing image and mounted-prefix contract).
 
@@ -122,7 +122,7 @@ The design is built when all of the following hold:
 7. A checkout-resident executable script discovers its checkout by resolving its complete symlink chain; users may symlink it to PATH under any name, with no generator, installed launcher, or automatic PATH edit. It uses the real checkout as build source but preserves the caller's cwd as workspace. Linux/macOS resolution handles relative, absolute and multi-hop links portably without `readlink -f`; if named `yolo`, it execs the absolute matched launcher to avoid recursion. `just dev` delegates to the same script/build core. Each invocation reuses only a complete bundle matching the bounded source-capture identity or builds one, then execs with arguments, signals and exit status preserved. Failed builds never run stale output. The wrapper child-scrubs obsolete `YOLO_REPO_ROOT`, only notifying when present without revealing its value; a normal direct launcher still refuses it. A dangling/cyclic PATH alias is rejected by the OS before the wrapper can run; tests assert nonzero with no build/launch, while resolver failures observed after start get custom repair guidance where possible. Document the explicit `ln -sfn /absolute/path/to/checkout/scripts/dev-wrapper.sh /path/to/yolo-dev` repair form.
 8. `just install`, release packaging, image realization/load, and `packages:` delivery still provide their existing supported behavior using the shared package machinery. The standalone `installPrefix` package remains available for mounted-prefix packaging; removing `guestPrefix` changes the content hash input `imageIdentity` derives from `flake.nix`, but does not change the identity mechanism or image/load path.
 
-## 6. Owner rulings (2026-10-21)
+## 6. Owner rulings
 
 | Ruling | Recorded contract |
 | :--- | :--- |
@@ -132,6 +132,7 @@ The design is built when all of the following hold:
 | Add a checkout-resident PATH-ready development wrapper | Its executable resolves its real path through symlinks, uses that checkout as build source, preserves the caller's cwd for launch, and execs the absolute matched launcher. Users symlink it under any name; `just dev` delegates to the same script. |
 | Make default Mac Podman viable | Deliver the artifact in the VM-shared home path; do not require `/nix` sharing, VM setup, or an installed replacement. |
 | Preserve trust and runtime boundaries | No broader credential/home grants, workspace mutation, writable helper injection, alternate Go implementation, or image/load/package redesign. Keep the standalone mounted-prefix `installPrefix` package; `imageIdentity` continues to hash `flake.nix` and `flake.lock`, so its value naturally follows a flake edit without changing that mechanism. |
+| <a id="OQ-MDB1"></a>OQ-MDB1 (2026-10-30): a failed development build falls back to the last development build | The owner's words: *"a failed build falls back to the last dev launcher build. don't we save them somewhere and GC them? if you don't have a build yet, it just fails, doesn't fall back to anything."* When building the checkout's bundle fails, the development wrapper runs the newest complete development bundle under `~/.local/share/yolo-jail/dev-bundles/` (the bundles `prune.PruneDevBundles` keeps), says plainly that the checkout's edits are not running and which build is, and still reports the build failure. With no development bundle at all it fails with the build error. It never falls back to the installed launcher. |
 
 ## 7. Terms
 
@@ -139,12 +140,4 @@ The design is built when all of the following hold:
 
 ## 8. Open questions
 
-<a id="OQ-MDB1"></a>**💬 OQ-MDB1: When a development launcher fails to build, may recovery go through the installed launcher, or must it work with no installed launcher at all?**
-
-<!-- vantage: question id=OQ-MDB1 leaning="Require an installed launcher and its matching bundle; with none, refuse and name `just deploy-dev`." -->
-
-Motivation: a development launcher that fails to compile strands its user, who then cannot start the jail that would fix it; the 2026-10-28 stash is the example the fan-out plan cites. Impact: the answer decides whether recovery needs a working installed `yolo`. The plan's recommendation, attributed there to Astra, is to recover through the stable installed launcher and its matching bundle, say plainly that the unfinished code is not running, and refuse when the two are incompatible.
-
-_Leaning:_ Require the installed launcher. Example: `yolo-dev` fails to build, so it starts the installed `yolo` with its matching bundle and prints that the checkout's edits are not running. With no installed launcher it refuses, naming `just deploy-dev`.
-
-**Answer:**
+None open.
