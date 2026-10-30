@@ -12,10 +12,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -129,10 +132,59 @@ func activeProviderRunW(args []string, out, errw io.Writer) int {
 		}
 	}
 
-	rc := namedVerbSet(configEditWorkspace(), "active_provider."+agent, name,
-		config.EditTargetChoice{Kind: config.EditTargetUser}, dryRun, false, out, errw)
+	choice := config.EditTargetChoice{Kind: config.EditTargetUser}
+	key, value := "active_provider."+agent, any(name)
+	userFile, isTOML := config.UserConfigFile()
+	switch {
+	case !pathExistsOnDisk(userFile) && isTOML:
+		// No user config at all: the readable file is the one to start. An empty config.toml is
+		// a valid config, and the edit below then adds [active_provider] to it.
+		if dryRun {
+			fmt.Fprintf(out, "Would create %s with:\n[active_provider]\n%s = %q\n", userFile, agent, name)
+			return 0
+		}
+		if err := os.MkdirAll(filepath.Dir(userFile), 0o700); err != nil {
+			fmt.Fprintf(errw, "yolo active-provider: cannot create %s: %v\n  Create that directory yourself, then rerun this command.\n", filepath.Dir(userFile), err)
+			return 1
+		}
+		if err := os.WriteFile(userFile, nil, 0o600); err != nil {
+			fmt.Fprintf(errw, "yolo active-provider: cannot create %s: %v\n  Create that file yourself (empty is fine), then rerun this command.\n", userFile, err)
+			return 1
+		}
+	case !isTOML:
+		// A legacy JSONC user config takes the key too, but a launch refuses active_provider
+		// beside the legacy `profile` key, so never write that pair.
+		if _, legacy := config.UserScopeConfigOrEmpty().Get(config.ProfileKey); legacy {
+			fmt.Fprintf(errw, "yolo active-provider: %s still selects a provider with the legacy `profile` key, and a launch refuses `active_provider` beside it, so nothing was written.\n"+
+				"  Run `yolo config migrate` to convert the file, or remove `profile` from it and rerun this command.\n", userFile)
+			return 1
+		}
+		// JSONC cannot add a nested key under a table it does not hold, so add the whole table.
+		if !configEditPathPresentInFile(userFile, config.ActiveProviderKey) {
+			key = config.ActiveProviderKey
+			table := jsonx.NewOrderedMap()
+			table.Set(agent, name)
+			value = table
+		}
+	}
+
+	rc := namedVerbSet(configEditWorkspace(), key, value, choice, dryRun, false, out, errw)
 	if rc == 0 && !dryRun {
 		fmt.Fprintln(out, "This takes effect at the next launch.")
 	}
 	return rc
+}
+
+func pathExistsOnDisk(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// configEditPathPresentInFile reports whether the file at path holds a top-level key.
+func configEditPathPresentInFile(path, key string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return configEditPathPresent(data, configdoc.JSONC, []configdoc.Step{{Key: key}})
 }
