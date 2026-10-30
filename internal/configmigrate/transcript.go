@@ -1,0 +1,69 @@
+package configmigrate
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Transcript is what `yolo config migrate` shows before it asks (config-migration.md §1): the old
+// files, what is not on this machine, each file's summary, the equality verdict and the records.
+func (p *MigrationPlan) Transcript() string {
+	var b strings.Builder
+	old := p.Graph.Old()
+	if len(old) == 0 {
+		b.WriteString("No config file here is in the old format; nothing to migrate.\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "Found %d %s in the old format:\n", len(old), plural(len(old), "file", "files"))
+	for _, f := range old {
+		via := ""
+		if f.Via != "" {
+			via = ", via include_if_found"
+		}
+		fmt.Fprintf(&b, "  %s  (%d lines%s)\n", f.Logical, countLines(f.Bytes), via)
+	}
+	for _, m := range p.Unreachable {
+		fmt.Fprintf(&b, "Not found here (listed in %s): %s.\n  Run `yolo config migrate` on a machine that has it.\n", m.ListedIn, m.Path)
+	}
+	for _, t := range p.Targets {
+		fmt.Fprintf(&b, "\n--- %s\n+++ %s\n", t.Old, t.New)
+		if t.New == t.Old {
+			fmt.Fprintf(&b, "  (include %s respelled to its .toml twin; nothing else changes)\n", strings.Join(t.Respelled, ", "))
+			continue
+		}
+		fmt.Fprintf(&b, "  (%d lines → %d; %d %s kept, in order)\n", countLines(t.File.Bytes), countLines(t.Bytes), t.Comments, plural(t.Comments, "comment", "comments"))
+		if t.Link != nil {
+			fmt.Fprintf(&b, "  %s links to it; %s is left as it is\n", t.Link.Path, t.Link.Old)
+		}
+	}
+	b.WriteString("\n")
+	if !p.Equal {
+		b.WriteString((&InequalityError{Plan: p}).Error())
+		b.WriteString("\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "Effective config before and after: identical (checked as canonical JSON, %d bytes).\n", p.CanonicalBytes)
+	var respell, left []string
+	for _, r := range p.Records {
+		switch r.State {
+		case RecordRespell:
+			respell = append(respell, r.Kind)
+		case RecordLeft:
+			left = append(left, fmt.Sprintf("  %s %s is left: %s.", r.Kind, r.Path, r.Why))
+		}
+	}
+	if len(respell) > 0 {
+		fmt.Fprintf(&b, "Records only yolo reads, respelled in place: %s.\n", strings.Join(respell, ", "))
+	}
+	for _, line := range left {
+		b.WriteString(line + "\n")
+	}
+	return b.String()
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
