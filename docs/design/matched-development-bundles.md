@@ -9,7 +9,7 @@ summary: "A build-only development artifact pairs the host launcher with every h
 
 # Build a matched launcher bundle without changing the install
 
-**Status:** 2026-10-30. Built, including [OQ-MDB1](#OQ-MDB1)'s fallback to the last development build (see its row in §6).
+**Status:** 2026-10-30. Built, including [OQ-MDB1](#OQ-MDB1)'s fallback to the last development build (see its row in [§6](#6-owner-rulings)).
 
 > **In short.** A launcher and the jail helpers it starts are one build artifact. Developers need a build-only path that produces that pair from one source snapshot and can be invoked directly, without changing the installed launcher, `PATH`, or the source selected by any other launcher.
 
