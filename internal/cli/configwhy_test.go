@@ -44,3 +44,18 @@ func TestConfigWhyNamesFileLineAndDefault(t *testing.T) {
 		t.Fatalf("bare why rc=%d stderr=%q", rc, errs)
 	}
 }
+
+// A renamed legacy key is never offered to `yolo config set`, which refuses it: `config why`
+// names the key that replaced it instead.
+func TestConfigWhyNamesTheReplacementForARenamedKey(t *testing.T) {
+	newNamedVerbFixture(t, "", "")
+	for key, want := range map[string]string{
+		"packages":       "packages was renamed, so use install.nix instead",
+		"resources.cpus": "resources.cpus was renamed, so use machine.resources.cpus instead",
+	} {
+		rc, out, errs := captureStd(t, func() int { return registry["config"]([]string{"config", "why", key}) })
+		if rc != 0 || !strings.Contains(out, want) || strings.Contains(out, "yolo config set "+key) {
+			t.Fatalf("config why %s rc=%d stdout=%q stderr=%q; want %q", key, rc, out, errs, want)
+		}
+	}
+}

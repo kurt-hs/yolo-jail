@@ -170,6 +170,9 @@ func configWhyDefault(cfg *jsonx.OrderedMap, sources *config.Sources, steps []co
 		}
 		return "without it, the key is unset; `yolo config-ref` describes what an unset key means"
 	}
+	if replacement := config.RenamedKeyReplacement(keys); replacement != "" {
+		return configWhyPath(steps) + " was renamed, so use " + replacement + " instead"
+	}
 	return "`yolo config-ref` describes what an unset key means; set it with `yolo config set " + configWhyPath(steps) + " <value>`"
 }
 

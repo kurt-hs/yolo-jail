@@ -55,3 +55,13 @@ func renamedKeyReplacement(parts []string) string {
 	}
 	return ""
 }
+
+// RenamedKeyReplacement is renamedKeyReplacement for a reader outside the edit verbs (`yolo
+// config why`), so advice about a legacy key names what replaced it rather than a verb that
+// refuses it.
+func RenamedKeyReplacement(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	return renamedKeyReplacement(parts)
+}
