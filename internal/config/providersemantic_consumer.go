@@ -20,6 +20,10 @@ type ProviderConsumerComposition struct {
 	Legacy   ProfileSelection
 }
 
+// activeProviderWithProfileProblem is the refusal for a config holding both selection keys: the
+// consumer boundary below and the launch's validation (validateActiveProvider) say it in one voice.
+const activeProviderWithProfileProblem = "config: active_provider and legacy profile selectors cannot be composed together; preserve the legacy reader for old files or select through active_provider"
+
 // ConfigProviderConsumer is the error-bearing configuration boundary for F-owned selection
 // consumers. It chooses active_provider only when explicitly authored, refuses mixed old/new
 // selectors, and otherwise preserves the legacy profile selection unchanged.
@@ -28,7 +32,7 @@ func ConfigProviderConsumer(cfg *jsonx.OrderedMap, declarations []packdecl.Provi
 	if cfg != nil {
 		if _, active := cfg.Get("active_provider"); active {
 			if _, legacy := cfg.Get(ProfileKey); legacy {
-				return ProviderConsumerComposition{}, fmt.Errorf("config: active_provider and legacy profile selectors cannot be composed together; preserve the legacy reader for old files or select through active_provider")
+				return ProviderConsumerComposition{}, fmt.Errorf("%s", activeProviderWithProfileProblem)
 			}
 			readable, err := ComposeConfiguredProviderSemantics(cfg, declarations, packs, catalog)
 			if err != nil {

@@ -222,6 +222,8 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "active_provider", Scope: user, Type: SchemaTypeObject},
 		{Path: "active_provider.default", Scope: user, Type: SchemaTypeMixed},
 		{Path: "active_provider.*", Scope: user, Type: SchemaTypeMixed},
+		{Path: "active_provider.default.*", Scope: user, Type: SchemaTypeString},
+		{Path: "active_provider.*.*", Scope: user, Type: SchemaTypeString},
 		{Path: "providers", Scope: mixed, Type: SchemaTypeObject},
 		{Path: "providers.*", Scope: mixed, Type: SchemaTypeMixed},
 		{Path: "providers.*.alias", Scope: user, Type: SchemaTypeString},

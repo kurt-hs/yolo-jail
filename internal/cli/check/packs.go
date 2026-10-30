@@ -285,6 +285,9 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 			default:
 				r.ok(fmt.Sprintf("%s: %d file(s) stage", e.Name, len(res.Staged.Staged)))
 			}
+			if advice := packMigrateAdvice(e); advice != "" {
+				r.note(advice)
+			}
 			// There is nothing origin-dependent left to match: OQ-TP9 deleted the host-access gate,
 			// so `check` and the launch load a pack the same way.
 			for _, prob := range res.Problems {

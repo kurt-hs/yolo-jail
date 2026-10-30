@@ -95,6 +95,9 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	validateMounts(config, workspace, errs, warns, edit)
 	validateAllowMounts(config, errs)
 	validateWorkspaceAllow(config, workspace, errs, edit)
+	if edit == nil {
+		validateRequestsUserScope(config, errs)
+	}
 	validateWorkspaceReadonly(config, errs)
 	validatePerSidePaths(config, errs)
 	validateLoopholes(config, workspace, resolver, errs, warns, edit)
@@ -124,6 +127,9 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	validateAgentProfilesRetired(config, errs, warns)
 	validateUseProfilesRetired(config, errs, warns)
 	validateProfile(config, errs, edit)
+	if edit == nil {
+		validateActiveProvider(config, workspace, errs)
+	}
 	if edit == nil {
 		validateProfiles(workspace, errs)
 		validateAdapters(workspace, errs)

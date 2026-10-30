@@ -20,9 +20,8 @@ import (
 // and then leave the agent to its own login with "native" (OQ-RC20). Fails if the channel
 // resolves the selection without the implied profiles (profilechannel.go: checkProfileDeclarations
 // then refuses the provider's name as undeclared), or if the fold stops reading "native" as no
-// profile. The config is the legacy JSONC `profile` key: the launch validator does not accept
-// `active_provider` yet (config.knownTopLevelConfigKeys), so the TOML form of this test waits on
-// that key being admitted.
+// profile. The config is the legacy JSONC `profile` key; the TOML `active_provider` form is
+// TestALaunchSelectsThroughActiveProvider (activeprovider_toml_test.go).
 func TestALaunchSelectsAProviderByNameAndNative(t *testing.T) {
 	home := packHome(t)
 	dir := filepath.Join(home, ".config", "yolo-jail", "local")
