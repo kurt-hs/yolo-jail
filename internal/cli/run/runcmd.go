@@ -348,6 +348,11 @@ type Options struct {
 	// (config.ScopeCheck.ApprovedGrants; docs/design/git-broker-plan.md ID-10), set beside
 	// approvedScopes and written to the same scope files.
 	approvedGrants map[string][]brokerscope.Grant
+	// readWithoutScope are the brokered loopholes whose read grant the same gate found applying
+	// over no repository (config.ScopeCheck.ReadWithoutScope), each mapped to the workspace key
+	// that would list one: their scope is empty for want of a remote, not of a grant, and
+	// writeScopeFiles says so.
+	readWithoutScope map[string]string
 	// workspaceMounts are the mounts the workspace config declares that this launch binds, read-
 	// only ones and RC-D24's writable requests (oq-cx-symlink): set by the config-change gate
 	// from its own read, with each source as the gate resolved it (config.ApproveWorkspaceRead),

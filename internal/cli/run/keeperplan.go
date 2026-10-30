@@ -81,6 +81,10 @@ type keeperPlan struct {
 	// ApprovedGrants are the user grants the same gate approved, per brokered loophole
 	// (Options.approvedGrants), which the keeper writes into the same scope files.
 	ApprovedGrants map[string][]brokerscope.Grant `json:"approved_grants,omitempty"`
+	// ReadWithoutScope are the brokered loopholes whose read grant the same gate found applying
+	// over no repository (Options.readWithoutScope), each with the workspace key that would list
+	// one, so the keeper's launch line names the missing remote rather than a grant.
+	ReadWithoutScope map[string]string `json:"read_without_scope,omitempty"`
 	// Forwards are the host ports the jail reaches through socket forwards, parsed and disclosed by
 	// the launch, and ForwardDir the per-jail socket directory, "" when there are none.
 	Forwards   []PortForward `json:"forwards,omitempty"`

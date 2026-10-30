@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // TestLaunchAsksNothingForAVacuousScope drives the launch's own gate (checkConfigChanges, which
@@ -64,6 +67,163 @@ func TestLaunchAsksNothingForAVacuousScope(t *testing.T) {
 				}
 				if g := o.approvedGrants["gb"]; len(g) != 0 {
 					t.Fatalf("a vacuous scope handed its broker grants: %v", g)
+				}
+			})
+		}
+	}
+}
+
+// vacuousWorkspace makes the fixture's workspace one with no remote its broker could serve:
+// "non-Git" removes the checkout, "no remotes" leaves a checkout whose config names none.
+func vacuousWorkspace(t *testing.T, ws, shape string) {
+	t.Helper()
+	switch shape {
+	case "non-Git":
+		if err := os.RemoveAll(filepath.Join(ws, ".git")); err != nil {
+			t.Fatal(err)
+		}
+	case "no remotes":
+		if err := os.WriteFile(filepath.Join(ws, ".git", "config"), []byte("[core]\n\tbare = false\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatalf("unknown workspace shape %q", shape)
+	}
+}
+
+// writeRawUserConfig replaces the user config with exactly name's text, with no read grant added
+// (writeUserConfigOf always adds one).
+func writeRawUserConfig(t *testing.T, name, text string) {
+	t.Helper()
+	dir := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail")
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// scopeLaunchLine drives a launch with no terminal through its own gate (checkConfigChanges, which
+// records what it approved through recordApprovedScopes) and then through writeScopeFiles' own
+// line for the brokers that start, and returns everything it printed.
+func scopeLaunchLine(t *testing.T, o *Options, buf *strings.Builder, merged *jsonx.OrderedMap) string {
+	t.Helper()
+	if !o.checkConfigChanges(merged, "podman") {
+		t.Fatalf("a scope with no remote stopped the launch:\n%s", buf.String())
+	}
+	brokered := o.brokeredToStart("podman", merged)
+	if len(brokered) == 0 {
+		t.Fatalf("no broker starts:\n%s", buf.String())
+	}
+	o.writeScopeFiles("yolo-vacuous-line", brokered)
+	return buf.String()
+}
+
+// addRemote is the next step the line must name.
+const addRemote = "`git remote add`"
+
+// TestAHeldReadGrantOverNoRemoteNamesTheMissingRemote is V-G2's launch line (V-G2b). A user who
+// holds the read grant, in a workspace with no remote the broker could serve, gets an approved
+// empty scope with no grant (TestLaunchAsksNothingForAVacuousScope); the line the launch prints
+// for it must name the missing remote and how to add one, never "no read grant applies" with
+// advice to add the grant they already hold. Without the grant the old line stands. Both host
+// shapes, both kinds of remote-less workspace, through the legacy (JSON) user grant.
+func TestAHeldReadGrantOverNoRemoteNamesTheMissingRemote(t *testing.T) {
+	for _, host := range []string{"*", "github.com"} {
+		for _, ws := range []string{"non-Git", "no remotes"} {
+			for _, held := range []bool{true, false} {
+				name := host + "/" + ws + "/no grant"
+				if held {
+					name = host + "/" + ws + "/read grant"
+				}
+				t.Run(name, func(t *testing.T) {
+					o, buf, _ := brokeredFixtureOn(t, true, host)
+					if !held {
+						writeRawUserConfig(t, "config.jsonc", "{}\n")
+					}
+					vacuousWorkspace(t, o.Workspace, ws)
+					out := scopeLaunchLine(t, o, buf, gbOn())
+					if !held {
+						if !strings.Contains(out, "gb: grants nothing in this workspace: no read grant applies") {
+							t.Fatalf("a launch with no read grant does not say so:\n%s", out)
+						}
+						if strings.Contains(out, "your read grant applies") {
+							t.Fatalf("a launch with no read grant claims one:\n%s", out)
+						}
+						return
+					}
+					if strings.Contains(out, "no read grant applies") || strings.Contains(out, "To let every workspace read") {
+						t.Fatalf("a held read grant was reported missing:\n%s", out)
+					}
+					want := "gb: your read grant applies, but this workspace has no remote, so the broker has no " +
+						"repository to serve and every call through it is refused; add one with " + addRemote + ", " +
+						"and the next launch asks about it"
+					if host != "*" {
+						want = "gb: your read grant applies, but this workspace has no remote on github.com and no " +
+							"`brokered.gbsrc.repos` entry, so the broker has no repository to serve and every call " +
+							"through it is refused; add a remote with " + addRemote + " (or list the repository under " +
+							"`brokered.gbsrc.repos`), and the next launch asks about it"
+					}
+					if !strings.Contains(out, want) {
+						t.Fatalf("the launch does not name the missing remote as\n  %s\n%s", want, out)
+					}
+				})
+			}
+		}
+	}
+}
+
+// The same line through the readable producer (scopeCheckFromReadable): a TOML user config whose
+// `[allow.github]` puts read in `always` allows the read, and one with read only `on_request`,
+// never requested, does not. Grants there are issued per concrete target, so the producer must
+// read the allowance off its input to tell the two apart.
+func TestAReadableReadAllowanceOverNoRemoteNamesTheMissingRemote(t *testing.T) {
+	for _, ws := range []string{"non-Git", "no remotes"} {
+		for _, held := range []bool{true, false} {
+			name := ws + "/no read allowance"
+			if held {
+				name = ws + "/read allowed"
+			}
+			t.Run(name, func(t *testing.T) {
+				o, buf, marker := brokeredFixtureBlock(t, true,
+					`{"source": "github", "remote_host": "github.com", "read_capability": "read"}`)
+				mod := filepath.Join(t.TempDir(), "github-broker")
+				if err := os.MkdirAll(mod, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				manifest := `{"name": "github-broker", "transport": "loopback-tls", "lifecycle": "spawned",
+				  "host_daemon": {"cmd": ["/bin/cp", "{repository_scope}", "` + marker + `"], "publishes": "socket"},
+				  "brokered": {"source": "github", "remote_host": "github.com", "read_capability": "read"}}`
+				if err := os.WriteFile(filepath.Join(mod, "manifest.jsonc"), []byte(manifest), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				loopholes.SetPackModules([]loopholes.PackModule{{Dir: mod, Pack: "github", HostExecApproved: true}})
+				allow := "[allow.github]\non_request = [\"read\"]\n"
+				if held {
+					allow = "[allow.github]\nalways = [\"read\"]\n"
+				}
+				writeRawUserConfig(t, paths.UserConfigTOMLName, allow)
+				vacuousWorkspace(t, o.Workspace, ws)
+				out := scopeLaunchLine(t, o, buf, ghOn())
+				if !held {
+					if !strings.Contains(out, "github-broker: grants nothing in this workspace: no read grant applies") {
+						t.Fatalf("a launch with no read allowance does not say so:\n%s", out)
+					}
+					return
+				}
+				if strings.Contains(out, "no read grant applies") {
+					t.Fatalf("an allowed read was reported missing:\n%s", out)
+				}
+				want := "github-broker: your read grant applies, but this workspace has no remote on github.com and no " +
+					"`brokered.github.repos` entry, so the broker has no repository to serve and every call through " +
+					"it is refused; add a remote with " + addRemote + " (or list the repository under " +
+					"`brokered.github.repos`), and the next launch asks about it"
+				if !strings.Contains(out, want) {
+					t.Fatalf("the launch does not name the missing remote as\n  %s\n%s", want, out)
 				}
 			})
 		}

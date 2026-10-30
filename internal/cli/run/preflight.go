@@ -469,7 +469,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 		o.IsTTYStdin() && o.IsTTYStderr(), o.AcceptConfigChanges, pr)
 	o.workspaceMounts = nil
 	if ok && err == nil {
-		o.recordApprovedScopes(approved, scope.ApprovedGrants())
+		o.recordApprovedScopes(approved, scope.ApprovedGrants(), scope.ReadWithoutScope())
 		o.workspaceMounts = approvedMounts
 	}
 	if err != nil {

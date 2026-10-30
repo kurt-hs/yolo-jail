@@ -70,11 +70,15 @@ func (o *Options) brokeredScopeCheck(rt string, cfg *jsonx.OrderedMap, read *con
 // recordApprovedScopes keeps what the gate just approved, per loophole, for the spawn: the
 // gate's own in-memory result (WW-P2), never a re-read of the approval record, which a
 // concurrent macos-user session can write between this gate and the spawn. grants are the user
-// grants the same gate approved (config.ScopeCheck.ApprovedGrants), kept beside them.
-func (o *Options) recordApprovedScopes(approved map[string][]config.ScopeRepo, grants map[string][]brokerscope.Grant) {
+// grants are the user grants the same gate approved (config.ScopeCheck.ApprovedGrants), kept
+// beside them, and readWithoutScope the loopholes whose read grant applies over no repository
+// (config.ScopeCheck.ReadWithoutScope), for writeScopeFiles' line.
+func (o *Options) recordApprovedScopes(approved map[string][]config.ScopeRepo, grants map[string][]brokerscope.Grant,
+	readWithoutScope map[string]string) {
 	if approved != nil {
 		o.approvedScopes = approved
 		o.approvedGrants = grants
+		o.readWithoutScope = readWithoutScope
 	}
 }
 
@@ -156,6 +160,23 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 		// A broker with no read grant grants nothing (BB-D108, BB-D110): its gate approved no
 		// scope, and every call through it is refused, so the line says that and how to grant.
 		if !brokerscope.HoldsRead(grants) {
+			// Unless the read grant DOES apply and the workspace names no repository for it: the
+			// gate approved nothing because there is nothing to serve, so the line names the
+			// missing remote and how to add one, never the grant the user already holds.
+			if entryKey, held := o.readWithoutScope[lp.Name]; held && approved {
+				if form == brokerscope.FormRemoteURL {
+					out.printf("[dim]%s: your read grant applies, but this workspace has no remote, so the "+
+						"broker has no repository to serve and every call through it is refused; add one with "+
+						"`git remote add`, and the next launch asks about it[/dim]", lp.Name)
+				} else {
+					out.printf("[dim]%s: your read grant applies, but this workspace has no remote on %s and "+
+						"no `%s` entry, so the broker has no repository to serve and every call through it is "+
+						"refused; add a remote with `git remote add` (or list the repository under `%s`), and "+
+						"the next launch asks about it[/dim]", lp.Name, lp.Brokered.RemoteHost,
+						richtext.Escape(entryKey), richtext.Escape(entryKey))
+				}
+				continue
+			}
 			out.printf("[dim]%s: grants nothing in this workspace: no read grant applies, so every call "+
 				"through it is refused. %s[/dim]", lp.Name, richtext.Escape(config.BrokerGrantAdvice(lp.Brokered.Source)))
 			continue

@@ -339,6 +339,9 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 		// issuing grants per concrete target, scopeCheckFromReadable). The source's last approved
 		// scope, if it had one, still shows as removed, once.
 		if !brokerscope.HoldsRead(s.Grants) || !s.concrete() {
+			// Said apart at the launch: a held grant over no remote is a missing remote, not a
+			// missing grant (ScopeSource.ReadWithoutScope).
+			s.ReadWithoutScope = brokerscope.HoldsRead(s.Grants)
 			s.Read.Remotes, s.Entry, s.Grants, s.GrantFiles, s.UserGrants = nil, nil, nil, nil, nil
 			s.Dormant = !recordHeldLiveScope(rec, b.Source)
 		} else {

@@ -81,6 +81,13 @@ type ScopeSource struct {
 	// the gate compares against no record, and every remote and entry shows as added beside the
 	// grant.
 	FirstRead bool
+	// ReadWithoutScope is a source whose read grant (or readable read allowance) applies, but
+	// whose workspace names no repository for it: no remote its broker serves and no entry. Like
+	// a source with no read grant it is out of the gate and approves an empty scope with no grant
+	// (a read grant over no repository is not a scope), but the launch's line for it differs: the
+	// grant is there and the remote is missing, so the next step is adding a remote, never a grant
+	// the user already holds (ScopeCheck.ReadWithoutScope; run.writeScopeFiles).
+	ReadWithoutScope bool
 }
 
 // grantsRecordKey is the scope part's key for a source's approved grants: `<source>.grants`. A
@@ -815,6 +822,32 @@ func ApprovedGrants(workspace, source string) []brokerscope.Grant {
 		if g, ok := brokerscope.ParseGrant(s); ok {
 			out = append(out, g)
 		}
+	}
+	return out
+}
+
+// ReadWithoutScope names, by loophole label, each in-play source whose read grant applies but
+// whose workspace names no repository (ScopeSource.ReadWithoutScope), mapped to the workspace key
+// that would list one (its EntryKey, else `brokered.<source>.repos`). A launch hands it to the
+// spawn beside ApprovedGrants, so the broker's line names the missing remote instead of a grant
+// the user already holds. nil when no source is in that state.
+func (s *ScopeCheck) ReadWithoutScope() map[string]string {
+	if !s.inPlay() {
+		return nil
+	}
+	var out map[string]string
+	for _, src := range s.Sources {
+		if !src.ReadWithoutScope {
+			continue
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		key := src.EntryKey
+		if key == "" {
+			key = BrokeredReposKey(src.Source)
+		}
+		out[src.Label] = key
 	}
 	return out
 }

@@ -586,6 +586,11 @@ func scopeCheckFromReadable(workspace string, brokers []ScopeBroker, input Reada
 			source.Read.Problem = strings.Join(input.Differences, "; ")
 		}
 		if !brokerscope.HoldsRead(source.Grants) {
+			// Grants are issued per concrete target here, so a read allowance over no target
+			// issues none: whether the read was allowed is read off the input itself. A target
+			// dropped as unserializable (Differences) is not a missing remote, and its problem is
+			// already said at the gate.
+			source.ReadWithoutScope = readableReadAllowed(input, broker.Source) && len(input.Differences) == 0
 			source.Read.Remotes = nil
 			source.Entry = nil
 			source.Grants = nil
@@ -600,6 +605,18 @@ func scopeCheckFromReadable(workspace string, brokers []ScopeBroker, input Reada
 		check.Sources = append(check.Sources, source)
 	}
 	return check
+}
+
+// readableReadAllowed reports whether the readable input lets source's broker read at all: its
+// read capability is in `allow.<source>.always`, or in `on_request` and requested by the
+// workspace — ProduceReadableGateInput's own readAllowed, kept per source in ReadCapabilities.
+func readableReadAllowed(input ReadableGateInput, source string) bool {
+	for _, c := range input.ReadCapabilities {
+		if c.Source == source && (c.Always || (c.OnRequest && c.Requested)) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendUniqueStrings(values []string, additions ...string) []string {
