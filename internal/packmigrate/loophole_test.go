@@ -140,7 +140,8 @@ func assertMigratedProbe(t *testing.T, dir string) {
 		t.Errorf("a written default_enabled = false was not carried over:\n%s", got)
 	}
 	// Settings keep their declaration order, as sub-tables of settings.
-	if strings.Index(got, "[settings.second]") < 0 || strings.Index(got, "[settings.second]") > strings.Index(got, "[settings.first]") {
+	second, first := strings.Index(got, "[settings.second]"), strings.Index(got, "[settings.first]")
+	if second < 0 || second > first {
 		t.Errorf("settings lost their order:\n%s", got)
 	}
 	if strings.Contains(got, "\n[settings]\n") {
