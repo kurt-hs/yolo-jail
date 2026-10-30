@@ -315,7 +315,7 @@ func TestOfferAnsweredYesConvertsThenLaunches(t *testing.T) {
 		t.Errorf("the launch after the conversion was refused (records not respelled?): rc %d\n%s",
 			next.rc, next.combined())
 	}
-	if strings.Contains(next.combined(), "old format") {
+	if strings.Contains(next.combined(), "Deprecated config format") {
 		t.Errorf("the launch after the conversion still sees an old file:\n%s", next.combined())
 	}
 }
@@ -328,7 +328,7 @@ func TestConvertLaterSilencesTheOffer(t *testing.T) {
 
 	control := newOldGraph(t, "")
 	c := runCommand(t, control.dir, append(jailRunArgs(), "--", "bash", "-lc", `true`), withHostSemantics())
-	if c.rc != 0 || !strings.Contains(c.stderr, "old format") {
+	if c.rc != 0 || !strings.Contains(c.stderr, "Deprecated config format") {
 		t.Fatalf("control: a launch without a terminal on an old file should continue and say so: rc %d\n%s",
 			c.rc, c.combined())
 	}
@@ -336,7 +336,7 @@ func TestConvertLaterSilencesTheOffer(t *testing.T) {
 	g := newOldGraph(t, `"convert_later": true`)
 	before := treeBytes(t, g.dir)
 	quiet := runCommand(t, g.dir, append(jailRunArgs(), "--", "bash", "-lc", `command -v hello`), withHostSemantics())
-	if quiet.rc != 0 || strings.Contains(quiet.combined(), "old format") {
+	if quiet.rc != 0 || strings.Contains(quiet.combined(), "Deprecated config format") {
 		t.Errorf("convert_later did not silence the line without a terminal: rc %d\n%s", quiet.rc, quiet.combined())
 	}
 	r := launchAtTerminal(t, g.dir, append(jailRunArgs(), "--", "bash", "-lc", `command -v hello && echo HELLO-ON-PATH`), "", withHostSemantics())

@@ -86,16 +86,25 @@ convert. That's fine."*
 
 ```console
 $ yolo
-~/.config/yolo-jail/config.jsonc is in the old format. Convert it now? [y/N] n
-Launching with the old file; this yolo reads it until 0.20. `yolo config migrate` converts it once
-  every machine that shares it runs 0.17 or newer. To stop this prompt until then, add
-  "convert_later": true to ~/.config/yolo-jail/config.jsonc.
+Deprecated config format: yolo now uses TOML, and this file is still JSONC:
+  ~/.config/yolo-jail/config.jsonc
+The deprecated format will keep working for a few more releases.
+Converting keeps the original next to it, as config.jsonc.pre-migrate.
+
+  Preview:      yolo config migrate --dry-run
+  Stop asking:  add "convert_later": true to ~/.config/yolo-jail/config.jsonc
+
+Convert to TOML now? [y/N] n
+Keeping the JSONC file for now.
 ```
 
-(`y` shows the diff above, writes, and continues the launch. With no terminal the offer prints as
-one line and the launch continues on the old file. `"convert_later": true` in the old user file
-silences the offer for every old file this machine reads; no command writes it. The version
-numbers are illustrative.)
+(`y` converts, says *"Converted. The original is next to the new file, as
+config.jsonc.pre-migrate."*, and continues the launch. A setting with no TOML spelling yet is
+named with its next step, and nothing is changed; a conversion that would change what the config
+means is reported as a yolo bug to file, and nothing is changed. With no terminal the offer is the
+opening line and the two command lines, with no question. `"convert_later": true` in the old user
+file silences the offer for every old file this machine reads; no command writes it. The wording
+is the owner's ([RC-D35](readable-config.md#RC-D35)).)
 
 An old key in a new file, from the same rename table the conversion uses, so nothing is
 maintained for this message alone:

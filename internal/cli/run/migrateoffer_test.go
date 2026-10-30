@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configmigrate"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
@@ -83,8 +84,8 @@ func TestLaunchOfferYesConvertsThenLaunches(t *testing.T) {
 			l.exists("config.toml"), l.exists("config.jsonc.pre-migrate"), l.exists("config.jsonc"), l.stderr.String())
 	}
 	s := l.stderr.String()
-	for _, want := range []string{"still in the old format (JSONC)", "Convert it now? [y/N]", "identical (checked as canonical JSON",
-		"Launching on the converted files"} {
+	for _, want := range []string{"Deprecated config format:", "this file is still JSONC", "Convert to TOML now? [y/N]",
+		"Converted. The original is next to the new file, as config.jsonc.pre-migrate."} {
 		if !strings.Contains(s, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, s)
 		}
@@ -98,19 +99,24 @@ func TestLaunchOfferNoLaunchesOnOldFile(t *testing.T) {
 		t.Fatalf("n changed the user file\nstderr:\n%s", l.stderr.String())
 	}
 	s := l.stderr.String()
-	for _, want := range []string{"[y/N]", "Launching with the old format", "`yolo config migrate`"} {
+	for _, want := range []string{"[y/N]", "Keeping the JSONC file for now."} {
 		if !strings.Contains(s, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, s)
 		}
 	}
-	// Everything needed to decide is said BEFORE the question, not after the answer: which file,
-	// that no is safe, what yes does, how to look first, and how to stop being asked.
+	// Everything needed to decide is said BEFORE the question, in this order: what is deprecated,
+	// which files, that the old format keeps working, where the originals go, how to look first,
+	// and how to stop being asked (RC-D35).
 	ask := strings.Index(s, "[y/N]")
-	for _, want := range []string{filepath.Join(l.userDir, "config.jsonc"), "a few more releases", "answer no",
-		".pre-migrate", "yolo config migrate --dry-run", `"convert_later": true to ` + filepath.Join(l.userDir, "config.jsonc")} {
-		if i := strings.Index(s, want); i < 0 || i > ask {
-			t.Errorf("%q is not said before the question (at %d, question at %d):\n%s", want, i, ask, s)
+	prev := -1
+	for _, want := range []string{"Deprecated config format:", filepath.Join(l.userDir, "config.jsonc"),
+		"keep working for a few more releases", "as config.jsonc.pre-migrate", "Preview:      yolo config migrate --dry-run",
+		`Stop asking:  add "convert_later": true to ` + filepath.Join(l.userDir, "config.jsonc")} {
+		i := strings.Index(s, want)
+		if i < 0 || i > ask || i < prev {
+			t.Errorf("%q is not said in order before the question (at %d, previous at %d, question at %d):\n%s", want, i, prev, ask, s)
 		}
+		prev = i
 	}
 }
 
@@ -126,23 +132,23 @@ func TestLaunchOfferNoTTYPrintsOneLineAndContinues(t *testing.T) {
 	}
 	var lines []string
 	for _, line := range strings.Split(s, "\n") {
-		if strings.Contains(line, "old format") {
+		if strings.Contains(line, "Deprecated config format") {
 			lines = append(lines, line)
 		}
 	}
 	if len(lines) != 1 {
-		t.Fatalf("want one offer line, got %d:\n%s", len(lines), s)
+		t.Fatalf("want one notice line, got %d:\n%s", len(lines), s)
 	}
-	for _, want := range []string{"still works", "`yolo config migrate --dry-run`", `"convert_later": true`} {
-		if !strings.Contains(lines[0], want) {
-			t.Errorf("the offer line lacks %q: %s", want, lines[0])
+	for _, want := range []string{"yolo config migrate --dry-run", `"convert_later": true`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("the notice lacks %q:\n%s", want, s)
 		}
 	}
 }
 
 func TestConvertLaterSilencesTheOffer(t *testing.T) {
 	// The control: the same file without the key is offered, so the silence below is the key's.
-	if control := runOfferLaunch(t, "{\n  \"packs\": []\n}\n", false, ""); !strings.Contains(control.stderr.String(), "old format") {
+	if control := runOfferLaunch(t, "{\n  \"packs\": []\n}\n", false, ""); !strings.Contains(control.stderr.String(), "Deprecated config format") {
 		t.Fatalf("the control launch made no offer:\n%s", control.stderr.String())
 	}
 	for _, terminal := range []bool{true, false} {
@@ -151,7 +157,7 @@ func TestConvertLaterSilencesTheOffer(t *testing.T) {
 		if l.exists("config.toml") {
 			t.Fatalf("terminal=%v: convert_later did not stop the conversion", terminal)
 		}
-		if s := l.stderr.String(); strings.Contains(s, "old format") {
+		if s := l.stderr.String(); strings.Contains(s, "Deprecated config format") {
 			t.Fatalf("terminal=%v: convert_later did not silence the offer:\n%s", terminal, s)
 		}
 	}
@@ -171,7 +177,7 @@ func TestAnAttachIsNotOfferedTheConversion(t *testing.T) {
 		held = live
 	})
 	releaseLock(held)
-	if s := l.stderr.String(); strings.Contains(s, "[y/N]") || strings.Contains(s, "old format") {
+	if s := l.stderr.String(); strings.Contains(s, "[y/N]") || strings.Contains(s, "Deprecated config format") {
 		t.Fatalf("an attach to a running jail was offered the conversion:\n%s", s)
 	}
 	if l.exists("config.toml") || !l.exists("config.jsonc") {
@@ -194,5 +200,40 @@ func TestANeverAttachLaunchIsOfferedBesideARunningJail(t *testing.T) {
 	releaseLock(held)
 	if s := l.stderr.String(); !strings.Contains(s, "[y/N]") {
 		t.Fatalf("a launch that never attaches was not offered the conversion:\n%s", s)
+	}
+}
+
+// A setting with no TOML spelling yet is not a yolo bug: the offer lists it with its own next step,
+// writes nothing, and launches on the old file (RC-D35).
+func TestLaunchOfferYesWithAnUnconvertibleSettingNamesItAndLaunches(t *testing.T) {
+	old := "{\n  \"packs\": [],\n  \"lsp_servers\": {\"rust\": {\"command\": \"rust-analyzer\", \"fileExtensions\": {\".rs\": \"rust\"}}}\n}\n"
+	l := runOfferLaunch(t, old, true, "y\n")
+	l.mustLaunch(t)
+	if l.exists("config.toml") || !l.exists("config.jsonc") {
+		t.Fatalf("an unconvertible setting still converted the file\nstderr:\n%s", l.stderr.String())
+	}
+	s := l.stderr.String()
+	for _, want := range []string{"Some settings can't be converted to TOML yet:", "lsp_servers", "Nothing was changed; launching with your current files."} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "yolo bug") {
+		t.Errorf("an unconvertible setting was called a yolo bug:\n%s", s)
+	}
+}
+
+// A conversion that would change the config's meaning IS a yolo bug, and says where to report it.
+func TestAConversionThatChangesMeaningIsReportedAsABug(t *testing.T) {
+	var stderr bytes.Buffer
+	o := &Options{Stderr: &stderr, Getenv: func(string) string { return "" }}
+	plan := &configmigrate.MigrationPlan{Differences: []configmigrate.Difference{{Layer: "user", Path: "packs", Before: `["a"]`, After: `["b"]`}}}
+	o.reportMigrationRefusal(plan, &configmigrate.InequalityError{Plan: plan}, []string{"/h/.config/yolo-jail/work.jsonc"})
+	s := stderr.String()
+	for _, want := range []string{"Couldn't convert work.jsonc", "this is a yolo bug", "Nothing was changed; launching with your current files.",
+		"Please file it at " + migrationBugURL + " with the output above."} {
+		if !strings.Contains(s, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, s)
+		}
 	}
 }

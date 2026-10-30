@@ -81,7 +81,7 @@ touch /ctx/` + filepath.Base(roSrc) + `/nope 2>/dev/null || echo READONLY-OK`
 	if _, err := os.Stat(filepath.Join(roSrc, "nope")); err == nil {
 		t.Errorf("the read-only mount let the jail write to the host")
 	}
-	if strings.Contains(r.combined(), "old format") {
+	if strings.Contains(r.combined(), "Deprecated config format") {
 		t.Errorf("a launch on TOML files offered a conversion:\n%s", r.combined())
 	}
 }
