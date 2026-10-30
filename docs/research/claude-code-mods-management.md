@@ -204,7 +204,7 @@ lists what the module calls. Claude's own `details` does not count a module at a
 - **The traps:** the read-only skills folder, the policy in [G6](#g6-an-organization-policy-silently-blocks-the-whole-route),
   and the per-workspace state in [G7](#g7-a-mods-saved-state-is-per-workspace).
 - **Keeping a mod Claude wrote:** wrap its folder from the host path of the jail's `~/.claude`, which on podman
-  is `<workspace>/.yolo/home/claude/` ([AGENTS.md:527-530](../../AGENTS.md#L527-L530)). `--from-plugin`
+  is `<workspace>/.yolo/home/claude/` ([AGENTS.md, "Where things live"](../../AGENTS.md#where-things-live)). `--from-plugin`
   already does this.
 
 **Verdict: build now.** Docs only, and it is how a user finds any of the routes above.
