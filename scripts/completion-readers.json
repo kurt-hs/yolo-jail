@@ -6121,6 +6121,7 @@
 "internal/cli/configrefcoverage_test.go",
 "internal/cli/configrefreserved_test.go",
 "internal/cli/configreftieraliases_test.go",
+"internal/cli/configreftoml_test.go",
 "internal/cli/configrenderhost_test.go",
 "internal/cli/configreplace_test.go",
 "internal/cli/configtarget_test.go",
