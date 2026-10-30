@@ -1,8 +1,8 @@
 ---
 title: "Build a matched launcher bundle without changing the install"
 status: accepted
-stage: DECIDED
-next: "Implement the completed plan's paired build, source selection, and no-launch-build tests"
+stage: DESIGN
+next: "Owner rules OQ-MDB1: whether a development launcher that fails to build may recover through the installed launcher. The plan's paired build, source selection and no-launch-build tests are otherwise as stated."
 tags: [development, builds, launch]
 summary: "A build-only development artifact pairs the host launcher with every helper and flake it will run."
 ---
@@ -21,7 +21,7 @@ summary: "A build-only development artifact pairs the host launcher with every h
 
 **Start at [§2](#2-the-matched-artifact-contract)** — every later behavior follows from it.
 
-**Needs your ruling:** None; owner rulings recorded below.
+**Needs your ruling:** [OQ-MDB1](#OQ-MDB1), the recovery path for a development launcher that fails to build. Earlier owner rulings are recorded below.
 
 **Reads with:** [`matched-development-bundles-plan.md`](matched-development-bundles-plan.md) (completed implementation map and gates), [`image-staging-vs-baking.md`](../reference/image-staging-vs-baking.md) (the existing image and mounted-prefix contract).
 
@@ -136,3 +136,15 @@ The design is built when all of the following hold:
 ## 7. Terms
 
 **Matched bundle** *(coined here)* — one immutable build output pairing the host launcher with the helper binaries and flake bundle that launcher selects. Not merely binaries with equal Git commit strings: dirty builds and concurrent edits require one frozen source snapshot.
+
+## 8. Open questions
+
+<a id="OQ-MDB1"></a>**💬 OQ-MDB1: When a development launcher fails to build, may recovery go through the installed launcher, or must it work with no installed launcher at all?**
+
+<!-- vantage: question id=OQ-MDB1 leaning="Require an installed launcher and its matching bundle; with none, refuse and name `just deploy-dev`." -->
+
+Motivation: a development launcher that fails to compile strands its user, who then cannot start the jail that would fix it; the 2026-10-28 stash is the example the fan-out plan cites. Impact: the answer decides whether recovery needs a working installed `yolo`. The plan's recommendation, attributed there to Astra, is to recover through the stable installed launcher and its matching bundle, say plainly that the unfinished code is not running, and refuse when the two are incompatible.
+
+_Leaning:_ Require the installed launcher. Example: `yolo-dev` fails to build, so it starts the installed `yolo` with its matching bundle and prints that the checkout's edits are not running. With no installed launcher it refuses, naming `just deploy-dev`.
+
+**Answer:**
