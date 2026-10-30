@@ -591,6 +591,7 @@ func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []co
 	}
 	return last.End, last.End, []byte(", " + name + ": " + string(value)), nil
 }
+
 // reindentValue re-bases a multi-line encoded value so its continuation lines sit under the
 // member's own indent; the encoder always starts at column zero.
 func reindentValue(value []byte, indent, nl string) string {
