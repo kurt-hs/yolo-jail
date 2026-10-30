@@ -200,7 +200,7 @@ A second jail-daemon pointer already reaches the host, and not through claude. W
 (`openai-auth-adapter`, declared in
 [`packs/codex-auth/loopholes/openai-auth-broker/manifest.jsonc`](../../packs/codex-auth/loopholes/openai-auth-broker/manifest.jsonc)),
 and the pointer is an ungated env var of the codex pack
-([`packs/codex/pack.json`](../../packs/codex/pack.json)). `yolo host -- codex` does not hand it
+([`packs/codex/pack.toml`](../../packs/codex/pack.toml)). `yolo host -- codex` does not hand it
 on: `openaiauthhost.Prepare` replaces it with the address of the adapter it serves itself.
 
 With no base URL, claude runs on whatever login it holds. Rows 1 to 4 are
@@ -216,7 +216,7 @@ unconditionally.
    ([`viaclosure.go`](../../internal/packload/viaclosure.go)), is called by the launch, `yolo
    check` and config validation, and not by `yolo host` ([WG-I8](wire-bridge-gateway.md#WG-I8):
    *"`yolo host` runs neither closure"*). The claude pack needs `aws-auth`, `openai-auth` and
-   `wire-bridge` unconditionally ([`packs/claude/pack.json`](../../packs/claude/pack.json)), and
+   `wire-bridge` unconditionally ([`packs/claude/pack.toml`](../../packs/claude/pack.toml)), and
    `openai-auth` is the only pack that declares the `openai-codex` provider. The host test file
    says so itself: *"bridgeConfig lists wire-bridge explicitly: the one way it reaches the host
    notch, which runs no pack's `needs`"*
@@ -292,7 +292,7 @@ no-op. Six facts, each from the tree:
    sandbox, which runs on the launcher's own network stack (`run.sharesLauncherNetns` answers
    true for the native runtimes).
 5. **The address is one per machine.** 8214 and 8215 are manifest-borne
-   ([`packs/wire-bridge/pack.json`](../../packs/wire-bridge/pack.json)), and
+   ([`packs/wire-bridge/pack.toml`](../../packs/wire-bridge/pack.toml)), and
    [WB-D13](../reference/wire-bridge.md#wb-d13)'s one user-scope override moves the address,
    not its count: *"One writer and a boot-fatal collision are what the ruling buys"*. Two
    concurrent host launches would collide.

@@ -92,7 +92,7 @@ endpoint at `https://openrouter.ai/api`. `kilo` contributes `KILO_API_KEY`, an
 `openai-chat-completions`. It contributed the wire bridge's local `anthropic`
 endpoint at `http://127.0.0.1:8216` as well when this was written; that half is
 **gone** — protocol resolution moved every bridge address into
-[`packs/wire-bridge`](../../packs/wire-bridge/pack.json)'s own `adapter`
+[`packs/wire-bridge`](../../packs/wire-bridge/pack.toml)'s own `adapter`
 contributions, and `8216` was eliminated rather than relocated, because kilo now
 shares the single `openai → anthropic` adaptation
 ([`../reference/protocol-resolution.md`](../reference/protocol-resolution.md)).

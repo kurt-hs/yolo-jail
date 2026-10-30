@@ -418,7 +418,7 @@ https://bedrock-runtime.{region}.amazonaws.com/openai/v1`, beside `aws.region`. 
 > snippet below in two ways: it declares no `options` (declaring any turns on the profile-option
 > census and would refuse user profiles that pass today, the reason [ML-D1](model-lists-and-pickers.md#ML-D1)
 > gives), and each model's facts ride `model_options`, `vendor` among them ([BR-D6](#BR-D6)).
-> The file is [`packs/bedrock/pack.json`](../../packs/bedrock/pack.json).
+> The file is [`packs/bedrock/pack.toml`](../../packs/bedrock/pack.toml).
 
 **Under [OQ-BR9](#decision-ledger)'s leaning (A), one runtime provider holds every model family.** It keeps
 the name `bedrock` and moves out of packs/claude into a new `bedrock` pack, which packs/claude

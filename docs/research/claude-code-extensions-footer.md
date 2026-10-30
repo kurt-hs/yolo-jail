@@ -63,7 +63,7 @@ How this round was done:
 **What it is.** The claude pack's settings defaults set `statusLine` to `yolo internal footer` with Claude's six
 provider switches, seven plain-words labels, three bridged routes and the template
 `{stdin.model.display_name}{ · |stdin.effort.level} · yolo: {yolo.billing} · {yolo.notch}`
-([pack.json:86-91](../../packs/claude/pack.json#L86-L91), READ). The renderer:
+([pack.toml](../../packs/claude/pack.toml), READ). The renderer:
 
 - reads the notch from `config.InJail()` ([footer.go:167-172](../../internal/footer/footer.go#L167-L172));
 - reads the billing route from the agent's env by three rules in order
@@ -181,7 +181,7 @@ reference:124).
 - **Version floor: 2.1.287** (SOURCED, changelog:95-97). Claude 2.1.274 fixed an "unknown key" notice for a
   top-level `$schema` in `hooks/hooks.json` (SOURCED, changelog:1261), so older loaders complained about unknown
   keys there. What a pre-2.1.287 loader does with `modules` is UNMEASURED. No older binary is on disk.
-  - **In a jail** the claude pack installs the latest Claude, unpinned ([pack.json:24-27](../../packs/claude/pack.json#L24-L27)), so the floor holds.
+  - **In a jail** the claude pack installs the latest Claude, unpinned ([pack.toml](../../packs/claude/pack.toml)), so the floor holds.
   - **At the host** your Claude may be older.
 - **A remote switch and local policy can turn it off.** Installed plugins' modules wait on a rollout flag,
   `tengu_plugin_hooks_modules`, default on (MEASURED, binary strings: `var pIe=!0`). Where GrowthBook (Anthropic's
@@ -208,7 +208,7 @@ reference:124).
   gets no yolo segment and runs no renderer. `PromptHint.tail` is terminal-only.
 - **Workspace trust.** *"hooks modules not loaded until workspace trust is accepted"* (MEASURED, binary strings).
   That is the gate the status-line command already has, which the claude pack pre-accepts in a jail
-  ([pack.json:61-65](../../packs/claude/pack.json#L61-L65)). **Same.**
+  ([pack.toml](../../packs/claude/pack.toml)). **Same.**
 - **Consent prompts.** The only consent prompt found is the dev-mods one: *"A mod is code Claude wrote; it runs
   with your permissions"*, with *"Enable for this session"* (MEASURED, binary strings). That prompt covers mods
   Claude writes into `~/.claude/dev-mods`, not installed or skills-dir plugins. No prompt was found for an
@@ -237,9 +237,9 @@ reference:124).
 `<pack>/skills/<plugin>/.claude-plugin/plugin.json` ([pluginpack.go:371-387](../../internal/pluginpack/pluginpack.go#L371-L387)),
 and a skills contribution carries it ([plugins.go:27-34](../../internal/packload/plugins.go#L27-L34)). The claude
 pack's skills contribution has no `from`, so the conventional `skills/` folder applies
-([pack.json:47-54](../../packs/claude/pack.json#L47-L54)). That folder does not exist at `026fca67`
+([pack.toml](../../packs/claude/pack.toml)). That folder does not exist at `026fca67`
 (`packs/claude/` holds `briefing/`, `loopholes/`, `derive.lua` and `pack.json`, READ), so step 2 creates it. The pack is `skills_tier: "namespaced"`
-([pack.json:190](../../packs/claude/pack.json#L190)), so the tree lands whole at `~/.claude/skills/<plugin>/`
+([pack.toml](../../packs/claude/pack.toml)), so the tree lands whole at `~/.claude/skills/<plugin>/`
 ([plugin.go:91](../../internal/hostskills/plugin.go#L91)). The embed takes dot-folders (`all:claude`,
 [embed.go:87](../../packs/embed.go#L87)). One writer serves both notches. In a jail `~/.claude/skills` is a
 read-only bind of yolo's staging copy ([assemble.go:878-879](../../internal/cli/run/assemble.go#L878-L879), and
@@ -290,7 +290,7 @@ flag is decided remotely. So there is no seamless fallback. What remains:
   ([Appendix B](#appendix-b-the-prototype)). Such a value survives in two places:
   - a host file `yolo host apply` filled before;
   - a jail, because the claude settings surface folds your host file in (`readsHost`,
-    [pack.json:94](../../packs/claude/pack.json#L94)).
+    [pack.toml](../../packs/claude/pack.toml)).
 - **yolo does not remove that frozen value.** A dropped default *"is not yolo's output to retire"*, and that rule is
   a standing ruling ([compose.go:278-299](../../internal/agentcfg/compose.go#L278-L299)). The narrow exception, a
   value the target cannot load, does not apply, because the old command still runs
@@ -343,7 +343,7 @@ into a plugin. A `SessionMode` label `jail` would repeat the footer's notch. **V
 ### 7.3 The briefing through `prompt.compose`
 
 A plugin can add a `session`-scoped section to the system prompt (types:3925-3932, 7788-7860). Today the claude
-pack composes `~/.claude/CLAUDE.md` ([pack.json:34-46](../../packs/claude/pack.json#L34-L46)). That file works on
+pack composes `~/.claude/CLAUDE.md` ([pack.toml](../../packs/claude/pack.toml)). That file works on
 every Claude version and shows in `/memory`. A section in the system prompt would be invisible there, would depend
 on an early-access API, and buys only dynamic content, which the briefing does not need. **Verdict: rejected.**
 

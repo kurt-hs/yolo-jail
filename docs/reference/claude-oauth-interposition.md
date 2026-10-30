@@ -645,7 +645,7 @@ the user's own login. `CLAUDE_CONFIG_DIR` stays unset, so `~/.claude` is still C
 directory.
 
 The symlink is still there, and now nothing in Claude's store reads through it:
-[`packs/claude/pack.json`](../../packs/claude/pack.json) declares `.claude` as
+[`packs/claude/pack.toml`](../../packs/claude/pack.toml) declares `.claude` as
 `{"kind":"state","scope":"workspace"}` and `.claude-shared-credentials` as `scope: "machine"`,
 joined by the `shared_credentials` hook, which `linkSharedCredential` in
 [`internal/entrypoint`](../../internal/entrypoint/packhooks.go) renders as a **relative** symlink

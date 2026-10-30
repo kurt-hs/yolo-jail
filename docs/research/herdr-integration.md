@@ -742,7 +742,7 @@ client, so the launcher keeps running. SOURCED
   ([`command.rs`](https://github.com/herdrdev/herdr/blob/v0.9.3/src/integration/command.rs#L27)).
   SOURCED.
 - The claude pack's settings surface reads the host file as a layer (`readsHost: true`,
-  [`pack.json`](../../packs/claude/pack.json#L66-L82)) and deep-merges it with no key filter
+  [`pack.toml`](../../packs/claude/pack.toml)) and deep-merges it with no key filter
   ([`compose.go`](../../internal/agentcfg/compose.go#L389-L416)). SOURCED.
 - So jail Claude runs herdr's hook at every session start, at a host path that does not exist in
   the jail. It fails, and Claude treats a failing `SessionStart` hook as a non-blocking error.

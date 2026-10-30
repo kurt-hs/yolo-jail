@@ -811,7 +811,7 @@ and `HOME` pass through unchanged, and Copilot uses the user's real keychain (ME
 [E18](#E18); no Copilot was run). The copilot pack
 declares no env and no storage setting. It renders `~/.copilot/config.json` read-modify-write,
 adding only `yolo` and `statusLine`, so `copilotTokens` and `storeTokenPlaintext` stay as the user
-left them ([`pack.json`](../../packs/copilot/pack.json)). The one requirement on the new work:
+left them ([`pack.toml`](../../packs/copilot/pack.toml)). The one requirement on the new work:
 **nothing it adds may reach this notch** ([§3.5](#35-who-gets-the-bus-address)).
 
 **That item is the login every jail shares** ([OQ-KC1](#8-decision-ledger)). A host already logged in

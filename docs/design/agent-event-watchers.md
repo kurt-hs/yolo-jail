@@ -1974,7 +1974,7 @@ codex from 0.156.1 to 0.158.0 under `~/.codex/packages/`, as that launcher does 
   becomes a notification; every monitor expires after at most 30 minutes and is re-armed by the
   agent.
 - **yolo's claude pack** renders no Claude Code hook and no messaging setting today (MEASURED,
-  [`packs/claude/pack.json`](../../packs/claude/pack.json)). The maintainer's pack renders
+  [`packs/claude/pack.toml`](../../packs/claude/pack.toml)). The maintainer's pack renders
   `Stop`, `StopFailure` and `Notification` hooks through a `config-overlay` on `claude/settings`
   (MEASURED, `/ctx/packs/matt/pack.json`).
 
@@ -1998,7 +1998,7 @@ All MEASURED under `@earendil-works/pi-coding-agent` in the npm prefix.
 - No built-in listener: nothing in `dist` calls `createServer` or `.listen`. `--mode rpc` drives
   a pi the caller spawned; it cannot attach to a running TUI.
 - yolo's pi pack ships two extensions today through `files` entries into
-  `.pi/agent/extensions/` ([`packs/pi/pack.json`](../../packs/pi/pack.json)).
+  `.pi/agent/extensions/` ([`packs/pi/pack.toml`](../../packs/pi/pack.toml)).
 
 ### A.3 omp
 

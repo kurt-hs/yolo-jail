@@ -61,5 +61,5 @@ Changed implementation seams: `internal/gitproto.Identity` now recognizes only t
 
 - [`git-broker.md`](../design/git-broker.md) — exact URL scope, credential boundary, and SSH/HTTPS transport policy.
 - [`git-broker-plan.md`](../design/git-broker-plan.md) — pack rewrite and broker implementation choices.
-- [`packs/git/pack.json`](../../packs/git/pack.json) — shipped URL rewrite rules; the real-Git test reads this manifest contribution directly.
+- [`packs/git/pack.toml`](../../packs/git/pack.toml) — shipped URL rewrite rules; the real-Git test reads this manifest contribution directly.
 - `internal/gitproto.Identity`, `internal/gitbroker.transportOf` — implementation and refusal seams verified by the tests named above.

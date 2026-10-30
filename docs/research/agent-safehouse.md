@@ -357,8 +357,8 @@ proposal built on them:
   `service`, `blocked-tool`, `requires`
 - a config surface carries `agent`, `name`, `path`, `codec`, `mode`, `defaults`, `managed`,
   and **`readsHost`** — a boolean on a surface, spelled exactly that way, used by exactly two
-  shipped packs ([`packs/claude/pack.json`](../../packs/claude/pack.json) and
-  [`packs/pi/pack.json`](../../packs/pi/pack.json))
+  shipped packs ([`packs/claude/pack.toml`](../../packs/claude/pack.toml) and
+  [`packs/pi/pack.toml`](../../packs/pi/pack.toml))
 
 > [!WARNING]
 > **`writable_home_dirs`, `host_files` and `mise_tools` are user-config keys, not pack schema.**
@@ -435,7 +435,7 @@ investigation, and `opentui` is the TUI library of the **TypeScript** opencode.
 
 *Resolved:* the `opencode-ai` npm package installed in this jail is **version 1.18.31**, ships
 `bin/opencode.exe` with per-platform optional dependencies, and is the TypeScript
-implementation. yolo's [`packs/opencode/pack.json`](../../packs/opencode/pack.json) declares
+implementation. yolo's [`packs/opencode/pack.toml`](../../packs/opencode/pack.toml) declares
 `"package": "opencode-ai"` and a config path of `~/.config/opencode/opencode.json`, and
 [the workspace skills layer](../reference/agent-briefings.md#the-workspace-layer) records `opencode 1.18.31` measured from
 the installed bundle. **yolo tracks the current program; the investigation documents a
@@ -444,7 +444,7 @@ only the prose that is behind.
 
 **2. `pi` — the npm package name disagrees across the two projects, and yolo is right.**
 Safehouse's `pi.md` says *"published as `@mariozechner/pi-coding-agent`"* at version `0.52.9`.
-yolo's [`packs/pi/pack.json`](../../packs/pi/pack.json) declares
+yolo's [`packs/pi/pack.toml`](../../packs/pi/pack.toml) declares
 `"package": "@earendil-works/pi-coding-agent"`.
 
 *Resolved:* the registry entry for `@earendil-works/pi-coding-agent` exists, its latest is

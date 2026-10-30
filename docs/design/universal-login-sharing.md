@@ -14,8 +14,8 @@ vantage:
 
 **Status:** 2026-10-13. Nothing built by this design. Current state verified at `80e08f98b`:
 the pack-declared machine-share mechanism exists and is in use by four packs
-([`packs/claude`](../../packs/claude/pack.json), [`packs/agy`](../../packs/agy/pack.json),
-[`packs/pi`](../../packs/pi/pack.json), [`packs/muse-code`](../../packs/muse-code/pack.json)), and
+([`packs/claude`](../../packs/claude/pack.toml), [`packs/agy`](../../packs/agy/pack.toml),
+[`packs/pi`](../../packs/pi/pack.toml), [`packs/muse-code`](../../packs/muse-code/pack.toml)), and
 [`../reference/agent-credentials.md`](../reference/agent-credentials.md) is the authority for what is
 built.
 
@@ -230,8 +230,8 @@ FAIL: Invalid auth.json credential for provider "providers"
   tolerated: its value must itself be a pi credential, and the Muse doc's `providers` map is not one.
 
 A's storage half is unmet as well. The two packs declare **different** machine-scope `at` dirs today —
-pi at `.pi-shared-credentials` ([`packs/pi/pack.json`](../../packs/pi/pack.json)) and Muse Code at
-`.muse-shared-credentials` ([`packs/muse-code/pack.json`](../../packs/muse-code/pack.json)) — while the
+pi at `.pi-shared-credentials` ([`packs/pi/pack.toml`](../../packs/pi/pack.toml)) and Muse Code at
+`.muse-shared-credentials` ([`packs/muse-code/pack.toml`](../../packs/muse-code/pack.toml)) — while the
 base-name join that would put both `auth.json` files at one path joins inside a **single** `at` dir
 ([`sharedlink.go`](../../internal/entrypoint/sharedlink.go)). A therefore needs one pack's `at` changed
 *as well as* a file both readers accept.

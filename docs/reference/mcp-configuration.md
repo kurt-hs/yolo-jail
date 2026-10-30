@@ -454,7 +454,7 @@ Pi has had its own MCP client since 0.99.0. It reads `~/.pi/agent/mcp.json` alwa
 project's `.pi/mcp.json` only while pi trusts the project (pi 0.99.2,
 `dist/extensions/mcp/config.js`, `loadMcpConfig`). The pi pack writes the first file, writes a
 second while pi-subagents is selected, and cleans up the file it wrote before pi had a client.
-Each rule below is a surface field in [`packs/pi/pack.json`](../../packs/pi/pack.json),
+Each rule below is a surface field in [`packs/pi/pack.toml`](../../packs/pi/pack.toml),
 documented on `manifest.Surface` in [`manifest.go`](../../internal/agentcfg/manifest/manifest.go);
 the rulings are [AM-R1 and AM-R2](../design/agent-directory-map.md#13-decision-ledger).
 

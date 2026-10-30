@@ -221,7 +221,7 @@ only captured edit for `claude/settings` is `enabledPlugins {}`, itself flagged 
 last render — redundant capture"*, with no `model` key; both `claude` binaries on the machine are
 2.1.303 installed the same day, so the host floor's copy is not stale; and the one place yolo
 touches a Bedrock model value — `ANTHROPIC_MODEL`'s `matches` in
-[`packs/claude/pack.json`](../../packs/claude/pack.json) — is a prefix check on the
+[`packs/claude/pack.toml`](../../packs/claude/pack.toml) — is a prefix check on the
 inference-profile/ARN shape that admits every Opus 5.5 id tested, filtering no family. Bedrock
 had the model all along (`us.anthropic.claude-opus-5-5`, `ACTIVE` in `us-east-1`); repinning to
 it gave `Opus 5.5 (1M context) · Amazon Bedrock` on the next launch.

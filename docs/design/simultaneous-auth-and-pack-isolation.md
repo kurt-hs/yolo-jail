@@ -55,7 +55,7 @@ Yolo may render profile-specific default models, lists, and model-level enforcem
 
 ### 1.2 Pack closure describes selected contributions, not per-launch authorization
 
-The workspace's configured packs are selected and their declared dependencies are closed. The Pi pack itself unconditionally needs `bedrock` and `openai-auth` ([`packs/pi/pack.json`](../../packs/pi/pack.json)); selecting Pi therefore includes those dependencies without Claude. Claude can add dependencies of its own, but removing Claude does not remove Pi's `openai-auth` or Bedrock needs. Pi does not declare `wire-bridge` as a need.
+The workspace's configured packs are selected and their declared dependencies are closed. The Pi pack itself unconditionally needs `bedrock` and `openai-auth` ([`packs/pi/pack.toml`](../../packs/pi/pack.toml)); selecting Pi therefore includes those dependencies without Claude. Claude can add dependencies of its own, but removing Claude does not remove Pi's `openai-auth` or Bedrock needs. Pi does not declare `wire-bridge` as a need.
 
 The presence of `openai-auth` in the selected pack closure means its declared contributions participate. It does not by itself establish that this Pi launch received a fresh broker-backed login or made a broker request.
 

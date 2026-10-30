@@ -423,7 +423,7 @@ At `77f52ef1`, yolo's tree never mentioned the daemon, `daemon_auto_start` or `-
 (MEASURED: search over `internal/` and `packs/`; the build that followed the ruling changed this,
 as the note below the table says). The codex pack installs through OpenAI's script, updates with
 `codex update`, and passes only `--dangerously-bypass-approvals-and-sandbox` (MEASURED: the
-`program` and `autonomy` contributions of [`packs/codex/pack.json`](../../packs/codex/pack.json)).
+`program` and `autonomy` contributions of [`packs/codex/pack.toml`](../../packs/codex/pack.toml)).
 None of that skips the daemon ([§2.2](#22-who-starts-it)), so **every interactive Codex yolo
 launched started one** (INFERRED: no yolo launch was run).
 
@@ -456,7 +456,7 @@ launched started one** (INFERRED: no yolo launch was run).
   as long as the jail, which that design needs nothing extra for. Its one wrinkle there is that it
   serves every session with the first session's environment (INFERRED).
 - **It holds state in the per-workspace home.** The pack declares `~/.codex` as per-workspace state
-  (the `state` contribution of [`pack.json`](../../packs/codex/pack.json)), so the daemon package, pid files,
+  (the `state` contribution of [`pack.toml`](../../packs/codex/pack.toml)), so the daemon package, pid files,
   logs, settings and the socket's symlink land in the workspace's home overlay and persist across
   launches. This jail's `~/.codex` has no daemon state yet, and its standalone install's
   latest-channel record, `packages/standalone/auto-update-version`, names the current release,
@@ -483,7 +483,7 @@ launched started one** (INFERRED: no yolo launch was run).
 - **It goes stale after every Codex update yolo installs.** The launcher moves the CLI with
   `codex update` at most hourly ([`shims.go:1462`](../../internal/entrypoint/shims.go#L1462)). The next launch's TUI starts the **old** selected package, prints
   the skew notice and lists the old version's models. yolo's `-p codex` default, `gpt-6.1-sol`
-  since `5e6220e8` ([`packs/codex-auth/pack.json`](../../packs/codex-auth/pack.json#L33-L44)),
+  since `5e6220e8` ([`packs/codex-auth/pack.toml`](../../packs/codex-auth/pack.toml)),
   is not at risk from a 0.157-or-later daemon: its catalog minimum is 0.153.0, and nothing shows the
   server gating it higher ([§1](#1-the-short-answer)). A model the server does gate above the
   daemon's version would be missing. About five minutes in, the updater loop installs the new release and restarts the server,
@@ -501,7 +501,7 @@ launched started one** (INFERRED: no yolo launch was run).
   the daemon's do not, and their output goes to `/dev/null`. So the skew never ends, silently
   (INFERRED).
 - **Disk.** The pack's `versions_dir` covers only `.codex/packages/standalone/releases`, pruned to
-  two ([`pack.json:18`](../../packs/codex/pack.json#L18),
+  two ([`pack.toml`](../../packs/codex/pack.toml),
   [`shims.go:1473`](../../internal/entrypoint/shims.go#L1473)). The daemon's releases directory sits
   beside it, unpruned, at roughly 424 MiB per release per workspace (INFERRED).
 - **Apple Container is unmeasured.** It binds the home over a shared filesystem. The control

@@ -62,7 +62,7 @@ not a subagent the running agent spawns through its own runtime.
 For Pi that is `~/.pi/agent/auth.json`, which the Pi pack links to the machine-scope
 `.pi-shared-credentials/auth.json`. Pi keeps every provider's credential in that one file,
 so the link shares every one of them machine-wide
-([`packs/pi/pack.json` L304-327](../../packs/pi/pack.json#L304-L327)).
+([`packs/pi/pack.toml` L304-327](../../packs/pi/pack.toml)).
 
 The isolated process finds no login, for three reasons:
 
