@@ -123,7 +123,10 @@ func TestClaudesRenderCarriesThePacksChromeDevtoolsEntry(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			e := NewEnv(map[string]string{"JAIL_HOME": home,
+			// A WORKSPACE OF ITS OWN: without one the render keeps its prism state under the
+			// container default, the machine's /workspace/.yolo/prism (scripts/completion-census.py
+			// refuses a test that opens it).
+			e := NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_WORKSPACE": filepath.Join(home, "ws"),
 				"YOLO_MCP_SERVERS": composedChromeWire(t, home, u.(*jsonx.OrderedMap))})
 			var term strings.Builder
 			e.Stderr = &term

@@ -26,5 +26,8 @@ func TestMain(m *testing.M) {
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	}
-	os.Exit(runWithStandInImageBins(m))
+	releaseWorkspaceMise := isolateWorkspaceMise()
+	code := runWithStandInImageBins(m)
+	releaseWorkspaceMise()
+	os.Exit(code)
 }

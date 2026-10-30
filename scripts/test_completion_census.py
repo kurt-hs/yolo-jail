@@ -59,6 +59,37 @@ class ParseLogTest(unittest.TestCase):
             with self.subTest(spelling=spelling):
                 self.assertEqual(self.parse(self.tmp, ["open " + spelling]), (set(), {"."}, set()))
 
+    def test_the_jail_workspace_mise_toml_is_no_reader_from_another_checkout(self):
+        # Production's retire surgery opens the literal /workspace/mise.toml. From any checkout
+        # but /workspace that is not the repository's file, so no reader is recorded.
+        got = self.parse(self.tmp, ["stat /workspace", "open /workspace/mise.toml"])
+        self.assertEqual(got, (set(), set(), set()))
+
+    def test_an_open_under_the_jail_workspace_outside_the_checkout_is_named(self):
+        census.ROOT = self.tmp
+        log = "\n".join(["# test log", "stat /workspace", "stat /workspace/.claude",
+                         "open /workspace/mise.toml", "stat /workspace/flake.nix",
+                         "open " + str(self.tmp / "other" / "data.txt"), "open ../other/data.txt"])
+        self.assertEqual(census.jail_workspace_opens(log, str(self.tmp / "pkg")),
+                         {"/workspace/mise.toml"})
+
+    def test_an_open_of_the_checkout_that_is_the_jail_workspace_is_a_read_not_a_leak(self):
+        census.ROOT = Path("/workspace")
+        self.assertEqual(census.jail_workspace_opens("open /workspace/mise.toml\n", "/workspace/pkg"),
+                         set())
+
+    def test_a_test_that_opens_the_jail_workspace_stops_the_census_with_its_fix(self):
+        census.refuse_jail_workspace_opens({})  # nothing leaked: no refusal
+        with self.assertRaises(census.CensusError) as caught:
+            census.refuse_jail_workspace_opens(
+                {("internal/x", "TestReadsTheLiveCheckout"): {"/workspace/mise.toml"},
+                 ("internal/y", "TestAlsoReadsIt"): {"/workspace/mise.toml"}})
+        message = str(caught.exception)
+        for part in ("internal/x TestReadsTheLiveCheckout", "internal/y TestAlsoReadsIt",
+                     "/workspace/mise.toml", "OverrideWorkspaceMisePath",
+                     "rerun scripts/completion-census.py"):
+            self.assertIn(part, message)
+
     def test_other_directories_and_files_are_still_recorded(self):
         got = self.parse(self.tmp, ["stat " + str(self.tmp / "other"),
                                     "open ../other/data.txt", "stat ../missing"])
