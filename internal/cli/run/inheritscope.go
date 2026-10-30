@@ -180,7 +180,11 @@ func (o *Options) inheritedScopeWithSelector(rt string, stamped bool, selectLega
 	if stamped {
 		stamp = o.inheritStamp()
 	}
-	effective, src := o.effectiveConfigForInherit()
+	effective, src, err := o.effectiveConfigForInherit()
+	if err != nil {
+		return nil, fmt.Errorf("the jail's inherited user config could not be rendered because the config no longer loads: %w. "+
+			"Fix the file it names, run `yolo check` to confirm, then launch again", err)
+	}
 	files, unknown, err := inheritScopeFilesWithSelector(effective, src, rt, stamp, selectLegacy)
 	if err != nil {
 		return nil, err
@@ -735,11 +739,10 @@ func inheritTOMLHeaderFirstLine() string {
 // (R6) comes for free — at depth 2 the effective config already contains what depth 1
 // inherited plus any layer it was passed.
 //
-// A load failure yields nil, which FilterInherit renders as an empty file rather than
-// failing the launch: the run pipeline has ALREADY loaded and validated this config
-// (loadAndValidateConfig, strict) and refused the launch on error, so a failure here means
-// the file changed underneath a launch in progress — and an empty inner scope degrades to
-// "this jail knows of no user config", which is what a user with no config has.
+// A load failure is returned, and the launch refuses: the run pipeline has ALREADY loaded and
+// validated this config (loadAndValidateConfig, strict), so a failure here means the file
+// changed underneath the launch, and rendering an empty inner scope instead would start a jail
+// that silently lacks the user config the host believes it delivered.
 //
 // LESS THE PER-WORKSPACE FILE (config.LoadConfigWithoutWorkspaceFile), the one difference from
 // `yolo config dump`'s computation, and deliberate: that file's switches are for THIS workspace
@@ -750,12 +753,8 @@ func inheritTOMLHeaderFirstLine() string {
 //
 // The provenance comes with it (config.LoadConfigWithoutWorkspaceFileWithSources), so each file
 // records which host file set each key and a refusal in the jail names that file.
-func (o *Options) effectiveConfigForInherit() (*jsonx.OrderedMap, *config.Sources) {
-	cfg, src, err := config.LoadConfigWithoutWorkspaceFileWithSources(o.Workspace, false, func(string) {})
-	if err != nil {
-		return nil, nil
-	}
-	return cfg, src
+func (o *Options) effectiveConfigForInherit() (*jsonx.OrderedMap, *config.Sources, error) {
+	return config.LoadConfigWithoutWorkspaceFileWithSources(o.Workspace, false, func(string) {})
 }
 
 // inheritStamp is the human-readable launch time for the generated files' headers. It uses

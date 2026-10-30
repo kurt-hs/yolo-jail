@@ -130,7 +130,7 @@ func TestAssemblyRefusesNestedJSONDestinationThatStrictUserReaderCannotMerge(t *
 			}
 
 			o := goldenOptions(t.TempDir(), os.Getenv("HOME"))
-			effective, _ := o.effectiveConfigForInherit()
+			effective, _, _ := o.effectiveConfigForInherit()
 			nestedValues, _, err := config.FilterInheritErr(effective, config.InheritNested)
 			if err != nil || nestedValues.Len() == 0 {
 				t.Fatalf("fixture does not provide nonempty nested inheritance: values=%#v err=%v", nestedValues, err)
