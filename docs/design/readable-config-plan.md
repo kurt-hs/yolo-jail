@@ -3,7 +3,7 @@ title: "Readable config: component implementation plan"
 date: 2026-10-26
 status: accepted
 stage: DECIDED
-next: "Build the remainder §1 lists (the loophole manifests), convert this repository's own config once the owner has installed a TOML-reading yolo, then graduate the design to a system doc and retire this plan"
+next: "Graduate the design to a system doc and retire this plan; everything else is built (readable-config.md's ledger)"
 depends-on:
   - readable-config.md
   - config-user.md
