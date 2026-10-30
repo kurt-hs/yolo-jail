@@ -99,3 +99,14 @@ func TestRequestsInTheProjectFileAreNotRefusedAsUserScope(t *testing.T) {
 		t.Fatalf("a project's requests were refused as the user config's: %v", got)
 	}
 }
+
+// "*" was the old `profile` table's every-agent key; `active_provider` renamed it `default`
+// (RC-D4), so "*" names no agent and is refused with the fix.
+func TestActiveProviderRefusesAStarKeyNamingDefault(t *testing.T) {
+	userDir, ws := convertLaterEnv(t)
+	writeConvertLaterFile(t, filepath.Join(userDir, "config.toml"), "[active_provider]\n\"*\" = \"bedrock\"\n")
+	got := errsMentioning(validateLoaded(t, ws), "config.active_provider.*")
+	if len(got) != 1 || !strings.Contains(got[0], "default") {
+		t.Fatalf("errors = %v, want one refusal of the \"*\" key naming `default`", validateLoaded(t, ws))
+	}
+}

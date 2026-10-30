@@ -21,6 +21,12 @@ func validateActiveProvider(cfg *jsonx.OrderedMap, workspace string, errs *[]str
 			"and one <agent> = \"<provider>\" line per agent that differs, or run "+
 			"`yolo config set active_provider.default <provider> --user`.")
 	}
+	if table, ok := activeProviderTable(cfg); ok {
+		if _, star := table.Get("*"); star {
+			add(errs, "config.active_provider.*: \"*\" names no agent. It was the old `profile` table's "+
+				"every-agent key; write `default` instead (`yolo active-provider default <provider>`).")
+		}
+	}
 	if _, legacy := cfg.Get(ProfileKey); legacy {
 		add(errs, activeProviderWithProfileProblem+". Remove `profile`, or run `yolo config migrate` to "+
 			"convert the old file.")
@@ -35,4 +41,10 @@ func validateActiveProvider(cfg *jsonx.OrderedMap, workspace string, errs *[]str
 			"is your choice, not a project's. Move it to "+userFile+" (`yolo config set "+
 			"active_provider.<agent> <provider> --user`), or remove it from the workspace config.")
 	}
+}
+
+func activeProviderTable(cfg *jsonx.OrderedMap) (*jsonx.OrderedMap, bool) {
+	raw, _ := cfg.Get(ActiveProviderKey)
+	table, ok := raw.(*jsonx.OrderedMap)
+	return table, ok
 }
