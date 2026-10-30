@@ -98,9 +98,11 @@ func canNest(rt string) bool { return rt == "podman" } // parity: Honored — on
 // unknown collects config keys the census does not classify. They are DROPPED from every
 // generated file and returned so the caller can say so: silently passing an unclassified
 // key into a jail would defeat the census, and silently dropping it would hide a schema
-// addition. (In a shipped binary the set is always empty — validate.go rejects an unknown
-// top-level key long before assembly — so this is the seam that keeps a future key from
-// slipping through, not a live path.)
+// addition. It is a live path whenever a root the validator accepts has no classification:
+// the readable (TOML) roots once reached it on every launch that set them, until
+// config.readableInheritCensus classified them. Two census tests now hold both vocabularies
+// to it (config.TestInheritCensusIsTotal, config.TestInheritCensusCoversReadableRoots), so
+// a non-empty set means one of them was bypassed.
 //
 // A scope whose filter kept NOTHING yields keys==0, and the caller then delivers no file at
 // all. That matters twice over. It is honest — a user with no relevant config had no user

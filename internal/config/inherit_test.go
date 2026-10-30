@@ -2,11 +2,14 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // THE CENSUS DRIFT TEST (OQ-LP9 R3). A new top-level config key must be classified in
@@ -348,4 +351,142 @@ func mapOf(t *testing.T, kv ...any) *jsonx.OrderedMap {
 		m.Set(k, kv[i+1])
 	}
 	return m
+}
+
+// THE READABLE-ROOT CENSUS. TestInheritCensusIsTotal walks knownTopLevelConfigKeys, the
+// LEGACY key set, so a root that exists only in the readable (TOML) vocabulary was invisible
+// to it: active_provider, allow, requests and pack_sources were dropped from every launch's
+// inherited user scope with a "classify them" warning, and no test failed. This walks the
+// readable schema's own top-level roots, so a new readable root fails the build until it is
+// classified — the same forcing function, over the vocabulary a config.toml is written in.
+func TestInheritCensusCoversReadableRoots(t *testing.T) {
+	roots := map[string]bool{}
+	for _, key := range ReadableSchemaKeys() {
+		root, _, _ := strings.Cut(key.Path, ".")
+		roots[root] = true
+	}
+	var unclassified []string
+	for root := range roots {
+		if _, legacy := inheritCensus[root]; legacy {
+			continue
+		}
+		if _, readable := readableInheritCensus[root]; readable {
+			continue
+		}
+		unclassified = append(unclassified, root)
+	}
+	sort.Strings(unclassified)
+	if len(unclassified) > 0 {
+		t.Fatalf("readable config roots with no inherit classification: %v\n\n"+
+			"Classify each in readableInheritCensus (internal/config/inherit.go) as its legacy\n"+
+			"equivalent is classified in inheritCensus — preflight, nested, both, or neither with\n"+
+			"the reason. An unclassified root is dropped from the jail's user scope at every launch.",
+			unclassified)
+	}
+	var phantom []string
+	for root, d := range readableInheritCensus {
+		if !roots[root] {
+			phantom = append(phantom, root+" (not a readable root)")
+		}
+		if _, legacy := knownTopLevelConfigKeys[root]; legacy {
+			phantom = append(phantom, root+" (a legacy key: classify it in inheritCensus)")
+		}
+		if strings.TrimSpace(d.reason) == "" {
+			t.Errorf("readableInheritCensus[%q] has no reason", root)
+		}
+	}
+	sort.Strings(phantom)
+	if len(phantom) > 0 {
+		t.Errorf("readableInheritCensus classifies keys it should not: %v", phantom)
+	}
+}
+
+// HOST→JAIL EQUALITY for a config.toml written in the readable vocabulary, with all four
+// roots the legacy census could not see. What the host filters for a scope must be exactly
+// what the jail's user reader loads back from the delivered file, and the four roots land
+// where their legacy equivalents do: active_provider like profile and pack_sources like
+// packs (both files), allow like brokered's user ceiling and requests like brokered's
+// per-workspace half (neither). Nothing is reported unclassified.
+func TestInheritedTOMLRoundTripsToTheSameEffectiveConfig(t *testing.T) {
+	host := t.TempDir()
+	t.Setenv("HOME", host)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv(UserLayerEnv, "")
+	write(t, filepath.Join(host, ".config", "yolo-jail", paths.UserConfigTOMLName), `packs = ['claude', 'acme/tools']
+[pack_sources.acme]
+git = 'https://example.invalid/yolo-packs'
+ref = 'main'
+[active_provider]
+default = 'bedrock'
+[allow.aws-auth]
+profile = 'my-sso-profile'
+unnarrowed = true
+`)
+	workspace := t.TempDir()
+	write(t, filepath.Join(workspace, paths.WorkspaceConfigTOMLName), `[requests.github]
+repos = ['acme/shared']
+`)
+	effective, src, err := LoadConfigWithoutWorkspaceFileWithSources(workspace, true, func(string) {})
+	if err != nil {
+		t.Fatalf("host effective config: %v", err)
+	}
+	for _, root := range []string{"active_provider", "allow", "requests", "pack_sources"} {
+		if _, present := effective.Get(root); !present {
+			t.Fatalf("fixture: host effective config lacks %s, so this test proves nothing: %#v", root, effective)
+		}
+	}
+
+	for _, scope := range []InheritScope{InheritPreflight, InheritNested} {
+		t.Run(scope.String(), func(t *testing.T) {
+			t.Setenv("HOME", host)
+			t.Setenv("YOLO_VERSION", "")
+			filtered, unknown, err := FilterInheritErr(effective, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(unknown) != 0 {
+				t.Fatalf("readable roots reported unclassified and dropped: %v", unknown)
+			}
+			for _, root := range []string{"active_provider", "pack_sources", "packs"} {
+				if _, present := filtered.Get(root); !present {
+					t.Errorf("%s did not cross into the %s scope", root, scope)
+				}
+			}
+			for _, root := range []string{"allow", "requests"} {
+				if _, present := filtered.Get(root); present {
+					t.Errorf("%s crossed into the %s scope; it must stay on the host", root, scope)
+				}
+			}
+			body, format, fallback, err := RenderFilteredForDelivery(filtered, src, scope, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if format != configdoc.TOML || fallback != "" {
+				t.Fatalf("a readable config fell back to JSONC delivery: %q\n%s", fallback, body)
+			}
+
+			jail := t.TempDir()
+			t.Setenv("HOME", jail)
+			t.Setenv("YOLO_VERSION", "9.9.9-test")
+			userDir := filepath.Join(jail, ".config", "yolo-jail")
+			write(t, filepath.Join(userDir, paths.UserConfigLegacyJSONCName), "{}\n")
+			write(t, filepath.Join(userDir, "inherited-launch.toml"), body)
+			got, err := LoadReadableUserScopeConfig(true, func(string) {})
+			if err != nil {
+				t.Fatalf("the jail's user reader refused the delivered file: %v\n%s", err, body)
+			}
+			want, _ := projectLegacyB2Config(jsonx.DeepCopyMap(filtered), nil)
+			gotJSON, err := SnapshotJSON(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantJSON, err := SnapshotJSON(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotJSON != wantJSON {
+				t.Fatalf("the jail loads back a different config than the host filtered:\n got %s\nwant %s", gotJSON, wantJSON)
+			}
+		})
+	}
 }

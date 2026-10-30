@@ -385,12 +385,72 @@ var inheritCensus = map[string]keyDisposition{
 	"use_profiles": {reason: "RETIRED — renamed to profile, which mirrors -p/--profile; emitting it would re-trigger the retirement error"},
 }
 
+// readableInheritDisposition is a readable-root census entry: the keyDisposition, plus
+// whether the root is projected FIELD BY FIELD (filterReadableInheritRoot) rather than
+// crossing whole.
+type readableInheritDisposition struct {
+	keyDisposition
+	// projected roots carry their legacy keys' split one field at a time, so the flags above
+	// say only which scopes receive SOME of the root; filterReadableInheritRoot is the rule.
+	projected bool
+}
+
+// readableInheritCensus classifies the top-level roots that exist only in the readable
+// (TOML) vocabulary, which inheritCensus cannot hold: its own drift tests pin it to
+// knownTopLevelConfigKeys, the legacy key set. TestInheritCensusCoversReadableRoots walks
+// ReadableSchemaKeys() and fails on a readable root classified in neither map.
+//
+// EACH ROOT IS CLASSIFIED AS ITS LEGACY EQUIVALENT IS, so a config.toml and the
+// config.jsonc it was converted from give a jail the same user scope.
+var readableInheritCensus = map[string]readableInheritDisposition{
+	// install / machine / env gather legacy keys whose dispositions differ (packages is
+	// nested-only, mise_tools both; gpu neither, resources nested), so they are split per
+	// field to keep each field where its legacy key went.
+	"install": {projected: true, keyDisposition: keyDisposition{preflight: true, nested: true,
+		reason: "per field: mise as mise_tools (both files), nix as packages (nested only)"}},
+	"machine": {projected: true, keyDisposition: keyDisposition{nested: true,
+		reason: "per field: resources, ports and forward as resources/network (nested only); gpu as gpu (neither)"}},
+	"env": {projected: true, keyDisposition: keyDisposition{nested: true,
+		reason: "per field: files, set and unset go where env_sources goes (nested only)"}},
+	// `active_provider` is `profile` renamed (readable-config.md RC-D1, OQ-RC14: the
+	// agent-to-setup selection keeps its job under the new name). It names `providers`, which
+	// cross both files, and is user scope only, which an inherited file is by construction.
+	"active_provider": {keyDisposition: keyDisposition{preflight: true, nested: true,
+		reason: "profile under its readable name: the provider each agent runs on, for this jail's readers and nested launches"}},
+	// `pack_sources` is the source half of what legacy `packs` entries carried inline
+	// (config-user.md §4): `packs = ["acme/tools"]` names a source declared here. `packs`
+	// crosses both files, and a jail reading it without the sources it names could not
+	// resolve the entry at all. Its local paths are host paths, exactly as a legacy path
+	// entry in `packs` was; nothing in-jail stats them (packsrc.ParseSourceDefinitions).
+	"pack_sources": {keyDisposition: keyDisposition{preflight: true, nested: true,
+		reason: "the sources packs entries name; packs crosses both files and cannot be resolved without them"}},
+	// `allow` is the user's ceiling over what a project may be granted — the readable form of
+	// brokered's user-scope grants (config-user.md §3 rule 6; A.4: "`allow` is user scope
+	// only"; A.2: the jail's copy omits the broker grants). brokered crosses into neither file,
+	// and a ceiling inherited as a nested launch's user scope would let a jail's own projects
+	// request host access with no human at the host approving it (readable-config-plan.md:
+	// nested inheritance has "no service authority widening").
+	"allow": {keyDisposition: keyDisposition{
+		reason: "the user's ceiling on host access a project may request; like brokered's grants, never inherited by a jail"}},
+	// `requests` is project scope only (config-user.md §3 rule 6: "`requests` in a project is
+	// the request"), the readable form of brokered's per-workspace repos. It reaches this
+	// filter only from the launching workspace's own file; inherited as user scope it would
+	// apply to every workspace an inner launch opens (brokered's reason), and the user-scope
+	// reader refuses it. A nested workspace's own config carries its own.
+	"requests": {keyDisposition: keyDisposition{
+		reason: "one project's request, approved at its own gate; as inherited user scope it would apply to every workspace an inner launch opens, and user scope refuses it"}},
+}
+
 // InheritDisposition returns the census entry for a key, and ok=false for a key the census
 // does not know. Callers use it to explain a dropped key rather than dropping it silently.
 func InheritDisposition(key string) (preflight, nested bool, reason string, ok bool) {
 	d, found := inheritCensus[key]
 	if !found {
-		return false, false, "", false
+		readable, isReadable := readableInheritCensus[key]
+		if !isReadable {
+			return false, false, "", false
+		}
+		d = readable.keyDisposition
 	}
 	return d.preflight, d.nested, d.reason, true
 }
@@ -399,10 +459,16 @@ func InheritDisposition(key string) (preflight, nested bool, reason string, ok b
 // comment and a test, both of which want a stable order.
 func InheritKeys(scope InheritScope) []string {
 	var out []string
-	for k, d := range inheritCensus {
+	add := func(k string, d keyDisposition) {
 		if (scope == InheritPreflight && d.preflight) || (scope == InheritNested && d.nested) {
 			out = append(out, k)
 		}
+	}
+	for k, d := range inheritCensus {
+		add(k, d)
+	}
+	for k, d := range readableInheritCensus {
+		add(k, d.keyDisposition)
 	}
 	sort.Strings(out)
 	return out
@@ -519,11 +585,12 @@ func filterInheritMap(effective *jsonx.OrderedMap, scope InheritScope, policy ma
 			}
 			continue
 		}
-		if k == "install" || k == "machine" || k == "env" {
-			unknown = append(unknown, k)
-			continue
-		}
 		d, ok := inheritCensus[k]
+		if readable, isReadable := readableInheritCensus[k]; isReadable {
+			// A projected root that filterReadableInheritRoot did not recognize has a shape
+			// its per-field rule cannot split, so it is reported rather than passed whole.
+			d, ok = readable.keyDisposition, !readable.projected
+		}
 		if !ok {
 			unknown = append(unknown, k)
 			continue
@@ -539,9 +606,9 @@ func filterInheritMap(effective *jsonx.OrderedMap, scope InheritScope, policy ma
 	return out, unknown
 }
 
-// filterReadableInheritRoot is the bounded canonical-vocabulary projection for B2 keys
-// already represented by the legacy census. Every other readable root remains unclassified
-// until its owning consumer has an inheritance rule.
+// filterReadableInheritRoot is the per-field projection for the readable roots
+// readableInheritCensus marks projected. Every other readable root crosses whole, by its
+// readableInheritCensus disposition.
 func filterReadableInheritRoot(key string, value any, scope InheritScope) (any, bool) {
 	m, ok := value.(*jsonx.OrderedMap)
 	if !ok {
