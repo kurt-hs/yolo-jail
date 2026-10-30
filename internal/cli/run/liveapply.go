@@ -624,7 +624,7 @@ func (o *Options) configChangesPending(rt, cname string, cfg *jsonx.OrderedMap, 
 		if have, ok := readCtxMountRecordSeam(cname, envLines); ok {
 			// No gate runs here: the writable requests compared are the ones the approval record
 			// already holds (RC-D24), so an unapproved one reads as a pending change.
-			o.writableRequests = config.ApprovedWritableRequests(o.Workspace)
+			o.workspaceMounts = config.ApprovedWorkspaceMounts(o.Workspace)
 			if add, rm := diffCtxMountsSeam(have, o.configCtxMounts(rt, cfg, nil)); len(add) > 0 || len(rm) > 0 {
 				return true
 			}

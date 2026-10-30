@@ -2,7 +2,7 @@ package run
 
 // ctxmountsrequest_test.go pins RC-D24's last steps at the launch's call sites: a writable mount
 // a project's TOML config requests is bound read-write from what the config-change gate approved
-// (runConfigGate keeps it on Options.writableRequests), at the path the gate resolved; nothing
+// (runConfigGate keeps it on Options.workspaceMounts), at the path the gate resolved; nothing
 // re-reads the workspace files to learn what to mount, so a request no gate approved is never
 // bound; the gate refuses a request that fails a refusal before it asks anything; and the
 // assembler refuses a launch whose approved request no longer resolves to the approved path.
@@ -146,8 +146,8 @@ func TestTheGateRefusesARequestItsOwnReadFails(t *testing.T) {
 			if _, err := os.Stat(config.ApprovalSnapshotPath(ws)); !os.IsNotExist(err) {
 				t.Fatalf("a refused request was recorded (stat err %v)", err)
 			}
-			if len(o.writableRequests) != 0 {
-				t.Fatalf("a refused gate left requests to bind: %+v", o.writableRequests)
+			if len(o.workspaceMounts) != 0 {
+				t.Fatalf("a refused gate left requests to bind: %+v", o.workspaceMounts)
 			}
 		})
 	}
@@ -176,8 +176,8 @@ func TestTheAssemblerRefusesARequestWhoseLinkMoved(t *testing.T) {
 	if !o.checkConfigChanges(merged, "podman") {
 		t.Fatalf("the gate refused:\n%s", buf)
 	}
-	if len(o.writableRequests) != 1 || o.writableRequests[0].Resolved != harmless {
-		t.Fatalf("approved = %+v, want the link resolved to %s", o.writableRequests, harmless)
+	if len(o.workspaceMounts) != 1 || o.workspaceMounts[0].Resolved != harmless {
+		t.Fatalf("approved = %+v, want the link resolved to %s", o.workspaceMounts, harmless)
 	}
 	if err := os.Remove(link); err != nil {
 		t.Fatal(err)

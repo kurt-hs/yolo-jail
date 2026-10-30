@@ -39,7 +39,7 @@ var configKeys = map[string]Entry{
 	"mounts": {
 		PodmanLinux: honored("configCtxMounts (ctxmounts.go) binds each entry read-only under " +
 			"/ctx; a read-write entry from the user config (config.LoadRWMounts) or an approved " +
-			"project request (config.LoadWorkspaceRWMounts) is named on " +
+			"project request the config-change gate approved (config.ApproveWorkspaceRead) is named on " +
 			"every launch"),
 		PodmanMac: honored("the same binds, made inside the Podman Machine VM; a source outside " +
 			"the machine's share set refuses the launch before the container starts " +

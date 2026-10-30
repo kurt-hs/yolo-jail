@@ -724,10 +724,16 @@ func ScopeChanges(workspace string, scope *ScopeCheck) (ChangeReport, error) {
 // by --accept-config-changes, and by a host `yolo check --accept-config-changes`, so the parts
 // land together.
 func RecordApproval(workspace string, wsConfig *jsonx.OrderedMap, scope *ScopeCheck) error {
+	return recordApproval(workspace, wsConfig, nil, scope)
+}
+
+// recordApproval is RecordApproval with each workspace mount's source recorded as resolved
+// says (a source it does not name, as it resolves now).
+func recordApproval(workspace string, wsConfig *jsonx.OrderedMap, resolved map[string]string, scope *ScopeCheck) error {
 	if scope != nil && scope.Fatal != nil {
 		return scope.Fatal
 	}
-	currentJSON, err := SnapshotJSON(approvalConfigPart(wsConfig))
+	currentJSON, err := SnapshotJSON(approvalConfigPartWith(wsConfig, resolved))
 	if err != nil {
 		return err
 	}

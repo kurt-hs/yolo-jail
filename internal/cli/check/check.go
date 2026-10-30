@@ -721,7 +721,7 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 			if err != nil {
 				r.fail("Could not read the workspace config to record its approval: "+termsafe.Visible(err.Error()),
 					"Fix it in the file this names, then: yolo check --accept-config-changes")
-			} else {
+			} else if mounts, ok := o.acceptWorkspaceMounts(r, workspace, workspaceConfig, read, resolver); ok {
 				// The approval record's scope part too, where a launch would start a
 				// brokered loophole: the check reads the remotes and the entry as the launch
 				// would, shows what changed, and every part lands together
@@ -733,7 +733,7 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 						r.line("    " + line)
 					}
 				}
-				if writeErr := config.RecordApproval(workspace, read.Config, scope); writeErr == nil {
+				if writeErr := config.RecordApprovalOfRead(workspace, read, mounts, scope); writeErr == nil {
 					r.ok("Approved workspace config recorded to host approval snapshot")
 					for _, s := range scopeSourcesOf(scope) {
 						if s.Dormant {

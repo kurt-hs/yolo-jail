@@ -203,6 +203,29 @@ skipped optional mount: ~/.local/share/yolo-jail/logs → /ctx/host-yolo-logs (m
   briefing is composed before the DAC preflight runs, so an element skipped by the preflight alone
   is still listed there; the marker and the launch's skip line say it may not be present.
 
+### Mount sources and links
+
+[oq-cx-symlink](#oq-cx-symlink) governs every `mounts` element a **workspace** config declares,
+read-only or writable, JSONC or TOML. A user-scope element is not judged by it.
+
+- **A source written inside the workspace, or inside another mount, is refused.** "Written" means
+  the path as the entry spells it, with `~` expanded and made absolute, before any symbolic link
+  is followed. The jail already has the workspace at `/workspace`, and a link there is the
+  agent's: `mounts = ["./notes"]` with `notes` linked to `~/.ssh` would otherwise bind `~/.ssh`.
+  "Another mount" is any other element of the workspace or user config, matched as written and
+  as resolved. `yolo check` and the launch both refuse it at the entry's line.
+- **Any other link is followed, and the approval names where it lands.** The config-change
+  prompt, the no-terminal refusal, the `--accept-config-changes` report and
+  `yolo check --accept-config-changes` show each mount's resolved destination, with the path as
+  written beside it when the two differ. The approval record holds those destinations, so a link
+  repointed after the approval changes the record and asks again.
+- **The launch binds the approved destination.** It resolves the source again and refuses the
+  launch, naming both paths, when the source now resolves elsewhere; the next step is to launch
+  again and approve the new destination at the prompt.
+
+The first launch after this rule shipped asks once for every workspace that declares a mount,
+because the record now holds the destinations.
+
 ### Where a read-write mount may be declared
 
 <a id="CX-D7"></a>
@@ -223,9 +246,11 @@ workspace scoping and the [config-change diff prompt](config-safety.md).
 
 #### A project may request one, once your config allows it
 
-[RC-D24](../design/readable-config.md#RC-D24) supersedes OQ-WT1 with one exception. A
-**request** is a `mounts` table with `write = true` in a project's TOML config,
-`yolo-jail.toml` or `yolo-jail.local.toml` or a TOML file either includes. The **ceiling** is
+[RC-D24](../design/readable-config.md#RC-D24) supersedes [`OQ-WT1`](../design/workspace-config-trust.md#OQ-WT1) with one exception. A
+**request** is a `mounts` table with `write = true` written by a project's TOML config file
+itself, `yolo-jail.toml` or `yolo-jail.local.toml`. A file either one includes cannot request
+one, and neither can a TOML file a JSONC config includes, so the file a human reviews is the
+file that asks. The **ceiling** is
 two lines in your user config:
 
 ```toml
@@ -255,11 +280,17 @@ on_request = ["write"]
   changes only where a read-write element may be written. It never changes what the element may
   reach.
 
-`config.LoadWorkspaceRWMounts` is the run pipeline's second source of read-write elements, beside
-`config.LoadRWMounts`. It reads the workspace files with their record, so it never returns an
-element that a JSONC file wrote. It reads the ceiling from the user scope directly. Inside a jail,
-for the jail's own workspace, the request is not judged again: the host has already judged it
-against its user's ceiling.
+- **The host must be absolute or start with `~`.** A relative path would resolve against
+  wherever yolo was started.
+- **`allow` is user-scope only.** A workspace config that sets it is refused at the key.
+- **The launch binds what the gate approved.** The config-change gate reads the workspace files
+  once, with their record, and runs every refusal above on that read before it asks. The
+  launch then binds each approved request at the destination the gate showed
+  ([Mount sources and links](#mount-sources-and-links)), and nothing re-reads the files to learn
+  what to mount. `yolo check --accept-config-changes` runs the same refusals on its own read,
+  prints the same block and records the same destinations. Inside a jail, for the jail's own
+  workspace, the request is not judged again: the host has already judged it against its user's
+  ceiling.
 
 ### The refusal set
 
@@ -747,7 +778,7 @@ only place the values themselves are stated.
 
 | ID | Ruling | Why it stays |
 | :--- | :--- | :--- |
-| <a id="oq-cx-symlink"></a>[`Mount sources and links`, 2026-10-29](#oq-cx-symlink) | Every mount a workspace config declares, read-only or writable: (1) a source whose written path is inside the workspace, or inside any other mount (no mounts in mounts), is refused; (2) the config-change approval shows and records the source's resolved destination beside the written path, and the launch refuses a source that now resolves elsewhere. Not yet built | The maintainer: *"let's just include the destination in the approval prompt and recording. this combined with no symlinks in agent writeable locations (this means no mounts in mounts I guess) makes it safe."* A link in a place the jail can write is the agent's, so following it lets the agent choose what is mounted; a link elsewhere is safe once the human approves where it lands. |
+| <a id="oq-cx-symlink"></a>[`Mount sources and links`, 2026-10-29](#oq-cx-symlink) | Every mount a workspace config declares, read-only or writable: (1) a source whose written path is inside the workspace, or inside any other mount (no mounts in mounts), is refused; (2) the config-change approval shows and records the source's resolved destination beside the written path, and the launch refuses a source that now resolves elsewhere. Built: [Mount sources and links](#mount-sources-and-links) | The maintainer: *"let's just include the destination in the approval prompt and recording. this combined with no symlinks in agent writeable locations (this means no mounts in mounts I guess) makes it safe."* A link in a place the jail can write is the agent's, so following it lets the agent choose what is mounted; a link elsewhere is safe once the human approves where it lands. |
 | <a id="oq-cx3"></a>[`OQ-CX3`](#oq-cx3) | The read-only form keeps its ordinary rules and takes no share of the rw refusal predicate, answered by [OQ-PR3](podman-readiness.md#why-its-this-way) | The maintainer ruled that a jail mounting the logs dir may read it: *"It's just like anything else on the host, it's outside of their view."* The shared predicate would refuse that mount. Whether a workspace config may declare any host mount is a scope question, [OQ-AS3](../research/agent-safehouse.md#OQ-AS3), whose presentation should name a user-scope ro mount of `$HOME`. |
 | <a id="oq-cx5"></a>[`OQ-CX5`](#oq-cx5) | DP-D15 is narrowed: deliver by link plus Seatbelt where the preflight and siting pass, refuse fatally elsewhere | DP-D15 is conditional in the maintainer's words (*"if we can't do it, we can't do it, we'll just make it a fatal error"*), and [OQ-DP4](../design/declaration-parity.md#decision-ledger) asked for delivery *"however we can make it work"*. DP-D15 said "can't" because a copy was the only mechanism; for a reachable source it is not. |
 | <a id="oq-cx7"></a>[`OQ-CX7`](#oq-cx7) | A context source inside a real home stays refused on macos-user; no ACL grant, no per-launch clone ([CX-D23](#CX-D23)) | The maintainer: *"I don't want to start setting ACLs or whatever on files and home directories … If you want to share something, you must put it in a shared location, and I think that's going to solidify mental models … And I also don't want this clone. That could be very slow."* |

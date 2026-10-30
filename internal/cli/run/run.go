@@ -519,13 +519,14 @@ func Run(opts Options) (rc int) {
 		// approval prompt, a host service or any staging — a refusal says what to do before the
 		// launch asks anything else (DP-D15). A --dry-run refuses too: its plan would describe a
 		// launch that cannot happen. No `mounts` key and no pack `mount` decides nothing.
-		// A WRITABLE MOUNT REQUEST (RC-D24) is planned here, before the gate approves it, as the
-		// gate's own read would give it, so its siting refuses before anything is asked; the gate
-		// below must then approve exactly this set, or the launch refuses (sameWritableRequests).
-		var plannedWritable []config.WritableRequest
+		// THE WORKSPACE'S MOUNTS (oq-cx-symlink; RC-D24's writable requests among them) are planned
+		// here, before the gate approves them, at the destinations the gate's own read would give,
+		// so their siting refuses before anything is asked; the gate below must then approve
+		// exactly this set, or the launch refuses (sameWorkspaceMounts).
+		var plannedWritable []config.WorkspaceMount
 		if !o.DryRun {
-			o.writableRequests = o.pendingWritableRequests()
-			plannedWritable = o.writableRequests
+			o.workspaceMounts = o.pendingWorkspaceMounts()
+			plannedWritable = o.workspaceMounts
 		}
 		ctxLinks, ctxCopies, ok := o.planMacosUserCtxMounts(cfg, staged.packs)
 		if !ok {
@@ -576,8 +577,8 @@ func Run(opts Options) (rc int) {
 		if !o.DryRun && !o.checkConfigChanges(cfg, rt) {
 			return 1
 		}
-		if !o.DryRun && !sameWritableRequests(plannedWritable, o.writableRequests) {
-			o.pr(o.Stderr).print("[bold red]The workspace config's writable host mounts changed while yolo " +
+		if !o.DryRun && !sameWorkspaceMounts(plannedWritable, o.workspaceMounts) {
+			o.pr(o.Stderr).print("[bold red]The workspace config's mounts changed while yolo " +
 				"was reading it, so the mounts planned for this launch are not the ones just approved. " +
 				"Nothing was launched.[/bold red]\n[dim]Launch again: the config-change prompt shows the " +
 				"mounts as they are now.[/dim]")
@@ -3158,7 +3159,7 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 			facts.Packs = mechanicsPackNames(view.staged.packs)
 			// An attach runs no gate, so the briefing lists the writable requests the approval
 			// record holds (RC-D24), the ones this jail's launch bound.
-			o.writableRequests = config.ApprovedWritableRequests(o.Workspace)
+			o.workspaceMounts = config.ApprovedWorkspaceMounts(o.Workspace)
 			_, refreshErr = o.refreshJailBriefings(cname, cfg, rt, view.staged, o.launchedIOPriority(rt, envLines), facts)
 		} else {
 			if factsOK {

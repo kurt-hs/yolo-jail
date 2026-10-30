@@ -698,7 +698,16 @@
     after printing the same block.  `allow.mounts` has no `always`: every
     writable mount is approved per project.  `write` and `mode` together are
     an error.  The JSONC config files are not backported: a read-write entry
-    there keeps the refusal above.  A request meets every rule below.
+    there keeps the refusal above.  Only yolo-jail.toml and yolo-jail.local.toml
+    themselves may request one, never a file they include, and `host` must be
+    absolute or start with "~".  A request meets every rule below.
+    [bold]A workspace config's mounts, read-only or read-write:[/bold] a source whose
+    path AS WRITTEN (before any symbolic link is followed) is inside the
+    workspace, or inside another mount, is a `yolo check` error and the launch
+    refuses — a link there is the agent's to point at ~/.ssh.  Any other link
+    is followed, and the config-change prompt shows and records where it
+    lands; a source that later resolves elsewhere refuses the launch until
+    you approve the new destination.
     A read-write source is also REFUSED when it is, or contains, your home,
     ~/.config/yolo-jail or ~/.local/share/yolo-jail, sits inside either yolo
     directory, or overlaps the workspace in either direction (a second

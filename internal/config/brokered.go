@@ -649,15 +649,16 @@ func brokeredWindow(s string, ceiling bool) bool {
 // and whether or not a broker starts, so turning the broker on or off never moves those bytes. It
 // never goes inside SnapshotJSON, which drift, the delivery copy and the inherited files share.
 //
-// It also carries every writable `mounts` element's host path AS RESOLVED (writableRecordKey,
-// RC-D24): a request approved as "<link>" must ask again once the link points elsewhere, so the
-// record holds what the human approved, not only what the agent wrote.
+// It also carries every workspace `mounts` element's source AS RESOLVED (mountRecordKey,
+// oq-cx-symlink in docs/reference/context-mounts.md): a mount approved as "<link>" must ask again
+// once the link points elsewhere, so the record holds what the human approved, not only what the
+// agent wrote.
 func approvalConfigPart(wsCfg *jsonx.OrderedMap) *jsonx.OrderedMap {
 	return approvalConfigPartWith(wsCfg, nil)
 }
 
 // approvalConfigPartWith is approvalConfigPart with the host paths the gate already resolved
-// (WorkspaceRead.WritableRequests), so the record holds exactly the paths the launch binds.
+// (WorkspaceRead.Mounts), so the record holds exactly the destinations the launch binds.
 func approvalConfigPartWith(wsCfg *jsonx.OrderedMap, resolved map[string]string) *jsonx.OrderedMap {
 	if wsCfg == nil {
 		return jsonx.NewOrderedMap()
@@ -673,7 +674,7 @@ func approvalConfigPartWith(wsCfg *jsonx.OrderedMap, resolved map[string]string)
 			part.Set(k, v)
 		}
 	}
-	return withWritableRecord(part, wsCfg, resolved)
+	return withMountRecord(part, wsCfg, resolved)
 }
 
 // validateBrokered checks the `brokered` key, each scope read on its own: the merged value

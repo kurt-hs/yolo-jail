@@ -139,6 +139,8 @@ type ChangedNonInteractiveError struct {
 	Workspace string
 	// WritableMounts are ChangeReport.WritableMounts: printed loud, before the diff.
 	WritableMounts []string
+	// MountSources are ChangeReport.MountSources, printed after them.
+	MountSources []string
 }
 
 // Headline states what happened and why the launch stopped. It names the repository scope
@@ -219,7 +221,7 @@ func (e *ChangedNonInteractiveError) Error() string {
 	var b strings.Builder
 	b.WriteString(e.Headline())
 	b.WriteString("\n\n")
-	for _, line := range WritableMountBlock(e.WritableMounts) {
+	for _, line := range append(WritableMountBlock(e.WritableMounts), MountSourceBlock(e.MountSources)...) {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -286,11 +288,16 @@ type ChangeReport struct {
 	// Workspace is the launch's workspace, for that step.
 	Workspace string
 	// WritableMounts are the writable host mounts the changed workspace config holds, one line
-	// each (WritableRequest.Line: the resolved host path, the jail path, and the path as written
+	// each (WorkspaceMount.Line: the resolved host path, the jail path, and the path as written
 	// when it differs), set only when the config part changed: approving the diff
 	// approves them (RC-D24), so every renderer shows them loud — red, and marked
 	// WritableMountMarker so they stay loud with color off (WritableMountBlock).
 	WritableMounts []string
+	// MountSources are the read-only mounts the changed workspace config declares, one line each
+	// (WorkspaceMount.Line), set only when the config part changed: approving the diff approves
+	// each at the destination shown (oq-cx-symlink in docs/reference/context-mounts.md), so
+	// every renderer shows them (MountSourceBlock).
+	MountSources []string
 }
 
 // ReportPrompter is a ChangePrompter that can show the whole report, so the header and the
@@ -448,7 +455,10 @@ func approveConfigAndScope(workspace string, config *jsonx.OrderedMap, resolved 
 		ConfigFiles: configFiles, ScopeLabels: sc.labels, Workspace: workspaceOrCwd(workspace)}
 	if configChanged {
 		// RC-D24: approving this diff approves every writable mount in it, so it is shown loud.
-		report.WritableMounts = requestLines(writableElements(config, resolved))
+		mounts := mountElements(config, resolved)
+		report.WritableMounts = mountLines(mounts, true)
+		// oq-cx-symlink: and every read-only one, at the destination its source resolves to.
+		report.MountSources = mountLines(mounts, false)
 	}
 
 	if !isTTY {
@@ -467,6 +477,7 @@ func approveConfigAndScope(workspace string, config *jsonx.OrderedMap, resolved 
 				ScopeLabels:          sc.labels,
 				Workspace:            workspaceOrCwd(workspace),
 				WritableMounts:       report.WritableMounts,
+				MountSources:         report.MountSources,
 			}
 			if sc.changed {
 				e.ScopePath = scopePath
@@ -476,7 +487,7 @@ func approveConfigAndScope(workspace string, config *jsonx.OrderedMap, resolved 
 		// Granted by the flag: shown, then recorded exactly as a `y` does, or the next
 		// launch prompts (or refuses) over the same change all over again. A writable mount
 		// is shown as a scope change is (WW-D20): the flag approves it, but never unseen.
-		if ar, ok := prompter.(AcceptedReporter); ok && (sc.changed || len(report.WritableMounts) > 0) {
+		if ar, ok := prompter.(AcceptedReporter); ok && (sc.changed || len(report.WritableMounts) > 0 || len(report.MountSources) > 0) {
 			ar.ReportAccepted(report)
 		}
 		if err := recordAll(); err != nil {

@@ -131,7 +131,7 @@ func validationUserScope(edit ...*editValidationContext) *jsonx.OrderedMap {
 }
 
 // loadMountsWorkspaceConfig is the workspace config, with its record, as validateMountScope and
-// LoadWorkspaceRWMounts re-read it. It is the format-aware reader (loadReadableWorkspaceConfig:
+// validateWorkspaceAllow re-read it. It is the format-aware reader (loadReadableWorkspaceConfig:
 // yolo-jail.toml or yolo-jail.jsonc, and each one's local file), never loadWorkspaceConfig,
 // which loadValidationWorkspaceConfigWithNode uses and which finds no TOML workspace file: a
 // scope check through it would never see a TOML project's request at all. An edit validates
@@ -187,7 +187,7 @@ func validateWorkspaceAllow(config *jsonx.OrderedMap, workspace string, errs *[]
 // it stays loud with color off (docs/reference/cli-color.md).
 const WritableMountMarker = "WRITABLE HOST MOUNT"
 
-// WritableMountBlock is the plain-text block the gate shows for lines (WritableRequest.Line):
+// WritableMountBlock is the plain-text block the gate shows for lines (WorkspaceMount.Line):
 // one marked line per mount, then what approving means. nil for none.
 func WritableMountBlock(lines []string) []string {
 	if len(lines) == 0 {

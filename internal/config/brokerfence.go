@@ -22,7 +22,7 @@ import (
 // state directory (context-mounts.md#the-refusal-set clause 1, config.rwMountRefusal).
 //
 // The fenced paths are brokerMountFences' (mountsrequestbind.go), which the config-change gate
-// also runs on a writable mount request it read itself (CheckWritableRequests).
+// also runs on a writable mount request it read itself (CheckWorkspaceMounts).
 
 func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver,
 	errs, warns *[]string, edit ...*editValidationContext) {

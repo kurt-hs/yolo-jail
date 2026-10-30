@@ -416,8 +416,8 @@ type gateHooks struct {
 	attach bool
 }
 
-// writableRequestResolver is the loophole resolver the gate's writable-request check fences with
-// (config.CheckWritableRequests), the one validation uses.
+// writableRequestResolver is the loophole resolver the gate's workspace-mount check fences with
+// (config.CheckWorkspaceMounts), the one validation uses.
 var writableRequestResolver = loopholeResolver
 
 // readWorkspaceForGateSeam is the gate's one read (config.ReadWorkspaceForGate), a variable so a
@@ -437,14 +437,15 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 			"in the config. Nothing was recorded.[/dim]")
 		return false
 	}
-	// RC-D24: the writable mounts this read requests, each resolved once, judged here on exactly
-	// what will be approved and bound (the launch validated an earlier read), before anything is
-	// asked. The apply plan below reads them as what a y would bind.
-	o.writableRequests = nil
-	requests := read.WritableRequests()
-	if refusals := config.CheckWritableRequests(o.Workspace, requests, writableRequestResolver()); len(refusals) > 0 {
+	// The mounts this read's workspace config declares (RC-D24's writable requests among them),
+	// each resolved once, judged here on exactly what will be approved and bound (the launch
+	// validated an earlier read), before anything is asked. The apply plan below reads them as
+	// what a y would bind.
+	o.workspaceMounts = nil
+	requests := read.Mounts()
+	if refusals := config.CheckWorkspaceMounts(o.Workspace, requests, writableRequestResolver()); len(refusals) > 0 {
 		out := o.pr(o.Stderr)
-		out.print("[bold red]The workspace config asks for a writable host mount the config-change gate refuses:[/bold red]")
+		out.print("[bold red]The workspace config declares a mount the config-change gate refuses:[/bold red]")
 		for _, r := range refusals {
 			out.printf("  [red]%s[/red]", richtext.Escape(termsafe.VisibleLines(r)))
 		}
@@ -452,7 +453,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 			"problems. Nothing was recorded.[/dim]")
 		return false
 	}
-	o.writableRequests = requests
+	o.workspaceMounts = requests
 	pr := &changePrompter{o: o}
 	scope := o.brokeredScopeCheck(rt, merged, read)
 	if h != nil {
@@ -463,10 +464,10 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 	}
 	ok, approved, approvedMounts, err := config.ApproveWorkspaceRead(o.Workspace, read, scope,
 		o.IsTTYStdin() && o.IsTTYStderr(), o.AcceptConfigChanges, pr)
-	o.writableRequests = nil
+	o.workspaceMounts = nil
 	if ok && err == nil {
 		o.recordApprovedScopes(approved, scope.ApprovedGrants())
-		o.writableRequests = approvedMounts
+		o.workspaceMounts = approvedMounts
 	}
 	if err != nil {
 		// The OQ-D2 refusal gets rendered rather than dumped: same diff, same
@@ -490,7 +491,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 func (o *Options) printChangeRefusal(e *config.ChangedNonInteractiveError) {
 	out := o.pr(o.Stderr)
 	out.printf("\n[bold red]⚠  %s[/bold red]\n", e.Headline())
-	printWritableMounts(out, e.WritableMounts)
+	printWritableMounts(out, e.WritableMounts, e.MountSources)
 	printScopeBlock(out, e.ScopeBlock)
 	printScopeCounts(out, e.ScopeCounts)
 	printConfigDiff(out, e.DiffLines)
@@ -504,12 +505,18 @@ func (o *Options) printChangeRefusal(e *config.ChangedNonInteractiveError) {
 // (config.ChangeReport.WritableMounts, RC-D24) in bold red, FIRST, above the scope block and the
 // diff: approving the diff approves them, and a long diff must not carry one past the reader.
 // Each line carries config.WritableMountMarker in its words, so it stays loud with color off.
-func printWritableMounts(out printer, lines []string) {
+// The read-only mounts follow, plain (config.MountSourceBlock): each at the destination its source
+// resolves to, which the approval records (oq-cx-symlink in docs/reference/context-mounts.md).
+func printWritableMounts(out printer, lines, readOnly []string) {
 	block := config.WritableMountBlock(lines)
 	for _, line := range block {
 		out.printf("[bold red]%s[/bold red]", richtext.Escape(line))
 	}
-	if len(block) > 0 {
+	ro := config.MountSourceBlock(readOnly)
+	for _, line := range ro {
+		out.print(richtext.Escape(line))
+	}
+	if len(block)+len(ro) > 0 {
 		out.print("")
 	}
 }
@@ -694,7 +701,7 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 			"Accept these repository scope changes? [y/N] "
 	}
 	out.print("\n[bold yellow]⚠  " + header + "[/bold yellow]\n")
-	printWritableMounts(out, r.WritableMounts)
+	printWritableMounts(out, r.WritableMounts, r.MountSources)
 	printScopeBlock(out, r.ScopeBlock)
 	printConfigDiff(out, r.DiffLines)
 	out.print("")
@@ -730,15 +737,19 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 func (p *changePrompter) ReportAccepted(r config.ChangeReport) {
 	out := p.o.pr(p.o.Stderr)
 	what := "Repository scope changed since last run"
+	mounts := "mounts"
+	if len(r.WritableMounts) > 0 {
+		mounts = "writable host mounts"
+	}
 	switch {
-	case r.ScopeChanged && len(r.WritableMounts) > 0:
-		what = "Repository scope and a config with writable host mounts changed since last run"
+	case r.ScopeChanged && len(r.WritableMounts)+len(r.MountSources) > 0:
+		what = "Repository scope and a config with " + mounts + " changed since last run"
 	case !r.ScopeChanged:
-		what = "Workspace config with writable host mounts changed since last run"
+		what = "Workspace config with " + mounts + " changed since last run"
 	}
 	out.print("\n[bold yellow]⚠  " + what + "; " + config.AcceptConfigChangesFlag +
 		" records it as approved:[/bold yellow]\n")
-	printWritableMounts(out, r.WritableMounts)
+	printWritableMounts(out, r.WritableMounts, r.MountSources)
 	printScopeBlock(out, r.ScopeBlock)
 	printScopeCounts(out, r.ScopeCounts)
 }

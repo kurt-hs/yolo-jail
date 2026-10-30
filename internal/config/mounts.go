@@ -370,16 +370,6 @@ func MountElementWhere(workspace string, m ContextMount) (string, []string) {
 	return "", nil
 }
 
-// hasRWMount reports whether cfg declares any read-write element.
-func hasRWMount(cfg *jsonx.OrderedMap) bool {
-	for _, m := range ParseMounts(cfg) {
-		if m.RW {
-			return true
-		}
-	}
-	return false
-}
-
 // rwBoundaryConsequence is what a read-write mount of each credential-boundary root would
 // hand the jail — this file's half of the refusal; the collision itself is the shared
 // predicate's (paths.WorkspaceScopeBreach).
@@ -416,8 +406,8 @@ var rwBoundaryConsequence = map[paths.ScopeRootKind]string{
 // ~/.ssh, ~/.aws and the like are deliberately NOT named (CX-D2): whoever gets a USER-SCOPE
 // element past the trust predicate already holds the host user's authority. That premise does
 // not hold for a project's request (RC-D24), which the agent wrote: there the human's approval
-// at the gate is the predicate, so the gate shows the path the request truly resolves to and the
-// host never follows a link the jail can write to get there (requestPathRefusal,
+// at the gate is the predicate, so the gate shows the destination the request truly resolves to,
+// and a source written where the agent can plant a link is refused (mountPathRefusal,
 // mountsrequestbind.go); the exemption is not relied on for it.
 func rwMountRefusal(source, workspace string) string {
 	if b := paths.WritableSourceScopeBreach(source); b != nil {
@@ -500,20 +490,24 @@ func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]s
 	}
 }
 
-// validateMountScope is the trust predicate's refusal half: a read-write element declared
-// in a scope rwMountTrusted rejects is a `yolo check` error, and so a launch refusal
-// (preflight refuses on any validation error). ValidateConfig only ever sees the MERGED map,
-// which carries no provenance, so — as validateCacheRelocations does — the workspace config
-// is re-read to learn which elements came from it. Nothing is re-read when the merged map
-// declares no read-write element, which is every config today.
+// validateMountScope judges every element the WORKSPACE config declares. ValidateConfig only
+// ever sees the MERGED map, which carries no provenance, so — as validateCacheRelocations does —
+// the workspace config is re-read to learn which elements came from it. Nothing is re-read when
+// the merged map declares no mount.
 //
-// THE ONE EXCEPTION IS RC-D24's REQUEST (mountsrequest.go): an element every one of whose writers
-// is a TOML workspace file is a request, honored when the user config's `allow.mounts.on_request`
-// lists "write" and otherwise refused naming that line. In a jail, for the jail's own workspace,
-// the request is not judged: the host judged it against the host user's ceiling, and the jail's
-// own user scope never carries one.
+//   - Read-only or writable, a source written inside the workspace or inside another mount is
+//     refused (mountPathRefusal, oq-cx-symlink in docs/reference/context-mounts.md).
+//   - A read-write element is the trust predicate's refusal half: declared in a scope
+//     rwMountTrusted rejects, it is a `yolo check` error, and so a launch refusal (preflight
+//     refuses on any validation error). THE ONE EXCEPTION IS RC-D24's REQUEST
+//     (mountsrequest.go): an element every one of whose writers is a TOML workspace file is a
+//     request, honored when the user config's `allow.mounts.on_request` lists "write" and
+//     otherwise refused naming that line.
+//
+// In a jail, for the jail's own workspace, nothing is judged: the sources are host paths that
+// are not here, and the host judged them against the host user's config.
 func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
-	if rwMountTrusted(mountScopeWorkspace) || !hasRWMount(config) {
+	if len(ParseMounts(config)) == 0 || (inJail() && jailOwnWorkspace(workspace)) {
 		return
 	}
 	wsCfg, wsNode, err := loadMountsWorkspaceConfig(workspace, edit...)
@@ -523,34 +517,39 @@ func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]stri
 	// Located in the workspace files' own record (sources.go), at the element itself: the
 	// merged record could only say where the `mounts` key is, in every file that writes one.
 	elements, indices := parseMountsIndexed(wsCfg)
-	allowRead, allowed := false, false
+	if len(elements) == 0 {
+		return
+	}
+	user := validationUserScope(edit...)
+	allowed := userAllowsWritableMountRequests(user)
 	for n, m := range elements {
-		if !m.RW {
-			continue
-		}
 		node := wsNode.key(mountsKey).elem(indices[n])
-		if isWorkspaceRequest(node) {
-			if inJail() && jailOwnWorkspace(workspace) {
+		if m.RW && !rwMountTrusted(mountScopeWorkspace) {
+			if !isWorkspaceRequest(node) {
+				msg := fmt.Sprintf("config.mounts: %s is in the workspace config, and a read-write "+
+					"mount is user-scope only — move it to %s. A workspace config is agent-editable, "+
+					"so it cannot grant a read-write host mount (docs/reference/context-mounts.md#where-a-read-write-mount-may-be-declared; "+
+					"a read-only entry may stay where it is)", m.Spec, paths.UserConfigPath())
+				add(errs, locatedAt(node, msg))
 				continue
-			}
-			if !allowRead {
-				allowRead, allowed = true, userAllowsWritableMountRequests(validationUserScope(edit...))
 			}
 			if !allowed {
 				add(errs, locatedAt(node, writableMountRequestRefusal(m)))
 				continue
 			}
-			req := WritableRequest{Mount: m, Resolved: resolveRequestHost(m.Host)}
-			if why := requestPathRefusal(req, workspace, nil); why != "" {
-				add(errs, locatedAt(node, why))
-			}
-			continue
 		}
-		msg := fmt.Sprintf("config.mounts: %s is in the workspace config, and a read-write "+
-			"mount is user-scope only — move it to %s. A workspace config is agent-editable, "+
-			"so it cannot grant a read-write host mount (docs/reference/context-mounts.md#where-a-read-write-mount-may-be-declared; "+
-			"a read-only entry may stay where it is)", m.Spec, paths.UserConfigPath())
-		add(errs, locatedAt(node, msg))
+		others := make([]ContextMount, 0, len(elements))
+		for k, o := range elements {
+			if k != n {
+				others = append(others, o)
+			}
+		}
+		if user != nil {
+			others = append(others, ParseMounts(user)...)
+		}
+		if why := mountPathRefusal(m, workspace, others); why != "" {
+			add(errs, locatedAt(node, why))
+		}
 	}
 }
 

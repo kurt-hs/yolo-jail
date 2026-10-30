@@ -40,7 +40,7 @@ func retarget(t *testing.T, link, to string) {
 	}
 }
 
-func approveRead(t *testing.T, ws string, p ChangePrompter, isTTY, accept bool) (bool, []WritableRequest) {
+func approveRead(t *testing.T, ws string, p ChangePrompter, isTTY, accept bool) (bool, []WorkspaceMount) {
 	t.Helper()
 	read, err := ReadWorkspaceForGate(ws)
 	if err != nil {
@@ -103,8 +103,8 @@ func TestARequestWhoseLinkMovedSinceTheGateDrifts(t *testing.T) {
 	if len(approved) != 1 || approved[0].Drift() != "" {
 		t.Fatalf("approved = %+v; an unmoved request must not drift", approved)
 	}
-	if got := ApprovedWritableRequests(h.ws); len(got) != 1 || got[0].Resolved != harmless {
-		t.Fatalf("ApprovedWritableRequests = %+v, want the approved request", got)
+	if got := ApprovedWorkspaceMounts(h.ws); len(got) != 1 || got[0].Resolved != harmless {
+		t.Fatalf("ApprovedWorkspaceMounts = %+v, want the approved request", got)
 	}
 	other := mountSourceDir(t, "other")
 	retarget(t, link, other)
@@ -114,8 +114,8 @@ func TestARequestWhoseLinkMovedSinceTheGateDrifts(t *testing.T) {
 			t.Fatalf("Drift() = %q, want it to name %q", why, want)
 		}
 	}
-	if got := ApprovedWritableRequests(h.ws); len(got) != 0 {
-		t.Fatalf("ApprovedWritableRequests after a retarget = %+v, want none", got)
+	if got := ApprovedWorkspaceMounts(h.ws); len(got) != 0 {
+		t.Fatalf("ApprovedWorkspaceMounts after a retarget = %+v, want none", got)
 	}
 }
 
@@ -132,53 +132,57 @@ func TestARequestWrittenInsideTheWorkspaceIsRefusedWhereverItResolves(t *testing
 	h.workspaceFile(t, paths.WorkspaceConfigTOMLName,
 		"mounts = [{ host = '"+filepath.Join(h.ws, "build-cache")+"', at = '/ctx/cache', write = true }]\n")
 	errs, _ := h.validate(t)
-	if got := joined(errs); !strings.Contains(got, "inside the workspace") || !strings.Contains(got, "can already write") {
+	if got := joined(errs); !strings.Contains(got, "inside the workspace") || !strings.Contains(got, "symbolic link there") {
 		t.Fatalf("errs = %q, want the path written in the workspace refused", got)
 	}
 	read, err := ReadWorkspaceForGate(h.ws)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if refusals := CheckWritableRequests(h.ws, read.WritableRequests(), nil); !strings.Contains(joined(refusals), "inside the workspace") {
-		t.Fatalf("CheckWritableRequests = %q, want the same refusal on what the gate read", refusals)
+	if refusals := CheckWorkspaceMounts(h.ws, read.WritableRequests(), nil); !strings.Contains(joined(refusals), "inside the workspace") {
+		t.Fatalf("CheckWorkspaceMounts = %q, want the same refusal on what the gate read", refusals)
 	}
 }
 
-// P5 for another writable mount: rule 1 refuses a path written inside the user's own writable
-// mount, and rule 2 refuses a path written outside every jail-writable tree that passes through
-// a link sitting inside one.
-func TestARequestThroughAnotherWritableMountIsRefused(t *testing.T) {
+// oq-cx-symlink, no mounts in mounts: a path written inside the user's own writable mount is
+// refused. A path written outside every mount that reaches one through a link is not: the link
+// is outside any place the agent can write, and the gate shows and records where it lands.
+func TestARequestInsideAnotherMountIsRefused(t *testing.T) {
 	h := newMountsHost(t)
 	shared := mountSourceDir(t, "shared")
-	outside := mountSourceDir(t, "outside")
 	h.userTOML(t, allowMountsLines+"\n[[mounts]]\nhost = '"+shared+"'\nat = '/ctx/shared'\nwrite = true\n")
-	if err := os.Symlink(outside, filepath.Join(shared, "c")); err != nil {
+	inner := filepath.Join(shared, "c")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// R/a is a link outside every tree, to the shared mount; R/a/c then crosses shared/c.
+	h.workspaceFile(t, paths.WorkspaceConfigTOMLName,
+		"mounts = [{ host = '"+inner+"', at = '/ctx/cache', write = true }]\n")
+	want := "inside the mount " + shared
+	if got := joined(CheckWorkspaceMounts(h.ws, gateRequests(t, h.ws), nil)); !strings.Contains(got, want) {
+		t.Fatalf("CheckWorkspaceMounts = %q, want %q", got, want)
+	}
+	errs, _ := h.validate(t)
+	if got := joined(errs); !strings.Contains(got, want) {
+		t.Fatalf("validation = %q, want %q", got, want)
+	}
+
 	r := mountSourceDir(t, "r")
-	if err := os.Symlink(shared, filepath.Join(r, "a")); err != nil {
+	if err := os.Symlink(inner, filepath.Join(r, "a")); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, host, want string }{
-		{"written inside it", filepath.Join(shared, "c"), "your writable mount"},
-		{"through a link inside it", filepath.Join(r, "a", "c"), "symbolic link " + filepath.Join(shared, "c")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			h.workspaceFile(t, paths.WorkspaceConfigTOMLName,
-				"mounts = [{ host = '"+tc.host+"', at = '/ctx/cache', write = true }]\n")
-			if got := joined(CheckWritableRequests(h.ws, gateRequests(t, h.ws), nil)); !strings.Contains(got, tc.want) {
-				t.Fatalf("CheckWritableRequests = %q, want %q", got, tc.want)
-			}
-			errs, _ := h.validate(t)
-			if got := joined(errs); !strings.Contains(got, tc.want) {
-				t.Fatalf("validation = %q, want %q", got, tc.want)
-			}
-		})
+	h.workspaceFile(t, paths.WorkspaceConfigTOMLName,
+		"mounts = [{ host = '"+filepath.Join(r, "a")+"', at = '/ctx/cache', write = true }]\n")
+	reqs := gateRequests(t, h.ws)
+	if got := CheckWorkspaceMounts(h.ws, reqs, nil); len(got) != 0 {
+		t.Fatalf("a link outside every mount was refused: %q", got)
+	}
+	if len(reqs) != 1 || reqs[0].Resolved != inner || !strings.Contains(reqs[0].Line(), inner) ||
+		!strings.Contains(reqs[0].Line(), "written as") {
+		t.Fatalf("requests = %+v, want the link's destination shown beside the written path", reqs)
 	}
 }
 
-// MAJOR 2. CheckWritableRequests is the validation the gate runs on exactly what it read: the
+// MAJOR 2. CheckWorkspaceMounts is the validation the gate runs on exactly what it read: the
 // refusal set (here the home itself), the ceiling, and the broker mount fence.
 func TestCheckWritableRequestsJudgesWhatTheGateRead(t *testing.T) {
 	t.Run("the refusal set", func(t *testing.T) {
@@ -193,8 +197,8 @@ func TestCheckWritableRequestsJudgesWhatTheGateRead(t *testing.T) {
 		if len(reqs) != 1 {
 			t.Fatalf("WritableRequests = %+v", reqs)
 		}
-		if got := joined(CheckWritableRequests(h.ws, reqs, nil)); !strings.Contains(got, "the read-write source") {
-			t.Fatalf("CheckWritableRequests(~) = %q, want the home refused", got)
+		if got := joined(CheckWorkspaceMounts(h.ws, reqs, nil)); !strings.Contains(got, "the read-write source") {
+			t.Fatalf("CheckWorkspaceMounts(~) = %q, want the home refused", got)
 		}
 	})
 	t.Run("the ceiling", func(t *testing.T) {
@@ -205,8 +209,8 @@ func TestCheckWritableRequestsJudgesWhatTheGateRead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := joined(CheckWritableRequests(h.ws, read.WritableRequests(), nil)); !strings.Contains(got, "[allow.mounts]") {
-			t.Fatalf("CheckWritableRequests without the ceiling = %q, want it refused naming the line", got)
+		if got := joined(CheckWorkspaceMounts(h.ws, read.WritableRequests(), nil)); !strings.Contains(got, "[allow.mounts]") {
+			t.Fatalf("CheckWorkspaceMounts without the ceiling = %q, want it refused naming the line", got)
 		}
 	})
 	t.Run("the broker fence", func(t *testing.T) {
@@ -222,8 +226,8 @@ func TestCheckWritableRequestsJudgesWhatTheGateRead(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := joined(CheckWritableRequests(h.ws, read.WritableRequests(), brokeredResolver)); !strings.Contains(got, "A workspace config may not mount it") {
-			t.Fatalf("CheckWritableRequests = %q, want the fence", got)
+		if got := joined(CheckWorkspaceMounts(h.ws, read.WritableRequests(), brokeredResolver)); !strings.Contains(got, "A workspace config may not mount it") {
+			t.Fatalf("CheckWorkspaceMounts = %q, want the fence", got)
 		}
 	})
 }

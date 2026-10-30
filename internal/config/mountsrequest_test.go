@@ -5,7 +5,7 @@ package config
 // `[allow.mounts] on_request = ["write"]` allows it, and the config-change gate then approves it
 // with the mount shown loud. Every rule is asserted at its call site: ValidateConfig (what
 // `yolo check` and the launch preflight run), WorkspaceRead.WritableRequests and
-// CheckWritableRequests (what the gate reads and judges, and so what the run pipeline mounts),
+// CheckWorkspaceMounts (what the gate reads and judges, and so what the run pipeline mounts),
 // and ApproveConfigAndScope (the gate).
 
 import (
@@ -21,7 +21,7 @@ import (
 const allowMountsLines = "[allow.mounts]\non_request = [\"write\"]\n"
 
 // gateRequests are the writable requests the config-change gate's own read of ws finds.
-func gateRequests(t *testing.T, ws string) []WritableRequest {
+func gateRequests(t *testing.T, ws string) []WorkspaceMount {
 	t.Helper()
 	read, err := ReadWorkspaceForGate(ws)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestAWritableMountRequestWithoutTheAllowLineIsRefusedNamingIt(t *testing.T)
 			if strings.Contains(got, "yolo config add") || strings.Contains(got, "yolo config set") {
 				t.Fatalf("refusal names a config verb that cannot create the table: %q", got)
 			}
-			if refusals := CheckWritableRequests(h.ws, gateRequests(t, h.ws), nil); len(refusals) == 0 {
+			if refusals := CheckWorkspaceMounts(h.ws, gateRequests(t, h.ws), nil); len(refusals) == 0 {
 				t.Fatal("the gate's check let a request through without the allow line")
 			}
 		})
@@ -104,7 +104,7 @@ func TestAWritableMountRequestIsAcceptedOnceTheUserAllowsIt(t *testing.T) {
 	if len(got) != 1 || got[0].Mount.Host != src || got[0].Mount.At != "/ctx/data" || !got[0].Mount.RW || got[0].Resolved != src {
 		t.Fatalf("WritableRequests = %+v, want the one requested writable mount", got)
 	}
-	if refusals := CheckWritableRequests(h.ws, got, nil); len(refusals) != 0 {
+	if refusals := CheckWorkspaceMounts(h.ws, got, nil); len(refusals) != 0 {
 		t.Fatalf("the gate's check refused an allowed request: %q", refusals)
 	}
 	// The user scope's own reader is unchanged: it never returns a workspace element.

@@ -387,7 +387,7 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 		rootful := o.rootfulPodmanHost(rt)
 		// A writable mount the gate approved whose path now resolves elsewhere refuses the
 		// launch (RC-D24); configCtxMounts leaves it unbound either way.
-		if err := o.writableRequestDrift(); err != nil && in.assemblyErr == nil {
+		if err := o.mountSourceDrift(); err != nil && in.assemblyErr == nil {
 			in.assemblyErr = err
 		}
 		in.ctxMountsBound = o.configCtxMounts(rt, cfg, out.print)
