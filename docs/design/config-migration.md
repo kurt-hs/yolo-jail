@@ -3,7 +3,7 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: accepted
 stage: DECIDED
-next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
+next: "Build the migration's dropping of written defaults and its folds (OQ-RC18); the old reader's removal waits for a later release"
 tags: [config, migration, versioning, release, design]
 summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Every section is ruled. Part of the readable-config redesign."
 ---
@@ -11,7 +11,11 @@ summary: "How a yolo knows which config it has, the order of releases, what `yol
 # Moving to the new config: the file name is the version, and one command converts everything
 
 **Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
-good and I want to move forward"*). Nothing is built. The transcripts are what a person would see under the
+good and I want to move forward"*). Built by 2026-10-30 except the migration's dropping of written defaults and its folds, which a
+migration does not do yet; the old reader's removal and the fetched-pack refusal belong to a later
+release, and the TOML release is not tagged yet (the [ledger](readable-config.md#decision-ledger)
+names each). Legacy JSONC is still read for a few releases: a launch offers `yolo config migrate`,
+and `"convert_later": true` in the old user file stops the offer. The transcripts are what a person would see under the
 leanings.
 
 **How to read this.** [§1](#1-what-youd-see) is the transcripts; [§2](#2-how-a-yolo-knows-which-config-it-has)

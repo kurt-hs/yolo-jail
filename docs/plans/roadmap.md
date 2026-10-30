@@ -172,10 +172,11 @@ and a pi-subagents registry several extensions can share stays in item 28.
     `refuseWorkspaceScope`, which the host notch bypasses. Details and the workaround are in
     [the lab report](../lab-reports/2026-10-19-launch-diagnostics-on-a-mac.md).
 
-11. [Build the readable-config redesign](../design/readable-config.md), following its
-    [component implementation plan](../design/readable-config-plan.md) — the maintainer,
-    2026-10-24: *"this is important"*. Follow the plan's dependency order because the shared
-    format is settled across five authorities: [the user config](../design/config-user.md),
+11. [Finish the readable-config redesign](../design/readable-config.md) — the maintainer,
+    2026-10-24: *"this is important"*. Most of it is built; what remains is listed in its
+    [implementation plan](../design/readable-config-plan.md#verified-implementation-state), and
+    the redesign graduates to a system doc once that is done. It stays here because the TOML
+    release ships with it: [the user config](../design/config-user.md),
     [a project's file](../design/config-project.md), [editing commands and format](../design/config-commands.md),
     [migration](../design/config-migration.md) and [pack manifests](../design/pack-manifests.md).
 

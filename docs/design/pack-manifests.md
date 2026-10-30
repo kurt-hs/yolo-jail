@@ -3,7 +3,7 @@ title: "Pack manifests: the same rules, shown on the maintainer's own packs"
 date: 2026-10-25
 status: accepted
 stage: DECIDED
-next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
+next: "Carry a model said once (every_model, twin_of, compact_at) into a launch's provider table, and give the shipped loophole manifests their TOML form"
 tags: [packs, manifest, toml, conventions, design]
 summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. Every section is ruled. Part of the readable-config redesign."
 ---
@@ -11,7 +11,11 @@ summary: "Each of the maintainer's twelve packs, before and after: a manifest-le
 # Pack manifests: the same rules, shown on the maintainer's own packs
 
 **Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
-good and I want to move forward"*). Nothing is built. The "today" manifests are the maintainer's twelve
+good and I want to move forward"*). Built by 2026-10-30, and every shipped pack is a `pack.toml`, except that a model said once
+(`every_model`, `twin_of`, `compact_at`) does not reach a launch yet and the shipped loophole
+manifests are still JSONC; the [ledger](readable-config.md#decision-ledger) names each. A legacy
+`pack.json` is still read for a few releases, and `yolo pack migrate` converts one. The "today"
+manifests are the maintainer's twelve
 packs, read on 2026-10-24.
 
 **How to read this.** [§1](#1-a-small-pack-luna-worker) to [§4](#4-flags-that-add-and-a-model-said-once)

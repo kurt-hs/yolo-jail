@@ -3,7 +3,7 @@ title: "Your config, one screen: packs, logins, and which setup each agent runs 
 date: 2026-10-25
 status: accepted
 stage: DECIDED
-next: "Accepted; the work owed is the build, which starts with the implementation plan when the maintainer asks for it"
+next: "Build git fetch of requested repositories, catalog facts at launch (C7) and a model said once reaching a launch, as the front door's ledger names them"
 tags: [config, packs, providers, profiles, broker, grants, conventions, design]
 summary: "The user config as one annotated file, today and proposed, then one section per part of it. Every section is ruled. Part of the readable-config redesign; the ledger of rulings is in the front door and the evidence is in the appendix."
 ---
@@ -11,7 +11,10 @@ summary: "The user config as one annotated file, today and proposed, then one se
 # Your config, one screen: packs, logins, and which setup each agent runs on
 
 **Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
-good and I want to move forward"*). Nothing is built. The "today" file is the maintainer's effective config as
+good and I want to move forward"*). Built by 2026-10-30 except git fetch of a project's requested repositories, catalog facts at
+launch (C7) and a model said once reaching a launch; the [ledger](readable-config.md#decision-ledger)
+names each. Legacy JSONC is still read for a few releases: a launch offers `yolo config migrate`,
+and `"convert_later": true` in the old user file stops the offer. The "today" file is the maintainer's effective config as
 this jail inherited it, condensed.
 
 **How to read this.** [§1](#1-the-file-today) and [§2](#2-the-file-proposed) are the whole file;

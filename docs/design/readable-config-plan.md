@@ -3,7 +3,7 @@ title: "Readable config: component implementation plan"
 date: 2026-10-26
 status: accepted
 stage: DECIDED
-next: "Prove the final documentation candidate preserves the HIGH-reviewed 91f3 foundation source; Root's final gates and landing remain pending, then continue B2/E1/E2/D2 and the remaining bounded waves"
+next: "Build the remainder §1 lists (git fetch of requested repositories, C7 and a model said once at launch, the migration's folds, config why's named verbs, the loophole manifests), convert this repository's own config once the owner has installed a TOML-reading yolo, then graduate the design to a system doc and retire this plan"
 depends-on:
   - readable-config.md
   - config-user.md
@@ -12,15 +12,16 @@ depends-on:
   - config-migration.md
   - pack-manifests.md
 tags: [config, packs, migration, editing, plan]
-summary: "Tree-grounded implementation handoff for the readable-config redesign. A1/B1/D1 foundations and F4/F8 corrections are present; the 91f3 foundation source passed targeted HIGH review, while final-candidate source equality and Root gates remain. The full redesign's discovery, runtime, migration, CLI, asset and documentation waves remain owed."
+summary: "Tree-grounded implementation handoff for the readable-config redesign, now largely built: TOML configs and pack.toml manifests are read at runtime, the named verbs and migrate commands exist, and the shipped packs are converted. §1 records what is built and the remainder still owed; §2–§9 are the hand-off as written."
 ---
 
 # Readable config: component implementation plan
 
-**Written against:** `c729692223d8d8a884887875b44da5639a154448`, 2026-10-26.
-The accepted-design tree and implementation seams were re-read at this foundation candidate. A1 document/index/fixture, B1 schema/rename and D1 grouped-manifest foundations are present. F4/F8 are closed on the lead-integrated source commit `91f3f81d8ea5b9a135aaf8f61d121d320db757b7`; the targeted HIGH review passed there (17 `tomlx`, 3 schema, 4 `configdoc`, 2 `packdecl` checks; 72 original function bodies unchanged; see durable `config-recovery-evidence/final-high-review.md`). The final documentation candidate must prove source equality with that reviewed foundation; Root's final gates and landing remain pending. The full redesign is not built: no TOML config discovery, pack discovery/selection activation, runtime consumer migration, CLI editing, migration, or shipped TOML assets are active.
-
-**Foundation provenance:** the imported A1/B1/D1 series and correction commits come from the recovery ref frozen at `b245d266d717326c3c3d6e3353d25e7f3fad66f3`; the source-to-result SHA map and gate logs remain in the durable recovery evidence. The F4 fix is in the separate lead-integrated commit above; this plan writer did not import it into the c729 worktree.
+**Written against:** `c729692223d8d8a884887875b44da5639a154448`, 2026-10-26; the
+[verified implementation state](#verified-implementation-state) was re-checked 2026-10-30 against
+`b1ca5ce40`. Sections 2 to 9 are the hand-off as it was written for the build, kept until
+graduation; where their "present", "pending" or "unbuilt" wording disagrees with that list, the
+list is the current state.
 
 **Precedence:** the [accepted design](readable-config.md) wins on behavior; the tree wins on
 cosmetic facts; this plan's mechanism advice is the first thing to be wrong. Never twist code to
@@ -58,12 +59,41 @@ unrelated subsystem or silently enlarge the fence. New files below are explicitl
 | [`liveapplyplan.go`](../../internal/cli/run/liveapplyplan.go), [`inheritscope.go`](../../internal/cli/run/inheritscope.go) | Keep per-key apply timing, boot-baseline folding, own-workspace assembled snapshot shortcut and preflight/nested inheritance separate. Generated user copy becomes TOML; machine-only records remain JSON in new vocabulary. |
 | [`config.go`](../../internal/cli/config.go), [`dispatch.go`](../../internal/cli/dispatch.go), [`pack.go`](../../internal/cli/pack.go), [`init.go`](../../internal/cli/init.go) | Six composition verbs move to surface; apply/drift/dump stay config. CLI registry also controls argv rewriting. `init` currently creates a long template and edits .gitignore; neither remains the default. |
 
-### Verified implementation state at the candidate
+### Verified implementation state
 
-- A1's `configdoc`, `testconfig`, TOML index/encoder, filename constants and vendored parser are in the tree; B1's schema/rename descriptors and validator extraction are in the tree; D1's grouped pack manifest decoder is in the tree. F4/F8 are closed on the 91f3 source, which passed targeted HIGH review. Root's final candidate must prove source equality and pass its final gates before acceptance.
-- On the c729 foundation base, `go test -mod=vendor -count=1 -short ./internal/configdoc ./internal/testconfig ./internal/tomlx ./internal/json5 ./internal/paths ./internal/config ./internal/packdecl ./internal/packload` failed only at `internal/tomlx.TestDecodeOrderedPreservesRepeatedNestedArrayTableAuthoredOrder`: the third singleton child had `[a z]`, expected `[z a]`. This is pre-fix evidence, not current candidate status.
-- The lead reports the singleton regression red before F4, and the full `tomlx`, `configdoc`, and `packdecl` suites green after the two-file fix. `go build -mod=vendor ./...` passed on c729; this proves compilation only, not redesign behavior or API acceptance.
-- No TOML config discovery, runtime activation, CLI editing, migration, or asset conversion has landed. Continue remaining waves only from a stable integrated base; H/K additionally wait for Root-landed runtime APIs.
+Verified 2026-10-30 against `b1ca5ce40`. The front door's
+[ledger](readable-config.md#decision-ledger) carries each ruling's landing commit and pinning test;
+this list is the state by component.
+
+- **Built.** The document/index/encoder foundation and the splice library (`internal/configdoc`,
+  `internal/configedit`); format-aware loading, in which the runtime facades read
+  `yolo-jail.toml` and `config.toml` before the legacy names and refuse both in one place; the
+  grouped `pack.toml` codec, read beside `pack.json`; qualified pack handles and default-branch
+  locks; `active_provider`, `native`, providers and variants in one selection namespace at launch;
+  the `allow`/`requests` ceiling and request model through the approval gate to the brokers,
+  writable mount requests included; the `yolo check` pack nudge; `yolo pack add/remove`, a
+  pointer-file `yolo init`, `yolo allow`, `yolo request`, `yolo active-provider`,
+  `yolo config set/add/unset/why` and the `yolo surface` namespace; `yolo config migrate` and
+  `yolo pack migrate` (`internal/configmigrate`, `internal/packmigrate`) with the launch's
+  conversion offer and `convert_later`; every shipped pack as a `pack.toml`; the TOML reference
+  in `yolo config-ref`, the user guide and the pack READMEs; and the TOML integration tests.
+- **Legacy window.** Legacy JSONC configs and `pack.json` manifests are still read, as
+  [RC-D19](readable-config.md#RC-D19) rules; the old reader's removal is a later release's work.
+- **Not built:**
+  - git fetch scope does not take a project's requested repositories; only the GitHub broker
+    does ([OQ-RC16](readable-config.md#decision-ledger), and with it the private-repository
+    refusal's wording under [OQ-RC21](readable-config.md#decision-ledger));
+  - catalog facts (C7) and a model said once (`every_model`, `twin_of`, `compact_at`) are
+    composed and validated but do not reach a launch's provider table
+    ([OQ-RC13](readable-config.md#decision-ledger), [OQ-RC19](readable-config.md#decision-ledger));
+  - `yolo config migrate` converts losslessly but does not yet drop written defaults or fold
+    repeated facts ([OQ-RC18](readable-config.md#decision-ledger));
+  - `yolo config why` names `yolo config set` for an unset key even where a named verb exists
+    ([OQ-RC10](readable-config.md#decision-ledger));
+  - this repository's own `yolo-jail.jsonc` is not converted, which waits on the owner installing
+    a TOML-reading `yolo` on the host first ([RC-D22](readable-config.md#RC-D22)), and the shipped
+    loophole `manifest.jsonc` files have no TOML form yet
+    ([OQ-RC2](readable-config.md#decision-ledger)).
 
 ## 2. First-landed contracts
 
