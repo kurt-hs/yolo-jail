@@ -289,7 +289,7 @@ func writeCLIUsage(out io.Writer, color bool, usage string) {
 
 func configHelpToken(token string) bool {
 	switch token {
-	case "ls", "render", "diff", "reset", "promote", "capture", "set", "add", "unset", "drift", "dump", "apply", "migrate",
+	case "ls", "render", "diff", "reset", "promote", "capture", "set", "add", "unset", "drift", "dump", "apply", "migrate", "why",
 		"--user", "--project", "--local", "--file", "--dry-run",
 		"--help", "-h", "--all", "--explain", "--at", "--force", "--keys", "--to",
 		"--plan", "--json", "--accept-promotion", "--record-only", "--accept-config-changes", "--yes":
