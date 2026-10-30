@@ -130,10 +130,14 @@ func (o *Options) offerConfigMigration() {
 		o.pr(o.Stderr).print("Launching with the old files; nothing was written.")
 		return
 	}
-	if _, err := configmigrate.Apply(plan, configmigrate.ApplyOptions{}); err != nil {
+	result, err := configmigrate.Apply(plan, configmigrate.ApplyOptions{})
+	if err != nil {
 		fmt.Fprintf(o.Stderr, "%v\n", err)
 		o.pr(o.Stderr).print("Launching with the old files.")
 		return
+	}
+	for _, ig := range result.Ignores {
+		fmt.Fprintln(o.Stderr, ig.Report(o.Workspace))
 	}
 	o.pr(o.Stderr).print("Written, keeping each original as <name>.pre-migrate. Launching on the converted files.")
 }

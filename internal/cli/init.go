@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/gitexclude"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
@@ -95,17 +95,9 @@ func Init(cwd string, mounts []string, out io.Writer, color bool) int {
 // path, or "" when cwd is no git work tree or the line is already there. info/exclude is local to
 // the clone, so the project's tracked .gitignore stays the project's.
 func excludeWorkspaceState(cwd string) (string, error) {
-	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--git-path", "info/exclude")
-	raw, err := cmd.Output()
-	if err != nil {
-		return "", nil // not a work tree, or no git: nothing to exclude from
-	}
-	path := strings.TrimSpace(string(raw))
+	path := gitexclude.File(cwd)
 	if path == "" {
-		return "", nil
-	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(cwd, path)
+		return "", nil // not a work tree, or no git: nothing to exclude from
 	}
 	existing, readErr := os.ReadFile(path)
 	if readErr != nil && !os.IsNotExist(readErr) {
@@ -116,27 +108,10 @@ func excludeWorkspaceState(cwd string) (string, error) {
 			return "", nil
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
-	}
-	entry := ".yolo/\n"
-	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
-		entry = "\n" + entry
-	}
-	if err := appendString(path, entry); err != nil {
+	if err := gitexclude.Append(path, ".yolo/"); err != nil {
 		return "", err
 	}
 	return path, nil
-}
-
-func appendString(path, s string) error {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString(s)
-	return err
 }
 
 // InitUserConfig runs `yolo init-user-config`. Writes the user-level defaults at

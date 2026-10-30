@@ -93,6 +93,8 @@ type MigrationPlan struct {
 	// CanonicalBytes is the size of the canonical JSON the verdict compared.
 	CanonicalBytes int
 	Records        []Record
+	// Ignores keep each converted file out of commits as git kept its old name out.
+	Ignores []Ignore
 
 	canonical canonicalSet
 }
@@ -245,6 +247,7 @@ func planWith(g *Graph, fold bool) (*MigrationPlan, error) {
 	if !p.Equal {
 		return p, &InequalityError{Plan: p}
 	}
+	p.Ignores = planIgnores(g, p.Targets)
 	return p, nil
 }
 

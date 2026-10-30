@@ -28,6 +28,8 @@ type ApplyResult struct {
 	Written, Backups, Links []string
 	// Records are the records only yolo reads, each with what was done to it.
 	Records []Record
+	// Ignores are the plan's Ignores, each marked Done or carrying its hint.
+	Ignores []Ignore
 }
 
 // Apply writes a plan that proved equal. It locks every file it replaces the way `yolo config
@@ -144,6 +146,7 @@ func Apply(p *MigrationPlan, opts ApplyOptions) (*ApplyResult, error) {
 		return nil, restore(fmt.Errorf("the written files do not say what the plan proved"))
 	}
 	res.Records = respellRecords(p.Records, p.Graph.Request.Workspace)
+	res.Ignores = applyIgnores(p.Ignores, p.Graph.Request.Workspace)
 	return res, nil
 }
 

@@ -7,6 +7,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,6 +93,45 @@ func TestConfigMigrateConvertsUserAndProjectOnTheHost(t *testing.T) {
 	}
 	if !strings.Contains(out, "Next: `yolo check`") {
 		t.Errorf("no next step:\n%s", out)
+	}
+}
+
+// The verb says before writing that a local file git ignored under its old name goes into the
+// clone's info/exclude, writes nothing on --dry-run, and says it did on --yes (RC-D33).
+func TestConfigMigrateKeepsTheLocalFileOutOfCommits(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	e := newMigrateEnv(t)
+	t.Setenv("XDG_CONFIG_HOME", e.home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(e.ws))
+	if out, err := exec.Command("git", "-C", e.ws, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	writeMigrateFile(t, filepath.Join(e.ws, ".gitignore"), "yolo-jail.local.jsonc\n")
+	writeMigrateFile(t, filepath.Join(e.ws, "yolo-jail.local.jsonc"), "{\n  \"network\": {\"mode\": \"bridge\"}\n}\n")
+	exclude := filepath.Join(e.ws, ".git", "info", "exclude")
+	before, _ := os.ReadFile(exclude)
+
+	planned := "yolo-jail.local.toml is not ignored by git as yolo-jail.local.jsonc was; adding it to .git/info/exclude."
+	rc, out, errw := runConfigMigrateVerb(t, "--dry-run")
+	if rc != 0 || !strings.Contains(out, planned) {
+		t.Fatalf("--dry-run: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errw)
+	}
+	if after, _ := os.ReadFile(exclude); !bytes.Equal(after, before) {
+		t.Fatalf("--dry-run wrote info/exclude: %q", after)
+	}
+
+	rc, out, errw = runConfigMigrateVerb(t, "--yes")
+	if rc != 0 || !strings.Contains(out, "Added /yolo-jail.local.toml to .git/info/exclude") {
+		t.Fatalf("--yes: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errw)
+	}
+	if err := exec.Command("git", "-C", e.ws, "check-ignore", "-q", "yolo-jail.local.toml").Run(); err != nil {
+		t.Fatalf("yolo-jail.local.toml is not ignored: %v", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(e.ws, ".gitignore")); string(data) != "yolo-jail.local.jsonc\n" {
+		t.Fatalf(".gitignore changed: %q", data)
 	}
 }
 

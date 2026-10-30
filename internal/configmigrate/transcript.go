@@ -64,6 +64,9 @@ func (p *MigrationPlan) Transcript() string {
 	for _, line := range left {
 		b.WriteString(line + "\n")
 	}
+	for _, ig := range p.Ignores {
+		b.WriteString(ig.Plan(p.Graph.Request.Workspace) + ".\n")
+	}
 	return b.String()
 }
 

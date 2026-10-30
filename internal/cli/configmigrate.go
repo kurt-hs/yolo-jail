@@ -130,6 +130,15 @@ func configMigrate(args []string, in io.Reader, interactive bool, out, errw io.W
 		return 1
 	}
 	fmt.Fprintf(out, "Written: %s.\n", strings.Join(result.Written, ", "))
-	fmt.Fprintln(out, "Nothing else on this machine changed. Next: `yolo check`.")
+	excluded := false
+	for _, ig := range result.Ignores {
+		fmt.Fprintln(out, ig.Report(workspace))
+		excluded = excluded || ig.Done
+	}
+	if excluded {
+		fmt.Fprintln(out, "Nothing else on this machine changed, and no tracked file was touched. Next: `yolo check`.")
+	} else {
+		fmt.Fprintln(out, "Nothing else on this machine changed. Next: `yolo check`.")
+	}
 	return 0
 }

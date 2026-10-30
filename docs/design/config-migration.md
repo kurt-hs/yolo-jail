@@ -162,7 +162,10 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 2. **Rewrites each file where it is, and never merges.** `config.jsonc` → `config.toml`, each
    include → its `.toml` twin with the include entries respelled; through a symlink, so the
    dotfiles copy changes; a file it cannot reach is listed with the command to run where it can;
-   each original kept as `<name>.pre-migrate`.
+   each original kept as `<name>.pre-migrate`. A renamed file whose old name git ignored and whose
+   new name it does not is added to the clone's own `.git/info/exclude`, never to the tracked
+   `.gitignore`, and the plan says so; where git cannot be asked, the plan names the line to add
+   instead ([RC-D33](readable-config.md#RC-D33)).
 3. **Keeps comments, in order.** A comment is never read as belonging to a key; each is written
    back in document order, before whatever key follows it in the new file, and nothing is dropped.
 4. **Drops written defaults and folds repeated facts**, each as its own hunk, only while the
