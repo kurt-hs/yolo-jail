@@ -202,6 +202,10 @@ func ProfileRecord(fold config.ProfileFold, bins []string, key config.ProfileSel
 		origin := fold.Origins[cli]
 		var source string
 		switch {
+		case origin.From == 0 && key.Key == config.ActiveProviderKey && origin.Named:
+			source = "config " + config.ActiveProviderKey + "." + cli
+		case origin.From == 0 && key.Key == config.ActiveProviderKey:
+			source = "config " + config.ActiveProviderKey + "." + config.ActiveProviderEveryAgent
 		case origin.From == 0 && origin.Named:
 			source = "config profile." + cli
 		case origin.From == 0 && len(key.Named) > 0:
@@ -649,7 +653,7 @@ func (o *Options) recordLaunchContext(cfg *jsonx.OrderedMap, packs []*packload.P
 		return
 	}
 	o.logRecord("profile: %s", ProfileRecord(o.profileFold(cfg, packs), config.ReceiversOf(packs).Bins,
-		config.ConfigProfileSelection(cfg), o.jailProfileFlag))
+		config.ConfigActiveSelection(cfg), o.jailProfileFlag))
 	if snap, err := config.SnapshotJSON(cfg); err == nil {
 		files := []string{paths.UserConfigPath(), filepath.Join(o.Workspace, config.WorkspaceConfigName)}
 		for _, line := range configChangeRecords(workspaceStateStore{o.Workspace}, snap, packs, files, time.Now()) {

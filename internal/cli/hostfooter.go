@@ -54,7 +54,7 @@ import (
 func hostFooterTables() footer.Tables {
 	cfg := config.UserScopeConfigOrEmpty()
 	var t footer.Tables
-	if config.ConfigProfileSelection(cfg).IsZero() {
+	if config.ConfigActiveSelection(cfg).IsZero() {
 		return t // no selection: the footer names the login, and nothing else is needed
 	}
 	// The packs before the table, because the key's "*" (or its string form) reaches the CLIs
@@ -80,7 +80,7 @@ func hostFooterTables() footer.Tables {
 		}
 	}
 	t.Providers = footerJSON(providers)
-	userProfiles, err := config.LoadProfiles(nil)
+	userProfiles, err := config.LoadSelectableProfiles(nil, cfg, packs)
 	if err != nil {
 		return t
 	}
@@ -119,7 +119,7 @@ func hostFooterTables() footer.Tables {
 // the pairing gate refuses only because nothing serves them yet.
 func footerLaunchServices(cfg *jsonx.OrderedMap, packs []*packload.Pack, providers *jsonx.OrderedMap,
 	use *jsonx.OrderedMap, unservable []packload.Adaptation) []*launchservice.Plan {
-	userProfiles, err := config.LoadProfiles(nil)
+	userProfiles, err := config.LoadSelectableProfiles(nil, cfg, packs)
 	if err != nil {
 		return nil
 	}

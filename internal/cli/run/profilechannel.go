@@ -162,9 +162,13 @@ func (o *Options) composePackChannel(cfg *jsonx.OrderedMap, packs []*packload.Pa
 	// the user file directly; OQ-CS5). Malformed entries arrive as warnings, which this
 	// is the right place to surface: the fatal form of the same problem already refused
 	// the launch in ValidateConfig.
-	userProfiles, err := config.LoadProfiles(func(msg string) {
+	//
+	// The ONE SELECTION NAMESPACE (config-user.md §5, OQ-RC3): the declarations also hold an
+	// implied profile per provider, alias and `<provider>/<variant>` no profile names, so
+	// `active_provider` and `-p` resolve a provider by its own name here and in the jail.
+	userProfiles, err := config.LoadSelectableProfiles(func(msg string) {
 		o.pr(o.Stderr).print(msg)
-	})
+	}, cfg, packs)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +227,7 @@ func (o *Options) composePackChannel(cfg *jsonx.OrderedMap, packs []*packload.Pa
 				c.bareNote = fold.BareListNote(fold.BareFrom == profileFoldFromKey)
 				// The two sources profileFold folded, for the disclosure's "reaches nothing"
 				// warning to name the one that reached an agent and how to undo it there.
-				key, flags := config.ConfigProfileSelection(cfg), o.ProfileFlags()
+				key, flags := config.ConfigActiveSelection(cfg), o.ProfileFlags()
 				c.deselect = func(agent, _ string) string {
 					return config.ProfileDeselection(key, flags, agent)
 				}

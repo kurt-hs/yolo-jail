@@ -575,7 +575,7 @@ func hostBareListUndeclared(agent string, entries []string) error {
 	if sel.launchRefusal() != nil {
 		return nil
 	}
-	userProfiles, err := config.LoadProfiles(nil)
+	userProfiles, err := config.LoadSelectableProfiles(nil, config.UserScopeConfigOrEmpty(), sel.packs)
 	if err != nil {
 		return nil
 	}
@@ -1697,7 +1697,7 @@ func (c *hostComposition) profileLines() []string {
 	// The "reaches nothing" warning's ending (PP-D12): where this command's selection came from
 	// and how to select none for it there, in the host's own terms — its `-p <cli>=` selects none
 	// for this one command, and the key's null works here through the same fold.
-	key := config.ConfigProfileSelection(c.cfg)
+	key := config.ConfigActiveSelection(c.cfg)
 	deselect := func(agent, _ string) string {
 		return config.HostProfileDeselection(key, c.typedProfile != "", len(c.configuredSet) > 0, agent)
 	}
@@ -2632,7 +2632,7 @@ func composeHostVarsWith(cfg *jsonx.OrderedMap, workspace, agent, command, profi
 	// plus the user's own entries. A pack that could not be resolved never reaches here: the
 	// selection above refused it (NC-D5), so an undeclared profile is undeclared by the whole
 	// pack set the config asks for.
-	userProfiles, err := config.LoadProfiles(warn)
+	userProfiles, err := config.LoadSelectableProfiles(warn, cfg, packs)
 	if err != nil {
 		c.err = err
 		return c
@@ -3098,7 +3098,7 @@ func (c *hostComposition) adHocGrantSpelling(provider string, grant *hostGrantRe
 // packs' shipped profiles and the user's own, "" when it resolves to none. For ES-D5's refusal,
 // which runs before the launch's own resolution and needs only the provider's name.
 func hostProfileProvider(packs []*packload.Pack, profile string) string {
-	user, err := config.LoadProfiles(nil)
+	user, err := config.LoadSelectableProfiles(nil, config.UserScopeConfigOrEmpty(), packs)
 	if err != nil {
 		return ""
 	}
@@ -3707,17 +3707,13 @@ func loadedHostPacks(cfg *jsonx.OrderedMap, agent, typed string) hostPackSet {
 // hostLaunchSelection is the closure's profile input for a host launch: agent's profile alone,
 // and the user's profile declarations from user scope.
 func hostLaunchSelection(cfg *jsonx.OrderedMap, agent, typed string) packload.Selection {
-	return packload.Selection{
-		UseProfiles: func(set []*packload.Pack) map[string]string {
+	return config.SelectionWithSelectableProfiles(func() *jsonx.OrderedMap { return cfg },
+		func(set []*packload.Pack) map[string]string {
 			if profile := hostAgentProfile(cfg, set, agent, typed); profile != "" {
 				return map[string]string{agent: profile}
 			}
 			return nil
-		},
-		UserProfiles: func() (map[string]packload.UserProfile, error) {
-			return config.LoadProfiles(nil)
-		},
-	}
+		})
 }
 
 // hostAgentProfile is the profile a host launch of agent selects over packs: its entry in
@@ -3757,7 +3753,7 @@ func hostProfileFold(cfg *jsonx.OrderedMap, packs []*packload.Pack, agent, typed
 		}
 		flag.Named = map[string][]string{agent: set}
 	}
-	return config.FoldProfiles(config.ReceiversOf(packs), config.ConfigProfileSelection(cfg), flag)
+	return config.FoldProfiles(config.ReceiversOf(packs), config.ConfigActiveSelection(cfg), flag)
 }
 
 // overlayGateProfiles is the ACTIVE profile sets the config-overlay `profile` modifier

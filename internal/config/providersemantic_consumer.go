@@ -14,7 +14,7 @@ import (
 
 // ProviderConsumerComposition selects the readable consumer path or retains the exact legacy
 // profile selection. A non-nil Readable result means the caller must use the typed provider
-// selection; otherwise Legacy is precisely ConfigProfileSelection's old result.
+// selection; otherwise Legacy is precisely the legacy `profile` key, lowered (legacyProfileSelection).
 type ProviderConsumerComposition struct {
 	Readable *ProviderSemanticResult
 	Legacy   ProfileSelection
@@ -37,7 +37,7 @@ func ConfigProviderConsumer(cfg *jsonx.OrderedMap, declarations []packdecl.Provi
 			return ProviderConsumerComposition{Readable: &readable}, nil
 		}
 	}
-	return ProviderConsumerComposition{Legacy: ConfigProfileSelection(cfg)}, nil
+	return ProviderConsumerComposition{Legacy: legacyProfileSelection(cfg)}, nil
 }
 
 // ClearNativeProviderEnvForReceiver clears only provider-owned environment declarations when
@@ -56,7 +56,7 @@ func ClearNativeProviderEnvForReceiver(result ProviderSemanticResult, packs []*p
 // provider declarations and active_provider. It parses only the named selection key,
 // derives eligible receivers from selected pack declarations, and delegates all selection,
 // model composition, and legacy derive projection to the shared semantic implementation.
-// It does not alter ConfigProfileSelection or activate runtime environment changes.
+// It does not alter the launch selection (ConfigActiveSelection) or activate runtime environment changes.
 func ComposeConfiguredProviderSemantics(cfg *jsonx.OrderedMap,
 	declarations []packdecl.ProviderContribution, packs []*packload.Pack,
 	catalog map[string]map[string]packdecl.ProviderModel) (ProviderSemanticResult, error) {

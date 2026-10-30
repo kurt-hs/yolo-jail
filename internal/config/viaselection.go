@@ -9,6 +9,7 @@ package config
 // (notch-convergence item 6), and this is the one place their shared input is assembled.
 
 import (
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -22,12 +23,27 @@ import (
 //
 // Embedded is left unset: SelectPacks fills it from the process's one materialization.
 func UserScopeSelection() packload.Selection {
+	return SelectionWithSelectableProfiles(UserScopeConfigOrEmpty, func(set []*packload.Pack) map[string]string {
+		return ConfigProfileTable(UserScopeConfigOrEmpty(), set)
+	})
+}
+
+// SelectionWithSelectableProfiles is the closure input over useProfiles whose declarations are the
+// whole selection namespace (SelectableProfiles over cfg's `providers`): the user's `profiles` plus
+// the implied profiles of the providers, aliases and variants the closure's set declares, so a
+// selected `<provider>/<variant>` whose variant names a `via` pulls that service in as a profile's
+// via does. packload.Selection.Close asks UseProfiles before UserProfiles, over one set, and
+// that set is the one the implied profiles are read from. cfg is read when the declarations are.
+func SelectionWithSelectableProfiles(cfg func() *jsonx.OrderedMap,
+	useProfiles func(set []*packload.Pack) map[string]string) packload.Selection {
+	var asked []*packload.Pack
 	return packload.Selection{
 		UseProfiles: func(set []*packload.Pack) map[string]string {
-			return ConfigProfileTable(UserScopeConfigOrEmpty(), set)
+			asked = set
+			return useProfiles(set)
 		},
 		UserProfiles: func() (map[string]packload.UserProfile, error) {
-			return LoadProfiles(nil)
+			return LoadSelectableProfiles(nil, cfg(), asked)
 		},
 	}
 }

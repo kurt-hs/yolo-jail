@@ -1438,7 +1438,7 @@ func (o *Options) effectiveUseProfiles(cfg *jsonx.OrderedMap, packs []*packload.
 // profileFold is the fold behind effectiveUseProfiles: the config `profile` key, then the -p
 // flags, over the receivers packs make (config.ReceiversOf).
 func (o *Options) profileFold(cfg *jsonx.OrderedMap, packs []*packload.Pack) config.ProfileFold {
-	return config.FoldProfiles(config.ReceiversOf(packs), config.ConfigProfileSelection(cfg),
+	return config.FoldProfiles(config.ReceiversOf(packs), config.ConfigActiveSelection(cfg),
 		o.ProfileFlags())
 }
 

@@ -33,7 +33,7 @@ func (t *hostLaunchTrace) recordComposition(launch *hostComposition, typed strin
 	}
 	fold := hostProfileFold(launch.cfg, launch.packs, launch.agent, typed)
 	profile := run.ProfileRecord(fold, config.ReceiversOf(launch.packs).Bins,
-		config.ConfigProfileSelection(launch.cfg), func(string, bool) string { return "-p " + typed })
+		config.ConfigActiveSelection(launch.cfg), func(string, bool) string { return "-p " + typed })
 	t.log.RecordContext(run.HostLaunchContext{
 		Workspace:    launch.workspace,
 		Profile:      profile,

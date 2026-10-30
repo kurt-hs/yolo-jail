@@ -72,6 +72,10 @@ type ProfileSelection struct {
 	// per-agent entries. An empty set names the CLI and selects NO profile for it, so Default
 	// does not reach it: the key's null, and the flag's `-p <cli>=`.
 	Named map[string][]string
+	// Key is the config key the selection was read from: ActiveProviderKey for an
+	// `active_provider` table, "" for the legacy `profile` key and for `-p`. It decides only
+	// how a message spells the key's fix (profileKeyFix); the fold reads the two alike.
+	Key string
 }
 
 // IsZero reports whether the selection selects nothing and names nothing.
@@ -251,17 +255,6 @@ func profileSetValue(v any) ([]string, bool) {
 	return nil, false
 }
 
-// ConfigProfileSelection is cfg's `profile` key, lowered (ProfileSelectionOf). A config
-// without the key selects nothing.
-func ConfigProfileSelection(cfg *jsonx.OrderedMap) ProfileSelection {
-	if cfg == nil {
-		return ProfileSelection{}
-	}
-	v, _ := cfg.Get(ProfileKey)
-	s, _ := ProfileSelectionOf(v)
-	return s
-}
-
 // ProfileReceivers is what a selection's Default reaches: every CLI the packs install, in pack
 // order, and which of them may hold a list of more than one profile — the CLIs whose program
 // declares `provider_sets` (packload.HoldsProviderSets, AP-D2). Every other receiver takes a
@@ -342,7 +335,15 @@ func FoldProfiles(recv ProfileReceivers, selections ...ProfileSelection) Profile
 	fold := ProfileFold{Table: jsonx.NewOrderedMap(), BareFrom: -1, Origins: map[string]ProfileOrigin{}}
 	fromBare := map[string]bool{}
 	for i, s := range selections {
-		if len(s.Default) > 0 {
+		if selectsNative(s.Default) {
+			// "native" (OQ-RC20) reaches every receiver as no profile, the key's null for each.
+			fromBare = map[string]bool{}
+			fold.BareList, fold.BareFrom = nil, -1
+			for _, bin := range recv.Bins {
+				fold.Table.Set(bin, nil)
+				fold.Origins[bin] = ProfileOrigin{From: i}
+			}
+		} else if len(s.Default) > 0 {
 			fromBare = map[string]bool{}
 			fold.BareList, fold.BareFrom = nil, -1
 			if len(s.Default) > 1 {
@@ -363,7 +364,7 @@ func FoldProfiles(recv ProfileReceivers, selections ...ProfileSelection) Profile
 		for _, cli := range s.namedKeys() {
 			delete(fromBare, cli)
 			fold.Origins[cli] = ProfileOrigin{From: i, Named: true}
-			if set := s.Named[cli]; len(set) > 0 {
+			if set := s.Named[cli]; len(set) > 0 && !selectsNative(set) {
 				fold.Table.Set(cli, packload.ProfileSetWire(set))
 			} else {
 				fold.Table.Set(cli, nil)
@@ -412,7 +413,7 @@ func ConfigProfileTable(cfg *jsonx.OrderedMap, packs []*packload.Pack) map[strin
 // whose values are the whole active sets (packload.ProfileSets reads them), for a reader that
 // asks about every entry (`yolo check`'s set predictions).
 func ConfigProfileSets(cfg *jsonx.OrderedMap, packs []*packload.Pack) *jsonx.OrderedMap {
-	return ProfileTableFor(ReceiversOf(packs), ConfigProfileSelection(cfg))
+	return ProfileTableFor(ReceiversOf(packs), ConfigActiveSelection(cfg))
 }
 
 // ProfileKeySpelling is the `profile` key's JSON for a selection, for a message that tells the
@@ -447,7 +448,7 @@ func ProfileKeySpelling(s ProfileSelection) string {
 // from, and the exact spelling that selects no profile for cli in that place (PP-D12 in
 // docs/design/providers-and-profiles-redesign.md).
 //
-// key is the config `profile` key's selection (ConfigProfileSelection) and flag the launch's -p
+// key is the config `profile` key's selection (ConfigActiveSelection) and flag the launch's -p
 // selection, which FoldProfiles folds above it, so a -p that reaches cli is the source. The
 // warning used to name only `-p <cli>=<name>`, so a selection the key made repeated on every
 // launch with no word of the key: a key-made one now names the key's file, line and column and
@@ -469,7 +470,7 @@ func ProfileDeselection(key, flag ProfileSelection, cli string) string {
 // keyReaches whether the `profile` key selects a profile for cli without it.
 //
 // A key-made selection names the key's fix exactly as a jail launch does: the fold the host
-// composes from (FoldProfiles over ConfigProfileSelection) reads the key's null for cli as none,
+// composes from (FoldProfiles over ConfigActiveSelection) reads the key's null for cli as none,
 // so the spelling it prints stops the warning on every later command; `-p <cli>=` follows for one
 // command. A typed one is undone by leaving the -p out, and when the key would then select for cli
 // too, by making it `-p <cli>=`, with the key's fix after it.
@@ -494,15 +495,23 @@ func HostProfileDeselection(key ProfileSelection, typed, keyReaches bool, cli st
 // was read from and the host's user config as the place to write. A --user-layer file is the one
 // user-scope input a jail's own caller writes (userlayer.go), so a selection located there keeps
 // the plain form.
+//
+// A selection read from `active_provider` (OQ-RC14) is undone by that key's own word, "native"
+// (OQ-RC20), at the agent's entry: `active_provider.<cli> = "native"`.
 func profileKeyFix(key ProfileSelection, cli, every string) string {
+	keyName := ProfileKey
 	spelling := "`" + ProfileKeySpelling(withNoProfileFor(key, cli)) + "`"
+	if key.Key == ActiveProviderKey {
+		keyName = ActiveProviderKey
+		spelling = "`" + ActiveProviderKey + "." + cli + ` = "` + NativeProvider + `"` + "`"
+	}
 	none := " to select none for " + cli + " on every " + every
 	loc := ""
 	if locs := UserScopeSources().Locations(profileKeyPathFor(key, cli)); len(locs) > 0 {
 		loc = locs[0]
 	}
 	if inJail() && !locatedInUserLayer(loc) {
-		where := "your host config's `" + ProfileKey + "` key"
+		where := "your host config's `" + keyName + "` key"
 		switch {
 		case strings.HasSuffix(loc, " on the host"):
 			// Located through the launch copy's record (launchorigins.go): loc is the host file.
@@ -512,7 +521,7 @@ func profileKeyFix(key ProfileSelection, cli, every string) string {
 		}
 		return where + ", so write " + spelling + " in your user config on the host" + none
 	}
-	where := "your config's `" + ProfileKey + "` key"
+	where := "your config's `" + keyName + "` key"
 	if loc != "" {
 		where += " at " + loc
 	}
@@ -535,6 +544,13 @@ func locatedInUserLayer(loc string) bool {
 // for the string or list form.
 func profileKeyPathFor(key ProfileSelection, cli string) string {
 	path := "config." + ProfileKey
+	if key.Key == ActiveProviderKey {
+		path = "config." + ActiveProviderKey
+		if _, named := key.Named[cli]; named {
+			return path + "." + cli
+		}
+		return path + "." + ActiveProviderEveryAgent
+	}
 	if _, named := key.Named[cli]; named {
 		return path + "." + cli
 	}

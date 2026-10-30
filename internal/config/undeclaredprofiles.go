@@ -64,5 +64,5 @@ func UndeclaredProfileProblems(fold ProfileFold, keyFrom int, userProfiles map[s
 // flag above it, the key at selection index 0 (ConfigProfileTable's fold, kept whole for the
 // declaration check).
 func ConfigProfileFold(cfg *jsonx.OrderedMap, packs []*packload.Pack) ProfileFold {
-	return FoldProfiles(ReceiversOf(packs), ConfigProfileSelection(cfg))
+	return FoldProfiles(ReceiversOf(packs), ConfigActiveSelection(cfg))
 }

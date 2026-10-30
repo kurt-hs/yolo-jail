@@ -119,8 +119,8 @@ func TestConfigProviderConsumerPreservesLegacyBoundaryAndRejectsMixedSelectors(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Readable != nil || !reflect.DeepEqual(got.Legacy, ConfigProfileSelection(cfg)) {
-		t.Fatalf("legacy selector behavior changed: got=%#v want=%#v", got, ConfigProfileSelection(cfg))
+	if got.Readable != nil || !reflect.DeepEqual(got.Legacy, legacyProfileSelection(cfg)) {
+		t.Fatalf("legacy selector behavior changed: got=%#v want=%#v", got, legacyProfileSelection(cfg))
 	}
 	cfg.Set("active_provider", jsonx.NewOrderedMap())
 	if _, err := ConfigProviderConsumer(cfg, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "cannot be composed together") {
