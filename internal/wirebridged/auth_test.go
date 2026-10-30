@@ -59,10 +59,6 @@ func servedBridge(t *testing.T, env map[string]string) (up *captureUpstream, ada
 	home := t.TempDir()
 	writeKeyChannel(t, home, "export ZAI_API_KEY=${ZAI_API_KEY:-'zai-key'}",
 		"export CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-'cb-key'}")
-	adapterAddr, viaAddr = freeLoopback(t), freeLoopback(t)
-	vp := viaRoutesFor(mustProviders(t, viaProviders), map[string]string{"pi": "pz"}, viaResolved("http://"+viaAddr))
-	adapter := route{ProviderName: "cerebras", ListenAddr: adapterAddr,
-		UpstreamBaseURL: "https://api.cerebras.ai/v1", KeyEnvName: "CEREBRAS_API_KEY"}
 	noReadinessPipe(t)
 	endpointFile := filepath.Join(t.TempDir(), "wire-bridge.endpoint")
 	old := EndpointFile
@@ -72,17 +68,48 @@ func servedBridge(t *testing.T, env map[string]string) (up *captureUpstream, ada
 	for k, v := range env {
 		vars[k] = v
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	go func() { done <- servePlan(ctx, plan{adapter: &adapter, via: vp}, entrypoint.NewEnv(vars)) }()
-	t.Cleanup(func() { cancel(); <-done })
-	if env[CallerTokenEnv] == testCallerToken {
-		waitFor(t, func() bool {
-			b, err := os.ReadFile(endpointFile)
-			return err == nil && strings.TrimSpace(string(b)) != ""
-		})
+	// freeLoopback closes the port it probed, so another process on the machine (a parallel
+	// package's test under `go test ./...`) can take it before the daemon binds, and the daemon
+	// then exits 1 having published nothing. That is the harness's race, not the bridge's: a
+	// daemon that exits before publishing is started again on fresh ports.
+	const attempts = 5
+	for attempt := 1; ; attempt++ {
+		adapterAddr, viaAddr = freeLoopback(t), freeLoopback(t)
+		vp := viaRoutesFor(mustProviders(t, viaProviders), map[string]string{"pi": "pz"}, viaResolved("http://"+viaAddr))
+		adapter := route{ProviderName: "cerebras", ListenAddr: adapterAddr,
+			UpstreamBaseURL: "https://api.cerebras.ai/v1", KeyEnvName: "CEREBRAS_API_KEY"}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan int, 1)
+		go func() { done <- servePlan(ctx, plan{adapter: &adapter, via: vp}, entrypoint.NewEnv(vars)) }()
+		if env[CallerTokenEnv] != testCallerToken {
+			t.Cleanup(func() { cancel(); <-done })
+			return up, adapterAddr, viaAddr
+		}
+		published, exited := false, false
+		for i := 0; i < 400 && !published && !exited; i++ {
+			if b, err := os.ReadFile(endpointFile); err == nil && strings.TrimSpace(string(b)) != "" {
+				published = true
+				break
+			}
+			select {
+			case <-done:
+				exited = true
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+		if published {
+			t.Cleanup(func() { cancel(); <-done })
+			return up, adapterAddr, viaAddr
+		}
+		cancel()
+		if !exited {
+			<-done
+			t.Fatal("the bridge published no endpoint within 2s")
+		}
+		if attempt == attempts {
+			t.Fatalf("the bridge exited without publishing an endpoint in %d attempts", attempts)
+		}
 	}
-	return up, adapterAddr, viaAddr
 }
 
 // sendAs posts body to url with exactly the given credential headers and no other: the bare
