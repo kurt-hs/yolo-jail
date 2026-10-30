@@ -112,6 +112,15 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		fmt.Fprintf(errw, "invalid config key: %v\n", err)
 		return 2
 	}
+	// RC-D21: no command writes convert_later; the person who wants the conversion offer to stop
+	// writes it by hand, once, in the old user file.
+	if action != configedit.Remove && len(key) == 1 && !key[0].IsIndex && key[0].Key == config.ConvertLaterKey {
+		fmt.Fprintf(errw, "yolo config %s: %s is written by hand, never by a command; nothing was written. "+
+			"To stop the launch offering the conversion, add \"%s\": true to %s yourself; "+
+			"to convert instead, run `yolo config migrate`\n",
+			actionName, config.ConvertLaterKey, config.ConvertLaterKey, paths.UserConfigPath())
+		return 1
+	}
 	mutation := configedit.Mutation{Action: action, Path: key}
 	if configEditNeedsHostForJailedUserScope(key, choice) {
 		printConfigEditHostRun(errw, workspace, args)

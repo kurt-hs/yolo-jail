@@ -78,11 +78,14 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	errs := &[]string{}
 	warns := &[]string{}
 
+	// convert_later is judged by validateConvertLater alone, so the unknown-key reporters read
+	// the config without it.
 	if edit == nil {
-		reportUnknownKeys(config, withAllowKey(knownTopLevelConfigKeys), "config", errs)
+		reportUnknownKeys(withoutConvertLater(config), withAllowKey(knownTopLevelConfigKeys), "config", errs)
 	} else {
-		reportUnknownKeysWithReadableFG(config, errs)
+		reportUnknownKeysWithReadableFG(withoutConvertLater(config), errs)
 	}
+	validateConvertLater(config, workspace, errs, edit)
 
 	validateRuntime(config, errs)
 	validateConfinement(config, errs)
@@ -717,6 +720,58 @@ func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string
 		add(errs, "config."+hostPathKey+": user-scope only — a folder on it decides which program "+
 			"`yolo host` runs, so it is read from "+paths.UserConfigPath()+" and a workspace value "+
 			"has no effect. Move it there, or remove it.")
+	}
+}
+
+// ConvertLaterKey is the old user file's "stop offering the conversion" key (RC-D21,
+// docs/design/config-migration.md §1): a person writes `"convert_later": true` by hand in the
+// old-format user config, and the launch stops offering `yolo config migrate`. No command writes
+// it, and a TOML file refuses it (readablevalidate.go), since a TOML file has nothing to convert.
+const ConvertLaterKey = "convert_later"
+
+// withoutConvertLater is config without ConvertLaterKey, for the unknown-key reporters; config
+// itself is never changed.
+func withoutConvertLater(config *jsonx.OrderedMap) *jsonx.OrderedMap {
+	if _, present := config.Get(ConvertLaterKey); !present {
+		return config
+	}
+	out := jsonx.NewOrderedMap()
+	for _, key := range config.Keys() {
+		if key != ConvertLaterKey {
+			value, _ := config.Get(key)
+			out.Set(key, value)
+		}
+	}
+	return out
+}
+
+// validateConvertLater accepts `convert_later` only as a boolean in the user config, and refuses
+// it in a workspace file: the offer it silences is the user's, and every old file this machine
+// reads stops being offered at once, so a project has nothing to say about it.
+func validateConvertLater(config *jsonx.OrderedMap, workspace string, errs *[]string, edit *editValidationContext) {
+	v, present := config.Get(ConvertLaterKey)
+	if !present {
+		return
+	}
+	if _, ok := v.(bool); !ok {
+		add(errs, "config."+ConvertLaterKey+": expected true or false (got "+reprAny(v)+"). "+
+			"Write \"convert_later\": true in "+paths.UserConfigPath()+" to stop the launch offering "+
+			"`yolo config migrate`, or remove the key.")
+	}
+	var wsCfg *jsonx.OrderedMap
+	var err error
+	if edit != nil {
+		wsCfg, err = loadValidationWorkspaceConfig(workspace, edit)
+	} else {
+		wsCfg, err = loadValidationWorkspaceConfig(workspace)
+	}
+	if err != nil || wsCfg == nil {
+		return
+	}
+	if _, atWorkspace := wsCfg.Get(ConvertLaterKey); atWorkspace {
+		add(errs, "config."+ConvertLaterKey+": user-scope only — it silences the launch's offer to "+
+			"convert every old-format file this machine reads, which is the user's choice, not a "+
+			"project's. Move it to "+paths.UserConfigPath()+", or remove it.")
 	}
 }
 

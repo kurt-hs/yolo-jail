@@ -149,6 +149,10 @@ func schemaTypeName(typ SchemaType) string {
 }
 
 func readableUnknownMessage(path []string) string {
+	if len(path) == 1 && path[0] == ConvertLaterKey {
+		return fmt.Sprintf("%q is refused in a TOML file: it has nothing to say there. It only stops the launch "+
+			"offering to convert an old-format file, and this file is already converted. Remove this line", ConvertLaterKey)
+	}
 	if descriptor, ok := readableRenameForPath(path); ok {
 		if descriptor.TOMLRefusal != "" {
 			return fmt.Sprintf("%q is not accepted in TOML. %s", readablePathDisplay(path, nil), descriptor.TOMLRefusal)

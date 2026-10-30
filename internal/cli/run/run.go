@@ -203,6 +203,12 @@ func Run(opts Options) (rc int) {
 	// reservation, profile keys) and would otherwise judge a pack this launch is
 	// about to deliver as absent. A no-op in a jail. Pinned by
 	// TestLaunchFetchesANeverInstalledGitPack.
+	//
+	// THE MIGRATION OFFER goes first (migrateoffer.go): an old-format config file is offered
+	// for conversion before anything reads the config, so a `y` launches on the new files, and
+	// before the config-change prompt, which the migration's respelled records keep quiet.
+	// Pinned by TestLaunchOfferYesConvertsThenLaunches.
+	o.offerConfigMigration()
 	o.refreshPacks()
 	cfg, ok := o.loadAndValidateConfig()
 	if !ok {

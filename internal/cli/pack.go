@@ -194,6 +194,10 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               collide with yours. Components that RUN (hooks, MCP/LSP servers,
                               bin/, workflow scripts, …) are named at init and shown in the
                               pack's footprint.
+  yolo pack migrate <path> [--dry-run] [--yes] [--keep-install-hints]
+                              rewrite a local pack's pack.json as pack.toml and move its plain
+                              files into home/, proving it delivers the same (moves keep their
+                              history in a checkout). This release still reads pack.json
   yolo pack lint [--online] [dir]
                               validate the tree AND the pack.json manifest; print its footprint.
                               It reads each patched fork's and extension's patch series as a launch
@@ -304,6 +308,8 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 		return packRemove(args[1:], out, errw)
 	case "init":
 		return packInit(args[1:], out, errw)
+	case "migrate":
+		return packMigrateMain(args[1:], out, errw)
 	case "lint":
 		return packLint(args[1:], out, errw, color)
 	case "ls":

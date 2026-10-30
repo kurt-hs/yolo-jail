@@ -1,0 +1,135 @@
+package cli
+
+// configmigrate.go is `yolo config migrate`: the one-time conversion of the old JSONC config
+// files into the TOML files that replace them (docs/design/config-migration.md §1 and §4). The
+// work is internal/configmigrate's: it reads the whole old graph, proves the converted files say
+// what the old ones say, and writes nothing otherwise. This verb picks what the migration covers,
+// shows the library's transcript, asks, and applies.
+//
+// WHAT IT COVERS (§4 item 6). On the host: the user config with everything it includes and its
+// config.d fragments, plus this workspace's project and local files. In a jail: only this
+// workspace's files, since the user config there is the host's, inherited for the launch.
+//
+// IT ASKS BEFORE WRITING. With a terminal it asks [y/N]; without one it writes only when told
+// to with --yes, which is how an agent in a jail runs it on the project's files (§5). A plan
+// that does not prove equal is shown, difference by difference, and nothing is written.
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/configmigrate"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/internal/tty"
+)
+
+const configMigrateUsage = `Usage: yolo config migrate [--dry-run] [--yes]
+
+Convert the old-format config files (config.jsonc, yolo-jail.jsonc, yolo-jail.local.jsonc and
+every file they include) into their TOML twins, once. On the host it converts the user config
+and this workspace's files; in a jail, only this workspace's files.
+
+It proves the converted files say exactly what the old ones say (the effective config before
+and after, compared as canonical JSON) and writes nothing otherwise, printing each difference.
+Each original is kept as <name>.pre-migrate, and the records only yolo reads (approval records,
+.yolo/config-boot.json) are respelled so the next launch asks nothing new.
+
+Convert only once every machine that shares these files runs a yolo that reads TOML: an older
+yolo finds no config.jsonc and starts with no packs.
+
+Flags:
+  --dry-run   Show what it would write, and write nothing.
+  --yes       Write without asking (for use with no terminal, such as an agent in a jail).
+  --help, -h  Show this help.`
+
+// configMigrateInteractive is whether the migration can ask its question: a person at stdin
+// who sees the prompt on stderr.
+var configMigrateInteractive = func() bool { return isTTY(os.Stdin) && isTTY(os.Stderr) }
+
+func configMigrateMain(args []string, out, errw io.Writer) int {
+	return configMigrate(args, os.Stdin, configMigrateInteractive(), out, errw)
+}
+
+// configMigrateRequest is what a migration started here covers: this workspace's files, and on
+// the host the user config's too.
+func configMigrateRequest(workspace string) configmigrate.Request {
+	req := configmigrate.Request{Workspace: workspace}
+	if !config.InJail() {
+		req.UserConfigDir = filepath.Dir(paths.UserConfigPath())
+	}
+	return req
+}
+
+func configMigrate(args []string, in io.Reader, interactive bool, out, errw io.Writer) int {
+	dryRun, yes := false, false
+	for _, a := range args {
+		switch a {
+		case "--dry-run":
+			dryRun = true
+		case "--yes":
+			yes = true
+		case "-h", "--help", "help":
+			writeCLIUsage(out, colorForWriter(out), configMigrateUsage)
+			return 0
+		default:
+			fmt.Fprintf(errw, "yolo config migrate: unexpected argument %q; it takes --dry-run and --yes "+
+				"(`yolo config migrate --help`)\n", a)
+			return 2
+		}
+	}
+	workspace := configEditWorkspace()
+	req := configMigrateRequest(workspace)
+	if req.UserConfigDir == "" {
+		fmt.Fprintln(errw, "In a jail only this workspace's config files migrate; the user config is the host's. "+
+			"Run `yolo config migrate` on the host to convert it.")
+	}
+	graph, err := configmigrate.Discover(req)
+	if err != nil {
+		fmt.Fprintf(errw, "yolo config migrate: %v\n", err)
+		return 1
+	}
+	plan, err := configmigrate.Plan(graph)
+	if plan != nil {
+		fmt.Fprint(out, plan.Transcript())
+	}
+	if err != nil {
+		var unequal *configmigrate.InequalityError
+		if !errors.As(err, &unequal) || plan == nil {
+			fmt.Fprintf(errw, "yolo config migrate: %v\n", err)
+		}
+		return 1
+	}
+	if len(plan.Targets) == 0 {
+		return 0
+	}
+	if dryRun {
+		fmt.Fprintln(out, "Dry run; nothing was written.")
+		return 0
+	}
+	if !yes {
+		if !interactive {
+			fmt.Fprintln(errw, "yolo config migrate: there is no terminal to ask on, so nothing was written. "+
+				"Read the plan above, then run `yolo config migrate --yes` to write it.")
+			return 1
+		}
+		question := fmt.Sprintf("Write %d %s, keeping each original as <name>.pre-migrate? [y/N] ",
+			len(plan.Targets), plural(len(plan.Targets), "file", "files"))
+		if !tty.Confirm(errw, in, question, false) {
+			fmt.Fprintln(errw, "Nothing was written. `yolo config migrate` asks again whenever you are ready.")
+			return 1
+		}
+	}
+	result, err := configmigrate.Apply(plan, configmigrate.ApplyOptions{})
+	if err != nil {
+		fmt.Fprintf(errw, "yolo config migrate: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(out, "Written: %s.\n", strings.Join(result.Written, ", "))
+	fmt.Fprintln(out, "Nothing else on this machine changed. Next: `yolo check`.")
+	return 0
+}
