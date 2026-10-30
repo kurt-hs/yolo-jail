@@ -103,26 +103,39 @@ func TestAskForPushSpendsExactGrantOnce(t *testing.T) {
 
 func TestAskForPushWaitsForTheAnswer(t *testing.T) {
 	f := newFixture(t, "")
-	f.broker.waitLimit = 10 * time.Second
+	// The refused git push leaves its request, for the same push as cmds, pending.
 	cmds := refusedPushCommands(t, f)
+	f.broker.waitLimit = 10 * time.Second
 	repo, _ := gitproto.Identity(origin)
 	for _, deny := range []bool{false, true} {
+		// The host answers every pending request until the push returns, not only the first
+		// it sees: on the first round the request the git push left pending is one, and when
+		// it is answered between askForPush's first spend and its filing, the filing makes a
+		// new request, which is the one askForPush waits on.
+		done := make(chan struct{})
 		decided := make(chan error, 1)
 		go func() {
+			var first error
+			defer func() { decided <- first }()
 			for {
 				reqs, _, err := ApprovalStore().List()
 				if err != nil {
-					decided <- err
+					first = err
 					return
 				}
 				for _, q := range reqs {
-					if q.State == "pending" {
-						_, err := ApprovalStore().Decide(q.ID, "pending", brokerstore.Decision{Deny: deny})
-						decided <- err
-						return
+					if q.State != "pending" {
+						continue
+					}
+					if _, err := ApprovalStore().Decide(q.ID, "pending", brokerstore.Decision{Deny: deny}); err != nil && first == nil {
+						first = err
 					}
 				}
-				time.Sleep(10 * time.Millisecond)
+				select {
+				case <-done:
+					return
+				case <-time.After(10 * time.Millisecond):
+				}
 			}
 		}()
 		start := time.Now()
@@ -131,11 +144,13 @@ func TestAskForPushWaitsForTheAnswer(t *testing.T) {
 			push = []gitproto.Command{{Old: cmds[0].Old, New: cmds[0].Old, Ref: cmds[0].Ref}}
 		}
 		_, reason, ok := f.broker.askForPush(context.Background(), repo, push, nil, []string{"refs/heads/main"}, &brokeraudit.Event{})
+		took := time.Since(start)
+		close(done)
 		if err := <-decided; err != nil {
 			t.Fatal(err)
 		}
-		if time.Since(start) > 5*time.Second {
-			t.Fatalf("the answer took %v to reach the push", time.Since(start))
+		if took > 5*time.Second {
+			t.Fatalf("the answer took %v to reach the push", took)
 		}
 		if ok == deny {
 			t.Fatalf("deny %v: ok %v, %q", deny, ok, reason)
