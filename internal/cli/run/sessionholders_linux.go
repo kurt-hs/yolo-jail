@@ -24,32 +24,56 @@ const userHZ = 100
 // flock(2), so only FLOCK lines answer. comm and start time come from the holder's own /proc entry,
 // and are left out when that cannot be read. An unreadable /proc yields nothing, which its caller
 // reads as an unnamed holder, never as none (JL-P3).
+//
+// ONE READ OF /proc/locks CAN MISS A HELD LOCK. The kernel serves it as a seq_file a buffer at a
+// time and resumes each buffer by POSITION in its lock list, so a lock listed ahead of a held one
+// and released between two of the read's buffers moves the held one back past the resume point,
+// and that read never shows it. A busy host takes and releases flocks all the time, so the table is
+// read procLocksReads times and the holders are the union: a holder that every read skipped needs a
+// release ahead of it inside each one.
 func procLockHolders(f *os.File) []lockHolder {
 	want := kernelLockIdentity(f)
 	if want == "" {
 		return nil
 	}
-	data, err := os.ReadFile("/proc/locks")
-	if err != nil {
+	var pids []int
+	seen := map[int]bool{}
+	for range procLocksReads {
+		data, err := readProcLocks()
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 6 || fields[1] != "FLOCK" || fields[5] != want {
+				continue
+			}
+			pid, err := strconv.Atoi(fields[4])
+			if err != nil || pid <= 0 || seen[pid] {
+				continue
+			}
+			seen[pid] = true
+			pids = append(pids, pid)
+		}
+	}
+	if len(pids) == 0 {
 		return nil
 	}
 	boot := bootTime()
-	var out []lockHolder
-	seen := map[int]bool{}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 6 || fields[1] != "FLOCK" || fields[5] != want {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[4])
-		if err != nil || pid <= 0 || seen[pid] {
-			continue
-		}
-		seen[pid] = true
+	out := make([]lockHolder, 0, len(pids))
+	for _, pid := range pids {
 		out = append(out, holderFromProc(pid, boot))
 	}
 	return out
 }
+
+// procLocksReads is how many times procLockHolders reads /proc/locks, so one read a concurrent
+// release made skip a holder does not leave it unnamed.
+const procLocksReads = 3
+
+// readProcLocks reads the host's lock table once. A var so a test can hand back a read that a
+// concurrent release made skip a held lock.
+var readProcLocks = func() ([]byte, error) { return os.ReadFile("/proc/locks") }
 
 // kernelLockIdentity reads the identity the kernel's lock table uses. On overlayfs
 // st_dev can name the overlay while a flock names its backing inode's device.
