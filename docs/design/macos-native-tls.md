@@ -243,7 +243,7 @@ tools installed, with no profile change.
 
 <!-- vantage: question id=OQ-MT12 -->
 
-**Research, not a ruling yet.** [MT-D7](#decision-ledger) keeps the keychain denied while this is open. The research names the programs that keep secrets in the macOS login keychain, the access list each one gives its items (the program itself, `/usr/bin/security`, or any application), and whether a process that can run that program, a downloaded copy of it, or `security` can read the secret back with no prompt. It covers the newer data-protection keychain too. The answer decides whether any mode may allow the keychain.
+**Research, not a ruling yet.** [MT-D7](#decision-ledger) keeps the keychain denied while this is open. The research names the programs that keep secrets in the macOS login keychain, the access list each one gives its items, and whether a process that can run that program, a downloaded copy of it, or `security` can read the secret back with no prompt. It covers the newer data-protection keychain too. The answer decides whether any mode may allow the keychain.
 
 Questions 6 and 11 are witnesses and 12 is research, not rulings; and a row that could not run is untested, not answered. Run any remaining one in a wholly disposable synthetic-only account, under the runbook's [scope and stop conditions](../plans/macos-native-comparison-runbook.md#scope-and-stop-conditions).
 
