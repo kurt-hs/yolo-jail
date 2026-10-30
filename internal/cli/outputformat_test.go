@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -349,5 +350,14 @@ func TestCheckOptionsWiring(t *testing.T) {
 	}
 	if opts.Stdin != os.Stdin {
 		t.Errorf("checkOptions wired Stdin to %T, want the process's own os.Stdin", opts.Stdin)
+	}
+	// PackAdd, the pack-switch nudge's "Add it to packs?" answer: nil makes the nudge
+	// unreachable (check/packnudge.go asks only when it is set). Funcs compare by code
+	// pointer.
+	if opts.PackAdd == nil {
+		t.Fatal("checkOptions leaves PackAdd nil, so the pack-switch nudge never asks")
+	}
+	if reflect.ValueOf(opts.PackAdd).Pointer() != reflect.ValueOf(packAddInProcess).Pointer() {
+		t.Error("checkOptions wired PackAdd to something other than packAddInProcess")
 	}
 }
