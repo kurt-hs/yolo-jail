@@ -134,16 +134,20 @@ func configWhyDefault(cfg *jsonx.OrderedMap, sources *config.Sources, steps []co
 		keys = append(keys, step.Key)
 	}
 	if len(keys) == 2 && keys[0] == "active_provider" {
+		hint := ""
+		if !present {
+			hint = "; set it with `" + configWhySetCommand(steps, keys) + "`"
+		}
 		if keys[1] != "default" {
 			if value, ok := configValueAt(cfg, "active_provider", "default"); ok {
 				where := ""
 				if locations := sources.Locations("config.active_provider.default"); len(locations) > 0 {
 					where = ", set in " + locations[0]
 				}
-				return "default would be: active_provider.default, " + configWhyRender(value) + where
+				return "default would be: active_provider.default, " + configWhyRender(value) + where + hint
 			}
 		}
-		return `default would be: "native" (no provider is selected, so the agent is left to its own login)`
+		return `default would be: "native" (no provider is selected, so the agent is left to its own login)` + hint
 	}
 	if len(keys) == 3 && keys[0] == "allow" && keys[2] != "always" && keys[2] != "on_request" {
 		_, settings, err := allowSelectedBrokers()
@@ -173,7 +177,49 @@ func configWhyDefault(cfg *jsonx.OrderedMap, sources *config.Sources, steps []co
 	if replacement := config.RenamedKeyReplacement(keys); replacement != "" {
 		return configWhyPath(steps) + " was renamed, so use " + replacement + " instead"
 	}
-	return "`yolo config-ref` describes what an unset key means; set it with `yolo config set " + configWhyPath(steps) + " <value>`"
+	return "`yolo config-ref` describes what an unset key means; set it with `" + configWhySetCommand(steps, keys) + "`"
+}
+
+// configWhySetCommand is the command that sets an unset key: the key's named verb where one
+// exists (docs/design/config-commands.md section 4, OQ-RC10) and the generic `yolo config set`
+// where none does.
+func configWhySetCommand(steps []configdoc.Step, keys []string) string {
+	generic := "yolo config set " + configWhyPath(steps) + " <value>"
+	if len(steps) == 0 || steps[0].IsIndex {
+		return generic
+	}
+	switch steps[0].Key {
+	case "packs":
+		return "yolo pack add <pack>"
+	case "active_provider":
+		if len(keys) == 2 {
+			return "yolo active-provider " + keys[1] + " <provider|native>"
+		}
+		return "yolo active-provider <agent|default> <provider|native>"
+	case "allow":
+		switch {
+		case len(keys) == 1:
+			return "yolo allow <source> [always|on_request] <capability>"
+		case len(keys) == 2:
+			return "yolo allow " + keys[1] + " <capability>"
+		case len(keys) == 3 && (keys[2] == "always" || keys[2] == "on_request"):
+			return "yolo allow " + keys[1] + " " + keys[2] + " <capability>"
+		}
+	case "requests":
+		switch {
+		case len(keys) == 1:
+			return "yolo request <source> <capability> [resource]"
+		case len(keys) == 2:
+			return "yolo request " + keys[1] + " <capability> [resource]"
+		case len(keys) == 3 && keys[2] == "repos":
+			return "yolo request " + keys[1] + " repos <OWNER/REPO>"
+		case len(keys) == 3 && keys[2] == "push":
+			return "yolo request " + keys[1] + " push <ref>"
+		case len(keys) == 3:
+			return "yolo request " + keys[1] + " " + keys[2]
+		}
+	}
+	return generic
 }
 
 func configWhyValueOf(cfg *jsonx.OrderedMap, steps []configdoc.Step) any {
