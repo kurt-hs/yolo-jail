@@ -131,7 +131,7 @@ func (o *Options) resolveNetModeSource(cfg *jsonx.OrderedMap) (mode, source stri
 			return m, netModeFromConfig
 		}
 	}
-	return "bridge", netModeFromDefault
+	return config.DefaultNetworkMode, netModeFromDefault
 }
 
 // advertiseHostFor returns the host name a loopback-TLS daemon should PUBLISH for

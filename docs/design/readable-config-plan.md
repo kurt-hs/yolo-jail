@@ -3,7 +3,7 @@ title: "Readable config: component implementation plan"
 date: 2026-10-26
 status: accepted
 stage: DECIDED
-next: "Build the remainder §1 lists (git fetch of requested repositories, C7 and a model said once at launch, the migration's folds, config why's named verbs, the loophole manifests), convert this repository's own config once the owner has installed a TOML-reading yolo, then graduate the design to a system doc and retire this plan"
+next: "Build the remainder §1 lists (C7 and a model said once at launch, the migration's folds, the loophole manifests), convert this repository's own config once the owner has installed a TOML-reading yolo, then graduate the design to a system doc and retire this plan"
 depends-on:
   - readable-config.md
   - config-user.md
@@ -80,16 +80,11 @@ this list is the state by component.
 - **Legacy window.** Legacy JSONC configs and `pack.json` manifests are still read, as
   [RC-D19](readable-config.md#RC-D19) rules; the old reader's removal is a later release's work.
 - **Not built:**
-  - git fetch scope does not take a project's requested repositories; only the GitHub broker
-    does ([OQ-RC16](readable-config.md#decision-ledger), and with it the private-repository
-    refusal's wording under [OQ-RC21](readable-config.md#decision-ledger));
   - catalog facts (C7) and a model said once (`every_model`, `twin_of`, `compact_at`) are
     composed and validated but do not reach a launch's provider table
     ([OQ-RC13](readable-config.md#decision-ledger), [OQ-RC19](readable-config.md#decision-ledger));
-  - `yolo config migrate` converts losslessly but does not yet drop written defaults or fold
-    repeated facts ([OQ-RC18](readable-config.md#decision-ledger));
-  - `yolo config why` names `yolo config set` for an unset key even where a named verb exists
-    ([OQ-RC10](readable-config.md#decision-ledger));
+  - `yolo config migrate` converts losslessly and drops written defaults but does not fold
+    repeated facts ([OQ-RC18](readable-config.md#decision-ledger), [RC-D27](readable-config.md#RC-D27));
   - this repository's own `yolo-jail.jsonc` is not converted, which waits on the owner installing
     a TOML-reading `yolo` on the host first ([RC-D22](readable-config.md#RC-D22)), and the shipped
     loophole `manifest.jsonc` files have no TOML form yet

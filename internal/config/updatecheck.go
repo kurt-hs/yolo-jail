@@ -41,7 +41,7 @@ func UpdateCheckEnabled() bool {
 func updateCheckValue(cfg *jsonx.OrderedMap) bool {
 	v, present := cfg.Get(updateCheckKey)
 	if !present || v == nil {
-		return true
+		return DefaultUpdateCheck
 	}
 	b, ok := v.(bool)
 	return !ok || b

@@ -38,6 +38,8 @@ type Target struct {
 	Comments int
 	// Respelled are the include entries rewritten to their twins.
 	Respelled []string
+	// Dropped are the written values left out because they are the default.
+	Dropped []DroppedDefault
 }
 
 // Difference is one key on which the old and the converted config disagree.
@@ -126,10 +128,19 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	p := &MigrationPlan{Graph: g, Unreachable: append([]Missing(nil), g.Unreachable...)}
 	remotes := workspaceRemotes(g.Request.Workspace)
 	newBytes := map[*File][]byte{}
+	writers := writerCounts{}
 	for _, f := range g.Files {
 		switch f.Role {
 		case RoleConvert:
-			t, skipped, err := convertFile(f, remotes)
+			writers.add(lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes}, f.Logical).values)
+		default:
+			writers.add(f.doc.Values)
+		}
+	}
+	for _, f := range g.Files {
+		switch f.Role {
+		case RoleConvert:
+			t, skipped, err := convertFile(f, remotes, writers)
 			if err != nil {
 				return nil, err
 			}
@@ -198,8 +209,9 @@ func oldTop(g *Graph) string {
 }
 
 // convertFile makes one old file's TOML.
-func convertFile(f *File, remotes []string) (Target, []NotConverted, error) {
+func convertFile(f *File, remotes []string, writers writerCounts) (Target, []NotConverted, error) {
 	l := lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes}, f.Logical)
+	dropped := dropDefaults(l.values, writers)
 	var respelled []string
 	if value, ok := l.values.Get("include_if_found"); ok {
 		list, _ := value.([]any)
@@ -242,7 +254,7 @@ func convertFile(f *File, remotes []string) (Target, []NotConverted, error) {
 		return Target{}, nil, fmt.Errorf("%s: %w", f.Logical, err)
 	}
 	t := Target{File: f, Old: f.Physical, New: twinPath(f.Physical), Backup: f.Physical + ".pre-migrate",
-		Bytes: data, Comments: len(comments), Respelled: respelled}
+		Bytes: data, Comments: len(comments), Respelled: respelled, Dropped: dropped}
 	link, err := linkFor(f)
 	if err != nil {
 		return Target{}, nil, err
@@ -486,6 +498,11 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, mirror
 	}
 	for _, root := range loweredRoots {
 		s.composed.Delete(root)
+	}
+	// A default written or left out is one fact, so the proof compares both sides with every
+	// default filled, by the table the readers answer from.
+	for _, m := range []*jsonx.OrderedMap{s.user, s.project, s.composed} {
+		config.ApplyWrittenDefaults(m)
 	}
 	for _, pair := range []struct {
 		m   *jsonx.OrderedMap

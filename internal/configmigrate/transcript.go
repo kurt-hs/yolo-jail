@@ -32,6 +32,9 @@ func (p *MigrationPlan) Transcript() string {
 			continue
 		}
 		fmt.Fprintf(&b, "  (%d lines → %d; %d %s kept, in order)\n", countLines(t.File.Bytes), countLines(t.Bytes), t.Comments, plural(t.Comments, "comment", "comments"))
+		for _, d := range t.Dropped {
+			fmt.Fprintf(&b, "  %q: %s dropped: it is the default\n", d.Path, d.Value)
+		}
 		if t.Link != nil {
 			fmt.Fprintf(&b, "  %s links to it; %s is left as it is\n", t.Link.Path, t.Link.Old)
 		}

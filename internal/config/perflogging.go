@@ -50,7 +50,7 @@ func PerfLoggingEnabled() bool {
 func perfLoggingValue(cfg *jsonx.OrderedMap) bool {
 	v, present := cfg.Get(perfLoggingKey)
 	if !present || v == nil {
-		return false
+		return DefaultPerfLogging
 	}
 	b, ok := v.(bool)
 	return ok && b

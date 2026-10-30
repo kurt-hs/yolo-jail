@@ -3,7 +3,7 @@ title: "Moving to the new config: the file name is the version, and one command 
 date: 2026-10-25
 status: accepted
 stage: DECIDED
-next: "Build the migration's dropping of written defaults and its folds (OQ-RC18); the old reader's removal waits for a later release"
+next: "Build the migration's folds once the legacy provider composer is gone (RC-D27); the old reader's removal waits for a later release"
 tags: [config, migration, versioning, release, design]
 summary: "How a yolo knows which config it has, the order of releases, what `yolo config migrate` does and proves, and what every machine sees along the way, shown as transcripts. Every section is ruled. Part of the readable-config redesign."
 ---
@@ -11,8 +11,8 @@ summary: "How a yolo knows which config it has, the order of releases, what `yol
 # Moving to the new config: the file name is the version, and one command converts everything
 
 **Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
-good and I want to move forward"*). Built by 2026-10-30 except the migration's dropping of written defaults and its folds, which a
-migration does not do yet; the old reader's removal and the fetched-pack refusal belong to a later
+good and I want to move forward"*). Built by 2026-10-30 except the migration's folds, which wait for the legacy provider composer's removal
+([RC-D27](readable-config.md#RC-D27)); the old reader's removal and the fetched-pack refusal belong to a later
 release, and the TOML release is not tagged yet (the [ledger](readable-config.md#decision-ledger)
 names each). Legacy JSONC is still read for a few releases: a launch offers `yolo config migrate`,
 and `"convert_later": true` in the old user file stops the offer. The transcripts are what a person would see under the
@@ -166,7 +166,9 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 3. **Keeps comments, in order.** A comment is never read as belonging to a key; each is written
    back in document order, before whatever key follows it in the new file, and nothing is dropped.
 4. **Drops written defaults and folds repeated facts**, each as its own hunk, only while the
-   equality check holds.
+   equality check holds. Built: a written default is dropped when it equals what the readers answer
+   for an absent key and only one file writes it. Folds are not built: they would change what the
+   legacy provider composer resolves ([RC-D27](readable-config.md#RC-D27)).
 5. **Respells the records only yolo reads**: the approval records under
    `~/.local/share/yolo-jail/approvals/` and each workspace's `.yolo/config-boot.json`. Without
    this every migrated workspace meets a full-file approval prompt once, and a launch with no

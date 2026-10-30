@@ -35,9 +35,12 @@ const briefingProvenanceKey = "briefing_provenance"
 // reader that guessed would be a second place the shape rule lives.
 func BriefingProvenance(cfg *jsonx.OrderedMap) bool {
 	if cfg == nil {
-		return false
+		return DefaultBriefingProvenance
 	}
-	v, _ := cfg.Get(briefingProvenanceKey)
+	v, present := cfg.Get(briefingProvenanceKey)
+	if !present {
+		return DefaultBriefingProvenance
+	}
 	on, _ := v.(bool)
 	return on
 }

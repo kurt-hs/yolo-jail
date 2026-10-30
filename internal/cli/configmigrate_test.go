@@ -253,3 +253,67 @@ func TestPackMigrateRefusesAnUnrepresentableNull(t *testing.T) {
 		t.Fatal("a refused migration changed the pack")
 	}
 }
+
+// TestConfigMigrateDropsWrittenDefaultsAndKeepsTheProof pins OQ-RC18's dropping of written
+// defaults through the verb: a default written once is left out, --dry-run says so, the comment
+// above it stays, and a non-default value is kept. It fails if the migration stops dropping, or
+// stops proving the result equal.
+func TestConfigMigrateDropsWrittenDefaultsAndKeepsTheProof(t *testing.T) {
+	e := newMigrateEnv(t)
+	writeMigrateFile(t, filepath.Join(e.userDir, "config.jsonc"),
+		"{\n  // timing stays off\n  \"perf_logging\": false,\n  \"update_check\": false,\n  \"network\": {\"mode\": \"bridge\"}\n}\n")
+
+	interactive := configMigrateInteractive
+	configMigrateInteractive = func() bool { return false }
+	t.Cleanup(func() { configMigrateInteractive = interactive })
+	if rc := registry["config"]([]string{"config", "migrate", "--dry-run"}); rc != 0 {
+		t.Fatalf("registry config migrate --dry-run rc=%d", rc)
+	}
+	rc, dry, errs := runConfigMigrateVerb(t, "--dry-run")
+	if rc != 0 {
+		t.Fatalf("--dry-run: rc=%d\n%s\n%s", rc, dry, errs)
+	}
+	for _, want := range []string{`"network.mode": "bridge" dropped: it is the default`,
+		`"perf_logging": false dropped: it is the default`, "identical"} {
+		if !strings.Contains(dry, want) {
+			t.Errorf("--dry-run lacks %q:\n%s", want, dry)
+		}
+	}
+	if strings.Contains(dry, "update_check") {
+		t.Errorf("update_check=false is not the default and must not be dropped:\n%s", dry)
+	}
+	if present(filepath.Join(e.userDir, "config.toml")) {
+		t.Fatal("--dry-run wrote a file")
+	}
+
+	if rc, out, errs := runConfigMigrateVerb(t, "--yes"); rc != 0 {
+		t.Fatalf("--yes: rc=%d\n%s\n%s", rc, out, errs)
+	}
+	data, err := os.ReadFile(filepath.Join(e.userDir, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if strings.Contains(got, "network") || strings.Contains(got, "perf_logging") {
+		t.Errorf("a written default survived:\n%s", got)
+	}
+	if !strings.Contains(got, "update_check = false") || !strings.Contains(got, "# timing stays off") {
+		t.Errorf("the non-default value or the comment above a dropped key was lost:\n%s", got)
+	}
+}
+
+// TestConfigMigrateKeepsADefaultTwoFilesWrite pins the single-writer rule: a project's bridge over
+// a user's host is a decision, not a default, so it is kept and the proof still holds.
+func TestConfigMigrateKeepsADefaultTwoFilesWrite(t *testing.T) {
+	e := newMigrateEnv(t)
+	writeMigrateFile(t, filepath.Join(e.userDir, "config.jsonc"), "{\n  \"network\": {\"mode\": \"host\"}\n}\n")
+	writeMigrateFile(t, filepath.Join(e.ws, "yolo-jail.jsonc"), "{\n  \"network\": {\"mode\": \"bridge\"}\n}\n")
+	rc, out, errs := runConfigMigrateVerb(t, "--yes")
+	if rc != 0 || strings.Contains(out, "dropped") {
+		t.Fatalf("rc=%d\n%s\n%s", rc, out, errs)
+	}
+	data, err := os.ReadFile(filepath.Join(e.ws, "yolo-jail.toml"))
+	if err != nil || !strings.Contains(string(data), `mode = "bridge"`) {
+		t.Fatalf("the project's bridge was dropped: %v\n%s", err, data)
+	}
+}
