@@ -266,6 +266,28 @@ func TestComposeProviderModelsInfersOnlyRecognizableMakers(t *testing.T) {
 	}
 }
 
+// With no catalog entry for a row, and nothing authored for a fact, the fact stays absent: no zero
+// is read as a real value and no default is invented. A catalog that does not name the row leaks
+// nothing into it either.
+func TestComposeProviderModelsMissingCatalogInventsNoFacts(t *testing.T) {
+	p := packdecl.ProviderContribution{Name: "p", ModelRows: map[string]packdecl.ProviderModel{
+		"openai/gpt-6": {Price: completePrice(1, 2, 3, 4)},
+	}}
+	elsewhere := map[string]packdecl.ProviderModel{"other": {Context: 9000, MaxTokens: 500, Reasoning: boolp(true), CompactAt: 100}}
+	for name, catalog := range map[string]map[string]packdecl.ProviderModel{"nil catalog": nil, "catalog naming another row": elsewhere} {
+		rows, err := ComposeProviderModels(p, catalog)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		row := rows.ByID["openai/gpt-6"]
+		f := row.Facts
+		if f.Context != 0 || f.MaxTokens != 0 || f.Reasoning != nil || len(f.Thinking) != 0 || len(f.Accepts) != 0 ||
+			f.Images != nil || f.API != "" || f.Name != "" || row.CompactAt != 0 {
+			t.Fatalf("%s: facts were invented for a row with no catalog entry: %#v", name, row)
+		}
+	}
+}
+
 func TestComposeProviderModelsRefusesInvalidFactsTwinsAndPrices(t *testing.T) {
 	for name, models := range map[string]map[string]packdecl.ProviderModel{
 		"missing": {"a": {TwinOf: "missing"}}, "cycle": {"a": {TwinOf: "b"}, "b": {TwinOf: "a"}}, "self": {"a": {TwinOf: "a"}},
