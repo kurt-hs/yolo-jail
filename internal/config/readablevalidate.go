@@ -148,10 +148,25 @@ func schemaTypeName(typ SchemaType) string {
 	}
 }
 
+// singularRootKeys are the singular spellings of two plural top-level keys, which a reader is
+// likely to try, mapped to the key that exists. singularRootKeyForms shows the table form.
+var singularRootKeys = map[string]string{"mcp": "mcp_servers", "mount": "mounts"}
+
+var singularRootKeyForms = map[string]string{
+	"mcp_servers": "write [mcp_servers.<name>]",
+	"mounts":      "write [[mounts]] for each mount",
+}
+
 func readableUnknownMessage(path []string) string {
 	if len(path) == 1 && path[0] == ConvertLaterKey {
 		return fmt.Sprintf("%q is refused in a TOML file: it has nothing to say there. It only stops the launch "+
 			"offering to convert an old-format file, and this file is already converted. Remove this line", ConvertLaterKey)
+	}
+	if len(path) == 1 {
+		if plural, ok := singularRootKeys[path[0]]; ok {
+			return fmt.Sprintf("unknown TOML config key %q: the key is the plural %q (%s)",
+				path[0], plural, singularRootKeyForms[plural])
+		}
 	}
 	if descriptor, ok := readableRenameForPath(path); ok {
 		if descriptor.TOMLRefusal != "" {
