@@ -429,69 +429,95 @@ func TestPreparationRevocationCancelsPausedChild(t *testing.T) {
 	}
 }
 
+// A key another advance holds is recorded busy without a success stamp, the free key behind it is
+// still admitted from the same timer tick, and the next tick retries the released key. Each
+// assertion is made when the scheduler reports that task's result recorded
+// (preparationTaskSettled), never at a wall-clock deadline: B's admission is a real check,
+// shared-demand handoff and capture whose duration follows machine load (a 5 s poll failed on a
+// loaded landing gate with B still checking). The readiness budget bounds only a scheduler that
+// never settles a task.
 func TestPreparationBusyKeyRetriesWithoutSuccessStamp(t *testing.T) {
 	pf := readyForABackgroundAdvance(t)
 	pf.agentUpdates(t, `{"treepool":"next-launch"}`)
 	stubPreparationWorkerStart(t)
 	_, _ = pf.launch(t, "podman", &run.ActInterrupt{})
+	// The observer runs on the scheduler's goroutine before its next dispatch pass, so the snapshot it
+	// reads is the record exactly as that task's result left it.
+	type settlement struct {
+		key      string
+		snapshot preparationSnapshot
+		err      error
+	}
+	settled := make(chan settlement, 16)
+	previousSettled := preparationTaskSettled
+	preparationTaskSettled = func(key string) {
+		snapshot, err := readPreparationSnapshot(key)
+		settled <- settlement{key, snapshot, err}
+	}
+	t.Cleanup(func() { preparationTaskSettled = previousSettled })
 	lk, err := pidlock.Acquire(backgroundKeyLock(poolKeyA), pidlock.NoWait, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer lk.Release()
 	ctx, stop := context.WithCancel(context.Background())
 	ticks := make(chan time.Time)
 	done := make(chan error, 1)
 	go func() { done <- runPreparationScheduler(ctx, ticks, io.Discard) }()
-	ticks <- pf.now
-	deadline := time.After(5 * time.Second)
-	for {
-		snapshot, _ := readPreparationSnapshot(poolKeyA)
-		if snapshot.Phase == "busy" {
-			break
-		}
-		select {
-		case <-deadline:
-			lk.Release()
+	stopped := false
+	defer func() {
+		if !stopped {
 			stop()
 			<-done
-			t.Fatalf("busy key did not defer: %+v", snapshot)
-		case <-time.After(time.Millisecond):
 		}
+	}()
+	budget := time.NewTimer(testsupport.ReadinessBudget(t))
+	defer budget.Stop()
+	// awaitSettled returns key's snapshot at its next recorded task result, failing the test when
+	// the scheduler stops first or never settles key within the readiness budget. The scheduler runs
+	// one task at a time in record order, so another key's settlement may arrive first; it is kept
+	// for that key's own wait.
+	early := map[string][]preparationSnapshot{}
+	awaitSettled := func(key string) preparationSnapshot {
+		t.Helper()
+		for {
+			if queued := early[key]; len(queued) > 0 {
+				early[key] = queued[1:]
+				return queued[0]
+			}
+			select {
+			case got := <-settled:
+				if got.err != nil {
+					t.Fatalf("%s: settled result unreadable: %v", got.key, got.err)
+				}
+				early[got.key] = append(early[got.key], got.snapshot)
+			case err := <-done:
+				stopped = true
+				t.Fatalf("scheduler stopped before settling %s: %v", key, err)
+			case <-budget.C:
+				a, _ := readPreparationSnapshot(poolKeyA)
+				b, _ := readPreparationSnapshot(poolKeyB)
+				t.Fatalf("scheduler never settled %s: A=%+v B=%+v", key, a, b)
+			}
+		}
+	}
+	ticks <- pf.now
+	if snapshot := awaitSettled(poolKeyA); snapshot.Phase != "busy" {
+		t.Fatalf("busy key did not defer: %+v", snapshot)
 	}
 	if outcome, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA)); err == nil && outcome.Pid == os.Getpid() && outcome.State == bgMoved {
 		t.Fatal("busy skip manufactured a successful outcome")
 	}
-	deadline = time.After(5 * time.Second)
-	for {
-		snapshot, _ := readPreparationSnapshot(poolKeyB)
-		if snapshot.Phase == "admitted" && snapshot.ServingEntry != "" {
-			break
-		}
-		select {
-		case <-deadline:
-			lk.Release()
-			stop()
-			<-done
-			t.Fatalf("free B starved while A remained locked: %+v", snapshot)
-		case <-time.After(time.Millisecond):
-		}
+	if snapshot := awaitSettled(poolKeyB); snapshot.Phase != "admitted" || snapshot.ServingEntry == "" {
+		t.Fatalf("free B starved while A remained locked: %+v", snapshot)
 	}
 	lk.Release()
 	ticks <- pf.now
-	deadline = time.After(5 * time.Second)
-	for {
-		outcome, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA))
-		if err == nil && outcome.To != "" {
-			break
-		}
-		select {
-		case <-deadline:
-			stop()
-			<-done
-			t.Fatalf("released busy key did not retry: outcome=%+v err=%v", outcome, err)
-		case <-time.After(time.Millisecond):
-		}
+	awaitSettled(poolKeyA)
+	if outcome, err := readBackgroundOutcome(backgroundOutcomePath(poolKeyA)); err != nil || outcome.To == "" {
+		t.Fatalf("released busy key did not retry: outcome=%+v err=%v", outcome, err)
 	}
+	stopped = true
 	stop()
 	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatal(err)

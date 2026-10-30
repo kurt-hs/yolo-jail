@@ -435,6 +435,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 					r.Phase, r.Reason = "busy", "another authorized advance owns this key; the next timer tick retries without changing its successful check stamp"
 				}
 			})
+			preparationTaskSettled(result.key)
 			if reprocess {
 				select {
 				case more <- struct{}{}:
@@ -675,6 +676,10 @@ func preparationTreesWithResolver(records []preparationRecord, resolver func(con
 func refreshPreparationSubscriptions(records []preparationRecord, current map[string]packload.Fork) []preparationRecord {
 	return refreshPreparationSubscriptionsUnder(context.Background(), records, current)
 }
+
+// preparationTaskSettled observes a finished task once its result is recorded in the
+// subscription state, before the next dispatch pass; the default has no side effects.
+var preparationTaskSettled = func(key string) {}
 
 // preparationRefreshInspected observes completed authority inspections; the default has no side effects.
 var preparationRefreshInspected = func(error) {}
