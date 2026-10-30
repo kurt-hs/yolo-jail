@@ -894,6 +894,31 @@ command again. The sharing precondition checks only the workspace's own entry, n
 parents. Found natively on 2026-10-29
 ([lab report §4](../lab-reports/2026-10-29-mac-native-fix-checks-and-unshared-ancestor.md#4-new-defect-a-workspace-under-a-private-parent-loops)).
 
+### <a id="it-dangling-layout-links"></a>🔧 **macos-user integration runs leave dangling layout links in the real account home**
+
+Each macos-user test that selects a pack with a state folder lays a link such as `~/.oh-omp` from
+`/Users/_yolojail` into its temporary `yolo-it-*` workspace, and nothing removes it when the workspace
+is deleted. On 2026-10-30 a dangling `~/.gemini` left by an Oct 18 run refused a real launch whose
+pack delivers files under `.gemini`, until the maintainer ran `sudo rm` on it
+([lab report §2](../lab-reports/2026-10-30-mac-sandbox-home-collisions-and-check-nudges.md#2-dangling-layout-links-from-integration-runs)).
+
+### <a id="files-into-foreign-state-dir"></a>🔧 **A pack's files under another pack's state folder lock that pack out of the account home**
+
+A `files` contribution into `.gemini/config/agents` (the maintainer's `matt-agentwork`), launched
+without `agy`, creates a real `/Users/_yolojail/.gemini`. Every later launch selecting `agy`, whose
+state folder that is, is then refused by `darwin_home_layout`, with the next step
+`sudo rm -rf /Users/_yolojail` rather than the one folder. The refused launch still writes agy's
+generated config into the real folder, and nothing warns ahead of time
+([lab report §3](../lab-reports/2026-10-30-mac-sandbox-home-collisions-and-check-nudges.md#3-a-files-delivery-into-another-packs-state-folder)).
+
+### <a id="check-nudge-false-warnings"></a>🔧 **Two `yolo check` warnings name fixes that do not apply**
+
+The aws-auth login nudge reads only `allow.aws-auth.profile`, so it warns on a JSONC config that
+sets the legacy `loopholes.aws-auth.settings.profile`, which the loophole honours. The `stages 0
+files` warning tells the user to fix `only`/`exclude` filters in a `packs` entry for the empty
+conventional local pack, which has neither
+([lab report §4](../lab-reports/2026-10-30-mac-sandbox-home-collisions-and-check-nudges.md#4-false-check-warnings)).
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
