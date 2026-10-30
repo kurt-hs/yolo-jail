@@ -801,6 +801,22 @@ writer to matter; `yolo config apply` closes the same gap for the running case. 
 repository listed under `widened` and removed from the config is never narrowed live. Such a file
 belongs to a broker that cannot take live scope anyway. Found 2026-10-18.
 
+### <a id="pi-paste-freeze"></a>🔧 **A long Kitty paste froze Pi's display twice; the cause is unknown and the work is parked**
+
+The owner reports that pasting one long selection through `clip2path` twice left Pi's input,
+output and Working animation stopped while Kitty stayed responsive, and Ctrl+Z returned a shell
+([`kitty-paste-freeze-limits-20261028.md`](../research/kitty-paste-freeze-limits-20261028.md), which
+says what that analysis does and does not establish). A 776-line offline probe and its write-up
+(`docs/research/fixtures/pi-paste-probe.mjs`, `docs/research/pi-terminal-paste.md`) exercised the
+installed Pi 1.4.0 paste parser, editor and both TUI renderers with synthetic 57 KB input: every
+case passed, so the code paths are separated but the incident is not reproduced and no cause is
+established. The one defect it found is in yolo's own proxy, now fixed: the output write dropped
+its count and error, and `writeOutputChunk` (`internal/ttyproxy/ttyproxy.go`, `624e81f60`) now
+reports it; whether that write was ever under pressure during a paste is unknown. Parked, with
+the probe commit `d6c7a1d37` unlanded on its recovery branch. The next evidence is an unfiltered
+synthetic stdin capture at Pi's TTY boundary; until then, put a long body in a file and pass the
+path. Found 2026-10-26.
+
 ### <a id="font-copy-gaps"></a>🔧 **The macos-user font copy: four gaps the lane's review left**
 
 The opt-in font copy (`share_host_fonts`, [PS-D19](../design/provisioner-sets.md#decision-ledger))
