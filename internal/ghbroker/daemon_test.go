@@ -528,17 +528,14 @@ func TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother(t *testing.T)
 
 	code, _, errOut := serve("pr", "view", "1", "-R", "other/private")
 	flat := strings.Join(strings.Fields(errOut), " ")
-	for _, want := range []string{"add it to the `repos` list under `brokered.github` in yolo-jail.json, or in " +
-		"yolo-jail.local.jsonc for what the project should not commit",
-		"if yolo-jail.json is read-only here, use yolo-jail.local.jsonc",
-		`Only if the file has no ` + "`brokered`" + ` key yet, add "brokered": {"github": {"repos": ["other/private"]}}`,
+	for _, want := range []string{"run `yolo request github repos other/private`, which adds it to the `repos` list in this project's config",
 		"run `yolo check --no-build`", "ask the user to restart the jail and approve the repository scope at launch",
 		"Nothing sent through gh adds a repository", "(o/r, org/lib)"} {
 		if code != ExitUsage || !strings.Contains(flat, want) {
 			t.Errorf("a repository outside the scope: code %d, want 64 saying %q:\n%s", code, want, errOut)
 		}
 	}
-	for _, leak := range []string{ws, paths.UserConfigPath(), `"workspaces"`, "yolo-jail.jsonc"} {
+	for _, leak := range []string{ws, paths.UserConfigPath(), `"workspaces"`, "yolo-jail.jsonc", "yolo-jail.json", "hand-edit", `"brokered": {`} {
 		if strings.Contains(errOut, leak) {
 			t.Errorf("the refusal names %q:\n%s", leak, errOut)
 		}
@@ -551,15 +548,15 @@ func TestTheBrokerRunsAnEntrysRepositoryAndNamesTheEntryForAnother(t *testing.T)
 		}
 	}
 
-	// A scope file without the names: the refusal names the file the briefing gives.
+	// A scope file without the file names gives the same verb: the advice never depended on them.
 	b2, cleanup2 := newBroker(brokerscope.File{Grants: readAll, Workspace: ws, Repos: []string{"o/r"}}, ws, &bytes.Buffer{})
 	defer cleanup2()
 	var errOut2 bytes.Buffer
 	b2.Serve(Request{Argv: []string{"pr", "view", "1", "-R", "other/private"}}, "jail-1", func([]byte) {},
 		func(p []byte) { errOut2.Write(p) })
 	if !strings.Contains(strings.Join(strings.Fields(errOut2.String()), " "),
-		"in the workspace config file your environment briefing names") {
-		t.Errorf("without the names, the refusal does not name the briefing's file:\n%s", errOut2.String())
+		"run `yolo request github repos other/private`") {
+		t.Errorf("without the names, the refusal does not name the verb:\n%s", errOut2.String())
 	}
 }
 

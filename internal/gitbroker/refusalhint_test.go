@@ -59,7 +59,7 @@ func TestRefusedUpdateNamesTheBranchGrantThatCoversIt(t *testing.T) {
 	if g != (brokerscope.Grant{Kind: "branch", Repo: fixtureRepo, Branch: "main"}) {
 		t.Fatalf("suggested %+v", g)
 	}
-	for _, want := range []string{"not in this workspace's working set", "yolo-jail.jsonc", "yolo config apply", `"branch"`, "grant_kinds"} {
+	for _, want := range []string{"not in this workspace's working set", "run `yolo request git push main`", "yolo-jail.jsonc", "yolo config apply", `"branch"`, "grant_kinds"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("the hint lacks %q:\n%s", want, out)
 		}
@@ -82,7 +82,7 @@ func TestRefusedCreationNamesTheCreateBranchGrant(t *testing.T) {
 	if g != (brokerscope.Grant{Kind: "create-branch", Repo: fixtureRepo}) {
 		t.Fatalf("suggested %+v", g)
 	}
-	if !strings.Contains(out, "any new branch") {
+	if !strings.Contains(out, "any new branch") || !strings.Contains(out, "run `yolo request git new_branches`") {
 		t.Fatalf("the hint does not say the grant covers any new branch name:\n%s", out)
 	}
 	f.approve(t, g)
@@ -114,7 +114,7 @@ func TestRefusedTagNamesTheTagGrant(t *testing.T) {
 	if g != (brokerscope.Grant{Kind: "tag", Repo: fixtureRepo, Tag: "v1"}) {
 		t.Fatalf("suggested %+v", g)
 	}
-	for _, want := range []string{"no tag grant covers it", "asks for approval", "from the host", "grant_kinds", "yolo config apply"} {
+	for _, want := range []string{"no tag grant covers it", "asks for approval", "run `yolo request git push_tags v1`", "from the host", "grant_kinds", "yolo config apply"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("the tag hint lacks %q:\n%s", want, out)
 		}

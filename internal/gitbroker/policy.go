@@ -130,7 +130,19 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 	// config takes it (docs/reference/happy-path-principle.md).
 	hint := func(ref, why string, g brokerscope.Grant) {
 		spelled, _ := json.Marshal(g)
-		say(ref + ": " + why + ". To let the broker push it unasked, add " + string(spelled) +
+		verb := ""
+		switch g.Kind {
+		case grantBranch:
+			verb = "yolo request git push " + g.Branch
+		case grantCreateBranch:
+			verb = "yolo request git new_branches"
+		case grantTag:
+			verb = "yolo request git push_tags " + g.Tag
+		}
+		if verb != "" {
+			verb = "run `" + verb + "`, or in a legacy JSONC project "
+		}
+		say(ref + ": " + why + ". To let the broker push it unasked, " + verb + "add " + string(spelled) +
 			" to `brokered.git.grants` in this workspace's yolo-jail.jsonc" + unlisted(g.Kind) +
 			", then run `yolo config apply` on the host, in this workspace, and approve the grant; " +
 			"or push it from the host (`git push` in this workspace there).")

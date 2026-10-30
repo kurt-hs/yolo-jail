@@ -154,7 +154,7 @@ var updateHook = func(sub string, args []string) (int, bool) {
 // updateDisclosure is printed once per machine, the first time a check is
 // about to run, so nobody learns from a firewall log that yolo phones home.
 const updateDisclosure = "ℹ yolo checks GitHub's releases API for a newer version, normally once a day.\n" +
-	"  Turn it off: \"update_check\": false in ~/.config/yolo-jail/config.jsonc."
+	"  Turn it off: `yolo config set update_check false --user`."
 
 // maybeNotifyUpdate prints the update notice when the cached check says one
 // exists, starts a release-channel background check when the cache is stale,

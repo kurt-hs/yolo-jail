@@ -57,7 +57,7 @@ func TestValidatePacksRejectsWorkspaceScope(t *testing.T) {
 	if found == "" {
 		t.Fatalf("no config.packs error; got %v", errs)
 	}
-	for _, want := range []string{"user-scope only", "~/.config/yolo-jail/config.jsonc"} {
+	for _, want := range []string{"user-scope only", "`yolo pack add <name>` on the host"} {
 		if !strings.Contains(found, want) {
 			t.Errorf("error %q missing %q", found, want)
 		}

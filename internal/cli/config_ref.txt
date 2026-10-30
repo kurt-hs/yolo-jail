@@ -1,9 +1,16 @@
 [bold]YOLO Jail Configuration Reference[/bold]
 
-[bold cyan]CONFIG FILE: yolo-jail.jsonc[/bold cyan]
+[bold cyan]CONFIG FILE: yolo-jail.toml (TOML), or the legacy yolo-jail.jsonc[/bold cyan]
+
+  Two formats are read today.  TOML is the current one: see [bold]THE TOML FORMAT[/bold]
+  below, and `yolo config migrate` to convert.  The rest of this reference
+  documents every key in its legacy JSONC spelling (the `"key": value` examples),
+  which a TOML file spells with the names THE TOML FORMAT lists.  Legacy files
+  are still read for a few releases; `yolo check` and every launch say when a
+  file is in the old format.
 
   Location: Project root (per-workspace)
-  Format:   JSON with comments (JSONC)
+  Format:   JSON with comments (JSONC), the legacy spelling
   User defaults: ~/.config/yolo-jail/config.jsonc
   Local overrides: yolo-jail.local.jsonc (sibling, auto-merged when present)
   .json spellings: yolo-jail.json and yolo-jail.local.json are read in place
@@ -26,8 +33,9 @@
   for per-machine tweaks that don't belong in the tracked config.
   Lists are merged and deduplicated. Scalars override.
 
-  [bold yellow]Rule:[/bold yellow] After [bold]EVERY[/bold] edit to `yolo-jail.jsonc`,
-  `yolo-jail.local.jsonc`, or `~/.config/yolo-jail/config.jsonc`, run
+  [bold yellow]Rule:[/bold yellow] After [bold]EVERY[/bold] edit to `yolo-jail.toml`,
+  `yolo-jail.local.toml`, `~/.config/yolo-jail/config.toml` (or their legacy
+  `.jsonc` twins), run
   `yolo check` before restarting or asking a human to restart the jail.
   Use `yolo check --no-build` inside a running jail for a faster preflight.
 
@@ -36,6 +44,87 @@
   starts (a list entry at the entry's own line): the file whose value takes
   effect.  Any other file writing the same key is named after the message,
   "(also written at …)".
+
+[bold cyan]THE TOML FORMAT[/bold cyan]
+
+  Files: `yolo-jail.toml` (project, committed), `yolo-jail.local.toml` (this
+  machine, not committed) and `~/.config/yolo-jail/config.toml` (yours).  A
+  project needs no file to run.  `yolo init` writes a three-line pointer file.
+  One format per scope: a TOML file beside a legacy file of the same scope is a
+  `yolo check` error, so convert both together with [bold]yolo config migrate[/bold].
+
+  Where a legacy key went (every other key keeps its name):
+
+    packages            -> [install] nix = [...]       mise_tools -> [install] mise = {...}
+    gpu, resources      -> [machine.gpu], [machine.resources]
+    network.ports       -> machine.ports               network.forward_host_ports -> machine.forward
+    env_sources         -> [env] files, set, unset
+    brokered.*          -> [allow.<source>] (your ceiling) and [requests.<source>]
+                           (a project's request); `repos` -> requests.github.repos
+    profile, profiles   -> [active_provider] and providers.<name>.variants.<variant>
+    loopholes.*.enabled -> selecting the pack that ships the loophole
+    loopholes.*.settings.* -> [allow.<pack>] settings
+
+  [bold]allow[/bold] — (table, [bold]USER SCOPE ONLY[/bold]): what a project's jail may do with your
+    logins.  `[allow.git]` and `[allow.github]` each take `always = [...]` (every
+    project's jail gets it) and `on_request = [...]` (a project may ask for it;
+    it is never granted by this line).  Capabilities are the ones the selected
+    pack declares, such as `fetch`, `push`, `new_branches`, `create_pr`; a pack's
+    own settings live under `[allow.<pack>]` as well.  `[allow.mounts]
+    on_request = ["write"]` lets a project request a writable mount.  Edit with
+    [bold]yolo allow <source> [always|on_request] <capability>[/bold], on the host; it offers
+    this workspace's approval of the change through `yolo config apply`.
+
+  [bold]requests[/bold] — (table, [bold]WORKSPACE SCOPE[/bold]): what this project asks for within your
+    `allow` ceiling: `[requests.git]` `push = ["main"]`, `push_tags`,
+    `new_branches = true`; `[requests.github]` `repos = ["acme/other"]`,
+    `create_pr`, `create_issue`.  A request your ceiling does not allow is
+    reported and skipped, never an error.  A `requests` table in a legacy
+    JSONC user config is refused.  Edit with
+    [bold]yolo request <source> <capability> [resource][/bold], which writes the project's
+    file, runs `yolo check`, and names the host step (`yolo config apply`).
+
+  [bold]active_provider[/bold] — (table, [bold]USER SCOPE ONLY[/bold]): which provider each agent runs on.
+    `claude = "bedrock"`, `claude = "bedrock/opus"` (a variant), `default = ...`
+    for every agent the table does not name, and `"native"` to leave an agent
+    to its own login.  The name must be one a selected pack declares.  Edit with
+    [bold]yolo active-provider <agent|default> <provider|provider/variant|native>[/bold];
+    it takes effect at the next launch.
+
+  [bold]mounts[/bold] (list of paths or tables): `"~/data"` lands at /ctx/data, read-only;
+    `{ host = "~/x", at = "/ctx/x" }` names the destination; `write = true` asks
+    for a writable mount, which needs `[allow.mounts] on_request = ["write"]` in
+    your user config and is approved, in red, at the config-change prompt (see
+    `mounts` below).
+
+  [bold]env[/bold] — (table): `files = [...]` (env files to load), `set = { NAME = "value" }`
+    and `unset = ["NAME"]`.  A variable is removed with `unset`, never by a
+    magic value, because any string is a legal value.
+
+  [bold]packs[/bold]: `packs = ["claude", "local/matt", { git = "https://..." }]`, user scope
+    only.  Edit with [bold]yolo pack add <name>[/bold] and [bold]yolo pack remove <name>[/bold]
+    (host); `yolo pack ls` lists what is available.
+
+  [bold]convert_later[/bold] — (boolean, [bold]LEGACY USER FILE ONLY[/bold]): `"convert_later": true` in
+    ~/.config/yolo-jail/config.jsonc stops the launch's offer to convert old
+    files to TOML, for every old file this machine reads.  A TOML file refuses
+    it, because it has nothing to say there.  No command writes it.
+
+  Pack manifests have a TOML spelling too: a pack directory's `pack.toml`
+  (`yolo pack migrate <path>` rewrites a local pack's `pack.json`).  In it,
+  `install = false` (or `install = { default = false, ... }`, or
+  `install.<manager> = false`) is no install hint, `options.<name> = false`
+  declares a provider option with no default, and a config surface's
+  `unset = ["/pointer"]` lists the keys its managed patch deletes.
+
+  Inspecting and editing, in either format:
+
+    yolo config why <key>      the effective value, every file and line that sets
+                               it, and what would apply without it
+    yolo config set|add|unset <key> [value] [--user|--project|--local]
+                               one typed edit, with the splice that keeps comments
+    yolo config migrate        convert old files to TOML once, proving equality
+    yolo config drift|dump|apply   as described below
 
 [bold cyan]USER SCOPE INSIDE A JAIL[/bold cyan]
 

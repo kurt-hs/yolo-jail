@@ -56,7 +56,7 @@ const packsKey = "packs"
 const (
 	NoPacksMessage  = "No packs are configured, so this jail has no coding agent"
 	NoPacksGuidance = "An agent arrives as a pack. The packs yolo ships are selected by " +
-		"name — add `\"packs\": [\"claude\"]` to ~/.config/yolo-jail/config.jsonc, or run " +
+		"name — run `yolo pack add claude` on the host, or run " +
 		"`yolo pack --help` for what packs deliver and how to add one from elsewhere."
 )
 
@@ -708,8 +708,8 @@ func validatePacks(workspace string, errs *[]string, edit ...*editValidationCont
 		return
 	}
 	if _, atWorkspace := wsCfg.Get(packsKey); atWorkspace && WorkspaceUserScopeOnlyKey(packsKey) {
-		add(errs, "config."+packsKey+": user-scope only — move it to "+
-			"~/.config/yolo-jail/config.jsonc. A workspace config travels with the repo "+"and is agent-editable, so it cannot decide which packs stage content "+
+		add(errs, "config."+packsKey+": user-scope only — remove it here and run "+
+			"`yolo pack add <name>` on the host, which writes it to your user config. A workspace config travels with the repo "+"and is agent-editable, so it cannot decide which packs stage content "+
 			"(skills and briefing prose an agent then follows) into the jail. A repo "+
 			"that wants to configure its own agents can just commit the files.")
 	}
