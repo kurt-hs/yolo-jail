@@ -539,6 +539,97 @@ class PackageTests(unittest.TestCase):
                     self.assertEqual(stdout.getvalue(),"","the dev wrapper wrote to the launcher's stdout")
                     self.assertIn(f"Matched development bundle: {launcher}",stderr.getvalue())
 
+    # OQ-MDB1: a failed development build runs the newest earlier development build, says so,
+    # and with none fails; build-dev, which produces a bundle, always fails.
+    @staticmethod
+    def _failing_builder(snapshot, output, **kw):
+        raise subprocess.CalledProcessError(2, ["stage-source-bundle.sh"])
+
+    def _earlier_bundle(self, repo, home, text, mtime):
+        (repo/"cmd/yolo/main.go").write_text(text)
+        launcher=mb.build_dev_bundle(repo, home, builder=fake_assembler, reaper=lambda *a: None)
+        os.utime(launcher.parent.parent, (mtime, mtime))
+        return launcher
+
+    def _run_dev(self, repo, home, mode="dev"):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        executed=[]; stderr=StringIO(); result=None; error=None
+        with redirect_stderr(stderr):
+            try:
+                result=mb.command(repo, mode, home=home, builder=self._failing_builder, argv0="/u/bin/yolo-dev",
+                                  args=["--", "bash"], execer=lambda path, argv, env: executed.append((path, argv)))
+            except RuntimeError as exc:
+                error=exc
+        return executed, stderr.getvalue(), result, error
+
+    def test_a_failed_build_runs_the_newest_earlier_bundle_and_names_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            older=self._earlier_bundle(repo, home, "package main // a\n", 1_000_000)
+            newer=self._earlier_bundle(repo, home, "package main // b\n", 2_000_000)
+            stamp=json.loads((newer.parent.parent/"share/yolo-jail/yolo-build-stamp.json").read_text())
+            (repo/"cmd/yolo/main.go").write_text("package main // broken\n")
+            executed, said, _, error=self._run_dev(repo, home)
+            self.assertIsNone(error)
+            self.assertEqual(executed, [(str(newer), ["/u/bin/yolo-dev", "--", "bash"])])
+            self.assertIn("development bundle failed", said)
+            self.assertIn("stage-source-bundle.sh", said, "the build failure was not reported")
+            self.assertIn("edits are NOT running", said)
+            self.assertIn(f"commit {stamp['commit']}", said)
+            self.assertIn(f"build stamp {stamp['version']}", said)
+            self.assertIn(str(newer), said)
+            self.assertNotIn("Matched development bundle", said)
+            self.assertGreater(newer.parent.parent.stat().st_mtime, 2_000_000, "the fallback was not touched")
+            self.assertEqual(older.parent.parent.stat().st_mtime, 1_000_000)
+
+    def test_a_failed_build_skips_a_broken_newer_bundle_and_leaves_its_age(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            good=self._earlier_bundle(repo, home, "package main // a\n", 1_000_000)
+            broken=self._earlier_bundle(repo, home, "package main // b\n", 2_000_000)
+            broken.parent.chmod(0o755); broken.chmod(0o755); broken.write_text("#!/bin/sh\nexit 7\n")
+            os.utime(broken.parent.parent, (2_000_000, 2_000_000))
+            (repo/"cmd/yolo/main.go").write_text("package main // broken\n")
+            executed, _, _, error=self._run_dev(repo, home)
+            self.assertIsNone(error)
+            self.assertEqual(executed[0][0], str(good))
+            self.assertEqual(broken.parent.parent.stat().st_mtime, 2_000_000)
+
+    def test_a_failed_build_with_no_earlier_bundle_fails_naming_the_fix(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            executed, _, _, error=self._run_dev(repo, home)
+            self.assertEqual(executed, [])
+            self.assertIsNotNone(error)
+            self.assertIn("stage-source-bundle.sh", str(error))
+            self.assertIn("Fix the build error above and rerun", str(error))
+            self.assertIn("no earlier development bundle", str(error))
+
+    def test_a_failed_build_never_runs_a_bundle_for_another_architecture(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            launcher=self._earlier_bundle(repo, home, "package main // a\n", 1_000_000)
+            _, host_arch=mb._platform(repo)
+            helpers=launcher.parent.parent/"share/yolo-jail/bin"
+            helpers.chmod(0o755)
+            (helpers/f"linux-{host_arch}").rename(helpers/"linux-otherarch")
+            (repo/"cmd/yolo/main.go").write_text("package main // broken\n")
+            executed, _, _, error=self._run_dev(repo, home)
+            self.assertEqual(executed, [])
+            self.assertIsNotNone(error)
+            self.assertIn("no earlier development bundle", str(error))
+
+    def test_build_dev_fails_on_a_failed_build_even_with_an_earlier_bundle(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); repo=repo_fixture(root); home=root/"home"
+            self._earlier_bundle(repo, home, "package main // a\n", 1_000_000)
+            (repo/"cmd/yolo/main.go").write_text("package main // broken\n")
+            executed, said, result, error=self._run_dev(repo, home, mode="build-dev")
+            self.assertEqual(executed, []); self.assertIsNone(result)
+            self.assertIsInstance(error, mb.DevBuildFailed)
+            self.assertNotIn("NOT running", said)
+
     def test_install_command_runs_shared_activation_workflow(self):
         result, gobin = self._just_install("yolo")
         self.assertIn("Launcher slot "+str(gobin/"yolo")+": empty.",result.stdout)
@@ -799,7 +890,11 @@ raise SystemExit(23)
         base_log=self.log.read_text()
         (self.repo/"cmd/yolo/main.go").write_text("package main // changed\n")
         dirty=subprocess.run([str(self.links/"yolo-dev"),"--","dirty"],cwd=self.cwd,env=self.env(),text=True,capture_output=True)
-        self.assertNotEqual(dirty.returncode,23); self.assertEqual(self.log.read_text(),base_log)
+        # OQ-MDB1: the dirty build fails, so the wrapper runs the last development build and says so.
+        self.assertEqual(dirty.returncode,23,dirty.stderr)
+        self.assertEqual(json.loads(self.log.read_text())["args"],["--","dirty"])
+        self.assertIn("edits are NOT running",dirty.stderr)
+        self.log.write_text(base_log)
         (self.repo/"cmd/yolo/main.go").write_text("package main\n")
         cache=next((self.home/".local/share/yolo-jail/dev-bundles").glob(f"{self.identity[:16]}-*"))
         cache.chmod(0o755); (cache/"share").chmod(0o755); (cache/"share/yolo-jail").chmod(0o755)

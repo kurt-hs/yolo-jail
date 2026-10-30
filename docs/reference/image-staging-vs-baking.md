@@ -134,8 +134,9 @@ launch prints the selected bundle before staging.
 
 **Development launchers and helpers come from one snapshot.** `just build-dev-bundle` emits a
 matched launcher and complete helper bundle; `just dev` reuses a matching complete bundle or builds
-one, then invokes it by absolute path. Normal installed `yolo` remains unchanged, and a failed
-development build never runs stale output.
+one, then invokes it by absolute path. Normal installed `yolo` remains unchanged. When the
+development build fails, `just dev` runs the newest earlier development bundle and says the edits
+are not running ([OQ-MDB1](../design/matched-development-bundles.md#OQ-MDB1)); with none it fails.
 
 ## The mounted prefix
 
@@ -340,7 +341,8 @@ launch reports the selected `Flake source:` and helper directory before staging.
 
 Development uses a matched launcher, helpers and flake captured from one bounded source snapshot.
 The wrapper rebuilds when the current snapshot identity differs, reuses only a complete matching
-bundle, and invokes the exact launcher by absolute path; a failed build never runs stale output. The
+bundle, and invokes the exact launcher by absolute path; a failed build runs the newest earlier
+development bundle with a notice naming it, or fails when there is none. The
 wrapper follows its symlink to find the checkout while preserving the caller's cwd as the jail
 workspace. It does not change the installed command or active installed bundle. The normal
 installed/default workflow remains `yolo` from its complete installed bundle.

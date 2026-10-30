@@ -385,6 +385,83 @@ def _reap_dev_bundles(launcher: Path, root: Path, runner=subprocess.run) -> None
         pass
 
 
+class DevBuildFailed(RuntimeError):
+    """Assembling or publishing the checkout's development bundle failed.
+
+    Only that step raises it: a snapshot that cannot be frozen (a missing required input, an
+    escaping symlink) is a refusal about the checkout, not a failed build, and never falls back.
+    It carries what the dev mode's fallback (OQ-MDB1) needs to pick an earlier bundle."""
+
+    def __init__(self, cause: BaseException, root: Path, host_os: str, host_arch: str):
+        self.cause, self.root, self.host_os, self.host_arch = cause, root, host_os, host_arch
+        super().__init__(f"building this checkout's development bundle failed: {str(cause).rstrip('.')}. "
+                         "Fix the build error above and rerun.")
+
+
+_DEV_BUNDLE_NAME = re.compile(r"^[0-9a-f]{16}-[0-9a-f]{32}$")  # prune.devBundleName
+
+
+def _validate_fallback_bundle(candidate: Path, host_os: str, host_arch: str) -> dict:
+    """Check an EARLIER development bundle is a complete one this host can run; return its stamp.
+
+    It was built from other source, so this snapshot's identity, stamps and ship lists do not
+    apply: the checkout's edits may have changed SHIPPED_BINARIES, and the bundle was checked
+    against its own lists when it was published. What still applies is everything that makes it a
+    complete, self-consistent pair for THIS host: the published layout, a development build kind,
+    a stamp whose identity is the one its directory is named for, helper directories for exactly
+    this host's targets (another architecture's bundle is refused here, before anything runs),
+    and a launcher that runs and reports the identity, kind, version and commit its bundle names."""
+    if not _DEV_BUNDLE_NAME.match(candidate.name):
+        raise RuntimeError(f"not a published development bundle name: {candidate.name}")
+    if not stat.S_ISDIR(candidate.lstat().st_mode) or {p.name for p in candidate.iterdir()} != {"bin", "share"}:
+        raise RuntimeError("incomplete matched bundle: output root must contain only bin and share")
+    if {p.name for p in (candidate / "bin").iterdir()} != {"yolo"}:
+        raise RuntimeError("incomplete matched bundle: native bin must contain only yolo")
+    bundle = candidate / "share/yolo-jail"
+    if {p.name for p in bundle.iterdir()} != {"flake.nix", "flake.lock", "yolo-build-stamp.json", "bin"}:
+        raise RuntimeError("incomplete matched bundle: unexpected or missing share/yolo-jail entries")
+    stamp = json.loads((bundle / "yolo-build-stamp.json").read_text())
+    identity = stamp.get("snapshotIdentity")
+    if not isinstance(identity, str) or not identity.startswith(candidate.name[:16]):
+        raise RuntimeError("development bundle's stamp names another snapshot than its directory")
+    targets = {f"linux-{host_arch}"} | ({f"darwin-{host_arch}"} if host_os == "darwin" else set())
+    if {p.name for p in (bundle / "bin").iterdir()} != targets:
+        raise RuntimeError("development bundle's helpers are not for this host")
+    for dirname in targets:
+        helpers = list((bundle / "bin" / dirname).iterdir())
+        if not helpers or any(not stat.S_ISREG(h.lstat().st_mode) or not h.lstat().st_mode & 0o111
+                              for h in helpers):
+            raise RuntimeError(f"incomplete matched bundle: {dirname} is empty or not executable")
+    validate_pair(candidate / "bin/yolo", bundle, identity, "development",
+                  stamps=(stamp.get("version"), stamp.get("commit")))
+    return stamp
+
+
+def _fallback_dev_launcher(root: Path, host_os: str, host_arch: str) -> tuple[Path, dict] | None:
+    """The newest complete development bundle under root this host can run (OQ-MDB1), or None.
+
+    Newest by directory mtime, the reaper's own "most recently used" (prune.PruneDevBundles,
+    which always keeps the newest few). Each candidate is touched BEFORE it is validated, the
+    reaper race guard a reuse takes (_touch_reused_bundle); one that cannot be touched is skipped.
+    A candidate that fails validation gets its mtime back, so a broken bundle is not kept alive
+    as the newest."""
+    try:
+        entries = [(p.lstat().st_mtime, p) for p in root.iterdir() if _DEV_BUNDLE_NAME.match(p.name)]
+    except OSError:
+        return None
+    for mtime, candidate in sorted(entries, key=lambda e: e[0], reverse=True):
+        if not _touch_reused_bundle(candidate):
+            continue
+        try:
+            return candidate / "bin/yolo", _validate_fallback_bundle(candidate, host_os, host_arch)
+        except (OSError, ValueError, RuntimeError, AttributeError, subprocess.SubprocessError):
+            try:
+                os.utime(candidate, (mtime, mtime))
+            except OSError:
+                pass
+    return None
+
+
 def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subprocess.run,
                      reaper=_reap_dev_bundles) -> Path:
     """Reuse a complete bundle of this identity and stamp, otherwise publish a fresh immutable build.
@@ -419,10 +496,13 @@ def build_dev_bundle(repo: Path, home: Path, *, builder=assemble, runner=subproc
               "changed since the last one. Later runs of the same source reuse it.",
               file=sys.stderr, flush=True)
         started = time.monotonic()
-        builder(snapshot, output, identity=identity, build_kind="development",
-                version=version, commit=commit, runner=runner)
-        published = _publish_assembled_bundle(home, output, identity, shipped, guest, host_os, host_arch,
-                                              stamps)
+        try:
+            builder(snapshot, output, identity=identity, build_kind="development",
+                    version=version, commit=commit, runner=runner)
+            published = _publish_assembled_bundle(home, output, identity, shipped, guest, host_os,
+                                                  host_arch, stamps)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+            raise DevBuildFailed(exc, root, host_os, host_arch) from exc
         print(f"Built the development bundle in {time.monotonic() - started:.0f} s.",
               file=sys.stderr, flush=True)
         reaper(published / "bin/yolo", root)
@@ -488,7 +568,24 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
             name: str = "yolo", args: list[str] | None = None, builder=assemble, runner=subprocess.run,
             execer=os.execvpe, argv0: str | None = None):
     if mode in ("build-dev", "dev"):
-        launcher = build_dev_bundle(repo, home, builder=builder, runner=runner)
+        try:
+            launcher = build_dev_bundle(repo, home, builder=builder, runner=runner)
+            notice = f"Matched development bundle: {launcher}"
+        except DevBuildFailed as failure:
+            # build-dev PRODUCES this checkout's bundle, so a failed build is its failure; only
+            # running (dev) falls back to the newest earlier development build (OQ-MDB1). Never
+            # to the installed launcher, and with no earlier development build it fails as before.
+            if mode == "build-dev":
+                raise
+            found = _fallback_dev_launcher(failure.root, failure.host_os, failure.host_arch)
+            if found is None:
+                raise RuntimeError(f"{failure} There is no earlier development bundle to run "
+                                   "instead.") from failure
+            launcher, stamp = found
+            notice = (f"matched-bundle: {failure}\n"
+                      "Your checkout's edits are NOT running. Running the last development build "
+                      f"instead: commit {stamp.get('commit') or 'unknown'}, build stamp "
+                      f"{stamp.get('version') or 'unstamped'}, at {launcher}")
         if mode == "build-dev":
             return launcher
         if "YOLO_REPO_ROOT" in os.environ:
@@ -496,7 +593,7 @@ def command(repo: Path, mode: str, *, home: Path, gobin: Path | None = None,
         child_env = os.environ.copy()
         child_env.pop("YOLO_REPO_ROOT", None)
         # stderr, flushed: stdout belongs to the launcher, and an exec discards Python's buffers.
-        print(f"Matched development bundle: {launcher}", file=sys.stderr, flush=True)
+        print(notice, file=sys.stderr, flush=True)
         # The launcher runs under the name it was invoked as (a `just deploy-dev yolo-dev` link), so
         # its own name checks see `yolo-dev`; `just dev` runs the wrapper by its path and keeps the
         # launcher's.
