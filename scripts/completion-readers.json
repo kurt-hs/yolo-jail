@@ -6122,6 +6122,7 @@
 "internal/cli/configrefreserved_test.go",
 "internal/cli/configreftieraliases_test.go",
 "internal/cli/configreftoml_test.go",
+"internal/cli/configrenamedhint_test.go",
 "internal/cli/configrenderhost_test.go",
 "internal/cli/configreplace_test.go",
 "internal/cli/configsetmissing_test.go",
