@@ -104,6 +104,14 @@ func TestCheckScopeCarriesTheSourcesGrantKinds(t *testing.T) {
 		[]byte(`{"brokered": {"gbsrc": {"grants": [{"kind": "create-branch", "repo": "github.com/o/r"}]}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A remote, so the source has concrete scope: grants over no repository are vacuous and
+	// held by nothing (config.NewScopeCheck).
+	if err := os.MkdirAll(filepath.Join(ws, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, ".git", "config"), []byte("[remote \"origin\"]\n\turl = git@github.com:o/r.git\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	read, err := config.ReadWorkspaceForGate(ws)
 	if err != nil {
 		t.Fatal(err)
