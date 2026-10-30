@@ -35,7 +35,7 @@ func applyClaudeSettings(t *testing.T, home string, rmw bool, profile string) ma
 	if profile != "" {
 		use["claude"] = profile
 	}
-	in := hostTestInputs(t, declaredRMW(t, testPacksForAgent(t, "claude", "bedrock", "openai-auth"), "claude", rmw), use, nil, nil)
+	in := hostTestInputs(t, declaredRMW(t, testPacksForAgent(t, "claude", "bedrock", "codex-auth"), "claude", rmw), use, nil, nil)
 	if r := hostRenderWith(t, home, render.OwnershipOwn, in, "claude", "claude/settings"); r.Action == "" ||
 		strings.HasPrefix(r.Action, "refused") {
 		t.Fatalf("claude/settings on %q: %q", profile, r.Action)
@@ -136,7 +136,7 @@ func TestTheHostLeafRecordNamesTheSwitchYoloWrote(t *testing.T) {
 
 			// A revert ends the relationship, and the record with it.
 			applyClaudeSettings(t, home, m.rmw, "bedrock")
-			if _, err := RevertHostRender(testPacksForAgent(t, "claude", "bedrock", "openai-auth"), home, false); err != nil {
+			if _, err := RevertHostRender(testPacksForAgent(t, "claude", "bedrock", "codex-auth"), home, false); err != nil {
 				t.Fatalf("revert: %v", err)
 			}
 			if _, err := os.Stat(rec); !os.IsNotExist(err) {
@@ -173,7 +173,7 @@ func TestHostApplyClearKeepsAPathAnOverlayStillAsserts(t *testing.T) {
 			}
 			overlay := &packload.Pack{Name: "house", Decl: &packdecl.Manifest{Contributes: []packdecl.Contribution{
 				{Kind: packdecl.KindConfigOverlay, Surface: "claude/settings", Raw: raw}}}}
-			packs := append(declaredRMW(t, testPacksForAgent(t, "claude", "bedrock", "openai-auth"), "claude", m.rmw), overlay)
+			packs := append(declaredRMW(t, testPacksForAgent(t, "claude", "bedrock", "codex-auth"), "claude", m.rmw), overlay)
 			for _, profile := range []string{"bedrock", "codex", "codex"} {
 				in := hostTestInputs(t, packs, map[string]string{"claude": profile}, nil, nil)
 				if r := hostRenderWith(t, home, render.OwnershipOwn, in, "claude", "claude/settings"); strings.HasPrefix(r.Action, "refused") {

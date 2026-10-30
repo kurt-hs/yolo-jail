@@ -31,7 +31,7 @@ func codexViaProvidersTable() map[string]any {
 			"endpoints": map[string]any{"openai": map[string]any{
 				"base_url": "https://api.z.ai/api/paas/v4", "wire_api": "openai-chat-completions"}},
 		},
-		// The subscription row carries a declared model, as packs/openai-auth's does: the
+		// The subscription row carries a declared model, as packs/codex-auth's does: the
 		// selection's model is the first declared id, and a row with none writes no model.
 		"openai-codex": map[string]any{
 			"endpoints": map[string]any{"openai-responses": map[string]any{

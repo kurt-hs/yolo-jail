@@ -52,7 +52,7 @@ func TestWithoutClientlessPlatformsBlanksAClientlessEntryOfASet(t *testing.T) {
 func doorwayPacks(t *testing.T) []*packload.Pack {
 	t.Helper()
 	return []*packload.Pack{officialPack(t, "pi"), officialPack(t, "bedrock"),
-		officialPack(t, "aws-auth"), officialPack(t, "openai-auth")}
+		officialPack(t, "aws-auth"), officialPack(t, "codex-auth")}
 }
 
 // loopholesConfig is a user config whose `loopholes` block is the given JSON object.
@@ -210,7 +210,7 @@ func TestTheApplysDoorwaySurveyAndALaunchsPlanDiscoverAtOnce(t *testing.T) {
 	packs := doorwayPacks(t)
 	removed := false
 	for _, p := range packs {
-		if p.Name == "openai-auth" {
+		if p.Name == "codex-auth" {
 			// A module dir that is gone, so discovery warns on both goroutines.
 			if err := os.RemoveAll(filepath.Join(p.Root, "loopholes", "openai-auth-broker")); err != nil {
 				t.Fatal(err)

@@ -280,7 +280,7 @@ func guestLogProbeScript(logRel, want string) string {
 	}, "\n")
 }
 
-// localGuestAdapterManifest is packs/openai-auth's loophole manifest less `jail_daemon.host_cmd`:
+// localGuestAdapterManifest is packs/codex-auth's loophole manifest less `jail_daemon.host_cmd`:
 // the host service and the refresh adapter as they were before HS-D15, so the adapter is a
 // jail daemon the macos-user guest runs.
 const localGuestAdapterManifest = `{

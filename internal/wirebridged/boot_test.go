@@ -143,9 +143,9 @@ func TestResolveRouteServesClaudeCodexWithoutProviderTableEntry(t *testing.T) {
 	}
 }
 
-// codexProviders is openai-codex as the resolver composes it once packs/openai-auth
+// codexProviders is openai-codex as the resolver composes it once packs/codex-auth
 // and packs/wire-bridge are both selected: the subscription's own Responses endpoint
-// (packs/openai-auth declares it, credential-free), plus the anthropic address
+// (packs/codex-auth declares it, credential-free), plus the anthropic address
 // packload.adaptEndpoints writes in for the `openai-responses → anthropic` adaptation.
 // The argument is that written address — the adapter's declaration by default, and
 // whatever a user-scope `adapters.openai-responses->anthropic.address` moved it to

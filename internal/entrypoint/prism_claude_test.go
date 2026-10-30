@@ -301,11 +301,11 @@ func TestConfigureClaudePrismNoLSP(t *testing.T) {
 // surface: deleting the provider context hand-off, or falling back to Claude's built-in
 // picker, makes this test fail at the boot writer rather than only in a Lua unit test.
 //
-// The provider table is the one a claude launch composes with packs/openai-auth, which
+// The provider table is the one a claude launch composes with packs/codex-auth, which
 // DECLARES the list, so the ids below are the declaration's as rendered — without the table
 // the derive has no list and writes no picker at all.
 func TestConfigureClaudePrismCodexModelPicker(t *testing.T) {
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "claude", "openai-auth"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "claude", "codex-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestConfigureClaudePrismCodexModelPicker(t *testing.T) {
 	if !ok {
 		t.Fatalf("modelPicker.options missing/!array: %v", picker["options"])
 	}
-	// The options packs/openai-auth's declaration renders, row for row, in its `order`.
+	// The options packs/codex-auth's declaration renders, row for row, in its `order`.
 	want := []any{
 		map[string]any{"model": "gpt-6.1-sol", "label": "GPT-6.1 Sol", "description": "Balanced"},
 		map[string]any{"model": "gpt-6.1-sol[1m]", "label": "GPT-6.1 Sol (1M context)", "description": "Balanced · 1M context"},

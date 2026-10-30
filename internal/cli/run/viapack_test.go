@@ -243,7 +243,7 @@ func TestTheLazyResolversApplyTheViaClosure(t *testing.T) {
 // rather than refusing a launch that works.
 func TestAViaThatRepointsNothingStartsWithANotice(t *testing.T) {
 	home := packHome(t)
-	writeUserConfig(t, home, `{"packs": ["pi", "openai-auth"],
+	writeUserConfig(t, home, `{"packs": ["pi", "codex-auth"],
 	  "profiles": {"sub": {"provider": "openai-codex", "via": "wire-bridge"}}}`)
 	var errBuf bytes.Buffer
 	o := &Options{Workspace: t.TempDir(), Stdout: discardBuf(), Stderr: &errBuf,

@@ -393,50 +393,11 @@ func (o *Options) composePackChannelWith(cfg *jsonx.OrderedMap, packs []*packloa
 // "declared".
 func (o *Options) checkProfileDeclarations(fold config.ProfileFold,
 	userProfiles map[string]packload.UserProfile, packs []*packload.Pack) error {
-	profiles := fold.Table
-	if profiles.Len() == 0 {
-		return nil
-	}
-	declared := packload.DeclaredProfileNames(packs, userProfiles)
-	isDeclared := map[string]bool{}
-	for _, name := range declared {
-		isDeclared[name] = true
-	}
-	var problems []string
-	reported := map[string]bool{}
-	sets := packload.ProfileSets(profiles)
-	for _, agent := range profiles.Keys() {
-		// EVERY ENTRY of the agent's active set (docs/design/active-provider-sets.md AP-D3): one
-		// undeclared entry refuses the launch, and yolo never runs the declared rest.
-		for _, name := range sets[agent] {
-			if name == "" || isDeclared[name] {
-				continue
-			}
-			reported[name] = true
-			problems = append(problems, fmt.Sprintf("profile %q selected for %s: %s",
-				name, agent, packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded()))))
-		}
-	}
-	// AND EVERY ENTRY OF A BARE LIST, whichever agents took it (OQ-AP3 read with AP-D3), the
-	// config key's or a -p's. An agent whose pack declares no provider_sets took its first entry
-	// alone (config.FoldProfiles), so the rest are in no agent's set above, and a typo there
-	// would pass whenever no set-capable agent is selected and refuse whenever one is. Asked
-	// only when the list reached some agent, as a bare name always was: the fold records a list
-	// no CLI received as none.
-	if bare := fold.BareList; len(bare) > 1 {
-		spelled := "the bare -p list " + strings.Join(bare, ",")
-		if fold.BareFrom == profileFoldFromKey {
-			spelled = "the profile key's list " + strings.Join(bare, ",")
-		}
-		for i, name := range bare {
-			if isDeclared[name] || reported[name] {
-				continue
-			}
-			reported[name] = true
-			problems = append(problems, fmt.Sprintf("profile %q (entry %d of %s): %s",
-				name, i+1, spelled, packload.UndeclaredProfileMessage(name, declared, packload.ShippedProfileDeclarers(name, packload.Embedded()))))
-		}
-	}
+	// EVERY ENTRY of each agent's active set (docs/design/active-provider-sets.md AP-D3), and
+	// every entry of a bare list whichever agents took it (OQ-AP3 read with AP-D3): one
+	// undeclared entry refuses the launch, and yolo never runs the declared rest. The one check
+	// `yolo check` predicts this refusal through (config.UndeclaredProfileProblems).
+	problems := config.UndeclaredProfileProblems(fold, profileFoldFromKey, userProfiles, packs, packload.Embedded())
 	if len(problems) == 0 {
 		return nil
 	}

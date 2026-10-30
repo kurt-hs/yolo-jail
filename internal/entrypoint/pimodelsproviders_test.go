@@ -70,7 +70,7 @@ func bootPiOnlyJail(t *testing.T, home string) {
 	}
 }
 
-// A PI-ONLY JAIL writes `providers`. The composed table is not empty — packs/openai-auth ships
+// A PI-ONLY JAIL writes `providers`. The composed table is not empty — packs/codex-auth ships
 // openai-codex — which is what makes the case sharp: the table arrives and the catalog still
 // writes no row, because openai-codex is pi's built-in provider and is never catalogued.
 func TestAPiOnlyJailWritesAModelsFileWithProviders(t *testing.T) {

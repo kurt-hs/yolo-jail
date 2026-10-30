@@ -11,7 +11,7 @@ import (
 
 // Operational logging — the (lighter) forensics contract ported from
 // src/oauth_broker_jail.py. The in-jail terminator log is a first-class triage
-// surface: the operator triage in packs/claude/loopholes/claude-oauth-broker/README.md
+// surface: the operator triage in packs/claude-auth/loopholes/claude-oauth-broker/README.md
 // greps it for the per-request `is_refresh=` line ("if the log shows only
 // is_refresh=false ... /login") and
 // the layer-named `refresh failed` / `proxy failed` errors. Ported so an

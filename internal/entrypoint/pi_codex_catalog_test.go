@@ -8,7 +8,7 @@ import (
 )
 
 // openai-codex is pi's BUILT-IN subscription provider, so pi's models.json must never carry a
-// row for it (docs/design/pi-codex-provider-shadowing.md OQ-1, OQ-2). packs/openai-auth declares
+// row for it (docs/design/pi-codex-provider-shadowing.md OQ-1, OQ-2). packs/codex-auth declares
 // an openai-responses endpoint on openai-codex, and a row written from it shadows pi's own
 // client, which then authenticates with the workspace's ambient OPENAI_API_KEY and gets 401s.
 // The exclusion is by NAME, as packs/codex/derive.lua does; every other reachable provider is
@@ -43,10 +43,10 @@ func TestPiCatalogNeverCataloguesOpenAICodex(t *testing.T) {
 }
 
 // The same property through the PRODUCTION pack set, where the openai-codex row comes from
-// packs/openai-auth's own declaration rather than a hand-built table, and with no profile
+// packs/codex-auth's own declaration rather than a hand-built table, and with no profile
 // selected. The set is pi, kilo, and openai-auth.
 func TestPiCatalogFromShippedPacksOmitsOpenAICodex(t *testing.T) {
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "pi", "kilo", "openai-auth"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "pi", "kilo", "codex-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -256,7 +256,7 @@ func TestTheRegionIsAskedOfEachAgentOnTheProvider(t *testing.T) {
 	  {"kind":"profile","name":"local","provider":"local"},
 	  {"kind":"env","profile":"local","vars":{"AWS_REGION":"eu-west-9"}}]}`)
 	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "codex"),
-		officialPack(t, "openai-auth"), officialPack(t, "bedrock"), local}
+		officialPack(t, "codex-auth"), officialPack(t, "bedrock"), local}
 	o.UseProfiles = map[string]string{"claude": "bedrock", "codex": "local"}
 
 	channel := channelFor(t, o, newConfig(), packs, emptyEnv())
@@ -294,7 +294,7 @@ func TestOpencodeOnBedrockIsNotGivenARegionItDoesNotRead(t *testing.T) {
 	o := retireOptions(t, discardBuf())
 	o.Getenv = shellWith(nil)
 	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "opencode"),
-		officialPack(t, "openai-auth"), officialPack(t, "bedrock")}
+		officialPack(t, "codex-auth"), officialPack(t, "bedrock")}
 	o.UseProfiles = map[string]string{"claude": "bedrock", "opencode": "bedrock"}
 
 	env := userEnvWith(map[string]string{"AWS_DEFAULT_REGION": "eu-west-1"})
@@ -372,7 +372,7 @@ func TestOpencodeThroughTheBridgeIsGivenTheRegionTheBridgeReads(t *testing.T) {
 	writeUserPacks(t, home, `[]`)
 	o := retireOptions(t, discardBuf())
 	o.Getenv = shellWith(nil)
-	packs := []*packload.Pack{officialPack(t, "opencode"), officialPack(t, "openai-auth"),
+	packs := []*packload.Pack{officialPack(t, "opencode"), officialPack(t, "codex-auth"),
 		officialPack(t, "bedrock"), officialPack(t, "wire-bridge")}
 	o.UseProfiles = map[string]string{"opencode": "bedrock-bridge"}
 

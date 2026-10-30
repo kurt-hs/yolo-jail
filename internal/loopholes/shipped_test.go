@@ -31,19 +31,20 @@ func repoRootDir(t *testing.T) string {
 // out (docs/reference/loophole-system.md OQ-BP4), so every row now names a pack and the
 // column that recorded WHICH CHANNEL is gone with the choice it recorded.
 //
-// The broker's row is the one to read twice: its pack is `claude`, the AGENT pack, not a
-// `claude-oauth-broker` pack of its own (docs/reference/loophole-system.md#oq-a10). The dependency
-// is structural — the broker exists to serve claude — so selecting the claude pack IS
-// the dependency, and a pack of its own would reinstate a second selection step.
+// The broker's row is the one to read twice: its pack is `claude-auth`, the provider pack
+// `claude` needs, not a `claude-oauth-broker` pack of its own (docs/reference/loophole-system.md#oq-a10).
+// It lived in the `claude` agent pack until 2026-10-29 (docs/design/provider-enablement.md
+// OQ-PE5); the dependency is still structural, through claude's `needs`, so selecting claude
+// still brings it and no second selection step exists.
 var shippedLoopholes = []struct{ name, pack string }{
-	{"claude-oauth-broker", "claude"},
+	{"claude-oauth-broker", "claude-auth"},
 	{"audio", "audio"},
 	{"host-processes", "host-processes"},
 	{"journal", "journal"},
 	{"macos-log", "macos-log"},
 	{"cgroup-delegate", "cgroup-delegate"},
 	{"serial", "serial"},
-	{"openai-auth-broker", "openai-auth"},
+	{"openai-auth-broker", "codex-auth"},
 	{"aws-auth", "aws-auth"},
 	{"github-broker", "github"},
 	{"git-broker", "git"},
@@ -102,7 +103,7 @@ func TestShippedBrokerNeverMountsItsPrivateKey(t *testing.T) {
 		}
 	}
 
-	module := shippedLoopholeModule(t, name, "claude")
+	module := shippedLoopholeModule(t, name, "claude-auth")
 	set := NewSet(DiscoverOptions{PackModules: []PackModule{{Dir: module, HostExecApproved: true}}})
 	lp, ok := set.Lookup(name)
 	if !ok {

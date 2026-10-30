@@ -10,7 +10,7 @@ package run
 //
 // (its os.RemoveAll of _official racing A's copy into it), and launch A warned
 //
-//	loophole module dir …/packs/_official/claude/loopholes/claude-oauth-broker is not a
+//	loophole module dir …/packs/_official/claude-auth/loopholes/claude-oauth-broker is not a
 //	directory, so that loophole is NOT active
 //
 // (A's host daemon start reading its own staged tree after B had removed it). The staging code
@@ -49,11 +49,11 @@ import (
 func claudeBrokerModuleDir(t *testing.T, loaded []*packload.Pack) string {
 	t.Helper()
 	for _, p := range loaded {
-		if p.Name == "claude" {
+		if p.Name == "claude-auth" {
 			return filepath.Join(p.Root, "loopholes", "claude-oauth-broker")
 		}
 	}
-	t.Fatalf("the claude pack was not staged; staged: %d packs", len(loaded))
+	t.Fatalf("the claude-auth pack was not staged; staged: %d packs", len(loaded))
 	return ""
 }
 
@@ -411,7 +411,7 @@ func TestAnAttachWithAnUnchangedConfigLeavesTheLiveJailsStagingUntouched(t *test
 	// The fixture must really contain what the assertion is about, or it proves nothing.
 	rel := func(p string) string { r, _ := filepath.Rel(root, p); return r }
 	for _, want := range []string{
-		filepath.Join(tree, "_official", "claude", "loopholes", "claude-oauth-broker"),
+		filepath.Join(tree, "_official", "claude-auth", "loopholes", "claude-oauth-broker"),
 		filepath.Join(tree, "_official", "pi", "extensions", "yolo-footer.js"),
 		filepath.Join(tree, "treepack", "tree", "sub", "b.txt"),
 		filepath.Join(tree, "treepack", "one.json"),
@@ -598,7 +598,7 @@ func TestAnAttachToAJailLaunchedBeforePerLaunchTreesLeavesItsSharedTreeAlone(t *
 	if trees := packTreesUnder(t, cname); len(trees) != 0 {
 		t.Errorf("the attach left its own staging behind: %v", trees)
 	}
-	for _, want := range []string{"added claude, wire-bridge;", "removed journal"} {
+	for _, want := range []string{"added claude, claude-auth, wire-bridge;", "removed journal"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("the attach did not read the older jail's shared tree as its packs (no %q):\nstderr:\n%s\nstdout:\n%s",
 				want, stderr, stdout)

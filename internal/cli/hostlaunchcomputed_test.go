@@ -71,7 +71,7 @@ func withComputedPack(t *testing.T, cfg string) string {
 
 // piSubagentsCodexCfg configures openrouter as pi's profile, with openai-auth's codex profile
 // selectable by -p.
-const piSubagentsCodexCfg = `{"packs": ["claude", "openrouter", "openai-auth", "pi"], ` +
+const piSubagentsCodexCfg = `{"packs": ["claude", "openrouter", "codex-auth", "pi"], ` +
 	`"profile": {"pi": "openrouter"}, "env_sources": [{"OPENROUTER_API_KEY": "tok-router"}]}`
 
 // piSubagentsAcmeCfg is one user provider with two profiles over it whose role pins differ, the

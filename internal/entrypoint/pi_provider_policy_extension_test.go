@@ -53,7 +53,7 @@ func TestShippedPiPackDeliversTheProviderPolicyExtension(t *testing.T) {
 func piPolicyEnv(t *testing.T, profile string, set []string) []string {
 	t.Helper()
 	var packs []*packload.Pack
-	for _, name := range []string{"pi", "bedrock", "openai-auth"} {
+	for _, name := range []string{"pi", "bedrock", "codex-auth"} {
 		p, err := embeddedPack(name)
 		if err != nil {
 			t.Fatal(err)

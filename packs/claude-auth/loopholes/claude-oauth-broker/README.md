@@ -1,8 +1,10 @@
 # claude-oauth-broker loophole
 
-A contribution of the official **`claude` pack** — `packs/claude/pack.json` declares
-`{"kind": "loophole", "from": "loopholes/claude-oauth-broker"}`, so selecting `packs: ["claude"]` is
-what installs it. Serializes Claude OAuth refreshes so multi-jail setups don't burn the single-use
+A contribution of the official **`claude-auth` pack** — `packs/claude-auth/pack.json` declares
+`{"kind": "loophole", "from": "loopholes/claude-oauth-broker"}`, and `packs/claude` needs
+`claude-auth`, so selecting `packs: ["claude"]` is still what installs it. It moved from the `claude`
+pack to `claude-auth` on 2026-10-29
+([`provider-enablement.md` OQ-PE5](../../../../docs/design/provider-enablement.md#OQ-PE5)). Serializes Claude OAuth refreshes so multi-jail setups don't burn the single-use
 refresh token. See [`docs/reference/claude-oauth-interposition.md`](../../../../docs/reference/claude-oauth-interposition.md) for design rationale, [the operator triage below](#repeated-login-401s) for repeated `/login` prompts, [`userguide/guides/loopholes.md`](../../../../userguide/guides/loopholes.md) for the loophole system.
 
 It was `bundled_loopholes/claude-oauth-broker/` until 2026-08-19, and it was the **last** inhabitant

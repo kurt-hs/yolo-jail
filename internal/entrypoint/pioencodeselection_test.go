@@ -818,10 +818,10 @@ func TestPiEnabledModelsFollowTheSelectionRules(t *testing.T) {
 }
 
 // newPiCodexRender is the multi-boot harness over the table a pi launch composes with
-// packs/openai-auth and its openai-codex declaration, and the codex profile installed.
+// packs/codex-auth and its openai-codex declaration, and the codex profile installed.
 func newPiCodexRender(t *testing.T) *pioencodeRender {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

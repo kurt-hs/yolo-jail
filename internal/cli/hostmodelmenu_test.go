@@ -168,7 +168,7 @@ func menuSlugs(t *testing.T, path string) []any {
 	return slugs
 }
 
-const codexOnTheSubscription = `{"packs": ["codex", "openai-auth"], "profile": {"codex": "codex"}}`
+const codexOnTheSubscription = `{"packs": ["codex", "codex-auth"], "profile": {"codex": "codex"}}`
 
 // THE DONE-WHEN: `yolo host -- codex` with the subscription configured for codex hands codex
 // yolo's menu, built from its own catalog for the subscription's list, named by the flag right
@@ -224,9 +224,9 @@ func TestHostCodexOnTheConfiguredSubscriptionGetsYolosMenu(t *testing.T) {
 // ~/.codex/config.toml is byte-identical, and no file in the home but the menu names the model.
 func TestHostCodexMovesOntoAPOverAnotherProviderAndGetsItsMenu(t *testing.T) {
 	for _, tc := range []struct{ name, cfg string }{
-		{"config names another provider", `{"packs": ["codex", "zai", "openai-auth"], "profile": {"codex": "zai"}, ` +
+		{"config names another provider", `{"packs": ["codex", "zai", "codex-auth"], "profile": {"codex": "zai"}, ` +
 			`"env_sources": [{"ZAI_API_KEY": "k"}]}`},
-		{"config names none", `{"packs": ["codex", "openai-auth"]}`},
+		{"config names none", `{"packs": ["codex", "codex-auth"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := hostGateHome(t, tc.cfg, nil)
@@ -290,7 +290,7 @@ func assertNoFileNames(t *testing.T, root, word string, skip ...string) {
 // row as one `-c`, so codex finds the row whether or not `yolo host apply` wrote it; no list, so
 // no menu, and codex's catalog is not read.
 func TestHostCodexMovesOntoAUserProviderWithItsRow(t *testing.T) {
-	cfg := `{"packs": ["codex", "openai-auth"], "profile": {"codex": "codex"}, ` +
+	cfg := `{"packs": ["codex", "codex-auth"], "profile": {"codex": "codex"}, ` +
 		`"providers": {"acme": {"endpoints": {"openai": {"base_url": "https://acme.example/v1"}}, ` +
 		`"api_key_env_name": "ACME_KEY", "models": {"default": "acme-1"}}}, ` +
 		`"profiles": {"acme": {"provider": "acme"}}, "env_sources": [{"ACME_KEY": "k"}]}`
@@ -329,7 +329,7 @@ func TestHostCodexOnAnAgreeingPGetsNoSelection(t *testing.T) {
 // A USER'S OWN LATER -c STILL WINS (MM-D22's rule, MM-D30): the selection's words go right after
 // argv[0], so the user's `-c model=...` typed after them is the one codex applies.
 func TestHostCodexLetsTheUsersOwnLaterDashCWin(t *testing.T) {
-	l := runHostMenu(t, "", `{"packs": ["codex", "openai-auth"]}`, nil, []string{"-p", "codex"}, "-c", `model="mine"`, "exec")
+	l := runHostMenu(t, "", `{"packs": ["codex", "codex-auth"]}`, nil, []string{"-p", "codex"}, "-c", `model="mine"`, "exec")
 	yolo, user := slices.Index(l.argv, `model="gpt-6.1-sol"`), slices.Index(l.argv, `model="mine"`)
 	if yolo < 0 || user < 0 || yolo > user {
 		t.Errorf("codex got %q: the selection's model must come before the user's own\n%s", l.argv, l.errs)
@@ -344,9 +344,9 @@ func TestHostCodexLetsTheUsersOwnLaterDashCWin(t *testing.T) {
 // provider codex is not on.
 func TestHostCodexSaysWhenAPCannotMoveIt(t *testing.T) {
 	for _, tc := range []struct{ name, cfg string }{
-		{"config names another profile", `{"packs": ["codex", "zai", "openai-auth"], "profile": {"codex": "codex"}, ` +
+		{"config names another profile", `{"packs": ["codex", "zai", "codex-auth"], "profile": {"codex": "codex"}, ` +
 			`"env_sources": [{"ZAI_API_KEY": "k"}]}`},
-		{"config names none", `{"packs": ["codex", "zai", "openai-auth"], "env_sources": [{"ZAI_API_KEY": "k"}]}`},
+		{"config names none", `{"packs": ["codex", "zai", "codex-auth"], "env_sources": [{"ZAI_API_KEY": "k"}]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			zai := runHostMenu(t, "", tc.cfg, nil, []string{"-p", "zai"}, "exec")
@@ -374,7 +374,7 @@ func TestHostCodexSaysWhenAPCannotMoveIt(t *testing.T) {
 			}
 		})
 	}
-	off := runHostMenu(t, "", `{"packs": ["codex", "openai-auth"]}`, map[string]string{entrypoint.NoLaunchFlagsEnv: "1"},
+	off := runHostMenu(t, "", `{"packs": ["codex", "codex-auth"]}`, map[string]string{entrypoint.NoLaunchFlagsEnv: "1"},
 		[]string{"-p", "codex"}, "exec")
 	if !reflect.DeepEqual(off.argv, []string{"codex", "exec"}) || off.catalogReads != 0 {
 		t.Errorf("with %s=1 codex got %q after %d catalog reads, want its own argv", entrypoint.NoLaunchFlagsEnv,
@@ -419,7 +419,7 @@ func TestTheMenuOfAProgramWithNoLaunchSelectionFollowsOnlyItsFile(t *testing.T) 
 // not declare (MM-D25's rule) or one that did not move codex builds none and reads no catalog, the
 // first saying why; one that moved codex builds the menu from the same composition.
 func TestTheMenuStepBuildsNoMenuForAPTheProgramWasNotMovedOnto(t *testing.T) {
-	home := hostGateHome(t, `{"packs": ["codex", "zai", "openai-auth"], "profile": {"codex": "zai"}, `+
+	home := hostGateHome(t, `{"packs": ["codex", "zai", "codex-auth"], "profile": {"codex": "zai"}, `+
 		`"env_sources": [{"ZAI_API_KEY": "k"}]}`, nil)
 	t.Setenv(entrypoint.NoLaunchFlagsEnv, "")
 	reads := filepath.Join(home, "catalog.reads")
@@ -507,7 +507,7 @@ func TestHostManagedCodexHoldsTheMenusLockWhileItRuns(t *testing.T) {
 // the user's own (openaiauthhost, unchanged by MM-D30), so the -p's selection reaches a managed codex
 // only through the words the launch hands it, which run ahead of the managed rewrite's.
 func TestHostManagedCodexGetsTheSelectionInItsArgv(t *testing.T) {
-	home := hostGateHome(t, `{"packs": ["codex", "zai", "openai-auth"], "profile": {"codex": "zai"}, `+
+	home := hostGateHome(t, `{"packs": ["codex", "zai", "codex-auth"], "profile": {"codex": "zai"}, `+
 		`"env_sources": [{"ZAI_API_KEY": "k"}]}`, nil)
 	fake := &lockProbingManagedLaunch{t: t}
 	orig := prepareOpenAIAuthHost
@@ -542,7 +542,7 @@ func (f *lockProbingManagedLaunch) Run(target string, argv, env []string, in io.
 // subscription reaches the menu through the table this launch composed, and a guarded launch flag
 // another pack declares for codex comes after the menu's flag, as the jail's launcher orders them.
 func TestHostCodexMenuFollowsTheLaunchsListAndLeadsThePacksFlags(t *testing.T) {
-	home := hostGateHome(t, `{"packs": ["codex", "openai-auth"], "profile": {"codex": "codex"}}`, nil)
+	home := hostGateHome(t, `{"packs": ["codex", "codex-auth"], "profile": {"codex": "codex"}}`, nil)
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "local", "pack.json"), `{"name":"acme","contributes":[`+
 		`{"kind":"models","provider":"openai-codex","only":["gpt-6-astra"]},`+
 		`{"kind":"autonomy","guarded":{"launch":[{"bin":"codex","flags":["--ask-first"]}]}}]}`)
@@ -613,7 +613,7 @@ func TestHostCodexInAJailLeavesTheMenuToTheJailsLauncher(t *testing.T) {
 	// codex's file, and a host-composed one would come later in the argv and win. Over a config
 	// naming no profile for codex, so the -p's selection differs from the configured one and only
 	// the jail's own guard keeps it from being handed.
-	bare := hostGateHome(t, `{"packs": ["codex", "openai-auth"]}`, nil)
+	bare := hostGateHome(t, `{"packs": ["codex", "codex-auth"]}`, nil)
 	t.Setenv("YOLO_VERSION", "0.0.0-test")
 	moved := runHostMenu(t, bare, "", nil, []string{"-p", "codex"}, "exec")
 	if moved.rc != 0 || !reflect.DeepEqual(moved.argv, []string{"codex", "exec"}) {

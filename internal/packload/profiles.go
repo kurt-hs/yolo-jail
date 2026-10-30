@@ -450,7 +450,7 @@ func DeclaredProfileNames(packs []*Pack, user map[string]UserProfile) []string {
 // ShippedProfileDeclarers returns, sorted, the names of the packs in universe (the caller passes
 // the shipped set, Embedded()) whose manifest declares a profile named name. It is the hint
 // UndeclaredProfileMessage gives when a name is undeclared only because the pack shipping it is
-// not selected: `-p pi=github-copilot` with pi alone (BI-D14). It reads manifests only, and
+// not selected: `-p pi=copilot` with pi alone (BI-D14). It reads manifests only, and
 // reserves nothing.
 func ShippedProfileDeclarers(name string, universe []*Pack) []string {
 	var out []string
@@ -491,6 +491,134 @@ func UndeclaredProfileMessage(name string, declared, shippedBy []string) string 
 			"`packs` list", strings.Join(shippedBy, " or "), strings.Join(quoted, " or "))
 	}
 	return msg
+}
+
+// UndeclaredProfileHelp is THE refusal body for a selected profile name nothing declares, the one
+// every notch and `yolo check` print (docs/design/provider-enablement.md, Happy Path): selected is
+// the launch's packs and universe the shipped set (the caller passes Embedded()). It reads
+// manifests only, to word the message, and reserves nothing. In order of what it says:
+//
+//   - a name a shipped pack's `formerly` records as one of its profiles' former names: the new
+//     name, and the pack to add when it is not selected (OQ-PE3);
+//   - a name a shipped pack declares as a profile: that pack (ShippedProfileDeclarers);
+//   - a name a selected agent has built in (its `built_in_providers.names`): the profile a
+//     shipped pack declares over a provider of that name when one does, else the two-line
+//     declaration typed out (OQ-PE4);
+//   - otherwise the list of what is declared, since a typo is then the likely cause.
+func UndeclaredProfileHelp(name string, declared []string, selected, universe []*Pack) string {
+	if now, pack, ok := RenamedProfile(name, universe); ok {
+		msg := fmt.Sprintf("no profile named %q is declared — it was renamed %q, which the %s pack "+
+			"declares: select %q instead", name, now, pack, now)
+		if !slices.Contains(declared, now) {
+			msg += fmt.Sprintf(", and add %q to your config's `packs` list", pack)
+		}
+		return msg
+	}
+	if shippedBy := ShippedProfileDeclarers(name, universe); len(shippedBy) > 0 {
+		return UndeclaredProfileMessage(name, declared, shippedBy)
+	}
+	agents := agentsWithBuiltIn(selected, name)
+	if len(agents) == 0 {
+		return UndeclaredProfileMessage(name, declared, nil)
+	}
+	have := "none"
+	if len(declared) > 0 {
+		have = strings.Join(declared, ", ")
+	}
+	who := strings.Join(agents, " and ")
+	verb := "has"
+	if len(agents) > 1 {
+		verb = "have"
+	}
+	if profile, pack, ok := shippedProfileOver(name, universe); ok {
+		msg := fmt.Sprintf("no profile named %q is declared — %s %s %s built in, and the %s pack "+
+			"yolo ships declares it as the profile %q: select %q instead", name, who, verb, name,
+			pack, profile, profile)
+		if !slices.Contains(declared, profile) {
+			msg += fmt.Sprintf(", and add %q to your config's `packs` list", pack)
+		}
+		return msg + " (declared: " + have + ")"
+	}
+	return fmt.Sprintf("no profile named %q is declared — %s %s %s built in, so declare it in "+
+		"your user config (%s):\n"+
+		"  \"providers\": {%q: {\"platform\": %q}},\n"+
+		"  \"profiles\": {%q: {\"provider\": %q}}\n"+
+		"(declared: %s)", name, who, verb, name, paths.UserConfigPath(), name, name, name, name, have)
+}
+
+// RenamedProfile is the profile a shipped pack's `formerly` record says old was renamed to, and
+// that pack's name, when one does (packdecl.Formerly).
+func RenamedProfile(old string, universe []*Pack) (now, pack string, ok bool) {
+	for _, p := range universe {
+		if p == nil || p.Decl == nil || p.Decl.FormerNames() == nil {
+			continue
+		}
+		if n, has := p.Decl.FormerNames().Profiles[old]; has && n != "" {
+			return n, p.Name, true
+		}
+	}
+	return "", "", false
+}
+
+// RenamedPack is the shipped pack whose `formerly` record names old as one of its former names
+// (packdecl.Formerly), so a `packs` entry still naming old is refused naming it.
+func RenamedPack(old string, universe []*Pack) (string, bool) {
+	for _, p := range universe {
+		if p == nil || p.Decl == nil || p.Decl.FormerNames() == nil {
+			continue
+		}
+		if slices.Contains(p.Decl.FormerNames().Packs, old) {
+			return p.Name, true
+		}
+	}
+	return "", false
+}
+
+// agentsWithBuiltIn is, sorted, every program bin a selected pack installs whose
+// `built_in_providers.names` lists name.
+func agentsWithBuiltIn(selected []*Pack, name string) []string {
+	var out []string
+	for _, p := range selected {
+		if p == nil || p.Decl == nil {
+			continue
+		}
+		for _, c := range p.Decl.Contributions() {
+			if c.Kind != packdecl.KindProgram || c.Bin == "" || c.BuiltInProviders == nil {
+				continue
+			}
+			if slices.Contains(c.BuiltInProviders.Names, name) && !slices.Contains(out, c.Bin) {
+				out = append(out, c.Bin)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// shippedProfileOver is the first profile, in pack order, a shipped pack declares over a provider
+// named provider that the same pack ships, with that pack's name.
+func shippedProfileOver(provider string, universe []*Pack) (profile, pack string, ok bool) {
+	for _, p := range universe {
+		if p == nil || p.Decl == nil {
+			continue
+		}
+		ships := false
+		for _, prov := range p.Decl.Providers() {
+			if prov.Name == provider {
+				ships = true
+				break
+			}
+		}
+		if !ships {
+			continue
+		}
+		for _, prof := range p.Decl.Profiles() {
+			if prof.Provider == provider {
+				return prof.Name, p.Name, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // WireViaKey and WireViaBaseKey are ProfilesWireTable's reserved keys for a profile's

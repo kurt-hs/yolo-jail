@@ -31,7 +31,7 @@ type BuiltInProviders struct {
 	// YoloLists names the yolo providers, each one Names or a non-null Plans key, that the
 	// program runs on its own client but on YOLO'S model list, which the program's pack renders
 	// from yolo's declaration of the provider: pi and opencode on openai-codex, whose one list
-	// packs/openai-auth declares (docs/design/model-lists-and-pickers.md ML-D1). The derive still
+	// packs/codex-auth declares (docs/design/model-lists-and-pickers.md ML-D1). The derive still
 	// writes no catalog row over the provider, but core treats its list as yolo's: the agent's
 	// children get the provider's YOLO_MODEL_<ROLE> tiers, and the launch's profile line names the
 	// endpoint the list rides on rather than saying the agent uses a list of its own.

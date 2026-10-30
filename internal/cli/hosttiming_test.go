@@ -238,7 +238,7 @@ func TestHostTimingSpansTheServicesStart(t *testing.T) {
 	t.Cleanup(func() { startLaunchService = inner })
 	t.Setenv(paths.TimingEnv, "")
 	t.Setenv(paths.VerboseEnv, "")
-	l := runServiceLaunch(t, codexConfig(upstream.URL), []string{"--timing", "-p", "codex"}, "", nil)
+	l := runServiceLaunch(t, codexConfig(t, upstream.URL), []string{"--timing", "-p", "codex"}, "", nil)
 	if l.rc != 0 || l.execed {
 		t.Fatalf("rc=%d execed=%v\n%s", l.rc, l.execed, l.errs)
 	}

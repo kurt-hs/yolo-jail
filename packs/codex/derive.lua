@@ -1,7 +1,7 @@
 -- codex: project MCP servers and model_providers into codex's TOML format.
 
 -- THE openai-codex MODEL LIST. codexModelList expands the one declaration of it — the
--- `models` and `model_options` packs/openai-auth/pack.json ships on the openai-codex provider,
+-- `models` and `model_options` packs/codex-auth/pack.json ships on the openai-codex provider,
 -- with the user's `providers.openai-codex` merged over it — into the ordered list every
 -- consumer presents (docs/design/model-lists-and-pickers.md ML-D1). `p` is
 -- ctx.providers["openai-codex"]; anything without a `models` table expands to {}.
@@ -518,7 +518,7 @@ yolo.derive("codex", "config", function(ctx)
   -- any third-party `model_provider` residue.
   --
   -- The model is codexDefault's: the profile's own `model`, else the FIRST id of the one
-  -- declared list (packs/openai-auth/pack.json), the same default claude and pi start on.
+  -- declared list (packs/codex-auth/pack.json), the same default claude and pi start on.
   -- A list emptied by the user's config and a profile naming nothing write NO model, so
   -- codex falls back to its own default, and the deselect rule (OQ-PSW2) clears the model
   -- an earlier launch wrote.

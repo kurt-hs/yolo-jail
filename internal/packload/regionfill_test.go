@@ -131,7 +131,7 @@ func awsAuthSetting(profile string) func(string, string) string {
 // never an sso-session's sso_region.
 func TestTheRegionFillReadsTheProfileTheCredentialComesFrom(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	onBedrock := map[string]string{"claude": "bedrock"}
 	nothing := NothingServed()
 	jailServed := ServedInJail([]string{"aws-auth", "wire-bridge"}).WithListen(declaredListen)
@@ -189,7 +189,7 @@ func TestTheRegionFillReadsTheProfileTheCredentialComesFrom(t *testing.T) {
 // found which takes priority"). Reading `[default]` alone handed an agent a region other than
 // the one it would choose itself, and refused a file it reads fine.
 func TestTheRegionFillReadsProfileDefaultBeforeDefault(t *testing.T) {
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	onBedrock := map[string]string{"claude": "bedrock"}
 	nothing := NothingServed()
 	for _, tc := range []struct {
@@ -232,7 +232,7 @@ func TestTheRegionFillReadsProfileDefaultBeforeDefault(t *testing.T) {
 // read, and the lookup says why, for the refusal.
 func TestTheRegionFillFillsOnlyAnAgentWithNoRegion(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	onBedrock := map[string]string{"claude": "bedrock"}
 	nothing := NothingServed()
 	launch := map[string]string{"HOME": home, "AWS_REGION": "us-west-2"}
@@ -282,7 +282,7 @@ func TestTheRegionFillFillsOnlyAnAgentWithNoRegion(t *testing.T) {
 // names the profile read anyway, and a profile aws-auth serves decides before the shell's does.
 func TestTheRegionFillLeavesTheLaunchShellsChoiceToTheRefusal(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	onBedrock := map[string]string{"claude": "bedrock"}
 	nothing := NothingServed()
 	jailServed := ServedInJail([]string{"aws-auth", "wire-bridge"}).WithListen(declaredListen)
@@ -335,7 +335,7 @@ func TestTheRegionFillLeavesTheLaunchShellsChoiceToTheRefusal(t *testing.T) {
 // reads, AWS_REGION for claude and for opencode, which reads nothing else.
 func TestTheRegionFillDeliversInTheVariableTheAgentReads(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "opencode", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "opencode", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	nothing := NothingServed()
 	s, _ := fillCase{packs: packs, profiles: map[string]string{"claude": "bedrock", "opencode": "bedrock"},
 		served: &nothing, src: &RegionFileSource{Getenv: launchEnv(map[string]string{"HOME": home})}}.scope(t)
@@ -355,7 +355,7 @@ func TestTheRegionFillDeliversInTheVariableTheAgentReads(t *testing.T) {
 // variable, and the file is not offered as a remedy that would not be read.
 func TestTheRegionFillLeavesAnUnreadRegionToTheRefusal(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "opencode", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "opencode", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	nothing := NothingServed()
 	for _, tc := range []struct {
 		name      string
@@ -402,7 +402,7 @@ func TestTheRegionFillLeavesAnUnreadRegionToTheRefusal(t *testing.T) {
 // fill free to consult the normal file source.
 func TestTheRegionFillFallsBackWhenAnInheritedCredentialHasNoParentRegion(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	served := ServedInJail([]string{"aws-auth", "wire-bridge"}).WithListen(declaredListen).
 		WithInherited(map[string]map[string]string{"aws-auth": {
 			"AWS_CONTAINER_CREDENTIALS_FULL_URI": "http://127.0.0.1:52001/credentials",
@@ -427,7 +427,7 @@ func TestTheRegionFillFallsBackWhenAnInheritedCredentialHasNoParentRegion(t *tes
 
 func TestTheRegionFillKeepsAnInvalidParentRegionStranded(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	served := ServedInJail([]string{"aws-auth", "wire-bridge"}).WithListen(declaredListen).
 		WithInherited(map[string]map[string]string{"aws-auth": {
 			"AWS_CONTAINER_CREDENTIALS_FULL_URI": "http://127.0.0.1:52001/credentials",
@@ -455,7 +455,7 @@ func TestTheRegionFillKeepsAnInvalidParentRegionStranded(t *testing.T) {
 // that environment's HOME); a missing file, a missing section, no HOME and a value that is not one
 // DNS label each deliver nothing and say why.
 func TestTheRegionFillReadsTheFileTheLaunchNames(t *testing.T) {
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	onBedrock := map[string]string{"claude": "bedrock"}
 	nothing := NothingServed()
 	home := regionHome(t, "[default]\nregion = us-east-2\n")
@@ -520,7 +520,7 @@ func TestTheRegionFillReadsTheFileTheLaunchNames(t *testing.T) {
 // is named under the refusal, with the profile, the reason and a third way to set a region, and
 // the consulted line ends with it.
 func TestTheRegionPreflightCountsAFilledRegionAndNamesTheFileItRead(t *testing.T) {
-	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	onBedrock := map[string]string{"claude": "bedrock"}
 	nothing := NothingServed()
 	ask := func(s *CredentialScope) []RegionAsk {
@@ -557,7 +557,7 @@ func TestTheRegionPreflightCountsAFilledRegionAndNamesTheFileItRead(t *testing.T
 // agents given it, and what chose the profile.
 func TestTheRegionFillDisclosesTheRegionTheFileAndTheProfile(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "claude", "opencode", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "opencode", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	jailServed := ServedInJail([]string{"aws-auth", "wire-bridge"}).WithListen(declaredListen)
 	s, _ := fillCase{packs: packs, profiles: map[string]string{"claude": "bedrock", "opencode": "bedrock"},
 		served: &jailServed, src: &RegionFileSource{Getenv: launchEnv(map[string]string{"HOME": home}),
@@ -686,7 +686,7 @@ func TestARegionFileIsAHostReadInTheFootprint(t *testing.T) {
 // is the one the region pre-flight's ask for that provider carries (RegionFileFor).
 func TestTheRegionFillReadsForABedrockEntryAfterTheFirst(t *testing.T) {
 	home := regionHome(t, regionConfig)
-	packs := embeddedNamed(t, "pi", "zai", "aws-auth", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "pi", "zai", "aws-auth", "bedrock", "codex-auth", "wire-bridge")
 	nothing := NothingServed()
 	profiles := map[string]string{"pi": "zai"}
 	providers, resolved, _ := launchSelection(t, packs, nil, nil, profiles)

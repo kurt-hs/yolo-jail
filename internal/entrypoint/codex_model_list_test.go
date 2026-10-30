@@ -1,7 +1,7 @@
 package entrypoint
 
 // codex_model_list_test.go pins the ONE openai-codex model list
-// (docs/design/model-lists-and-pickers.md ML-D1): packs/openai-auth/pack.json declares it on
+// (docs/design/model-lists-and-pickers.md ML-D1): packs/codex-auth/pack.json declares it on
 // the provider, and every consumer renders it — claude's picker and allowlist, claude's
 // launch env, pi's selection and pi-subagents' scope, the data file pi's extension
 // registers, codex's model, opencode's selection and the rows and whitelist on its own `openai`
@@ -176,10 +176,10 @@ func codexIDs(list []codexModel, prefix string) []any {
 	return out
 }
 
-// shippedCodexDeclaration is the openai-codex provider contribution packs/openai-auth ships.
+// shippedCodexDeclaration is the openai-codex provider contribution packs/codex-auth ships.
 func shippedCodexDeclaration(t *testing.T) packdecl.ProviderContribution {
 	t.Helper()
-	p, err := embeddedPack("openai-auth")
+	p, err := embeddedPack("codex-auth")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func shippedCodexDeclaration(t *testing.T) packdecl.ProviderContribution {
 			return prov
 		}
 	}
-	t.Fatal("packs/openai-auth declares no openai-codex provider")
+	t.Fatal("packs/codex-auth declares no openai-codex provider")
 	return packdecl.ProviderContribution{}
 }
 
@@ -228,7 +228,7 @@ func piCodexModelsRel(t *testing.T) string {
 
 func renderCodexConsumers(t *testing.T, user *jsonx.OrderedMap) (codexConsumers, *jsonx.OrderedMap) {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", "claude", "codex", "opencode", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "claude", "codex", "opencode", "codex-auth")
 	providers, err := packload.ComposeProviders(user, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -626,7 +626,7 @@ func TestTheHostNotchGivesPiTheDeclaredCodexList(t *testing.T) {
 	rel := piCodexModelsRel(t)
 	t.Setenv("YOLO_CTX_ROOT", t.TempDir())
 	home := t.TempDir()
-	in := hostTestInputs(t, testPacksForAgent(t, "pi", "openai-auth"), nil, nil, nil)
+	in := hostTestInputs(t, testPacksForAgent(t, "pi", "codex-auth"), nil, nil, nil)
 	if r := hostRenderWith(t, home, render.OwnershipOwn, in, "pi", "pi/codex-models"); r.Action != "rendered" {
 		t.Fatalf("pi/codex-models at the host under own: %q, want rendered", r.Action)
 	}

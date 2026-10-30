@@ -22,7 +22,7 @@ func TestPiCodexProfileSeedsFreshAuthBeforeNpmLauncherExec(t *testing.T) {
 		t.Fatal(err)
 	}
 	profiles := map[string]string{"pi": "codex"}
-	env := launchEnvFor(t, append(testPacksForAgent(t, "pi", "openai-auth"), codex), profiles, "pi")
+	env := launchEnvFor(t, append(testPacksForAgent(t, "pi", "codex-auth"), codex), profiles, "pi")
 	for key, want := range map[string]string{
 		"YOLO_AUTH_PRELAUNCH_PI_FLAG":    "--pi-auth",
 		"YOLO_AUTH_PRELAUNCH_PI_PATH":    ".pi/agent/auth.json",
@@ -38,9 +38,9 @@ func TestPiCodexProfileSeedsFreshAuthBeforeNpmLauncherExec(t *testing.T) {
 	}
 
 	// The provider table a pi launch really composes: pi's needs closure brings
-	// packs/openai-auth, whose openai-codex declaration is where the default model comes
+	// packs/codex-auth, whose openai-codex declaration is where the default model comes
 	// from. An empty table here would render a selection with no model at all.
-	closure := testPacksForAgent(t, "pi", "openai-auth")
+	closure := testPacksForAgent(t, "pi", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, closure)
 	if err != nil {
 		t.Fatal(err)

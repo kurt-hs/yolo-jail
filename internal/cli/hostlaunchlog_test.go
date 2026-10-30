@@ -301,7 +301,7 @@ func TestAResidentAgentsStderrStaysOutOfTheHostLaunchLog(t *testing.T) {
 			upstream, _ := fakeUpstream(t)
 			fakeHostBroker(t)
 			const marker = "AGENT-STDERR-MARKER-7f3a"
-			hostGateHome(t, codexConfig(upstream.URL), wcShell(nil))
+			hostGateHome(t, codexConfig(t, upstream.URL), wcShell(nil))
 			cwd, err := os.Getwd()
 			if err != nil {
 				t.Fatal(err)

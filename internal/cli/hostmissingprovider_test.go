@@ -2,7 +2,7 @@ package cli
 
 // hostmissingprovider_test.go pins the host notch's answer to claude's codex profile on a bare
 // `"packs": ["claude"]` (docs/design/credential-sources-separation.md ES-D24, ES-D25; notch
-// convergence items 3 and 6). Only packs/openai-auth declares the openai-codex provider. The host
+// convergence items 3 and 6). Only packs/codex-auth declares the openai-codex provider. The host
 // used to apply no `needs`, so that launch held no such provider: it exited 0 and handed claude
 // three context-window constants and no address (measured 2026-09-27), so claude ran on its own
 // Claude login while the footer said "codex (bridge)". Then it refused, first as a missing
@@ -34,12 +34,12 @@ func TestEveryHostSpellingOfClaudeOnCodexStartsTheBridge(t *testing.T) {
 		prepareOpenAIAuthHost = func(hostPrelaunch, io.Writer) (managedOpenAIHostLaunch, error) { return nil, nil }
 		os.Exit(Main(append([]string{"yolo"}, strings.Fields(spelling)...)))
 	}
-	claudeCodex := `{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "openai-auth"]}`
+	claudeCodex := `{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "codex-auth"]}`
 	for _, tc := range []struct{ cfg, spelling string }{
 		{claudeCodex, "host -p codex -- claude"},
 		{claudeCodex, "-p codex host -- claude"},
 		{claudeCodex, "--at host -p codex -- claude"},
-		{`{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`, "host -- claude"},
+		{`{"host_management":"own","host_apply_on_launch":false,"packs": ["claude", "codex-auth"], "profile": {"claude": "codex"}}`, "host -- claude"},
 	} {
 		t.Run(tc.spelling, func(t *testing.T) {
 			out := runHostSpelling(t, "^TestEveryHostSpellingOfClaudeOnCodexStartsTheBridge$", helper,
@@ -130,7 +130,7 @@ func TestHostStillRunsClaudeOnBedrockWithBedrockPack(t *testing.T) {
 // each reaches the subscription through the host's managed OpenAI launch.
 func TestHostRunsCodexAndPiOnCodexWithTheAuthPack(t *testing.T) {
 	for _, agent := range []string{"codex", "pi"} {
-		rc, env, errs := hostGateRun(t, `{"packs": ["`+agent+`", "openai-auth"]}`, nil, []string{"-p", "codex"}, agent)
+		rc, env, errs := hostGateRun(t, `{"packs": ["`+agent+`", "codex-auth"]}`, nil, []string{"-p", "codex"}, agent)
 		if rc != 0 || env == nil {
 			t.Errorf("yolo host -p codex -- %s must run: rc = %d\n%s", agent, rc, errs)
 		}

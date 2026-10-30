@@ -27,8 +27,8 @@ package config
 //
 // A PACK'S PROVIDER COUNTS ONLY WHERE A PROFILE MAKES IT AN AGENT'S SOURCE, and an agent's
 // built-in login only where no profile replaces it. A provider rides into a launch whether or
-// not anything runs on it: openai-auth's `openai-codex`, which declares web_search, joins every
-// launch selecting claude, codex or pi through their `needs`. Counting the composed table whole
+// not anything runs on it: codex-auth's `openai-codex`, which declares web_search, joins every
+// launch selecting codex through its `needs`, and any launch selecting codex-auth. Counting the composed table whole
 // let `pi` alone pass `web_search`, and claude on its `bedrock` profile too — both sources §6.2
 // names as lacking search, and both refused by this gate before packs counted at all.
 //

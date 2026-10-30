@@ -174,7 +174,7 @@ func (f *supervisedFake) die(service string) {
 // launch's lines go. Deleting the Supervise call from startMacosUserServices or from
 // startMacosUserDoorways fails this.
 func TestTheMacosUserArmSupervisesEachServiceAndDoorwayItStarts(t *testing.T) {
-	o, stderr, _ := overrideNativeLaunch(t, `{"packs": ["claude", "cerebras", "codex", "openai-auth"], `+
+	o, stderr, _ := overrideNativeLaunch(t, `{"packs": ["claude", "cerebras", "codex", "codex-auth"], `+
 		`"env_sources": [{"CEREBRAS_API_KEY": "csk-test"}]}`, shellWith(nil))
 	o.ProfileName = "cerebras"
 	fakes := map[string]*supervisedFake{}
@@ -262,7 +262,7 @@ func TestTheRealCodexDoorwayComesBackOnItsAddressWhenKilled(t *testing.T) {
 	if after != 401 {
 		t.Errorf("a refresh at %s after the doorway was killed got %d, want the restarted doorway's 401", url, after)
 	}
-	for _, want := range []string{`yolo: the "openai-auth-broker" service (pack "openai-auth") exited ` +
+	for _, want := range []string{`yolo: the "openai-auth-broker" service (pack "codex-auth") exited ` +
 		`(killed by SIGKILL) while codex runs; restarting it in 50ms on the same address (`,
 		`yolo: the "openai-auth-broker" service is back (pid `} {
 		if !strings.Contains(stderr.String(), want) {

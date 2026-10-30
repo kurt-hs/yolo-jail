@@ -194,6 +194,28 @@ var knownReleaseBreaks = []knownReleaseBreak{
 	// validation problem, not an encoding/json refusal, so the rest of the manifest is read.
 	{release: "v0.15.1", pack: "guardrails", problem: `program needs "via"`,
 		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree},
+	// Measured against v0.15.1 on 2026-10-29: the provider packs of
+	// docs/design/provider-enablement.md declare `formerly` (PE-D7, the renamed packs' old names)
+	// and `pinned_endpoint` on their provider (PE-D4), which that reader does not know. It skips
+	// the field (`formerly`, pack-wide) or the provider contribution; neither stops the decode.
+	// The repair drops the field, so the rest is decoded. Those pack directories did not exist under
+	// these names in v0.15.1, so none of its jails
+	// staged them, and a fresh launch mounts this tree's binaries.
+	{release: "v0.15.1", pack: "codex-auth", problem: `unknown field "formerly"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
+		repair: dropKey("formerly")},
+	{release: "v0.15.1", pack: "copilot-auth", problem: `unknown field "formerly"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
+		repair: dropKey("formerly")},
+	{release: "v0.15.1", pack: "codex-auth", problem: `unknown field "pinned_endpoint"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
+		repair: dropKey("pinned_endpoint")},
+	{release: "v0.15.1", pack: "copilot-auth", problem: `unknown field "pinned_endpoint"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
+		repair: dropKey("pinned_endpoint")},
+	{release: "v0.15.1", pack: "claude-auth", problem: `unknown field "pinned_endpoint"`,
+		guard: guardNoRestageOnAttach, pinnedBy: pinAttachLeavesAnOlderJailsTree,
+		repair: dropKey("pinned_endpoint")},
 }
 
 // releaseDecodeProbe is the program compiled INSIDE the last release's tree: that release's
@@ -608,10 +630,14 @@ func knownBreakFor(release, pack, problem string) int {
 	return -1
 }
 
-// knownSkippedBreakFor recognizes only a listed program unknown-field diagnostic for the exact
-// released yolo and pack. Other skips remain failures in the release-compatibility test.
+// knownSkippedBreakFor recognizes only a listed unknown-field diagnostic for the exact released
+// yolo and pack, on a skip that reader reports: a skipped program or provider contribution, or a
+// pack-wide field it ignores. Every such entry carries a repair, so the rest of what the skip hid
+// is decoded again without it. Other skips remain failures in the release-compatibility test.
 func knownSkippedBreakFor(release, pack, skipped string) int {
-	if !strings.Contains(skipped, "skipping the program contribution") {
+	if !strings.Contains(skipped, "skipping the program contribution") &&
+		!strings.Contains(skipped, "skipping the provider contribution") &&
+		!strings.Contains(skipped, `" is ignored`) {
 		return -1
 	}
 	for i, b := range knownReleaseBreaks {
@@ -625,7 +651,7 @@ func knownSkippedBreakFor(release, pack, skipped string) int {
 	return -1
 }
 
-func TestKnownSkippedReleaseBreakMatchesOnlyTheListedProgramField(t *testing.T) {
+func TestKnownSkippedReleaseBreakMatchesOnlyTheListedField(t *testing.T) {
 	const diagnostic = `pack claude: contributes[0]: skipping the program contribution "claude" — unknown field "sandbox_tmpdir_env", which this yolo does not know`
 	want := knownBreakFor("v0.15.1", "claude", `unknown field "sandbox_tmpdir_env"`)
 	if want < 0 || knownReleaseBreaks[want].repair == nil {
@@ -641,6 +667,8 @@ func TestKnownSkippedReleaseBreakMatchesOnlyTheListedProgramField(t *testing.T) 
 		{"wrong pack", "v0.15.1", "pi", diagnostic},
 		{"different field", "v0.15.1", "claude", `skipping the program contribution "claude" — unknown field "sandbox_tmpdir_env_typo"`},
 		{"not a skipped program", "v0.15.1", "claude", `unknown field "sandbox_tmpdir_env"`},
+		{"a skipped provider's other field", "v0.15.1", "claude-auth", `skipping the provider contribution "anthropic" — unknown field "pinned_endpoint_typo"`},
+		{"a skipped kind the list does not name", "v0.15.1", "claude-auth", `skipping the loophole contribution "x" — unknown field "pinned_endpoint"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := knownSkippedBreakFor(tc.release, tc.pack, tc.diagnostic); got != -1 {

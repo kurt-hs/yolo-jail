@@ -29,7 +29,7 @@ func lazyNeedsFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(local, "pack.json"), []byte(
-		`{"name":"local","needs":[{"pack":"openai-auth"}],"supersedes":[{"capability":"openai-oauth-refresh",`+
+		`{"name":"local","needs":[{"pack":"codex-auth"}],"supersedes":[{"capability":"openai-oauth-refresh",`+
 			`"because":"this fixture ships its own OpenAI refresh path"}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}

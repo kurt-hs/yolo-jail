@@ -36,7 +36,7 @@ import (
 // list and names none of its own.
 func shippedScopeRender(t *testing.T) *pioencodeRender {
 	t.Helper()
-	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "openai-auth",
+	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "codex-auth",
 		"bedrock", "cerebras", "meta-provider", "wire-bridge")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {

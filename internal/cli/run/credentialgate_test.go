@@ -552,7 +552,7 @@ func TestClaudeAtTheBridgeNeverHoldsABedrockAPIKey(t *testing.T) {
 	const key = "real-bedrock-api-key"
 	creds := jsonx.NewOrderedMap()
 	creds.Set("AWS_BEARER_TOKEN_BEDROCK", key)
-	packs := []string{"claude", "bedrock", "aws-auth", "openai-auth", "wire-bridge"}
+	packs := []string{"claude", "bedrock", "aws-auth", "codex-auth", "wire-bridge"}
 	config := func([]*packload.Pack) *jsonx.OrderedMap {
 		cfg := bareConfig()
 		withBedrockRegion(cfg)
@@ -594,7 +594,7 @@ func TestClaudeAtTheBridgeOnMacosUserHoldsNoBedrockAPIKey(t *testing.T) {
 	const key = "real-bedrock-api-key"
 	creds := jsonx.NewOrderedMap()
 	creds.Set("AWS_BEARER_TOKEN_BEDROCK", key)
-	packs := []string{"claude", "bedrock", "aws-auth", "openai-auth", "wire-bridge"}
+	packs := []string{"claude", "bedrock", "aws-auth", "codex-auth", "wire-bridge"}
 	config := func([]*packload.Pack) *jsonx.OrderedMap {
 		cfg := bareConfig()
 		withBedrockRegion(cfg)

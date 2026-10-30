@@ -90,7 +90,7 @@ const ServiceName = "wire-bridge"
 const CodexResponsesListenAddr = "127.0.0.1:8215"
 
 // CodexResponsesBaseURL is the subscription Responses API base, the DEFAULT for a composed
-// openai-codex entry that names no `openai-responses` endpoint (packs/openai-auth declares
+// openai-codex entry that names no `openai-responses` endpoint (packs/codex-auth declares
 // this same URL). The handler appends /responses, just as the existing route appends
 // /chat/completions.
 const CodexResponsesBaseURL = "https://chatgpt.com/backend-api/codex"
@@ -929,7 +929,7 @@ func routeFor(providers *jsonx.OrderedMap, useProfiles map[string]string,
 		// below takes its own. This branch used to return here without reading the table
 		// at all, on the premise that openai-codex was "Pi/Codex's built-in subscription
 		// provider, not a composed provider fact" — true when written, false since
-		// packs/openai-auth gave the provider the public Responses endpoint. From that
+		// packs/codex-auth gave the provider the public Responses endpoint. From that
 		// moment packs/wire-bridge's `openai-responses → anthropic` adaptation fronts it,
 		// so the composed entry carries an `endpoints.anthropic.base_url` like every
 		// other bridged provider, and packs/claude's env derive builds ANTHROPIC_BASE_URL
@@ -953,7 +953,7 @@ func routeFor(providers *jsonx.OrderedMap, useProfiles map[string]string,
 		// address. The nil check is the empty composed table ComposeProviders encodes as
 		// a nil map (orderedOrNil), which WillServe's launcher call site hands over as-is.
 		//
-		// THE UPSTREAM COMES OFF THE COMPOSED ENTRY TOO, for the same reason: packs/openai-auth
+		// THE UPSTREAM COMES OFF THE COMPOSED ENTRY TOO, for the same reason: packs/codex-auth
 		// declares the subscription's Responses endpoint, and a constant here was a second
 		// writer of that fact (ES-D29). CodexResponsesBaseURL is its default, for an entry
 		// that names no `openai-responses` endpoint. A user may move it only at user scope,

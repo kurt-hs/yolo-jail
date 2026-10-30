@@ -74,7 +74,7 @@ func TestMacosUserRefusesAPairingThroughAServiceItCannotStart(t *testing.T) {
 // port. Until 2026-09-28 the pointer was withheld and named here (NC-D16). Through the real
 // composePackChannel and jailDaemonsFor, so deleting servedDaemons' split or the settle fails it.
 func TestMacosUserServesCodexsRefreshPointerAtThePortItsAdapterBinds(t *testing.T) {
-	packs := []*packload.Pack{officialPack(t, "codex"), officialPack(t, "openai-auth")}
+	packs := []*packload.Pack{officialPack(t, "codex"), officialPack(t, "codex-auth")}
 	withModules := func(o *Options, _ *jsonx.OrderedMap) {
 		loopholes.SetPackModules(packLoopholeModules(packs))
 	}

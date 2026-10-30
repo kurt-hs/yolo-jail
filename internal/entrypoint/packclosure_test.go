@@ -72,14 +72,15 @@ func TestTestPacksForAgentResolvesTheNeedsClosure(t *testing.T) {
 		extra []string
 		want  []string
 	}{
-		// pi has no unconditional needs; bedrock and openai-auth are decoupled.
+		// pi has no unconditional needs; bedrock and codex-auth are decoupled.
 		{agent: "pi", want: []string{"pi"}},
 		// cerebras needs wire-bridge only when claude or copilot is installed; pi is neither.
 		{agent: "pi", extra: []string{"cerebras"},
 			want: []string{"cerebras", "pi"}},
-		// claude's unconditional need is wire-bridge, and it satisfies kilo's conditional one as well.
+		// claude's unconditional needs are claude-auth and wire-bridge, and the latter satisfies
+		// kilo's conditional one as well.
 		{agent: "omp", extra: []string{"claude", "kilo"},
-			want: []string{"claude", "kilo", "omp", "wire-bridge"}},
+			want: []string{"claude", "claude-auth", "kilo", "omp", "wire-bridge"}},
 		// bedrock's own need joins aws-auth.
 		{agent: "omp", extra: []string{"bedrock"},
 			want: []string{"aws-auth", "bedrock", "omp"}},

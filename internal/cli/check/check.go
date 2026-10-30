@@ -668,6 +668,10 @@ func (o *Options) sectionMergedConfig(r *reporter, merged *jsonx.OrderedMap, wor
 		config.ConfigCapabilityLaunch(merged))
 	errors = append(errors, capErrs...)
 	warnings = append(warnings, capWarns...)
+	// The launch's undeclared-profile refusal, predicted over the same selection
+	// (profiledeclarations.go).
+	errors = append(errors, profileDeclarationGap(merged, config.UserScopeSelectedPacks,
+		func() (map[string]packload.UserProfile, error) { return config.LoadProfiles(nil) })...)
 	// A `brokered` source no selected pack brokers: this check's warning alone, never a
 	// launch's, since a committed entry would print it at every launch of every contributor
 	// who selects no such pack (docs/design/workspace-widening.md WW-D22).

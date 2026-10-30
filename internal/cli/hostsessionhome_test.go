@@ -363,9 +363,8 @@ func TestHostPiResidentSessionCapturesUserEditNormally(t *testing.T) {
 	env := piSessionHomeEnv(t)
 	upstream, _ := fakeUpstream(t)
 	fakeHostBroker(t)
-	cfg := strings.TrimSuffix(piSubagentsCodexCfg, "}") +
-		`,"host_management":"own","host_apply_on_launch":false,"providers":{"openai-codex":{"endpoints":{"openai-responses":{"base_url":"` +
-		upstream.URL + `/codex"}}}}}`
+	repointCodexUpstream(t, upstream.URL)
+	cfg := strings.TrimSuffix(piSubagentsCodexCfg, "}") + `,"host_management":"own","host_apply_on_launch":false}`
 	home := hostGateHome(t, cfg, nil)
 	const original = `{"defaultProvider":"openrouter","theme":"system"}`
 	unchanged := piSettingsFixture(t, home, original)
@@ -432,9 +431,8 @@ func testHostPiFirstOwnedSessionCapture(t *testing.T, applyOnLaunch bool) {
 	if !applyOnLaunch {
 		apply += `,"host_apply_on_launch":false`
 	}
-	cfg := strings.TrimSuffix(piSubagentsCodexCfg, "}") + apply +
-		`,"providers":{"openai-codex":{"endpoints":{"openai-responses":{"base_url":"` +
-		upstream.URL + `/codex"}}}}}`
+	repointCodexUpstream(t, upstream.URL)
+	cfg := strings.TrimSuffix(piSubagentsCodexCfg, "}") + apply + "}"
 	home := hostGateHome(t, cfg, nil)
 	const original = `{"defaultProvider":"openrouter","theme":"system"}`
 	settingsPath := filepath.Join(home, ".pi", "agent", "settings.json")

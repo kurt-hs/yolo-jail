@@ -15,7 +15,7 @@ import (
 // and headers to the built-in provider's models of the same name, so a row redirects the
 // subscription client — pi's failure, in the fork that inherited pi's catalog.
 //
-// Shipped packs do not reach the row today only by accident of spelling: packs/openai-auth's
+// Shipped packs do not reach the row today only by accident of spelling: packs/codex-auth's
 // own endpoint is keyed `openai-responses`, which omp's derive does not read, and the
 // bridge address composed under `anthropic` carries no wire_api. Any endpoint omp CAN read
 // (a user's providers.openai-codex.endpoints.openai) or a via profile selecting it writes
@@ -81,7 +81,7 @@ func TestOmpViaProfileNeverCataloguesOpenAICodex(t *testing.T) {
 
 // The same property through a PRODUCTION pack set (design doc P3): omp beside claude, kilo, and openai-auth.
 func TestOmpCatalogFromShippedPacksOmitsOpenAICodex(t *testing.T) {
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "omp", "claude", "kilo", "openai-auth"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "omp", "claude", "kilo", "codex-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}

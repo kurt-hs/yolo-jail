@@ -58,7 +58,7 @@ func readJSONAt(t *testing.T, home, rel string) map[string]any {
 // and the inputs the host does not carry — the retired preset key, an entry naming a jail path —
 // are named.
 func TestYoloHostApplyAssertWritesTheComputedLayer(t *testing.T) {
-	home := hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own",
+	home := hostComputedHome(t, `{"packs":["pi","codex-auth"],"host_management":"own",
 		"mcp_servers":{"tavily":{"command":"npx","args":["-y","tavily-mcp"]},
 		               "jailed":{"command":"/ctx/bin/mcp"}},
 		"mcp_presets":["sequential-thinking"],
@@ -142,7 +142,7 @@ func TestTheWrapperAutoApplyWritesTheComputedLayer(t *testing.T) {
 // `yolo config render --at host` shows the computed layer's content — the bytes host apply
 // would write, derive included — and `yolo config ls --at host` lists the layer.
 func TestConfigRenderAndLsAtHostShowTheComputedLayer(t *testing.T) {
-	hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own","mcp_servers":{"tavily":{"command":"npx"}}}`)
+	hostComputedHome(t, `{"packs":["pi","codex-auth"],"host_management":"own","mcp_servers":{"tavily":{"command":"npx"}}}`)
 	rc, out, errs := runSurfaceVerb(t, "render", "pi/mcp", "--at", "host")
 	if rc != 0 {
 		t.Fatalf("config render --at host rc=%d\n%s%s", rc, out, errs)
@@ -218,7 +218,7 @@ func TestYoloHostApplyAssertWritesTheOmpYAMLCatalog(t *testing.T) {
 // yours after the first activation stands (HC-D17). Before 2026-10-04 the profile replaced pi's
 // defaultModel and no group, no line and no count said so.
 func TestHostApplyGroupsAComputedOverwriteUnderItsInput(t *testing.T) {
-	home := hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own","profile":{"pi":"codex"}}`)
+	home := hostComputedHome(t, `{"packs":["pi","codex-auth"],"host_management":"own","profile":{"pi":"codex"}}`)
 	writeFile(t, filepath.Join(home, ".pi", "agent", "settings.json"),
 		`{"theme":"dark","defaultModel":"before-yolo"}`)
 	var out, errw bytes.Buffer
@@ -242,7 +242,7 @@ func TestHostApplyGroupsAComputedOverwriteUnderItsInput(t *testing.T) {
 // subagents.defaultModel under "a pick of your own after that (your agent's /model) stands on
 // every later apply", and the apply then replaced it.
 func TestHostApplyDoesNotPromiseARecomputedValueStands(t *testing.T) {
-	home := hostComputedHome(t, `{"packs":["pi","openai-auth"],"host_management":"own","profile":{"pi":"codex"}}`)
+	home := hostComputedHome(t, `{"packs":["pi","codex-auth"],"host_management":"own","profile":{"pi":"codex"}}`)
 	apply := func(args ...string) string {
 		t.Helper()
 		var out, errw bytes.Buffer

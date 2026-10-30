@@ -25,7 +25,7 @@ import (
 // shipped provider table and profiles, and returns the model-list file it wrote.
 func renderCodexModelList(t *testing.T, home, use string) map[string]any {
 	t.Helper()
-	packs := testPacksForAgent(t, "codex", "openrouter", "openai-auth")
+	packs := testPacksForAgent(t, "codex", "openrouter", "codex-auth")
 	table, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func listIDs(doc map[string]any) []any {
 func TestCodexModelListIsTheSubscriptionsListOnly(t *testing.T) {
 	doc := renderCodexModelList(t, t.TempDir(), `{"codex":"codex"}`)
 	if got, want := listIDs(doc), []any{"gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("codex's list on -p codex = %v, want %v, packs/openai-auth's ids in order", got, want)
+		t.Errorf("codex's list on -p codex = %v, want %v, packs/codex-auth's ids in order", got, want)
 	}
 	models, _ := doc["models"].([]any)
 	if len(models) > 0 {

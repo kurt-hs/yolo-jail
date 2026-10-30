@@ -243,7 +243,7 @@ func TestCheckAcceptsExactSubagentIDBeforeListDefault(t *testing.T) {
 // profile coverage. Model IDs come from each provider's shipped list, Pi's native catalog, or a
 // test-only configured row for dynamic providers that ship no model list.
 func TestCheckResolvesEveryShippedPiProfileModelReference(t *testing.T) {
-	cfg := `{"packs": ["pi", "openai-auth", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
+	cfg := `{"packs": ["pi", "codex-auth", "zai", "openrouter", "kilo", "llamacpp", "bedrock",
   "cerebras", "meta-provider", "wire-bridge"]}`
 	cases := []struct {
 		profile, provider, model, scopeModel string
@@ -346,7 +346,7 @@ func TestCheckReadsNothingForAProfileWithNoProviderRow(t *testing.T) {
 // A pack pattern naming one of the openai-codex [1m] variants resolves: the registry holds the ids
 // pi's own codex-models surface renders, which the table's list does not spell.
 func TestCheckResolvesAPatternAgainstPisRenderedModelFiles(t *testing.T) {
-	out, _ := runPacksCheck(t, `{"packs": ["pi", "openai-auth", "file://`+scopePack(t, "openai-codex/gpt-6.1-sol[1m]")+`"]}`,
+	out, _ := runPacksCheck(t, `{"packs": ["pi", "codex-auth", "file://`+scopePack(t, "openai-codex/gpt-6.1-sol[1m]")+`"]}`,
 		"codex")
 	if strings.Contains(out, "matches no model") {
 		t.Fatalf("a variant pi's codex-models file holds must resolve:\n%s", out)

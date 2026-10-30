@@ -171,7 +171,7 @@ func TestAProfileModelOfDefaultNamesNoModel(t *testing.T) {
 func TestNoListTellsClaudeAtTheBridgeWhatItMeansAndWhatToDo(t *testing.T) {
 	emptyLoopholeDirs(t)
 	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "aws-auth"), officialPack(t, "wire-bridge"),
-		officialPack(t, "openai-auth"), {Name: "bare-bedrock", Root: t.TempDir(), Decl: envDisclosureDecl(t, bareBedrockPack)}}
+		officialPack(t, "codex-auth"), {Name: "bare-bedrock", Root: t.TempDir(), Decl: envDisclosureDecl(t, bareBedrockPack)}}
 	o := goldenOptions(t.TempDir(), packHome(t))
 	var stderr bytes.Buffer
 	o.Stderr = &stderr

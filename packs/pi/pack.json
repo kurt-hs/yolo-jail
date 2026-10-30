@@ -65,7 +65,7 @@
           "xiaomi-token-plan-cn", "xiaomi-token-plan-sgp", "zai", "zai-coding-cn"
         ],
         // openai-codex runs on pi's own client but on yolo's list: extensions/yolo-openai-auth.js
-        // registers the one list packs/openai-auth declares (model-lists-and-pickers.md ML-D1).
+        // registers the one list packs/codex-auth declares (model-lists-and-pickers.md ML-D1).
         "yolo_lists": ["openai-codex"]
       },
       "flags": [

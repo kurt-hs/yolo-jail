@@ -27,7 +27,7 @@ func profileKeyConfig(t *testing.T, value string) *jsonx.OrderedMap {
 // hands the jail.
 func deliveredProfiles(t *testing.T, cfg *jsonx.OrderedMap, set func(*Options)) string {
 	t.Helper()
-	la := assembleWithProfilesAssembled(t, cfg, packsFixture(t, "claude", "bedrock", "pi", "openai-auth"), set)
+	la := assembleWithProfilesAssembled(t, cfg, packsFixture(t, "claude", "bedrock", "pi", "codex-auth"), set)
 	got := la.channelEnv(t, "YOLO_USE_PROFILES")
 	if len(got) != 1 {
 		t.Fatalf("YOLO_USE_PROFILES crossed %q, want exactly one line", got)

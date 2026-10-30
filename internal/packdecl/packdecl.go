@@ -116,6 +116,10 @@ type Manifest struct {
 	// (WB-D9..D12), and what is validated here versus at resolution.
 	Needs []PackNeed `json:"needs,omitempty"`
 
+	// Formerly records the names this pack and its profiles had before a rename, read only to
+	// word the refusal of an old name (formerly.go; docs/design/provider-enablement.md PE-D7).
+	Formerly *Formerly `json:"formerly,omitempty"`
+
 	// ModelListChecks is optional check-only metadata, keyed by this pack's own non-fork
 	// program bins (docs/design/model-lists-and-pickers.md MM-D41). An absent bin opts out;
 	// an empty object opts in without restricting makers. It is pack-wide so older use
@@ -967,6 +971,7 @@ func (m *Manifest) Validate() []string {
 	problems := m.validateSkillsTier()
 	problems = append(problems, m.validateSupersedes()...)
 	problems = append(problems, m.validateNeeds()...)
+	problems = append(problems, m.validateFormerly()...)
 	problems = append(problems, m.validateContributions()...)
 	problems = append(problems, m.validateModelListChecks()...)
 	problems = append(problems, m.validateLaunchComputed()...)

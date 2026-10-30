@@ -155,7 +155,7 @@ func TestPiCodexProfilePassesProtocolResolution(t *testing.T) {
 		switch p.Name {
 		case "pi":
 			pi = p
-		case "openai-auth":
+		case "codex-auth":
 			auth = p
 		}
 	}
@@ -186,7 +186,7 @@ func TestCodexCodexProfilePassesProtocolResolution(t *testing.T) {
 		switch p.Name {
 		case "codex":
 			codex = p
-		case "openai-auth":
+		case "codex-auth":
 			auth = p
 		}
 	}

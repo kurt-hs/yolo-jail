@@ -1,4 +1,4 @@
-// A loophole contributed by the OFFICIAL `claude` pack.  See
+// A loophole contributed by the OFFICIAL `claude-auth` pack, which `claude` needs.  See
 // internal/loopholedecl for the schema.  Generated CA + leaf state live under
 // ~/.local/share/yolo-jail/state/claude-oauth-broker/ (writable); this manifest
 // is in the pack's staged tree, mounted :ro.
@@ -7,11 +7,12 @@
 // LAST inhabitant of that channel — moving it is what emptied and retired it
 // (docs/reference/loophole-system.md, "The Claude OAuth broker, a contribution of the claude pack", OQ-BP4).
 //
-// A CONTRIBUTION OF `packs/claude`, NOT A PACK OF ITS OWN (loophole-activation.md
+// A CONTRIBUTION OF `packs/claude-auth`, NOT A PACK OF ITS OWN (loophole-activation.md
 // OQ-A10, now in docs/reference/loophole-system.md).  The dependency is structural — this
-// loophole exists to serve claude and serves nothing else — so SELECTING THE CLAUDE
-// PACK is the dependency, and a `packs/claude-oauth-broker` would reinstate exactly
-// the second selection step R6 deletes.  A user who does not want it (a Bedrock
+// loophole exists to serve the Claude subscription — so it rides with the pack that declares
+// that subscription's provider and profile, and `packs/claude` needs that pack, so SELECTING
+// THE CLAUDE PACK still brings it with no second selection step.  It was `packs/claude`'s own
+// contribution until 2026-10-29 (docs/design/provider-enablement.md OQ-PE5).  A user who does not want it (a Bedrock
 // setup, where no OAuth token is ever refreshed) declares `supersedes` on the
 // `claude-oauth-refresh` capability below, or sets
 // `loopholes.claude-oauth-broker.enabled: false`.

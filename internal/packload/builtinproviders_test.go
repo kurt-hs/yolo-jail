@@ -142,12 +142,12 @@ func TestTheGateRelaysThePlansKeyAndNoTierOnABuiltInProvider(t *testing.T) {
 
 // THE SUBSCRIPTION'S LIST STAYS YOLO'S WHERE THE AGENT'S PACK RENDERS IT (`yolo_lists`;
 // docs/design/model-lists-and-pickers.md ML-D1): pi and opencode run openai-codex on their own
-// client, but on the one list packs/openai-auth declares (pi's extension registers it, opencode's
+// client, but on the one list packs/codex-auth declares (pi's extension registers it, opencode's
 // derive writes it as its own `openai` row's models and whitelist). So a child on the subscription
 // is still handed the list's tiers, and the profile line still names the endpoint that list rides
 // on. omp runs openai-codex on its own list too, so it alone keeps the built-in answer.
 func TestTheCodexListStaysYolosForAnAgentThatRendersIt(t *testing.T) {
-	names := []string{"pi", "opencode", "omp", "openai-auth"}
+	names := []string{"pi", "opencode", "omp", "codex-auth"}
 	packs := embeddedNamed(t, names...)
 	for _, tc := range []struct {
 		agent    string

@@ -91,10 +91,10 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 			if !errors.As(err, &ue) {
 				t.Fatalf("host: err = %v, want the bridge refusal (*UnservedAdapterError)", err)
 			}
-			if ue.ProviderPack != "openai-auth" || ue.Adaptation.Pack != "wire-bridge" {
+			if ue.ProviderPack != "codex-auth" || ue.Adaptation.Pack != "wire-bridge" {
 				t.Errorf("host: the refusal must name the provider's pack and the adapter: %+v", ue)
 			}
-			for _, want := range []string{`do not add "openai-auth" to ` + "`packs`" + ` to fix this`,
+			for _, want := range []string{`do not add "codex-auth" to ` + "`packs`" + ` to fix this`,
 				`that would not change this refusal`} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("host: Error() must say %q:\n%v", want, err)
@@ -105,12 +105,12 @@ func TestAClaudeCodexSelectionWithoutItsProviderRefuses(t *testing.T) {
 			if !errors.As(err, &mp) {
 				t.Fatalf("jail: err = %v, want *MissingProviderError", err)
 			}
-			if mp.Profile != "codex" || mp.Provider != "openai-codex" || mp.Shipper != "openai-auth" ||
+			if mp.Profile != "codex" || mp.Provider != "openai-codex" || mp.Shipper != "codex-auth" ||
 				mp.Then == nil {
 				t.Errorf("jail: %+v", mp)
 			}
 			for _, want := range []string{`Profile "codex" uses provider "openai-codex" for claude`,
-				`Add "openai-auth" to ` + "`packs`" + ` in your workspace configuration`,
+				`Add "codex-auth" to ` + "`packs`" + ` in your workspace configuration`,
 				`Pack "wire-bridge" adapts "openai-responses" → "anthropic"`} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("jail: Error() must say %q:\n%v", want, err)
@@ -139,10 +139,10 @@ func TestCodexAndPiWithoutTheirProviderStillCompose(t *testing.T) {
 	}
 	var mp *MissingProviderError
 	_, err := agentEnvAt(t, notches[1], embeddedNamed(t, "pi"), nil, userProfiles, "pi", "codex")
-	if !errors.As(err, &mp) || mp.Shipper != "openai-auth" {
+	if !errors.As(err, &mp) || mp.Shipper != "codex-auth" {
 		t.Fatalf("host: pi on codex without openai-auth must be refused naming openai-auth, got %v", err)
 	}
-	want := `Profile "codex" uses provider "openai-codex" for pi, but that provider is unavailable. Add "openai-auth" to ` + "`packs`" + ` in your workspace configuration to use this provider`
+	want := `Profile "codex" uses provider "openai-codex" for pi, but that provider is unavailable. Add "codex-auth" to ` + "`packs`" + ` in your workspace configuration to use this provider`
 	if got := err.Error(); got != want {
 		t.Errorf("rendered refusal = %q, want %q", got, want)
 	}
@@ -203,15 +203,15 @@ yolo.env("respy", function(ctx) return { RESPY_URL = "x" } end)`), 0o644); err !
 	for _, n := range notches {
 		_, err := agentEnvAt(t, n, []*Pack{agent}, nil, user, "respy", "sub")
 		var mp *MissingProviderError
-		if !errors.As(err, &mp) || mp.Shipper != "openai-auth" || mp.Then != nil {
+		if !errors.As(err, &mp) || mp.Shipper != "codex-auth" || mp.Then != nil {
 			t.Fatalf("%s: err = %v, want the missing provider naming openai-auth to add", n.name, err)
 		}
-		if !strings.Contains(err.Error(), `Add "openai-auth" to `+"`packs`"+` in your workspace configuration`) {
+		if !strings.Contains(err.Error(), `Add "codex-auth" to `+"`packs`"+` in your workspace configuration`) {
 			t.Errorf("%s: the refusal must name the pack whose addition resolves it:\n%v", n.name, err)
 		}
 	}
 	// With the pack added the selection composes, so the refusal above was about the row alone.
-	with := append([]*Pack{agent}, embeddedNamed(t, "openai-auth")...)
+	with := append([]*Pack{agent}, embeddedNamed(t, "codex-auth")...)
 	if _, err := agentEnvAt(t, notches[1], with, nil, user, "respy", "sub"); err != nil {
 		t.Errorf("with openai-auth selected the selection resolves: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestAJailCountsASurfaceDeriveAsAReader(t *testing.T) {
 	deriving := mk(`yolo.derive("respy", "config", function(ctx) return {} end)`)
 	_, err := agentEnvAt(t, notches[0], []*Pack{deriving}, nil, user, "respy", "sub")
 	var mp *MissingProviderError
-	if !errors.As(err, &mp) || mp.Shipper != "openai-auth" {
+	if !errors.As(err, &mp) || mp.Shipper != "codex-auth" {
 		t.Fatalf("jail: a surface derive reads the table, so err = %v must be the missing provider", err)
 	}
 	if _, err := agentEnvAt(t, notches[1], []*Pack{deriving}, nil, user, "respy", "sub"); err != nil {
@@ -274,9 +274,9 @@ func TestAProviderNothingDeclaresRefuses(t *testing.T) {
 func TestAProviderTheUserDroppedRefuses(t *testing.T) {
 	user := jsonx.NewOrderedMap()
 	user.Set("openai-codex", nil)
-	_, err := agentEnvAt(t, notches[0], embeddedNamed(t, "codex", "openai-auth"), user, nil, "codex", "codex")
+	_, err := agentEnvAt(t, notches[0], embeddedNamed(t, "codex", "codex-auth"), user, nil, "codex", "codex")
 	var mp *MissingProviderError
-	if !errors.As(err, &mp) || mp.Dropped != "openai-auth" {
+	if !errors.As(err, &mp) || mp.Dropped != "codex-auth" {
 		t.Fatalf("err = %v, want *MissingProviderError naming openai-auth as the dropped provider's pack", err)
 	}
 	if !strings.Contains(err.Error(), "Remove the `providers.openai-codex` null entry") {
@@ -303,7 +303,7 @@ func TestPairingRefusalsReportsAMissingProvider(t *testing.T) {
 	if len(errs) != 1 || !errors.As(errs[0], &mp) {
 		t.Fatalf("PairingRefusals = %v, want the one missing-provider refusal", errs)
 	}
-	want := `Profile "codex" uses provider "openai-codex" for claude, but that provider is unavailable. Add "openai-auth" to ` + "`packs`" + ` in your workspace configuration to make this provider available, but that alone will not fix this refusal:`
+	want := `Profile "codex" uses provider "openai-codex" for claude, but that provider is unavailable. Add "codex-auth" to ` + "`packs`" + ` in your workspace configuration to make this provider available, but that alone will not fix this refusal:`
 	if !strings.HasPrefix(errs[0].Error(), want) {
 		t.Errorf("check refusal = %q, want prefix %q", errs[0], want)
 	}
@@ -318,7 +318,7 @@ func TestTheShippedClaudeCodexBranchComposesNothingWithoutAnAddress(t *testing.T
 	entry := jsonx.NewOrderedMap()
 	entry.Set("endpoints", nil)
 	user.Set("openai-codex", entry)
-	vars, err := agentEnvAt(t, notches[0], embeddedNamed(t, "claude", "openai-auth"), user, nil, "claude", "codex")
+	vars, err := agentEnvAt(t, notches[0], embeddedNamed(t, "claude", "codex-auth"), user, nil, "claude", "codex")
 	if err != nil {
 		t.Fatalf("a row offering no protocol has nothing to settle, so the gate passes it: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestTheShippedClaudeCodexBranchComposesNothingWithoutAnAddress(t *testing.T
 		t.Errorf("claude's codex branch with no address composed %v, want nothing", vars)
 	}
 	// And the same branch WITH the bridge's address still composes its route.
-	vars, err = agentEnvAt(t, notches[0], embeddedNamed(t, "claude", "openai-auth", "wire-bridge"), nil, nil,
+	vars, err = agentEnvAt(t, notches[0], embeddedNamed(t, "claude", "codex-auth", "wire-bridge"), nil, nil,
 		"claude", "codex")
 	if err != nil {
 		t.Fatal(err)

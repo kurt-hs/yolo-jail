@@ -277,7 +277,7 @@ func TestAModelsContributionIsAFootprintClaim(t *testing.T) {
 // other, and a synthetic list of three where only the last is kept.
 func TestAModelsOnlyDropsAdjacentEntries(t *testing.T) {
 	shipped := modelsPack(t, "company", `{"kind":"models","provider":"openai-codex","only":["gpt-6.1-sol"]}`)
-	packs := append(embeddedNamed(t, "openai-auth"), shipped)
+	packs := append(embeddedNamed(t, "codex-auth"), shipped)
 	table, notes := composeWithNotes(t, nil, packs)
 	if len(notes) != 0 {
 		t.Errorf("notes = %v, want none", notes)

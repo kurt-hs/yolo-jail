@@ -28,7 +28,7 @@ func assertRender(t *testing.T, home, pack, surface string, use map[string]strin
 		if prof == "bedrock" {
 			extra = append(extra, "bedrock")
 		} else if prof == "codex" {
-			extra = append(extra, "openai-auth")
+			extra = append(extra, "codex-auth")
 		}
 	}
 	in := hostTestInputs(t, declaredRMW(t, testPacksForAgent(t, pack, extra...), pack, true), use, nil, nil)
@@ -218,7 +218,7 @@ func TestTheFirstOwnedApplyKeepsAPickTheUserMadeUnderAssert(t *testing.T) {
 	editJSON(t, settings, func(d map[string]any) { d["defaultModel"] = "my-pick" })
 	moveSelectionRecordWhereAssertKeptIt(t, home, "pi", "settings")
 	for i := 0; i < 2; i++ {
-		in := hostTestInputs(t, testPacksForAgent(t, "pi", "openai-auth"), map[string]string{"pi": "codex"}, nil, nil)
+		in := hostTestInputs(t, testPacksForAgent(t, "pi", "codex-auth"), map[string]string{"pi": "codex"}, nil, nil)
 		hostRenderWith(t, home, render.OwnershipOwn, in, "pi", "pi/settings")
 		if got := decodeJSONFile(t, settings)["defaultModel"]; got != "my-pick" {
 			t.Fatalf("owned apply %d over a home `assert` wrote into took the user's pick: defaultModel = %v", i+1, got)

@@ -127,12 +127,12 @@ func TestAnActiveSetWhosePrimaryRoutesAtTheBridgeRegistersIt(t *testing.T) {
 		packs    []string
 		profiles map[string]string
 	}{
-		{"pi's via primary", []string{"pi", "openai-auth", "bedrock", "zai", "wire-bridge"},
+		{"pi's via primary", []string{"pi", "codex-auth", "bedrock", "zai", "wire-bridge"},
 			map[string]string{"pi": "bedrock-bridge,zai"}},
-		{"opencode's via primary", []string{"opencode", "openai-auth", "bedrock", "zai", "wire-bridge"},
+		{"opencode's via primary", []string{"opencode", "codex-auth", "bedrock", "zai", "wire-bridge"},
 			map[string]string{"opencode": "bedrock-bridge,zai"}},
 		{"pi's bridged primary beside claude on zai",
-			[]string{"claude", "pi", "cerebras", "zai", "wire-bridge", "bedrock", "openai-auth"},
+			[]string{"claude", "pi", "cerebras", "zai", "wire-bridge", "bedrock", "codex-auth"},
 			map[string]string{"claude": "zai", "pi": "cerebras,zai"}},
 	}
 	for _, tc := range cases {

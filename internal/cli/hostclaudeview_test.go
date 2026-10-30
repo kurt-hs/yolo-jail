@@ -320,7 +320,7 @@ func TestSetEnvironReplacesEveryEntryOfTheKey(t *testing.T) {
 func TestHostClaudeBesideALaunchOwnedServiceCarriesTheView(t *testing.T) {
 	upstream, _ := fakeUpstream(t)
 	fakeHostBroker(t)
-	home := hostGateHome(t, codexConfig(upstream.URL), wcShell(viewShell("1")))
+	home := hostGateHome(t, codexConfig(t, upstream.URL), wcShell(viewShell("1")))
 	claudeViewHost(t)
 	writeClaudeLogin(t, filepath.Join(home, ".local", "share", "yolo-jail", "state",
 		"claude-oauth-broker", "claude-credentials.json"), "AT_machine", "RT_machine")

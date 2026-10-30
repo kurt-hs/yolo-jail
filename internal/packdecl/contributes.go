@@ -858,6 +858,13 @@ type Contribution struct {
 	// the provider lives, never who is calling, and the user's own `providers` entry
 	// overrides it like any other field.
 	Region string `json:"region,omitempty"`
+	// PinnedEndpoint pins the provider's address (docs/design/provider-enablement.md PE-D4): a
+	// user's `providers` entry over it may not add or change an `endpoints` entry or a
+	// `base_url`, and a launch that tries is refused naming the fix, because the agent sends a
+	// subscription's bearer token to whatever address it is given. A PACK FIELD ONLY: a user
+	// provider entry has no key that sets or clears it, so the pin cannot be lifted from the
+	// layer it guards against. Provider kind only.
+	PinnedEndpoint bool `json:"pinned_endpoint,omitempty"`
 	// RegionEnvName makes a region a LAUNCH REQUIREMENT for every provider of this one's
 	// PLATFORM, and names the variables an agent on that platform reads its region from when
 	// the entry carries no `region` — for Bedrock, AWS_REGION and AWS_DEFAULT_REGION. The
@@ -2055,6 +2062,9 @@ type ProviderContribution struct {
 	// `capabilities` key a user's own entry declares, so the two layers merge like every
 	// other field rather than needing a reader each.
 	Capabilities []string
+	// PinnedEndpoint pins the provider's address against the user layer; see the field's own
+	// comment on Contribution.
+	PinnedEndpoint bool
 }
 
 // Providers returns every provider the pack ships, in declaration order.
@@ -2071,25 +2081,26 @@ func (m *Manifest) Providers() []ProviderContribution {
 			continue
 		}
 		out = append(out, ProviderContribution{
-			Name:          c.Name,
-			Alias:         c.ProviderAlias,
-			Model:         c.ProviderModel,
-			Via:           c.Via,
-			Variants:      c.ProviderVariants,
-			VariantOrder:  append([]string(nil), c.ProviderVariantOrder...),
-			EveryModel:    c.EveryProviderModel,
-			ModelRows:     c.ProviderModels,
-			ModelOrder:    append([]string(nil), c.ProviderModelOrder...),
-			Endpoints:     c.Endpoints,
-			APIKeyEnvName: c.APIKeyEnvName,
-			Platform:      c.Platform,
-			Region:        c.Region,
-			RegionEnvName: c.RegionEnvName,
-			RegionFile:    c.RegionFile,
-			Models:        c.Models,
-			ModelOptions:  c.ModelOptions,
-			Options:       c.Options,
-			Capabilities:  c.Capabilities,
+			Name:           c.Name,
+			Alias:          c.ProviderAlias,
+			Model:          c.ProviderModel,
+			Via:            c.Via,
+			Variants:       c.ProviderVariants,
+			VariantOrder:   append([]string(nil), c.ProviderVariantOrder...),
+			EveryModel:     c.EveryProviderModel,
+			ModelRows:      c.ProviderModels,
+			ModelOrder:     append([]string(nil), c.ProviderModelOrder...),
+			Endpoints:      c.Endpoints,
+			APIKeyEnvName:  c.APIKeyEnvName,
+			Platform:       c.Platform,
+			Region:         c.Region,
+			RegionEnvName:  c.RegionEnvName,
+			RegionFile:     c.RegionFile,
+			Models:         c.Models,
+			ModelOptions:   c.ModelOptions,
+			Options:        c.Options,
+			Capabilities:   c.Capabilities,
+			PinnedEndpoint: c.PinnedEndpoint,
 		})
 	}
 	return out
@@ -4242,6 +4253,11 @@ func validateContribution(label string, c Contribution) []string {
 			"%s: kind %q does not take \"platform\" — it says what service a PROVIDER is, and on "+
 				"\"env\" gates the variables on the selected provider being that service; no "+
 				"consumer reads it on this kind", label, c.Kind))
+	}
+	if c.PinnedEndpoint && c.Kind != KindProvider {
+		problems = append(problems, fmt.Sprintf(
+			"%s: kind %q does not take \"pinned_endpoint\" — it pins a PROVIDER's address against "+
+				"the user's `providers` entry, and no consumer reads it on this kind", label, c.Kind))
 	}
 	// ONE GATE PER CONTRIBUTION. A `profile` gate names a profile and a `platform` gate the
 	// service a profile's provider is; with both, the contribution would need a rule for which

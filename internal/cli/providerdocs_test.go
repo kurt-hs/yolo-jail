@@ -50,7 +50,7 @@ var legacyProviderDocFields = map[string]string{
 	"Name": "name", "Endpoints": "endpoints", "APIKeyEnvName": "api_key_env_name",
 	"Platform": "platform", "Region": "region", "RegionEnvName": "region_env_name",
 	"RegionFile": "region_file", "Models": "models", "ModelOptions": "model_options",
-	"Options": "options", "Capabilities": "capabilities",
+	"Options": "options", "Capabilities": "capabilities", "PinnedEndpoint": "pinned_endpoint",
 }
 
 // groupedProviderFields are normalized fields populated by packdecl's grouped-TOML codec and

@@ -150,15 +150,15 @@
     }
   ],
   "name": "copilot",
-  // THE COPILOT CLI BRINGS ITS OWN PROVIDER (docs/design/pi-codex-provider-shadowing.md BI-D14):
-  // packs/github-copilot declares the `github-copilot` provider and profile, and needing it
-  // unconditionally is what makes selecting copilot enough for `-p github-copilot` and what binds
-  // the platform to copilot's own client (a pack binds a platform by needing a pack that ships a
-  // provider of it), so that profile runs on copilot's own GitHub login. The pack installs
+  // THE COPILOT CLI BRINGS ITS OWN PROVIDER (docs/design/provider-enablement.md OQ-PE3, PE-D5):
+  // packs/copilot-auth declares the `github-copilot` provider and the `copilot` profile, and
+  // needing it unconditionally is what makes selecting copilot enough for `-p copilot` and what
+  // binds the platform to copilot's own client (a pack binds a platform by needing a pack that
+  // ships a provider of it), so that profile runs on copilot's own GitHub login. The pack installs
   // nothing and runs nothing; a user may also select it without copilot, beside pi.
   "needs": [
     {
-      "pack": "github-copilot"
+      "pack": "copilot-auth"
     }
   ],
   "skills_tier": "namespaced"

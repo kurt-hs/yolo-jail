@@ -31,7 +31,7 @@ local opencodeSDK = {
 }
 
 -- THE ChatGPT SUBSCRIPTION (docs/design/model-lists-and-pickers.md ML-D1). yolo's provider is
--- `openai-codex` (packs/openai-auth); opencode's is its own built-in `openai`, which its
+-- `openai-codex` (packs/codex-auth); opencode's is its own built-in `openai`, which its
 -- built-in ChatGPT login (CodexAuthPlugin, opencode 1.18.34) puts on the subscription whenever
 -- an `oauth` credential is stored under `openai`. That is opencode's NATIVE client for the
 -- provider, so it is never catalogued as a yolo row (docs/design/pi-codex-provider-shadowing.md
@@ -156,7 +156,7 @@ local function opencodeLimit(context, output)
 end
 
 -- THE openai-codex MODEL LIST. codexModelList expands the one declaration of it — the
--- `models` and `model_options` packs/openai-auth/pack.json ships on the openai-codex provider,
+-- `models` and `model_options` packs/codex-auth/pack.json ships on the openai-codex provider,
 -- with the user's `providers.openai-codex` merged over it — into the ordered list every
 -- consumer presents (docs/design/model-lists-and-pickers.md ML-D1). `p` is
 -- ctx.providers["openai-codex"]; anything without a `models` table expands to {}.

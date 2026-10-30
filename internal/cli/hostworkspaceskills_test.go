@@ -406,7 +406,7 @@ func serviceSkillsLaunch(t *testing.T, start func(*launchservice.Plan, map[strin
 	t.Helper()
 	upstream, _ := fakeUpstream(t)
 	fakeHostBroker(t)
-	hostGateHome(t, codexConfig(upstream.URL), nil)
+	hostGateHome(t, codexConfig(t, upstream.URL), nil)
 	ws, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

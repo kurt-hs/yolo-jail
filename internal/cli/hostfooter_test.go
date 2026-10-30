@@ -234,7 +234,7 @@ func TestHostFooterRunKeepsArgvWhole(t *testing.T) {
 // openai-auth is listed. Before, the host refused the
 // selection and the footer named the login (FT-D1).
 func TestHostFooterNamesABridgedSelectionTheHostServes(t *testing.T) {
-	_, command := hostFooterHome(t, `{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`)
+	_, command := hostFooterHome(t, `{"packs": ["claude", "codex-auth"], "profile": {"claude": "codex"}}`)
 	line, stderr := hostFooterRun(t, command)
 	if want := "Opus · yolo: codex (bridge) · host"; line != want {
 		t.Errorf("host Claude footer = %q, want %q (a host launch runs claude's codex route)", line, want)
@@ -251,7 +251,7 @@ func TestHostFooterTablesKeepsAComposedSelection(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-		`{"packs": ["claude", "pi", "openai-auth"], "profile": {"claude": "codex", "pi": "codex"}}`)
+		`{"packs": ["claude", "pi", "codex-auth"], "profile": {"claude": "codex", "pi": "codex"}}`)
 	got := hostFooterTables().UseProfiles
 	if got != `{"claude": "codex", "pi": "codex"}` {
 		t.Errorf("host footer profile = %q, want both composed selections", got)
@@ -267,7 +267,7 @@ func TestHostFooterTablesFoldTheProfileKeysDefault(t *testing.T) {
 		t.Setenv("HOME", home)
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 		writeFile(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
-			`{"packs": ["claude", "pi", "openai-auth"], "profile": `+sel+`}`)
+			`{"packs": ["claude", "pi", "codex-auth"], "profile": `+sel+`}`)
 		if got := hostFooterTables().UseProfiles; got != `{"claude": "codex", "pi": "codex"}` {
 			t.Errorf("%s: host footer profile = %q, want claude and pi on codex", name, got)
 		}

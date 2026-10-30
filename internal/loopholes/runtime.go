@@ -279,7 +279,8 @@ func (sp JailDaemonSpec) ResolvedHostCmd() []string {
 // argv, so until this existed the payload was composed inside runtimeArgsFor and emitted only
 // as `-e YOLO_JAIL_DAEMONS=`, which is a container flag — and a backend with no consumer for
 // it started nothing and said nothing (docs/reference/macos-user-nix-and-features.md, the
-// DEFAULT configuration: packs/claude `needs` both openai-auth and wire-bridge).
+// DEFAULT configuration: packs/claude `needs` both claude-auth, whose claude-oauth-broker is a
+// host daemon, and wire-bridge).
 //
 // NO UNGATED PACKAGE-LEVEL TWIN, unlike RuntimeArgsFor and ManifestHostDaemonSpecs. Those
 // have one because they predate the gate and a caller may hold a plain slice; this is new, so

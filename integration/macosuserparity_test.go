@@ -88,7 +88,7 @@ func macosUserRunProbe(t *testing.T, fix, ws, script string, opts ...runOption) 
 //   - claude's other jail daemons are declined by name.
 func TestMacosUserReportsOnlyPlatformInertLoopholes(t *testing.T) {
 	requireMacosUser(t)
-	packHome(t, `{"packs": ["claude", "journal", "openai-auth"], "loopholes": {"journal": {"enabled": true}}}`)
+	packHome(t, `{"packs": ["claude", "journal", "codex-auth"], "loopholes": {"journal": {"enabled": true}}}`)
 	ws := macosUserWorkspace(t, `{}`)
 	journalVar := macosUserServiceEnvVar("journal")
 	brokerVar := macosUserServiceEnvVar("claude-oauth-broker")
@@ -132,7 +132,7 @@ func TestMacosUserReportsOnlyPlatformInertLoopholes(t *testing.T) {
 		"wire-bridge: yolo-jaild wire-bridge — ",
 		"openai-auth-broker: yolo-jaild openai-auth-adapter --listen ",
 		"(its doorway runs for this launch, outside the sandbox)",
-		`Opened the "openai-auth-broker" doorway (pack "openai-auth"`,
+		`Opened the "openai-auth-broker" doorway (pack "codex-auth"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the launch did not say %q (noteMacosUserJailDaemonDeclines, "+

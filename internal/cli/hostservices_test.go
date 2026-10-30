@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
 	"github.com/mschulkind-oss/yolo-jail/internal/launchservice"
@@ -270,11 +271,48 @@ func assertServiceGone(t *testing.T, l serviceLaunch) {
 	}
 }
 
-// codexConfig is claude alone, with the subscription's Responses endpoint moved to the fake
-// upstream (a user-scope provider address, which is legal there and only there).
-func codexConfig(upstream string) string {
-	return `{"packs": ["claude", "openai-auth"], "providers": {"openai-codex": {"endpoints": {"openai-responses": ` +
-		`{"base_url": "` + upstream + `/codex"}}}}}`
+// codexConfig is claude with codex-auth selected, and the subscription's Responses endpoint moved
+// to the fake upstream for this test (repointCodexUpstream).
+func codexConfig(t *testing.T, upstream string) string {
+	t.Helper()
+	repointCodexUpstream(t, upstream)
+	return `{"packs": ["claude", "codex-auth"]}`
+}
+
+// repointCodexUpstream moves the subscription's Responses endpoint to the fake upstream in the
+// table a launch-owned service is HANDED, never in config. No config may move it: codex-auth pins
+// the openai-codex addresses (docs/design/provider-enablement.md PE-D4), because whatever address
+// the bridge is given receives the subscription's access view, so a user-scope `endpoints` entry
+// is refused (packload.PinnedEndpointRefusal). The bridge still reads its upstream off the composed
+// entry (wirebridged's codex route), so rewriting the entry at the service's input is exactly the
+// fact the bridge acts on, with the launch's composition and its refusal left as shipped.
+func repointCodexUpstream(t *testing.T, upstream string) {
+	t.Helper()
+	orig := startLaunchService
+	startLaunchService = func(p *launchservice.Plan, env map[string]string) (*launchservice.Running, error) {
+		if raw := env[entrypoint.ProvidersWireEnv]; raw != "" {
+			var table map[string]any
+			if err := json.Unmarshal([]byte(raw), &table); err != nil {
+				t.Errorf("the service input's %s is not JSON: %v", entrypoint.ProvidersWireEnv, err)
+			} else if entry, ok := table["openai-codex"].(map[string]any); ok {
+				endpoints, _ := entry["endpoints"].(map[string]any)
+				if endpoints == nil {
+					endpoints = map[string]any{}
+					entry["endpoints"] = endpoints
+				}
+				responses, _ := endpoints["openai-responses"].(map[string]any)
+				if responses == nil {
+					responses = map[string]any{}
+					endpoints["openai-responses"] = responses
+				}
+				responses["base_url"] = upstream + "/codex"
+				moved, _ := json.Marshal(table)
+				env[entrypoint.ProvidersWireEnv] = string(moved)
+			}
+		}
+		return orig(p, env)
+	}
+	t.Cleanup(func() { startLaunchService = orig })
 }
 
 // THE HEADLINE: `yolo host -p codex -- claude` on a bare `"packs": ["claude"]` runs claude on the
@@ -285,7 +323,7 @@ func codexConfig(upstream string) string {
 func TestHostCodexClaudeRunsThroughALaunchOwnedBridge(t *testing.T) {
 	upstream, auths := fakeUpstream(t)
 	fakeHostBroker(t)
-	l := runServiceLaunch(t, codexConfig(upstream.URL), []string{"-p", "codex"}, "", nil)
+	l := runServiceLaunch(t, codexConfig(t, upstream.URL), []string{"-p", "codex"}, "", nil)
 	if l.rc != 0 {
 		t.Fatalf("rc = %d\n%s", l.rc, l.errs)
 	}
@@ -371,7 +409,7 @@ func TestHostBridgesPickedPortsAreStillItsOwnWhenAnotherListenerAsksFirst(t *tes
 	upstream, _ := fakeUpstream(t)
 	fakeHostBroker(t)
 	var taken *[]string
-	l := runServiceLaunchWith(t, codexConfig(upstream.URL), []string{"-p", "codex"}, "", nil,
+	l := runServiceLaunchWith(t, codexConfig(t, upstream.URL), []string{"-p", "codex"}, "", nil,
 		func(string) { taken = askForPlannedPortsFirst(t) })
 	if len(*taken) > 0 {
 		t.Errorf("another listener bound %v, ports this launch picked for its bridge, before the "+
@@ -399,7 +437,7 @@ func TestHostServicesLaunchRunsTheFloorsCopyWithTheFloorsPath(t *testing.T) {
 	fakeHostBroker(t)
 	orig := newHostFloor
 	t.Cleanup(func() { newHostFloor = orig })
-	l := runServiceLaunchWith(t, codexConfig(upstream.URL), []string{"-p", "codex"}, "", nil, func(agentExec string) {
+	l := runServiceLaunchWith(t, codexConfig(t, upstream.URL), []string{"-p", "codex"}, "", nil, func(agentExec string) {
 		newHostFloor = func(out io.Writer, progs []hostfloor.Program) *hostfloor.Floor {
 			f := productionHostFloor(out, progs)
 			f.GOOS = "linux"
@@ -438,8 +476,8 @@ func TestHostServicesLaunchRunsTheFloorsCopyWithTheFloorsPath(t *testing.T) {
 func TestHostWrapperSpellingAndTheChatRouteRunThroughTheBridge(t *testing.T) {
 	upstream, auths := fakeUpstream(t)
 	fakeHostBroker(t)
-	l := runServiceLaunch(t, `{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}, "providers": `+
-		`{"openai-codex": {"endpoints": {"openai-responses": {"base_url": "`+upstream.URL+`/codex"}}}}}`,
+	repointCodexUpstream(t, upstream.URL)
+	l := runServiceLaunch(t, `{"packs": ["claude", "codex-auth"], "profile": {"claude": "codex"}}`,
 		nil, "", nil)
 	if l.rc != 0 || l.report.WithToken != http.StatusOK {
 		t.Fatalf("profile claude=codex: rc = %d, request %d\n%s", l.rc, l.report.WithToken, l.errs)
@@ -487,7 +525,7 @@ func TestHostServiceStopsWhenTheAgentDiesOfASignal(t *testing.T) {
 		signals <- syscall.SIGTERM
 		close(dump)
 	}()
-	l := runServiceLaunch(t, codexConfig(upstream.URL), []string{"-p", "codex"}, "sleep", signals)
+	l := runServiceLaunch(t, codexConfig(t, upstream.URL), []string{"-p", "codex"}, "sleep", signals)
 	<-dump
 	if !<-reported {
 		t.Fatalf("the fake agent wrote no report within %s, so it was signalled before it was served\n%s", budget, l.errs)
@@ -544,7 +582,7 @@ func TestHostRefusesWhenTheServiceCannotStart(t *testing.T) {
 			"listening. Its argv: yolo internal daemon wire-bridge. Its log: /x.log", p.Service, p.Pack)
 	}
 	t.Cleanup(func() { startLaunchService = origStart })
-	rc, env, errs := hostGateRun(t, `{"packs": ["claude", "openai-auth"]}`, nil, []string{"-p", "codex"}, "claude")
+	rc, env, errs := hostGateRun(t, `{"packs": ["claude", "codex-auth"]}`, nil, []string{"-p", "codex"}, "claude")
 	if rc != 1 || env != nil {
 		t.Fatalf("rc = %d, env = %v: a service that cannot start must refuse before the agent\n%s", rc, env, errs)
 	}
@@ -563,8 +601,8 @@ func TestHostEnvRefusesABridgedProfile(t *testing.T) {
 		args  []string
 		spell string
 	}{
-		{`{"packs": ["claude", "openai-auth"]}`, []string{"env", "--agent", "claude", "-p", "codex"}, "`yolo host -p codex -- claude`"},
-		{`{"packs": ["claude", "openai-auth"], "profile": {"claude": "codex"}}`, []string{"env", "--agent", "claude"},
+		{`{"packs": ["claude", "codex-auth"]}`, []string{"env", "--agent", "claude", "-p", "codex"}, "`yolo host -p codex -- claude`"},
+		{`{"packs": ["claude", "codex-auth"], "profile": {"claude": "codex"}}`, []string{"env", "--agent", "claude"},
 			"`yolo host -- claude`"},
 	} {
 		hostGateHome(t, tc.cfg, nil)
@@ -592,7 +630,7 @@ func TestHostEnvRefusesABridgedProfile(t *testing.T) {
 // takes effect (OQ-HS3). Every apply test here declares `host_management: "own"`: the unset key
 // is `none` since OQ-CO14, under which the apply refuses before it renders or says anything.
 func TestHostApplyWritesNoBridgedAddressAndSaysWhy(t *testing.T) {
-	home := hostComputedHome(t, `{"packs": ["claude", "openai-auth"], "host_management": "own", "profile": {"claude": "codex"}}`)
+	home := hostComputedHome(t, `{"packs": ["claude", "codex-auth"], "host_management": "own", "profile": {"claude": "codex"}}`)
 	var out, errw bytes.Buffer
 	if rc := hostMain([]string{"apply", "--assert"}, &out, &errw, false, strings.NewReader("y\n")); rc != 0 {
 		t.Fatalf("yolo host apply --assert rc=%d\n%s%s", rc, out.String(), errw.String())
@@ -704,7 +742,7 @@ func TestHostRefusesAFetchedPacksHostHalfByName(t *testing.T) {
 		`{"kind": "adapter", "adapts": {"from": "openai-responses", "to": "anthropic"}, "address": "http://127.0.0.1:8215"}`,
 		`{"kind": "service", "name": "wire-bridge", "jail_daemon": {"cmd": ["yolo-jaild", "wire-bridge"]}, `+
 			`"host_daemon": {"cmd": ["yolo", "internal", "daemon", "wire-bridge"]}}`)
-	cfg := `{"packs": ["claude", "openai-auth", {"source": "` + src + `", "name": "wire-bridge"}]}`
+	cfg := `{"packs": ["claude", "codex-auth", {"source": "` + src + `", "name": "wire-bridge"}]}`
 	origStart := startLaunchService
 	startLaunchService = func(*launchservice.Plan, map[string]string) (*launchservice.Running, error) {
 		t.Fatal("a fetched pack's host half was started")
@@ -743,8 +781,8 @@ func TestHostRunsALocalPacksBridgeHostHalfAndNamesItBeforeItStarts(t *testing.T)
 	if err := os.WriteFile(filepath.Join(fork, "pack.json"), manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `{"packs": ["claude", "openai-auth", {"source": "file://` + fork + `", "name": "wire-bridge"}], ` +
-		`"providers": {"openai-codex": {"endpoints": {"openai-responses": {"base_url": "` + upstream.URL + `/codex"}}}}}`
+	repointCodexUpstream(t, upstream.URL)
+	cfg := `{"packs": ["claude", "codex-auth", {"source": "file://` + fork + `", "name": "wire-bridge"}]}`
 	l := runServiceLaunch(t, cfg, []string{"-p", "codex"}, "", nil)
 	if l.rc != 0 {
 		t.Fatalf("rc = %d: a local fork's bridge must run\n%s", l.rc, l.errs)

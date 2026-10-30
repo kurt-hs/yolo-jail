@@ -146,7 +146,7 @@ func inFullProbeCtx(agent, surface string) *DeriveCtx {
 }
 
 // inFullSelectedProbeCtx is inFullProbeCtx with a provider SELECTED — the shipped
-// `openai-codex` subscription, with the row packs/openai-auth declares: its capabilities,
+// `openai-codex` subscription, with the row packs/codex-auth declares: its capabilities,
 // its Responses endpoint and its model list. Two tables are produced only under a
 // selection (claude/settings' `modelPicker` and pi/settings' `subagents`), and both are
 // tables the classification says are NOT declared in full, so without this second world

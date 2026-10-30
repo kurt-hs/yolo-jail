@@ -281,7 +281,7 @@ type BuiltInProvider struct {
 	// YoloList is true when the agent runs the provider on its own client but on YOLO'S model
 	// list, which its pack renders from yolo's declaration of the provider
 	// (packdecl.BuiltInProviders.YoloLists): pi and opencode on openai-codex, whose one list
-	// packs/openai-auth declares (docs/design/model-lists-and-pickers.md ML-D1). Core then keeps
+	// packs/codex-auth declares (docs/design/model-lists-and-pickers.md ML-D1). Core then keeps
 	// the provider's tiers and its endpoint on the launch line, as for any catalogued provider.
 	YoloList bool
 }

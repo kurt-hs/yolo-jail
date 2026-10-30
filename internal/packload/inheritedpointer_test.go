@@ -12,7 +12,7 @@ import (
 )
 
 func TestAnInheritedPointerIsDeliveredWithTheLaunchingJailsValues(t *testing.T) {
-	packs := embeddedNamed(t, "codex", "openai-auth", "aws-auth", "bedrock", "claude")
+	packs := embeddedNamed(t, "codex", "codex-auth", "aws-auth", "bedrock", "claude")
 	profiles := map[string]string{"codex": "bedrock"}
 	providers, resolved, _ := launchSelection(t, packs, nil, nil, profiles)
 	const awsURI, awsToken = "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN"

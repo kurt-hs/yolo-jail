@@ -29,14 +29,14 @@ import (
 // anywhere, switched by a top-level config key. It entered this table straight into a pack
 // (docs/reference/loophole-system.md#oq-a6).
 var shippedManifestHome = map[string]string{
-	"claude-oauth-broker": "claude",
+	"claude-oauth-broker": "claude-auth",
 	"audio":               "audio",
 	"host-processes":      "host-processes",
 	"journal":             "journal",
 	"macos-log":           "macos-log",
 	"cgroup-delegate":     "cgroup-delegate",
 	"serial":              "serial",
-	"openai-auth-broker":  "openai-auth",
+	"openai-auth-broker":  "codex-auth",
 	"aws-auth":            "aws-auth",
 	"github-broker":       "github",
 	"git-broker":          "git",

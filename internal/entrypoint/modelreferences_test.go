@@ -54,7 +54,7 @@ func TestTheBootNamesAPickedModelTheDerivedScopeExcludes(t *testing.T) {
 // A profile's subagents.default that pi's catalog does not hold, on a provider pi runs on its own
 // catalog, is written verbatim; the boot names it with the nearest catalog id.
 func TestTheBootNamesASubagentModelPisRegistryDoesNotHold(t *testing.T) {
-	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "zai", "openrouter", "kilo", "llamacpp", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

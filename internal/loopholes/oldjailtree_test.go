@@ -45,7 +45,7 @@ func TestAnOlderJailsShippedCredentialLoopholesStayInTheSet(t *testing.T) {
 		ResetPackSupersessions()
 	})
 	var mods []PackModule
-	for _, l := range [][2]string{{"claude", "claude-oauth-broker"}, {"openai-auth", "openai-auth-broker"},
+	for _, l := range [][2]string{{"claude-auth", "claude-oauth-broker"}, {"codex-auth", "openai-auth-broker"},
 		{"aws-auth", "aws-auth"}} {
 		mods = append(mods, PackModule{Dir: oldShippedManifest(t, l[0], l[1]), HostExecApproved: true})
 	}

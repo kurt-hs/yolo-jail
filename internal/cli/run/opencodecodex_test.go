@@ -33,7 +33,7 @@ func codexLaunchPacks(t *testing.T) []*packload.Pack {
 		byName[p.Name] = p
 	}
 	var selected []*packload.Pack
-	for _, name := range []string{"claude", "codex", "opencode", "pi", "openai-auth", "bedrock"} {
+	for _, name := range []string{"claude", "codex", "opencode", "pi", "codex-auth", "bedrock"} {
 		p, ok := byName[name]
 		if !ok {
 			t.Fatalf("no official pack named %q", name)

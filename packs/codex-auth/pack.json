@@ -15,6 +15,7 @@
         }
       },
       "kind": "provider",
+      "pinned_endpoint": true,
       "model_options": {
         "gpt-6-astra": {
           "context_window": "272000",
@@ -51,6 +52,12 @@
       "provider": "openai-codex"
     }
   ],
-  "description": "One machine-wide owner for OpenAI subscription login and refresh-token rotation.",
-  "name": "openai-auth"
+  "description": "The OpenAI (ChatGPT) subscription as one provider and profile, and the one machine-wide owner for its login and refresh-token rotation. It installs nothing; the codex pack brings it, and you may select it without codex.",
+  // The name this pack had before OQ-PE3 (docs/design/provider-enablement.md PE-D7): a config
+  // still naming it is refused naming this one. The pinned endpoint is PE-D4: the bridge routes
+  // claude through it, and a user providers.openai-codex entry may not re-point it.
+  "formerly": {
+    "packs": ["openai-auth"]
+  },
+  "name": "codex-auth"
 }

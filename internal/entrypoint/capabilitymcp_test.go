@@ -177,7 +177,7 @@ func TestTavilyIsDeliveredForKiloAndRemovedForEveryNativeSearchSource(t *testing
 	}{
 		{"claude subscription is native", "claude", []string{"claude"}, "", false},
 		{"claude on bedrock is not", "claude", []string{"claude", "bedrock"}, "bedrock", true},
-		{"claude on codex is native", "claude", []string{"claude", "openai-auth"}, "codex", false},
+		{"claude on codex is native", "claude", []string{"claude", "codex-auth"}, "codex", false},
 		{"claude on kilo is not", "claude", []string{"claude", "kilo"}, "kilo", true},
 		{"claude on zai is native", "claude", []string{"claude", "zai"}, "zai", false},
 		{"agy's built-in source is native", "agy", []string{"agy"}, "", false},
@@ -300,7 +300,7 @@ func TestAServerWithAnotherCapabilityOrNoProvidesIsUnaffected(t *testing.T) {
 // whose source declares nothing simply delivers every MCP server — a silent flip back to
 // the pre-rule behaviour with nothing anywhere failing.
 func TestCapabilityDeclarationsTravelUnderTheWireNames(t *testing.T) {
-	packs := capabilityPacks(t, "claude", "bedrock", "zai", "kilo", "openai-auth")
+	packs := capabilityPacks(t, "claude", "bedrock", "zai", "kilo", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatalf("ComposeProviders: %v", err)

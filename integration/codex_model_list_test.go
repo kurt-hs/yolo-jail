@@ -26,7 +26,7 @@ func TestCodexProfileRendersOneModelListForEveryAgent(t *testing.T) {
 	requireJail(t)
 
 	dir := writeProject(t, `{}`)
-	packHome(t, `{"packs": ["openai-auth", "pi", "claude", "codex", "opencode"]}`)
+	packHome(t, `{"packs": ["codex-auth", "pi", "claude", "codex", "opencode"]}`)
 	// runCommand rather than runYolo: the flag goes BEFORE the `--` that starts the
 	// container command. A bare name selects the profile for every agent.
 	r := runCommand(t, dir, append(jailRunArgs(), "-p", "codex", "--", "true"))
@@ -97,7 +97,7 @@ func TestCodexProfileRendersOneModelListForEveryAgent(t *testing.T) {
 
 	// pi's catalog never shadows its built-in openai-codex provider
 	// (docs/design/pi-codex-provider-shadowing.md OQ-1, OQ-2): a models.json row written from the
-	// Responses address packs/openai-auth declares replaces pi's own subscription client, which
+	// Responses address packs/codex-auth declares replaces pi's own subscription client, which
 	// then authenticates with the ambient OPENAI_API_KEY. This launch composes openai-codex and no
 	// other provider, so with the exclusion in place pi's catalog is empty (`"providers": {}`,
 	// observed 2026-10-01), and without it the openai-codex row is the whole catalog (revert-checked

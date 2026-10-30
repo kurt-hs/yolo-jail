@@ -15,10 +15,12 @@ package integration
 //	  → an Anthropic-shaped answer back.
 //
 // NO agent binary runs and NO external API is called. The upstream is a stub on the HOST's
-// loopback, reached because the user `providers` override re-points openai-codex's
-// `openai-responses` endpoint at it (the route reads that endpoint, ES-D29), and a user
-// provider URL at loopback becomes an implicit forward (wirebridge_test.go's header says why
-// the stub lives on the host). The access view is a FORGED LOGIN (openaiauth_test.go's term: a
+// loopback, reached because a LOCAL FORK of codex-auth declares openai-codex's
+// `openai-responses` endpoint at it (the route reads that endpoint, ES-D29) and
+// `network.forward_host_ports` forwards its port (wirebridge_test.go's header says why the stub
+// lives on the host). It used to be a user `providers` override; codex-auth pins that address
+// now (docs/design/provider-enablement.md PE-D4), so a user layer may not move it, and a fork —
+// the user's own pack, selected under the shipped name — is the one way left to. The access view is a FORGED LOGIN (openaiauth_test.go's term: a
 // Codex-shaped auth.json of random test strings whose access token is a JWT a day from expiry),
 // imported into a private credential state, so the broker serves it from cache and never calls
 // OpenAI. Every daemon it reaches is its own launch's, under its HOME and private state
@@ -28,6 +30,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -41,6 +44,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/openaiauth"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
+	"github.com/mschulkind-oss/yolo-jail/packs"
 )
 
 // codexUpstreamRecord is what the host-side stub saw of the one request the bridge made.
@@ -92,11 +96,11 @@ func TestWireBridgeTranslatesClaudeCodexToResponses(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Close() })
 
 	dir := writeProject(t, `{}`)
+	fork := codexAuthForkAt(t, "http://127.0.0.1:"+strconv.Itoa(stubPort)+"/codex")
 	packHome(t, `{
-		"packs": ["claude", "openai-auth"],
+		"packs": ["claude", {"source": "file://`+fork+`", "name": "codex-auth"}],
 		"profile": {"claude": "codex"},
-		"providers": {"openai-codex": {"endpoints": {"openai-responses": {"base_url": "http://127.0.0.1:`+
-		strconv.Itoa(stubPort)+`/codex"}}}}
+		"network": {"forward_host_ports": [`+strconv.Itoa(stubPort)+`]}
 	}`)
 	macArchivePrivateState(t)
 	statePath := filepath.Join(loopholes.StateDirFor(openaiauth.LoopholeName), openaiauth.StateFileName)
@@ -147,7 +151,7 @@ true`
 	mu.Unlock()
 	if !up.seen {
 		t.Fatalf("the host-side upstream stub was never called: the Codex route did not dial the " +
-			"openai-responses endpoint the user provider names")
+			"openai-responses endpoint the codex-auth fork names")
 	}
 	if up.path != "/codex/responses" {
 		t.Errorf("upstream path = %q, want the declared base plus /responses", up.path)
@@ -193,4 +197,32 @@ true`
 	}
 	stepSummary(t, fmt.Sprintf("### Wire bridge Codex route: HTTP %s, upstream path %q",
 		kvLine(r.stdout, "MSGS"), up.path))
+}
+
+// codexAuthForkAt copies the shipped codex-auth pack out of the binary's embed into a temp dir,
+// with its openai-codex `openai-responses` endpoint moved to upstream, and returns the dir.
+func codexAuthForkAt(t *testing.T, upstream string) string {
+	t.Helper()
+	tree, err := fs.Sub(packs.FS, "codex-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork := filepath.Join(t.TempDir(), "codex-auth")
+	if err := os.CopyFS(fork, tree); err != nil {
+		t.Fatalf("copying codex-auth: %v", err)
+	}
+	manifest := filepath.Join(fork, "pack.json")
+	raw, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const shipped = `"base_url": "https://chatgpt.com/backend-api/codex"`
+	if !strings.Contains(string(raw), shipped) {
+		t.Fatalf("codex-auth no longer declares %s; this fork no longer moves the endpoint", shipped)
+	}
+	moved := strings.Replace(string(raw), shipped, `"base_url": "`+upstream+`"`, 1)
+	if err := os.WriteFile(manifest, []byte(moved), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return fork
 }

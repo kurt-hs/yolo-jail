@@ -113,7 +113,7 @@ func TestHostCapabilityCensusFoldsTheTypedProfile(t *testing.T) {
 		// The launch may stop further on (a credential pre-flight); only the gate's verdict is
 		// this cell's, and the composition's profile line, which prints after the gate, is the
 		// witness that the launch got past it.
-		_, _, errs := hostGateRun(t, `{"packs": ["pi", "openai-auth"], "required_capabilities": ["web_search"]}`,
+		_, _, errs := hostGateRun(t, `{"packs": ["pi", "codex-auth"], "required_capabilities": ["web_search"]}`,
 			nil, []string{"-p", "codex"}, "pi")
 		if strings.Contains(errs, "required_capabilities") || strings.Contains(errs, "required capabilit") {
 			t.Fatalf("-p codex -- pi met the requirement through the provider, yet the gate spoke:\n%s", errs)

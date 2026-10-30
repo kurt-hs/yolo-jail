@@ -198,5 +198,14 @@
       "scope": "workspace"
     }
   ],
-  "name": "codex"
+  "name": "codex",
+  // CODEX BRINGS ITS OWN PROVIDER (docs/design/provider-enablement.md OQ-PE2): packs/codex-auth
+  // declares the `openai-codex` provider and the `codex` profile and runs the openai-auth-broker,
+  // so every Codex launch has the broker that keeps its single-use refresh token from being burnt
+  // by a second jail, and the env above gated on it is served.
+  "needs": [
+    {
+      "pack": "codex-auth"
+    }
+  ]
 }

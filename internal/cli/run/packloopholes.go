@@ -951,7 +951,7 @@ func (o *Options) discloseLoopholes(rt string, cfg *jsonx.OrderedMap, packs []*p
 	//
 	// ⚠ ONE PACK WAS EXEMPT FROM THIS REPORT UNTIL 2026-09-18, and the exemption is what made
 	// Apple Container silent about the credential service. `rt == "container"` handed this the
-	// set MINUS the openai-auth pack, on the reasoning that its host daemon is the one
+	// set MINUS the codex-auth (then openai-auth) pack, on the reasoning that its host daemon is the one
 	// `startLoopholes` really starts there, so reporting it inert would contradict the exec
 	// line above. Measured, that reasoning does not hold and the silence it bought was the
 	// whole defect:

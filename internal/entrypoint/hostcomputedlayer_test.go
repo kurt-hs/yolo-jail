@@ -166,7 +166,7 @@ func TestTheHostRendersEachDerivedSurfaceClass(t *testing.T) {
 			}},
 		{name: "pi/codex-models carries the declared openai-codex list", pack: "pi",
 			surface: "pi/codex-models", rel: ".pi/agent/yolo-openai-codex-models.json",
-			extra: []string{"openai-auth"},
+			extra: []string{"codex-auth"},
 			check: func(t *testing.T, home string) {
 				models := jsonAt(t, home, ".pi/agent/yolo-openai-codex-models.json", "models").([]any)
 				var long bool
@@ -420,7 +420,7 @@ func hostSelectionOnTheEdge(t *testing.T, rmw bool) {
 	settings := filepath.Join(home, ".pi", "agent", "settings.json")
 	// A value predating the selection, which the first activation outranks (HC-D17).
 	writeTestFile(t, settings, `{"theme": "dark", "defaultModel": "before-yolo"}`)
-	packs := declaredRMW(t, testPacksForAgent(t, "pi", "openai-auth"), "pi", rmw)
+	packs := declaredRMW(t, testPacksForAgent(t, "pi", "codex-auth"), "pi", rmw)
 	selected := hostTestInputs(t, packs, map[string]string{"pi": "codex"}, nil, nil)
 	apply := func(in *HostInputs) map[string]any {
 		t.Helper()
@@ -481,7 +481,7 @@ func overwriteReportNamesAComputedLeaf(t *testing.T, rmw bool) {
 	home := t.TempDir()
 	settings := filepath.Join(home, ".pi", "agent", "settings.json")
 	writeTestFile(t, settings, `{"theme": "dark", "defaultModel": "before-yolo"}`)
-	packs := declaredRMW(t, testPacksForAgent(t, "pi", "openai-auth"), "pi", rmw)
+	packs := declaredRMW(t, testPacksForAgent(t, "pi", "codex-auth"), "pi", rmw)
 	in := hostTestInputs(t, packs, map[string]string{"pi": "codex"}, nil, nil)
 	preview := func() HostRenderResult {
 		t.Helper()
@@ -527,7 +527,7 @@ func overwriteReportTellsASelectionKeyFromARecomputedLeaf(t *testing.T, rmw bool
 	home := t.TempDir()
 	settings := filepath.Join(home, ".pi", "agent", "settings.json")
 	writeTestFile(t, settings, `{"theme": "dark", "defaultModel": "before-yolo"}`)
-	packs := declaredRMW(t, testPacksForAgent(t, "pi", "openai-auth"), "pi", rmw)
+	packs := declaredRMW(t, testPacksForAgent(t, "pi", "codex-auth"), "pi", rmw)
 	in := hostTestInputs(t, packs, map[string]string{"pi": "codex"}, nil, nil)
 	preview := func() []string {
 		t.Helper()

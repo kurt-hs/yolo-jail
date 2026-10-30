@@ -185,7 +185,7 @@ func (f sealFixture) launchStreams(t *testing.T, sealed bool) (argv []string, ws
 // device node and /dev/kvm, so each of those crossings is one an unsealed launch makes
 // (TestTheSealFixtureCrossesUnsealed).
 var sealCrossingsFixture = sealFixture{
-	moduleNames: []string{"claude", "openai-auth", "wire-bridge"},
+	moduleNames: []string{"claude", "codex-auth", "wire-bridge"},
 	dirs:        []string{"sealtest-notes", ".config/nvim", ".config/git", ".claude", "bigdisk/hf"},
 	files: map[string]string{
 		".config/git/ignore":    "sealtest-host-ignore-pattern\n",

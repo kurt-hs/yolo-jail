@@ -20,7 +20,7 @@ import (
 // The shipped claude pack's env for its codex profile opts claude's launcher into the login,
 // and no other selection does. It fails if the pack's gated contribution is deleted.
 func TestClaudeCodexProfileOptsIntoTheOpenAILogin(t *testing.T) {
-	closure := testPacksForAgent(t, "claude", "openai-auth", "bedrock")
+	closure := testPacksForAgent(t, "claude", "codex-auth", "bedrock")
 	env := launchEnvFor(t, closure, map[string]string{"claude": "codex"}, "claude")
 	if env["YOLO_AUTH_PRELAUNCH_CLAUDE_LOGIN"] != "1" {
 		t.Fatalf("claude on codex: YOLO_AUTH_PRELAUNCH_CLAUDE_LOGIN = %q, want 1, so the launcher "+
@@ -44,7 +44,7 @@ func TestClaudeLauncherEnsuresTheOpenAILoginOnCodex(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not found")
 	}
-	closure := testPacksForAgent(t, "claude", "openai-auth")
+	closure := testPacksForAgent(t, "claude", "codex-auth")
 	var install *packdecl.Install
 	for _, p := range closure {
 		installs, _ := p.HonoredInstalls()

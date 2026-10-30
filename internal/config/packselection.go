@@ -6,7 +6,7 @@ package config
 // Before it, the jail launch, `yolo check`, config validation, the lazy loophole resolvers and
 // `config promote` each looped over the `packs` entries and ran the selection closure themselves,
 // and no host verb ran the closure at all. So `"packs": ["claude"]` was four packs in a jail
-// (claude, aws-auth, openai-auth and wire-bridge, through claude's `needs`) and one at the host.
+// (claude, aws-auth, openai-auth — now codex-auth — and wire-bridge, through claude's `needs`) and one at the host.
 // The host kept off the closure on purpose (credential-sources-separation.md ES-D24) because it
 // would have added aws-auth's pointer at an address nothing on the host serves; served-address
 // composition (item 2, NC-D16) withholds and names such a pointer, which is what makes the host

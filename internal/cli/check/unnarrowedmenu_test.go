@@ -30,7 +30,7 @@ func companyPack(t *testing.T, models string) string {
 func unnarrowedMenuCheck(t *testing.T, models, agent string, set ...string) (string, int) {
 	t.Helper()
 	packsFixture(t, `{
-	  "packs": ["opencode", "pi", "zai", "openai-auth", "file://`+companyPack(t, models)+`"],
+	  "packs": ["opencode", "pi", "zai", "codex-auth", "file://`+companyPack(t, models)+`"],
 	  "profiles": {
 	    "zai-open": {"provider": "zai", "enforce_models": false},
 	    "codex-open": {"provider": "openai-codex", "enforce_models": false}

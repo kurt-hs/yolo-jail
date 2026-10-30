@@ -101,7 +101,7 @@ func TestTheUnnarrowedMenuLineAgreesWithOpencodesWhitelist(t *testing.T) {
 	// An `only` naming nothing any pack added keeps no model: the entry is still marked narrowed,
 	// and the derive writes no whitelist for an empty list, with the switch on or off.
 	emptied := companyModelsPack(t, `{"kind":"models","provider":"zai","only":["glm-nothing-added"]}`)
-	withNarrowed := append(testPacksForAgent(t, "opencode", "zai", "bedrock", "openai-auth"), narrowed)
+	withNarrowed := append(testPacksForAgent(t, "opencode", "zai", "bedrock", "codex-auth"), narrowed)
 	withAdded := append(testPacksForAgent(t, "opencode", "zai"), added)
 	withEmptied := append(testPacksForAgent(t, "opencode", "zai"), emptied)
 	// llamacpp is a provider opencode has none of its own for, so its narrowed list is a generic

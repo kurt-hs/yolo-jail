@@ -614,6 +614,12 @@ func lowerPackSourceWithNames(source, name, itemPath string, embeddedNames func(
 		if name, ok := embeddedPackNameFromNames(source, available); ok {
 			return EmbeddedPackEntry(name), ""
 		}
+		// A FORMER NAME of a shipped pack (packdecl.Formerly; provider-enablement.md OQ-PE3) is
+		// refused naming the pack that took it over, never aliased: the list of everything that
+		// ships would bury the one name that answers.
+		if now, renamed := packload.RenamedPack(source, packload.Embedded()); renamed {
+			return PackEntry{}, fmt.Sprintf("%s.source: %q is now %q; write %q", itemPath, source, now, now)
+		}
 		return PackEntry{}, itemPath + ".source: " + unknownEmbeddedMessageFromNames(source, available)
 	}
 	switch {

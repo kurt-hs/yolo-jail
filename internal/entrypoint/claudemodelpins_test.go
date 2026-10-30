@@ -76,7 +76,7 @@ var claudeTierVars = []string{
 // availableModels' order lead with it. A profile over openai-codex declares no option census
 // (the provider declares no options, ML-D1), so the opt-in needs no declaration there.
 func TestClaudeOnTheCodexListPinsTheStartOnlyOnTheOptIn(t *testing.T) {
-	packs := testPacksForAgent(t, "claude", "openai-auth")
+	packs := testPacksForAgent(t, "claude", "codex-auth")
 	for _, tc := range []struct {
 		name    string
 		options map[string]string
@@ -467,7 +467,7 @@ func TestClaudeNativeBedrockDefaultPinsOpusAndIsTheSavedModel(t *testing.T) {
 // per-launch start pin.
 func TestClaudeOnTheCodexListWithEnforcementOff(t *testing.T) {
 	off := false
-	got := renderClaudeModels(t, testPacksForAgent(t, "claude", "openai-auth"), nil, map[string]packload.UserProfile{
+	got := renderClaudeModels(t, testPacksForAgent(t, "claude", "codex-auth"), nil, map[string]packload.UserProfile{
 		"codex-open": {Provider: "openai-codex", EnforceModels: &off},
 	}, "codex-open")
 	for _, k := range []string{"availableModels", "enforceAvailableModels"} {

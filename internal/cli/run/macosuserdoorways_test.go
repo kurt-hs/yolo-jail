@@ -86,7 +86,7 @@ func observeDoorways(t *testing.T) *doorwaysSeen {
 // pointer is ungated, so every codex launch is pointed at the refresh doorway.
 func codexNativeLaunch(t *testing.T) (*Options, *bytes.Buffer, *nativeLaunch) {
 	t.Helper()
-	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["codex", "openai-auth"]}`, shellWith(nil))
+	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["codex", "codex-auth"]}`, shellWith(nil))
 	o.Args = []string{"codex"}
 	o.ProfileName = ""
 	return o, stderr, seen
@@ -122,7 +122,7 @@ func TestTheMacosUserArmOpensTheCodexDoorwayAndStopsItAfterTheCommand(t *testing
 	if tok, _ := seen.env.Get(openauthclient.CallerTokenEnv); tok != plan.Token {
 		t.Errorf("the token the Codex launcher binds (%v) is not the doorway's", tok)
 	}
-	if plan.Pack != "openai-auth" || plan.TokenEnv != openauthclient.CallerTokenEnv {
+	if plan.Pack != "codex-auth" || plan.TokenEnv != openauthclient.CallerTokenEnv {
 		t.Errorf("the doorway's plan names pack %q and token %q", plan.Pack, plan.TokenEnv)
 	}
 }
@@ -138,7 +138,7 @@ func TestMacosUserDryRunSaysWhichDoorwaysItWouldOpen(t *testing.T) {
 	if len(doors.plans) != 0 {
 		t.Errorf("a dry run opened %d doorways", len(doors.plans))
 	}
-	want := `Would open the "openai-auth-broker" doorway (pack "openai-auth") on [127.0.0.1:`
+	want := `Would open the "openai-auth-broker" doorway (pack "codex-auth") on [127.0.0.1:`
 	if !strings.Contains(stderr.String(), want) ||
 		!strings.Contains(stderr.String(), "yolo internal daemon openai-auth-adapter --listen 127.0.0.1:") {
 		t.Errorf("the dry run does not say %q with the argv:\n%s", want, stderr.String())
@@ -150,7 +150,7 @@ func TestTheMacosUserArmRefusesWhenADoorwayCannotStart(t *testing.T) {
 	o, stderr, seen := codexNativeLaunch(t)
 	orig := startMacosUserDoorway
 	startMacosUserDoorway = func(p *launchservice.Plan, _ map[string]string) (launchedService, string, error) {
-		return nil, "", errors.New(`the "openai-auth-broker" service (pack "openai-auth") did not start: boom`)
+		return nil, "", errors.New(`the "openai-auth-broker" service (pack "codex-auth") did not start: boom`)
 	}
 	t.Cleanup(func() { startMacosUserDoorway = orig })
 	if rc := Run(*o); rc != 1 || seen.reached {
@@ -169,7 +169,7 @@ func TestTheMacosUserArmRefusesWhenADoorwayCannotStart(t *testing.T) {
 // fails. Deleting the stop() in startMacosUserDoorways' error branch fails this.
 func TestAMacosUserDoorwayThatCannotStartStopsTheOnesAlreadyOpen(t *testing.T) {
 	installFakeAWSCLI(t)
-	cfg := `{"packs": ["claude", "bedrock", "aws-auth", "openai-auth"]` + bedrockRegionMember +
+	cfg := `{"packs": ["claude", "bedrock", "aws-auth", "codex-auth"]` + bedrockRegionMember +
 		`, "loopholes": {"aws-auth": {"enabled": true, "settings": {"profile": "yolo-unit", "unnarrowed": true}}}}`
 	o, stderr, seen := overrideNativeLaunch(t, cfg, shellWith(nil))
 	var stopped atomic.Int32
@@ -350,7 +350,7 @@ func TestTheRealCodexDoorwayAnswersOnlyTheLaunchsCallerToken(t *testing.T) {
 	if rc := Run(*o); rc != 0 {
 		t.Fatalf("Run() = %d\n%s", rc, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), `Opened the "openai-auth-broker" doorway (pack "openai-auth"`) {
+	if !strings.Contains(stderr.String(), `Opened the "openai-auth-broker" doorway (pack "codex-auth"`) {
 		t.Fatalf("the launch did not open the doorway:\n%s", stderr.String())
 	}
 	if without != http.StatusUnauthorized {

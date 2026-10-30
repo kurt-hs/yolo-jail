@@ -98,7 +98,7 @@ func TestHostApplyNamesEachKindOncePerGroup(t *testing.T) {
 // credential doorway, with audio beside them for the shape the host delivers nowhere.
 func TestHostApplyNamesWhatYoloHostDeliversAtLaunch(t *testing.T) {
 	home := t.TempDir()
-	selectPacks(t, home, `"pi","guardrails","wire-bridge","aws-auth","openai-auth","audio"`)
+	selectPacks(t, home, `"pi","guardrails","wire-bridge","aws-auth","codex-auth","audio"`)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	defaultReport(t)
@@ -136,7 +136,7 @@ func TestHostApplyNamesWhatYoloHostDeliversAtLaunch(t *testing.T) {
 	// --verbose says which pack's contributions landed in each group, for a kind in both.
 	verboseReport(t)
 	_, verbose := surveyApply(t)
-	for _, want := range []string{"env (aws-auth, guardrails, pi)", "env (audio)", "loophole (aws-auth, openai-auth)",
+	for _, want := range []string{"env (aws-auth, guardrails, pi)", "env (audio)", "loophole (aws-auth, codex-auth)",
 		"loophole (audio)", "`yolo config-ref` says how"} {
 		if !strings.Contains(verbose, want) {
 			t.Errorf("--verbose does not say %q:\n%s", want, verbose)

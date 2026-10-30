@@ -29,7 +29,7 @@ func listWantsFor(t *testing.T, packs []*Pack, userProfiles map[string]UserProfi
 }
 
 func TestTheLaunchWantsAListOnlyWhereSomethingReadsIt(t *testing.T) {
-	packs := embeddedNamed(t, "claude", "copilot", "pi", "aws-auth", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "claude", "copilot", "pi", "aws-auth", "codex-auth", "wire-bridge")
 	bare := map[string]UserProfile{
 		"bare":     {Provider: "bare"},
 		"bare-via": {Provider: "bare", Via: "wire-bridge"},

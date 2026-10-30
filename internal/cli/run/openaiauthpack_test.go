@@ -22,13 +22,16 @@ import (
 
 const codexRefreshAdapterURL = "http://127.0.0.1:1460/oauth/token"
 
-func TestCodexPackDoesNotNeedSharedOpenAIAuth(t *testing.T) {
-	needs := officialPack(t, "codex").Decl.DeclaredNeeds()
-	for _, n := range needs {
-		if n.Pack == "openai-auth" {
-			t.Errorf("codex needs %s; agent packs must not need auth providers", n.Pack)
+// The vendor CLI brings its own subscription (docs/design/provider-enablement.md OQ-PE2): codex
+// needs codex-auth, so selecting codex runs the broker and makes the `codex` profile nameable.
+// It once asserted the opposite, when an agent pack needed no provider pack.
+func TestCodexPackNeedsCodexAuth(t *testing.T) {
+	for _, n := range officialPack(t, "codex").Decl.DeclaredNeeds() {
+		if n.Pack == "codex-auth" {
+			return
 		}
 	}
+	t.Errorf("codex does not need codex-auth, so selecting codex alone runs no broker")
 }
 
 func TestStagePacksJoinsAWSAuthForBedrock(t *testing.T) {
@@ -90,7 +93,7 @@ func TestStageRunPacksPreservesNeededAWSAuthState(t *testing.T) {
 }
 
 func TestCodexRoutesRefreshesToTheJailAdapter(t *testing.T) {
-	packs := []*packload.Pack{officialPack(t, "codex"), officialPack(t, "openai-auth")}
+	packs := []*packload.Pack{officialPack(t, "codex"), officialPack(t, "codex-auth")}
 	// The launch runs the OpenAI adapter (its loophole recorded, as staging records it), so the
 	// refresh URL the adapter serves is delivered (notch convergence item 2).
 	la := zaiLaunchAssembled(t, packs, bareConfig(), nil,
@@ -102,7 +105,7 @@ func TestCodexRoutesRefreshesToTheJailAdapter(t *testing.T) {
 }
 
 func TestShippedOpenAIAuthPackOwnsOneHostDaemonAndAdapter(t *testing.T) {
-	p := officialPack(t, "openai-auth")
+	p := officialPack(t, "codex-auth")
 	mods := packLoopholeModules([]*packload.Pack{p})
 	if len(mods) != 1 {
 		t.Fatalf("openai-auth loophole modules = %d, want 1", len(mods))
@@ -167,7 +170,7 @@ func TestShippedOpenAIAuthPackOwnsOneHostDaemonAndAdapter(t *testing.T) {
 // production assembly call site so deleting its preparation call makes the test fail.
 func TestOpenAIAuthAssemblyPreparesOnlySafeStateMount(t *testing.T) {
 	home := retireHome(t)
-	p := officialPack(t, "openai-auth")
+	p := officialPack(t, "codex-auth")
 	loopholes.SetPackModules(packLoopholeModules([]*packload.Pack{p}))
 	t.Cleanup(func() { loopholes.SetPackModules(nil) })
 
@@ -227,7 +230,7 @@ func TestOpenAIAuthLaunchDisclosureShowsResolvedStatePath(t *testing.T) {
 	retireHome(t)
 	var out bytes.Buffer
 	o := &Options{Stderr: &out}
-	o.notePackHostExec([]*packload.Pack{officialPack(t, "openai-auth")}, everyLoopholeStarts)
+	o.notePackHostExec([]*packload.Pack{officialPack(t, "codex-auth")}, everyLoopholeStarts)
 
 	got := out.String()
 	want := filepath.Join(loopholes.StateDirFor("openai-auth-broker"), "credentials.json")

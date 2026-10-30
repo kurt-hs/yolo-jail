@@ -392,6 +392,10 @@ func TestEveryConfigWarnSinkIsGraded(t *testing.T) {
 		// A bad programs.overrides entry is a validation error of the user config
 		// (config.validatePrograms), which check's config section already grades.
 		"ProgramOverrides": true,
+		// The packs section reads the user's profile declarations with r.configWarn
+		// (packs.go); the merged-config section's undeclared-profile prediction
+		// (profiledeclarations.go) re-reads them for the names alone.
+		"LoadProfiles": true,
 	}
 
 	fset := token.NewFileSet()

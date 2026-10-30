@@ -32,7 +32,7 @@ import (
 func servedPortPacks(t *testing.T) []*packload.Pack {
 	return []*packload.Pack{
 		officialPack(t, "claude"), officialPack(t, "cerebras"), officialPack(t, "wire-bridge"),
-		officialPack(t, "codex"), officialPack(t, "openai-auth"),
+		officialPack(t, "codex"), officialPack(t, "codex-auth"),
 	}
 }
 

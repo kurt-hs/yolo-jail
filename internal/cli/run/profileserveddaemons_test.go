@@ -78,7 +78,7 @@ func TestTheAWSAdapterStartsForALaterEntryOfASet(t *testing.T) {
 // and starts either way.
 func TestTheAWSAdapterStartsOnlyWhenAProfileSelectsWhatItServes(t *testing.T) {
 	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "codex"),
-		officialPack(t, "openai-auth"), officialPack(t, "aws-auth"), officialPack(t, "bedrock")}
+		officialPack(t, "codex-auth"), officialPack(t, "aws-auth"), officialPack(t, "bedrock")}
 
 	unselected, said := awsPayloadNames(t, packs, nil)
 	if unselected["aws-auth"] {
@@ -118,7 +118,7 @@ func TestTheAWSAdapterStartsOnlyWhenAProfileSelectsWhatItServes(t *testing.T) {
 // provider and its platform as the gate does; a profile-names-only selection starts neither.
 func TestTheAWSAdapterStartsForEveryBedrockSelection(t *testing.T) {
 	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "codex"),
-		officialPack(t, "openai-auth"), officialPack(t, "aws-auth"), officialPack(t, "bedrock")}
+		officialPack(t, "codex-auth"), officialPack(t, "aws-auth"), officialPack(t, "bedrock")}
 	for _, profile := range []string{"bedrock-sso", "eu"} {
 		o := goldenOptions(t.TempDir(), packHome(t))
 		var stderr bytes.Buffer

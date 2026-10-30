@@ -15,6 +15,7 @@ package packload
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -154,6 +155,7 @@ func composeProviderTable(user *jsonx.OrderedMap, packs []*Pack, cfg composeOpts
 	encode func(packdecl.ProviderContribution) *jsonx.OrderedMap) (*jsonx.OrderedMap, map[string]string, map[string]bool, error) {
 	out := jsonx.NewOrderedMap()
 	shipper := map[string]string{}
+	pinned := map[string]bool{}
 	providerSupplied := map[string]bool{}
 	type shipped struct {
 		pack string
@@ -172,6 +174,7 @@ func composeProviderTable(user *jsonx.OrderedMap, packs []*Pack, cfg composeOpts
 		}
 		out.Set(selected.prov.Name, encode(selected.prov))
 		shipper[selected.prov.Name] = selected.pack
+		pinned[selected.prov.Name] = selected.prov.PinnedEndpoint
 		providerSupplied[selected.prov.Name] = selected.prov.Models != nil
 	}
 	// THE `models` CONTRIBUTIONS remain between the packs' own providers and the user's entries.
@@ -204,14 +207,67 @@ func composeProviderTable(user *jsonx.OrderedMap, packs []*Pack, cfg composeOpts
 				out.Set(name, override)
 				continue
 			}
+			before := pinnedAddresses(base)
 			dropRepointedVendors(base, override)
 			mergeUnder(base, override)
+			if pinned[name] && !addressesWithin(pinnedAddresses(base), before) {
+				return nil, nil, nil, PinnedEndpointRefusal(name, shipper[name])
+			}
 			if err := addressConflict(name, base, shipper[name]); err != nil {
 				return nil, nil, nil, err
 			}
 		}
 	}
 	return out, shipper, providerSupplied, nil
+}
+
+// pinnedAddresses is every address a provider entry names (PE-D4): each `base_url` under its
+// `endpoints` and its `base_url` shorthand. A pin guards these and nothing else, so the user layer
+// may still change anything else about a pinned provider (its models, its options) or drop an
+// endpoint, which sends the bearer token nowhere new; and the comparison is of the composed
+// result, so restating the shipped address is no change.
+func pinnedAddresses(entry *jsonx.OrderedMap) map[string]bool {
+	out := map[string]bool{}
+	if v, ok := entry.Get("base_url"); ok {
+		if s, ok := v.(string); ok {
+			out[s] = true
+		}
+	}
+	eps, _ := entry.Get("endpoints")
+	if m, ok := eps.(*jsonx.OrderedMap); ok {
+		for _, protocol := range m.Keys() {
+			v, _ := m.Get(protocol)
+			if ep, ok := v.(*jsonx.OrderedMap); ok {
+				if u, ok := ep.Get("base_url"); ok {
+					if s, ok := u.(string); ok {
+						out[s] = true
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// addressesWithin reports whether every address in after was already in before.
+func addressesWithin(after, before map[string]bool) bool {
+	for a := range after {
+		if !before[a] {
+			return false
+		}
+	}
+	return true
+}
+
+// PinnedEndpointRefusal is the launch's refusal of a user `providers` entry that adds or changes
+// the address of a provider whose pack pinned it (docs/design/provider-enablement.md PE-D4), with
+// the next step: a provider under another name carries its own address and its own key.
+func PinnedEndpointRefusal(name, pack string) error {
+	return fmt.Errorf("providers.%s.endpoints: refused — %q is a subscription provider and its "+
+		"address is pinned by the %s pack, because the agent sends the subscription's bearer token "+
+		"to whatever address it is given. Drop `endpoints` and `base_url` from your providers.%s "+
+		"entry; to reach another host, declare a provider under another name with its own "+
+		"api_key_env_name", name, name, pack, name)
 }
 
 func canonicalProviderEntry(provider packdecl.ProviderContribution) *jsonx.OrderedMap {

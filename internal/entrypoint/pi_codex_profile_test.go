@@ -34,7 +34,7 @@ var piCodexExactAllow = []any{
 // Composed from pi alone, openai-codex never reached the catalog derive and the shadow
 // assertion below passed vacuously (docs/design/pi-codex-provider-shadowing.md §5, P3).
 func TestPiCodexProfileSelectsBuiltInProviderAndExplicitModel(t *testing.T) {
-	packs := testPacksForAgent(t, "pi", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestPiCodexProfileSelectsBuiltInProviderAndExplicitModel(t *testing.T) {
 }
 
 func TestPiCodexProfileSelects1MContextModel(t *testing.T) {
-	packs := testPacksForAgent(t, "pi", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestPiCodexProfileSelects1MContextModel(t *testing.T) {
 // class is every provider that declares an address and no model list: kilo does so
 // whenever no profile names a model, and so does a user's own `endpoints.openai`.
 func TestPiCatalogNeverWritesAModelsMapWhereAnArrayBelongs(t *testing.T) {
-	packs := testPacksForAgent(t, "pi", "kilo", "openai-auth")
+	packs := testPacksForAgent(t, "pi", "kilo", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

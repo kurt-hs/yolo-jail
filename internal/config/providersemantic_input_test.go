@@ -113,7 +113,7 @@ func TestBuildReadableSemanticInputsAdaptsLoadedGitGitHubAndAWSDeclarations(t *t
 }
 
 func TestBuildReadableSemanticInputsPreservesActiveProviderSelectionAndVia(t *testing.T) {
-	packs := selectedEmbeddedPacks(t, "pi", "openai-auth", "zai", "bedrock")
+	packs := selectedEmbeddedPacks(t, "pi", "codex-auth", "zai", "bedrock")
 	config := editReadableMap(t, `{"providers":{"bedrock":{"via":"wire-bridge"}},"active_provider":{"pi":["zai","bedrock"]}}`)
 	inputs, err := BuildReadableSemanticInputs(ReadableSemanticInputSource{
 		Config: config, Packs: packs, Catalog: map[string]map[string]packdecl.ProviderModel{},

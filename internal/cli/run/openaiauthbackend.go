@@ -14,7 +14,7 @@ const (
 	// It scopes NO report any more — that was the disclosure/inert split deleted below — and
 	// what still reads it is the fixtures that name a realistic pack. Kept because the
 	// distinction it records is the one a future per-pack scoping would get wrong again.
-	openAIAuthPackName = "openai-auth"
+	openAIAuthPackName = "codex-auth"
 )
 
 // openAIServiceRefusal is what the macos-user arm prints when it refuses a launch whose OpenAI
@@ -52,7 +52,7 @@ func openAIAuthLoopholeActive(cfg *jsonx.OrderedMap) bool {
 //
 // WHAT INVERTED WITH THEM, and it is the part worth reading before re-adding anything here:
 // the subset SCOPING was correct and is now an underclaim. `startOpenAIAuthDisclosed` handed
-// `notePackHostExec` only the openai-auth pack, because announcing daemon argvs that path
+// `notePackHostExec` only the codex-auth pack, because announcing daemon argvs that path
 // never started would have been OQ-10's overclaim. The arm starts every admitted loophole
 // now, so the whole pack set is exactly what it must announce, and `notePackLoopholesInert`
 // takes the whole set too — they stay complements by construction instead of by a pair of

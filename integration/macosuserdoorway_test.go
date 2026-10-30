@@ -29,7 +29,7 @@ import (
 // be told apart from a missing listener.
 func TestMacosUserOpensTheCodexDoorwayOutsideTheSandbox(t *testing.T) {
 	requireMacosUser(t)
-	packHome(t, `{"packs": ["codex", "openai-auth"]}`)
+	packHome(t, `{"packs": ["codex", "codex-auth"]}`)
 	ws := macosUserWorkspace(t, `{}`)
 	uid := sandboxUID(t)
 	me := strconv.Itoa(os.Getuid())
@@ -54,7 +54,7 @@ func TestMacosUserOpensTheCodexDoorwayOutsideTheSandbox(t *testing.T) {
 	door := section(r.stdout, "=== DOOR ===", "=== END ===")
 	diag := "\n--- probe:\n" + door + "\n--- launch stderr:\n" + r.stderr
 
-	if !strings.Contains(r.combined(), `Opened the "openai-auth-broker" doorway (pack "openai-auth"`) {
+	if !strings.Contains(r.combined(), `Opened the "openai-auth-broker" doorway (pack "codex-auth"`) {
 		t.Errorf("the launch did not say it opened the doorway%s", diag)
 	}
 	if strings.Contains(r.combined(), "Started openai-auth-broker inside the sandbox") {

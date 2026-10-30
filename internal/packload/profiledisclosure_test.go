@@ -48,7 +48,7 @@ func TestTheProfileDisclosureReadsEachAgentsPlatformBinding(t *testing.T) {
 	table := map[string]string{"claude": "bedrock", "pi": "bedrock", "codex": "bedrock",
 		"opencode": "bedrock", "copilot": "bedrock"}
 	d := disclose(t, []string{"claude", "pi", "codex", "opencode", "copilot", "bedrock", "aws-auth",
-		"openai-auth", "wire-bridge"}, table, nil)
+		"codex-auth", "wire-bridge"}, table, nil)
 	if strings.Join(d.Declared, ",") != "bedrock" {
 		t.Errorf("declared by %v, want the bedrock pack alone", d.Declared)
 	}
@@ -140,7 +140,7 @@ func TestTheProfileDisclosureNamesTheResolvedEndpoint(t *testing.T) {
 // told so, naming them; one reached by any of them, the pointer included, is not; and a notch
 // that asks no credential question (Reaches nil) says nothing either way.
 func TestTheProfileDisclosureSaysWhenNoCredentialReachesTheAgent(t *testing.T) {
-	names := []string{"pi", "bedrock", "aws-auth", "openai-auth"}
+	names := []string{"pi", "bedrock", "aws-auth", "codex-auth"}
 	table := map[string]string{"pi": "bedrock"}
 	none := reachOf(t, disclose(t, names, table, func(string, string) bool { return false }), "pi")
 	if len(none.Warnings) != 1 || !strings.Contains(none.Warnings[0],

@@ -354,22 +354,22 @@ func loopholePackDir(t *testing.T, name, from string) string {
 //	journal, cgroup-delegate    reserved as CONSTANTS in paths.BuiltinLoopholeNames — each
 //	                            had to be deleted by hand in the commit shipping its pack.
 //	claude-oauth-broker         reserved BOTH ways, and it is a contribution of the
-//	                            `claude` AGENT pack rather than a pack of its own, so it is
-//	                            also the row that would be missed by anything iterating
-//	                            "the loophole packs".
+//	                            `claude-auth` provider pack rather than a pack of its own
+//	                            (it was the `claude` agent pack's until 2026-10-29), so it
+//	                            is the row whose pack and loophole names differ.
 //
 // The SHIPPED packs, materialized from the binary's embed and read through the same
 // packLoopholeDecls the launch path uses — not hand-built decls, which would only assert
 // that a string is absent from a set.
 func TestEveryShippedLoopholePackSurvivesThePreflight(t *testing.T) {
-	// pack name -> the loophole it contributes. `claude` is the one where they differ.
+	// pack name -> the loophole it contributes. `claude-auth` is the one where they differ.
 	shipped := map[string]string{
 		"host-processes":  "host-processes",
 		"audio":           "audio",
 		"journal":         "journal",
 		"cgroup-delegate": "cgroup-delegate",
 		"serial":          "serial",
-		"claude":          broker.BrokerLoopholeName,
+		"claude-auth":     broker.BrokerLoopholeName,
 	}
 	var all []PackLoopholeDecl
 	for name, loophole := range shipped {

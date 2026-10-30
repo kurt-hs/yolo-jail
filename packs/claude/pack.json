@@ -99,10 +99,6 @@
       "via": "installer"
     },
     {
-      "from": "loopholes/claude-oauth-broker",
-      "kind": "loophole"
-    },
-    {
       "after": "host:.claude/CLAUDE.md",
       "agent": "claude",
       "into": ".claude/CLAUDE.md",
@@ -242,7 +238,15 @@
     }
   ],
   "name": "claude",
+  // CLAUDE CODE BRINGS ITS OWN PROVIDER (docs/design/provider-enablement.md OQ-PE1, OQ-PE5):
+  // packs/claude-auth declares the `anthropic` provider and the `claude` profile and carries the
+  // claude-oauth-broker loophole, so selecting claude makes `-p pi=claude` and an active set
+  // holding the subscription nameable, binds the platform to Claude Code's own client, and keeps
+  // the broker running whenever Claude Code can be.
   "needs": [
+    {
+      "pack": "claude-auth"
+    },
     {
       "pack": "wire-bridge"
     }

@@ -21,11 +21,12 @@
 // NOT EVERY OFFICIAL PACK IS AN AGENT. Most of what is embedded here installs no CLI at
 // all (`ls packs/` is the list; a count written down here is one more thing to keep true,
 // and the last one drifted inside its own sentence), in four kinds.
-// `audio`, `host-processes`, `journal`, `macos-log`, `cgroup-delegate`, `serial`, `openai-auth`,
-// `aws-auth` and `hello-daemon` —
+// `audio`, `host-processes`, `journal`, `macos-log`, `cgroup-delegate`, `serial`, `codex-auth`,
+// `claude-auth`, `aws-auth` and `hello-daemon` —
 // ship a LOOPHOLE (one of the closed set of contribution kinds, `packdecl.KnownKinds`) —
 // `audio` and `aws-auth` each also contribute an `env` block, and they are the two that
-// ship anything beside their loophole; `openai-auth` ships a `provider` instead — and
+// ship anything beside their loophole; `codex-auth` and `claude-auth` ship a `provider` and a
+// `profile` beside theirs — and
 // they are the dogfood for
 // docs/reference/loophole-system.md#oq-lp11, whose prize is that
 // "AGENTS ARE PACKS" becomes true of loopholes too.
@@ -37,7 +38,7 @@
 // its mode on disk. So executables.txt, embedded below beside the packs, records every file
 // whose repository mode carries an exec bit, and the materializer restores it
 // (packload.EmbeddedExecutablesFile; a test fails when the list and the tree disagree).
-// `zai`, `cerebras`, `openrouter`, `kilo`, `llamacpp`, `bedrock` and `github-copilot` ship neither CLI nor
+// `zai`, `cerebras`, `openrouter`, `kilo`, `llamacpp`, `bedrock` and `copilot-auth` ship neither CLI nor
 // loophole: provider/profile
 // packs. zai was the first pack whose whole content is declarative facts; cerebras was the
 // first to carry a `needs` entry — the wire-bridge it joins when claude or copilot is selected;
@@ -46,9 +47,11 @@
 // llama-server, whose Anthropic endpoint is the server's own rather than a bridge's. `bedrock`
 // is the first one the AGENT packs need rather than the other way round: every agent pack
 // whose derive binds Amazon Bedrock needs it, so selecting that agent is what brings the
-// provider (docs/design/bedrock-plumbing.md OQ-BR9). `github-copilot` is the same shape again,
+// provider (docs/design/bedrock-plumbing.md OQ-BR9). `copilot-auth` is the same shape again,
 // a provider and profile with no endpoint and no key, which `copilot` needs and a user may
-// select without it (docs/design/pi-codex-provider-shadowing.md BI-D14). `guardrails` ships neither either: blocked-tool refusals and install
+// select without it (docs/design/pi-codex-provider-shadowing.md BI-D14). The three
+// `<agent>-auth` packs are named for the agent whose login they carry
+// (docs/design/provider-enablement.md OQ-PE1). `guardrails` ships neither either: blocked-tool refusals and install
 // requirements (9caba669 moved the blocked tools out of core — core blocks nothing by
 // default), the third kind of CLI-less pack. `wire-bridge` is the fourth kind and the
 // first of it: a `kind: "service"` pack, one in-jail daemon and its endpoint file,
@@ -58,10 +61,9 @@
 // Anything here that reasons about "the six agent packs" (a comment, a test's name
 // list) is describing the agent SUBSET, not this list.
 //
-// AND THE CONVERSE: `claude` is an agent pack that ALSO ships a loophole
-// (`loopholes/claude-oauth-broker`). So "agent pack" and "loophole pack" are not a
-// partition of this list, and a test that assumed they were would miss the one pack in
-// both sets.
+// NO AGENT PACK SHIPS A LOOPHOLE ANY MORE: `claude` did (`loopholes/claude-oauth-broker`)
+// until 2026-10-29, when the broker moved to `claude-auth`, which `claude` needs
+// (docs/design/provider-enablement.md OQ-PE5).
 //
 // THIS EMBED IS THE ONLY CHANNEL LEFT. There were two — `bundled_loopholes/embed.go`
 // carried the loophole manifests yolo shipped — and emptying it was the sprint's goal
@@ -76,12 +78,14 @@
 //	                                     names in paths.BuiltinLoopholeNames, so each
 //	                                     reservation had to be deleted BY HAND.
 //	claude-oauth-broker (2026-08-19)     reserved BOTH ways at once, and it is a
-//	                                     CONTRIBUTION OF `packs/claude` rather than a pack
-//	                                     of its own (loophole-activation.md OQ-A10) —
+//	                                     CONTRIBUTION OF a pack rather than a pack of
+//	                                     its own (loophole-activation.md OQ-A10) —
 //	                                     because the dependency is structural and a
 //	                                     separate pack would reinstate a second selection
 //	                                     step. Its move deleted the reserved namespace
-//	                                     entirely, since it was the last name in it.
+//	                                     entirely, since it was the last name in it. It moved
+//	                                     from `packs/claude` to `packs/claude-auth` on
+//	                                     2026-10-29 (provider-enablement.md OQ-PE5).
 //
 // A reservation left standing over a pack-shipped name is not a warning: the name
 // pre-flight is fatal, so every launch that selects the pack fails.
@@ -89,5 +93,5 @@ package packs
 
 import "embed"
 
-//go:embed executables.txt all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:openai-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:muse-planner all:git all:github-copilot
+//go:embed executables.txt all:claude all:copilot all:opencode all:pi all:codex all:agy all:omp all:zai all:cerebras all:openrouter all:kilo all:llamacpp all:audio all:host-processes all:journal all:macos-log all:cgroup-delegate all:serial all:guardrails all:wire-bridge all:codex-auth all:aws-auth all:bedrock all:hello-daemon all:github all:chrome-devtools all:muse-code all:meta-provider all:muse-planner all:git all:copilot-auth all:claude-auth
 var FS embed.FS

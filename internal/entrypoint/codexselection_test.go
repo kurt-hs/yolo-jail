@@ -86,11 +86,11 @@ const zaiProviderJSON = `{"zai":{
 },"llamacpp":{"base_url":"http://127.0.0.1:8080/v1","models":{"default":"llama"}}}`
 
 // shippedCodexWithNeighbourJSON is the openai-codex row codex's needs closure composes
-// (packs/openai-auth declares it, its model list included) beside a speakable neighbour,
+// (packs/codex-auth declares it, its model list included) beside a speakable neighbour,
 // spelled as the composed table carries it.
 func shippedCodexWithNeighbourJSON(t *testing.T) string {
 	t.Helper()
-	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "codex", "openai-auth"))
+	providers, err := packload.ComposeProviders(nil, testPacksForAgent(t, "codex", "codex-auth"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestCodexDeriveWritesTheSelectionKeys(t *testing.T) {
 			// openai-codex is Codex's native first-party subscription provider (docs/reference/providers.md#selecting-openai-codex-for-codex).
 			// Selecting it writes the FIRST declared id directly without model_provider, and
 			// does not emit openai-codex into model_providers table. The row is the one the
-			// shipped packs compose, so the default is packs/openai-auth's declaration.
+			// shipped packs compose, so the default is packs/codex-auth's declaration.
 			name:         "native openai-codex provider writes model alone without model_provider",
 			providers:    shippedCodexNeighbourJSON,
 			profiles:     `{"codex":"codex"}`,

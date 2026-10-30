@@ -304,7 +304,7 @@ func TestAssembleEmitsCodexBridgeProfileEnv(t *testing.T) {
 		// literal in claude's derive — openai-auth declares the Responses endpoint the
 		// subscription serves, wire-bridge declares the address that fronts it, and core
 		// composes the pair into the provider entry (protocol-resolution.md).
-		[]string{"claude", "openai-auth", "wire-bridge"})
+		[]string{"claude", "codex-auth", "wire-bridge"})
 	got := la.channelEnv(t, "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
 		"ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
@@ -348,7 +348,7 @@ func TestAssembleEmitsCodexBridgeProfileEnvWith1MModel(t *testing.T) {
 	profiles.Set("claude", "codex")
 	la := assembleWithPacksAssembled(t, newConfig(
 		"agents", []any{"claude"}, "security", sec, "profile", profiles),
-		[]string{"claude", "openai-auth", "wire-bridge"},
+		[]string{"claude", "codex-auth", "wire-bridge"},
 		func() {
 			// pin_model is the opt-in to pinning the start (MM-D3); `model` names the default
 			// entry, which every tier is pinned to (MM-D2).

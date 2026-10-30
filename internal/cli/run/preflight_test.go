@@ -344,7 +344,7 @@ func TestAProviderNoProfileSelectsSatisfiesNothing(t *testing.T) {
 // census reading the config's `profile` key alone would refuse it.
 func TestTheProfileFlagPicksTheSource(t *testing.T) {
 	ws := capabilityWorkspace(t, `{"required_capabilities": ["web_search"]}`)
-	capabilityPackHome(t, `{"packs": ["pi", "openai-auth"]}`)
+	capabilityPackHome(t, `{"packs": ["pi", "codex-auth"]}`)
 	var stdout, stderr bytes.Buffer
 	o := capabilityGateOptions(t, ws, nil, &stdout, &stderr)
 	o.ProfileName = "codex"

@@ -95,7 +95,7 @@ func TestClaudeOnBedrockStartsOnlyOnAnAnthropicModel(t *testing.T) {
 				hooks = append(hooks, func() { writeProfilesAtHome(t, profile) })
 			}
 			la := assembleWithPacksAssembled(t, bedrockRegionOnly(tc.models),
-				[]string{"claude", "bedrock", "aws-auth", "openai-auth", "wire-bridge"}, hooks...)
+				[]string{"claude", "bedrock", "aws-auth", "codex-auth", "wire-bridge"}, hooks...)
 			got := la.channelEnv(t, claudeModelKeys...)
 			slices.Sort(got)
 			want := slices.Clone(tc.want)
@@ -125,7 +125,7 @@ func TestClaudeOnBedrockStartsOnlyOnAnAnthropicModel(t *testing.T) {
 func TestClaudeOnBedrockTakesNothingItsOwnClientCannotUse(t *testing.T) {
 	const opus = "global.anthropic.claude-opus-5-5"
 	const sol = "us.openai.gpt-6.1-sol"
-	packs := []string{"claude", "bedrock", "aws-auth", "openai-auth", "wire-bridge"}
+	packs := []string{"claude", "bedrock", "aws-auth", "codex-auth", "wire-bridge"}
 	withProfile := func(profile string) func() {
 		return func() { writeProfilesAtHome(t, profile) }
 	}

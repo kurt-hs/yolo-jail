@@ -7,7 +7,7 @@ import "testing"
 // deduplicated and sorted, a built-in mapped to pi's own ID, and nothing at all without a
 // profile, so pi keeps its native behavior. The shipped pi pack, through the gate that runs it.
 func TestPiHandsItsActiveSetAsAProviderRequestPolicy(t *testing.T) {
-	packs := embeddedNamed(t, "pi", "bedrock", "openai-auth", "wire-bridge")
+	packs := embeddedNamed(t, "pi", "bedrock", "codex-auth", "wire-bridge")
 	providers := userProviders(t, `{
 	  "zai":{"endpoints":{"openai":{"base_url":"https://api.z.ai/v4"}}},
 	  "openai-codex":{"endpoints":{"openai-responses":{"base_url":"https://chatgpt.example/codex"}}},

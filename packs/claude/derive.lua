@@ -12,7 +12,7 @@ local function in_full(ctx, t)
 end
 
 -- THE openai-codex MODEL LIST. codexModelList expands the one declaration of it — the
--- `models` and `model_options` packs/openai-auth/pack.json ships on the openai-codex provider,
+-- `models` and `model_options` packs/codex-auth/pack.json ships on the openai-codex provider,
 -- with the user's `providers.openai-codex` merged over it — into the ordered list every
 -- consumer presents (docs/design/model-lists-and-pickers.md ML-D1). `p` is
 -- ctx.providers["openai-codex"]; anything without a `models` table expands to {}.
@@ -799,7 +799,7 @@ yolo.derive("claude", "settings", function(ctx)
   -- Replacing the built-ins prevents retired choices from leaking into
   -- a Codex-profile launch.
   --
-  -- THE LIST IS THE ONE DECLARATION (codexModelList above; packs/openai-auth/pack.json),
+  -- THE LIST IS THE ONE DECLARATION (codexModelList above; packs/codex-auth/pack.json),
   -- the same list pi's extension registers, so the two pickers cannot drift.
   -- modelPicker.options follows its order; availableModels leads with the default entry.
   -- Claude Code's RETAINED built-in `Default` row keeps the tier default whenever that tier's
@@ -947,7 +947,7 @@ end
 yolo.env("claude", function(ctx)
   local p = ctx.providers[ctx.selected_provider]
   -- openai-codex is a broker-backed subscription identity, like Pi's native provider. Its
-  -- YOLO_PROVIDERS row (packs/openai-auth) carries the source's `capabilities` and the
+  -- YOLO_PROVIDERS row (packs/codex-auth) carries the source's `capabilities` and the
   -- PUBLIC ADDRESS of the Responses API, and deliberately no credential pointer — the wire
   -- bridge gets its short-lived access-token view from openai-auth, never from a generated
   -- configuration file. The Responses endpoint accepts concrete Codex model IDs, and the

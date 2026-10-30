@@ -35,7 +35,7 @@ func BrokerDir() string {
 // THESE THREE ARE THE WHOLE ON-DISK SURFACE, and the reason each one is on disk
 // is that a DIFFERENT PROCESS IN A DIFFERENT NAMESPACE reads it. All three are
 // bind-mounted per-file into every jail by the loophole's `state_files`
-// narrowing (packs/claude/loopholes/claude-oauth-broker/manifest.jsonc, issue
+// narrowing (packs/claude-auth/loopholes/claude-oauth-broker/manifest.jsonc, issue
 // #33): ca.crt becomes a trust anchor through NODE_EXTRA_CA_CERTS and the jail's
 // CA bundle, and server.crt/server.key are what `yolo-jaild oauth-terminator`
 // hands to ListenAndServeTLS inside the jail. Nothing host-side reads any of

@@ -32,7 +32,7 @@ import (
 // YOLO_USE_PROFILES. wire, when not "", replaces the resolved profile table.
 func renderOpencodeCodex(t *testing.T, use, wire string, extra ...string) map[string]any {
 	t.Helper()
-	packs := testPacksForAgent(t, "opencode", append(extra, "openai-auth")...)
+	packs := testPacksForAgent(t, "opencode", append(extra, "codex-auth")...)
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestOpencodeOnASetWithCodexSecondKeepsTheSubscription(t *testing.T) {
 // view flag and the file opencode's Auth store reads whenever openai-codex is selected for it,
 // and with neither on another provider.
 func TestOpencodeIsLaunchedWithTheOpenAILoginOnlyOnTheSubscription(t *testing.T) {
-	packs := testPacksForAgent(t, "opencode", "zai", "openai-auth")
+	packs := testPacksForAgent(t, "opencode", "zai", "codex-auth")
 	env, err := launchEnvOf(packs, map[string]string{"opencode": "codex"}, "opencode")
 	if err != nil {
 		t.Fatalf("opencode on codex: %v", err)
@@ -197,7 +197,7 @@ func TestShippedOpencodePackDeliversItsOpenAIAuthPlugin(t *testing.T) {
 	p := shippedOpencodePack(t)
 	needs := 0
 	for _, n := range p.Decl.DeclaredNeeds() {
-		if n.Pack == "openai-auth" && len(n.WhenBins) == 0 {
+		if n.Pack == "codex-auth" && len(n.WhenBins) == 0 {
 			needs++
 		}
 	}
@@ -445,7 +445,7 @@ esac
 // login's view as it does for codex alone. Without it the switch would reach opencode's `openai`
 // row with no stored login, on the derive's non-key.
 func TestOpencodeOnASetWithCodexSecondIsLaunchedWithTheOpenAILogin(t *testing.T) {
-	packs := testPacksForAgent(t, "opencode", "zai", "openai-auth")
+	packs := testPacksForAgent(t, "opencode", "zai", "codex-auth")
 	providers, err := packload.ComposeProviders(nil, packs)
 	if err != nil {
 		t.Fatal(err)

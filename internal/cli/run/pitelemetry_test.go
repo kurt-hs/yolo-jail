@@ -22,7 +22,7 @@ func TestPiTelemetryComesFromThePiPackNotCore(t *testing.T) {
 		t.Errorf("a launch that selects no pi pack still delivers pi's variable: %v", got)
 	}
 
-	with := assembleWithProfilesAssembled(t, newConfig(), packsFixture(t, "pi", "bedrock", "openai-auth"), nil)
+	with := assembleWithProfilesAssembled(t, newConfig(), packsFixture(t, "pi", "bedrock", "codex-auth"), nil)
 	if got := envArgValues(with.argv, "PI_TELEMETRY"); len(got) != 0 {
 		t.Errorf("pi's variable is still frozen onto the argv by core: %v", got)
 	}

@@ -39,7 +39,7 @@ func TestShippedPiPackDeliversOpenAIAuthExtension(t *testing.T) {
 	needs := p.Decl.DeclaredNeeds()
 	openaiAuth := 0
 	for _, n := range needs {
-		if n.Pack == "openai-auth" && len(n.WhenBins) == 0 {
+		if n.Pack == "codex-auth" && len(n.WhenBins) == 0 {
 			openaiAuth++
 		}
 	}

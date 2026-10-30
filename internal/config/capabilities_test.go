@@ -86,7 +86,7 @@ func TestUnmetCapabilitiesCountsTheSelectedPacks(t *testing.T) {
 		{"a pack-shipped provider no agent runs on", `["zai"]`,
 			`{"required_capabilities": ["web_search"]}`, []string{"web_search"}},
 		// A profile makes the provider the agent's source, and replaces its built-in login.
-		{"a profile selecting a provider that declares it", `["pi", "openai-auth"]`,
+		{"a profile selecting a provider that declares it", `["pi", "codex-auth"]`,
 			`{"required_capabilities": ["web_search"], "profile": "codex"}`, nil},
 		{"a profile selecting another pack's provider", `["pi", "zai"]`,
 			`{"required_capabilities": ["web_search"], "profile": "zai"}`, nil},
@@ -94,7 +94,7 @@ func TestUnmetCapabilitiesCountsTheSelectedPacks(t *testing.T) {
 			`{"required_capabilities": ["web_search"], "profile": "bedrock"}`,
 			[]string{"web_search"}},
 		// Every entry of an active set counts, not only the primary a session starts on.
-		{"a later entry of an active set", `["pi", "bedrock", "openai-auth"]`,
+		{"a later entry of an active set", `["pi", "bedrock", "codex-auth"]`,
 			`{"required_capabilities": ["web_search"], "profile": ["bedrock", "codex"]}`, nil},
 		// The provider is read from the COMPOSITION, so the user's layer applies to it: a list
 		// replaces the pack's, and a null removes the provider the profile selects.

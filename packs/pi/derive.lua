@@ -518,7 +518,7 @@ local function piOwn(ctx, name)
 end
 
 -- THE openai-codex MODEL LIST. codexModelList expands the one declaration of it — the
--- `models` and `model_options` packs/openai-auth/pack.json ships on the openai-codex provider,
+-- `models` and `model_options` packs/codex-auth/pack.json ships on the openai-codex provider,
 -- with the user's `providers.openai-codex` merged over it — into the ordered list every
 -- consumer presents (docs/design/model-lists-and-pickers.md ML-D1). `p` is
 -- ctx.providers["openai-codex"]; anything without a `models` table expands to {}.
@@ -794,7 +794,7 @@ yolo.derive("pi", "models", function(ctx)
     -- A PROVIDER PI HAS BUILT IN IS NEVER CATALOGUED HERE (piOwn;
     -- docs/design/pi-codex-provider-shadowing.md OQ-3): pi uses its own client, address and model
     -- list for it, and a row written from yolo's declaration replaces them. That is how
-    -- openai-codex was shadowed first (OQ-1, OQ-2): packs/openai-auth declares a Responses
+    -- openai-codex was shadowed first (OQ-1, OQ-2): packs/codex-auth declares a Responses
     -- address on it, and the row sent the ambient OPENAI_API_KEY to the subscription's backend.
     -- The settings derive selects pi's own provider instead.
     local native = (piOwn(ctx, name) ~= nil)

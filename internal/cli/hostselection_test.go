@@ -17,11 +17,12 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// claudeAndItsNeeds is what `"packs": ["claude"]` selects at every notch: claude and wire-bridge.
-var claudeAndItsNeeds = []string{"claude", "wire-bridge"}
+// claudeAndItsNeeds is what `"packs": ["claude"]` selects at every notch: claude, claude-auth
+// (docs/design/provider-enablement.md OQ-PE2) and wire-bridge.
+var claudeAndItsNeeds = []string{"claude", "claude-auth", "wire-bridge"}
 
 // claudeDirectNeeds says which pack's need joins claude, the pack a cause line names.
-var claudeDirectNeeds = []string{"wire-bridge"}
+var claudeDirectNeeds = []string{"claude-auth", "wire-bridge"}
 
 func packNames(packs []*packload.Pack) []string {
 	out := make([]string, 0, len(packs))

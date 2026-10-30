@@ -139,7 +139,7 @@ func TestTheMacosUserGuestDaemonsPickedPortIsFreeWhenTheSandboxStarts(t *testing
 // saying its doorway runs for this launch. The doorway is handed its token and the host
 // service's endpoint and private socket.
 func TestMacosUserBareClaudeOpensTheOpenAIDoorwayOutsideAndDeclinesTheRestByName(t *testing.T) {
-	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["claude", "openai-auth"]}`, shellWith(nil))
+	o, stderr, seen := overrideNativeLaunch(t, `{"packs": ["claude", "codex-auth"]}`, shellWith(nil))
 	o.ProfileName = ""
 	doors := observeDoorways(t)
 	if rc := Run(*o); rc != 0 {
@@ -167,7 +167,7 @@ func TestMacosUserBareClaudeOpensTheOpenAIDoorwayOutsideAndDeclinesTheRestByName
 		"openai-auth-broker: yolo-jaild openai-auth-adapter --listen " + plan.Addresses()[0] +
 			" — its doorway opens outside the sandbox on this backend instead",
 		"(its doorway runs for this launch, outside the sandbox)",
-		`Opened the "openai-auth-broker" doorway (pack "openai-auth", pid 4242) on ` + plan.Addresses()[0],
+		`Opened the "openai-auth-broker" doorway (pack "codex-auth", pid 4242) on ` + plan.Addresses()[0],
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the launch does not say %q:\n%s", want, out)

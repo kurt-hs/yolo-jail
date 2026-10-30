@@ -14,7 +14,7 @@ import (
 
 // carrierLaunch is every shipped agent beside the bedrock provider and the wire bridge.
 var carrierLaunch = []string{"claude", "codex", "opencode", "pi", "copilot", "omp", "agy", "bedrock",
-	"aws-auth", "openai-auth", "wire-bridge"}
+	"aws-auth", "codex-auth", "wire-bridge"}
 
 // TestTheCarrierCarriesOnlyTheAgentsWithNoClientOfThePlatform: on `-p bedrock` the bridge carries
 // copilot and oh-omp, which have no Bedrock client, and not agy, which declares no protocol the

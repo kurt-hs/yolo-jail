@@ -288,7 +288,7 @@ func pointers(t *testing.T, p *Pack, base string) ([]string, error) {
 }
 
 func TestCodexViaScanHonorsNativeMetadataAndRetainsCustomRoutes(t *testing.T) {
-	packs := embeddedNamed(t, "codex", "openai-auth", "bedrock", "wire-bridge")
+	packs := embeddedNamed(t, "codex", "codex-auth", "bedrock", "wire-bridge")
 	user, err := jsonx.Decode([]byte(`{
 	  "openai":{"base_url":"https://poison-openai.example/v1"},
 	  "amazon-bedrock":{"base_url":"https://poison-bedrock.example/v1"},
