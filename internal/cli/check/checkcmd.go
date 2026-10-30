@@ -156,6 +156,13 @@ type Options struct {
 	// launch's three staging-root preconditions. nil => the launch's own probe
 	// (macosuser.RealLaunchProbes().StagingRoot).
 	MacosStagingRoot func(path string) macosuser.StagingRootFacts
+	// PackAdd adds a pack to the user's `packs` list, in-process: the answer to the pack-switch
+	// nudge's "Add it to packs?" (packnudge.go). nil => the nudge never asks and only fails.
+	PackAdd func(handle string) error
+	// ListedPacks and AllowFacts are the nudge's seams: the names `packs` lists, and the packs
+	// and login settings an `allow.` table is judged against. nil => the real readers.
+	ListedPacks func() ([]string, error)
+	AllowFacts  func(listed []string) config.AllowPackFacts
 	// Machine is platform.machine() (x86_64 / aarch64). "" => derived.
 	Machine string
 	// Workspace is the directory whose yolo-jail.jsonc is validated. "" => cwd.

@@ -1099,6 +1099,8 @@ func checkOptions(args []string, errw io.Writer) (check.Options, bool) {
 	// Unconditional here, gated at the prompt: orphanCleanupPrompt asks only on a
 	// terminal, so a piped stdin cannot be read as an implicit yes.
 	opts.Stdin = os.Stdin
+	// The pack-switch nudge's "Add it to packs?" runs `yolo pack add` in-process (check/packnudge.go).
+	opts.PackAdd = packAddInProcess
 	// The host agent floor the launch itself builds, so the floor rows `yolo check` prints are
 	// read from the same construction `yolo host --` installs through (host-agent-environment.md
 	// §7). Observe only: the section asks dispositions, never installs.

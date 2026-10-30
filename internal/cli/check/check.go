@@ -162,6 +162,9 @@ func Check(opts Options) int {
 		return finish(o.Stdout, os.Stderr, o.Format, r, 1)
 	}
 
+	// The pack switch: an `allow.<pack>` table naming a pack `packs` does not list (packnudge.go).
+	o.sectionPackNudge(r, userConfig, src)
+
 	// Accumulated-fail gate: short-circuit here on ANY failure so far — not just
 	// config-validation errors — so a failed repo-root resolution or flake check
 	// (above) stops the run BEFORE the Entrypoint Dry-Run and the real `nix

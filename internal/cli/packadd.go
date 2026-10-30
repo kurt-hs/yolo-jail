@@ -229,3 +229,14 @@ func packHandleSource(workspace, handle string) (string, error) {
 	}
 	return "from " + ref.Source, nil
 }
+
+// packAddInProcess is `yolo pack add <handle>` for a caller that wants a verdict, not an exit
+// code: the pack-switch nudge in `yolo check`. A refusal's own words (which end in the next step)
+// are the error.
+func packAddInProcess(handle string) error {
+	var out, errw strings.Builder
+	if packAdd([]string{handle}, &out, &errw) != 0 {
+		return fmt.Errorf("%s", strings.TrimSpace(errw.String()))
+	}
+	return nil
+}

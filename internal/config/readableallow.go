@@ -10,6 +10,8 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // ReadableBrokerDeclaration is the stable declaration input to this unactivated normalizer.
@@ -1364,4 +1366,232 @@ func legacyKind(policy ReadableBrokerPolicy, capability string) string {
 func stringList(value any) []string { values, _ := readableStringList(value, "request"); return values }
 func appendReadableRepo(requests []ReadableRepoRequest, request ReadableRepoRequest) []ReadableRepoRequest {
 	return readableRepo(requests, request)
+}
+
+// AllowNudgeKind names which way an `allow.<name>` table disagrees with the pack list.
+type AllowNudgeKind string
+
+const (
+	// AllowNudgeUnselected: the table names a pack yolo knows that `packs` does not list. A table
+	// selects nothing, so this is an error whose fix is `yolo pack add <pack>`.
+	AllowNudgeUnselected AllowNudgeKind = "unselected"
+	// AllowNudgeUnknown: the table names no pack and no broker source at all (a typo, usually).
+	AllowNudgeUnknown AllowNudgeKind = "unknown"
+	// AllowNudgeLoginNoProfile: a listed login pack whose table names no profile. A warning: the
+	// pack installs and its service serves nothing.
+	AllowNudgeLoginNoProfile AllowNudgeKind = "login-no-profile"
+)
+
+// AllowNudge is one finding of AllowPackNudges (docs/design/config-user.md §7).
+type AllowNudge struct {
+	Kind AllowNudgeKind
+	// Table is the authored name under `allow.`; Pack is the pack that table belongs to (the one
+	// `yolo pack add` takes), "" for an unknown table.
+	Table, Pack string
+	// Closest is the nearest known name to an unknown Table, "" when none is near.
+	Closest string
+	// Setting is, for a login finding, the setting key that names the profile.
+	Setting string
+	// Location is "<file>:<line>:<col>" of the authored key.
+	Location string
+}
+
+// Problem is what is wrong, location first; NextStep is the one command or edit that fixes it.
+func (n AllowNudge) Problem() string {
+	switch n.Kind {
+	case AllowNudgeUnselected:
+		return fmt.Sprintf("%s: allow.%s names a pack that is not selected.", n.Location, n.Table)
+	case AllowNudgeUnknown:
+		return fmt.Sprintf("%s: allow.%s: no such pack.", n.Location, n.Table)
+	default:
+		return fmt.Sprintf("%s: packs lists %s, but [allow.%s] names no %s, so it serves nothing.",
+			n.Location, n.Pack, n.Pack, n.Setting)
+	}
+}
+
+// NextStep names the fix.
+func (n AllowNudge) NextStep() string {
+	switch n.Kind {
+	case AllowNudgeUnselected:
+		return fmt.Sprintf("Add it (yolo pack add %s) or delete the table.", n.Pack)
+	case AllowNudgeUnknown:
+		if n.Closest == "" {
+			return "`yolo pack ls` lists the packs yolo ships; name one, or delete the table."
+		}
+		return "Did you mean " + n.Closest + "? Rename the table heading, or delete it."
+	default:
+		return fmt.Sprintf("Set one: yolo config set allow.%s.%s <value>", n.Pack, n.Setting)
+	}
+}
+
+// Message is Problem and NextStep as one line, for a launch's refusal.
+func (n AllowNudge) Message() string { return n.Problem() + " " + n.NextStep() }
+
+// AllowPackFacts is what AllowPackNudges judges the tables against. Names maps every name an
+// `allow.` table may carry (a pack's, a broker source's) to the pack `yolo pack add` takes.
+// LoginProfile maps a login pack to the setting key that names its profile; both come from pack
+// declarations, never from a list of tool names here.
+type AllowPackFacts struct {
+	Listed       []string
+	Names        map[string]string
+	LoginProfile map[string]string
+}
+
+// AllowPackNudges compares user-scope `allow.<name>` tables with the pack list. The location of
+// each finding is where the authored key was written (userSrc may be nil).
+func AllowPackNudges(user *jsonx.OrderedMap, userSrc *Sources, facts AllowPackFacts) []AllowNudge {
+	listed := readableSet(facts.Listed)
+	userPath := paths.UserConfigPath()
+	locate := func(path string) string {
+		if locs := userSrc.Locations("config." + path); len(locs) > 0 {
+			return locs[0]
+		}
+		return userPath
+	}
+	var out []AllowNudge
+	allow, _ := readableTable(user, "allow")
+	if allow == nil {
+		allow = jsonx.NewOrderedMap()
+	}
+	known := make([]string, 0, len(facts.Names))
+	for name := range facts.Names {
+		known = append(known, name)
+	}
+	sort.Strings(known)
+	for _, name := range allow.Keys() {
+		if name == allowMountsName || isReadableTableOff(readableValue(allow, name)) {
+			continue
+		}
+		pack, isKnown := facts.Names[name]
+		switch {
+		case !isKnown:
+			out = append(out, AllowNudge{Kind: AllowNudgeUnknown, Table: name, Closest: closestAllowName(name, known), Location: locate("allow." + name)})
+		case !listed[pack]:
+			out = append(out, AllowNudge{Kind: AllowNudgeUnselected, Table: name, Pack: pack, Location: locate("allow." + name)})
+		}
+	}
+	logins := make([]string, 0, len(facts.LoginProfile))
+	for pack := range facts.LoginProfile {
+		logins = append(logins, pack)
+	}
+	sort.Strings(logins)
+	for _, pack := range logins {
+		if !listed[pack] {
+			continue
+		}
+		setting := facts.LoginProfile[pack]
+		if table, ok := asMap(readableValue(allow, pack)); ok {
+			if profile, _ := table.Get(setting); profile != nil && profile != "" {
+				continue
+			}
+		}
+		out = append(out, AllowNudge{Kind: AllowNudgeLoginNoProfile, Pack: pack, Table: pack, Setting: setting, Location: locate("packs")})
+	}
+	return out
+}
+
+func closestAllowName(name string, known []string) string {
+	limit := min(2, max(1, len(name)/4))
+	best, bestDist := "", limit+1
+	for _, candidate := range known {
+		if d := allowEditDistance(name, candidate); d < bestDist {
+			best, bestDist = candidate, d
+		}
+	}
+	return best
+}
+
+func allowEditDistance(a, b string) int {
+	prev, cur := make([]int, len(b)+1), make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(b)]
+}
+
+// EmbeddedAllowPackFacts builds the facts from the shipped packs' declarations: every shipped
+// pack name and broker source maps to its pack, and a pack whose gated env contribution names a
+// `region_profile_setting` is a login pack keyed by that setting. A listed pack that is not
+// shipped is still known by its own name.
+func EmbeddedAllowPackFacts(listed []string) AllowPackFacts {
+	facts := AllowPackFacts{Listed: listed, Names: map[string]string{}, LoginProfile: map[string]string{}}
+	shipped := packload.Embedded()
+	for _, pack := range shipped {
+		if pack == nil || pack.Name == "" {
+			continue
+		}
+		facts.Names[pack.Name] = pack.Name
+		if pack.Decl == nil {
+			continue
+		}
+		for _, gated := range pack.Decl.GatedEnvContributions() {
+			if gated.RegionProfileSetting != "" {
+				facts.LoginProfile[pack.Name] = gated.RegionProfileSetting
+			}
+		}
+	}
+	if declarations, _, err := ReadableDeclarationsForPacks(shipped); err == nil {
+		for _, d := range declarations {
+			if d.Brokered.Source != "" {
+				if _, taken := facts.Names[d.Brokered.Source]; !taken {
+					facts.Names[d.Brokered.Source] = d.Pack
+				}
+			}
+		}
+	}
+	for _, name := range listed {
+		if _, ok := facts.Names[name]; !ok {
+			facts.Names[name] = name
+		}
+	}
+	return facts
+}
+
+// ListedPackNames is the pack names the user scope lists, as LoadPacks reads them.
+func ListedPackNames(warn Warn) ([]string, error) {
+	entries, err := LoadPacks(warn)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name)
+	}
+	return names, nil
+}
+
+// AllowPackSwitchErrors is the launch's half of the pack-switch rule: one located error per
+// `allow.<name>` table that names a pack `packs` does not list (or no pack at all). It reads the
+// user scope itself; a read that fails reports nothing here, because the config gate has already
+// said so.
+func AllowPackSwitchErrors() []string {
+	user, src, err := UserScopeConfigWithSources(true, func(string) {})
+	if err != nil || user == nil {
+		return nil
+	}
+	if _, has := user.Get("allow"); !has {
+		return nil
+	}
+	listed, err := ListedPackNames(nil)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, n := range AllowPackNudges(user, src, EmbeddedAllowPackFacts(listed)) {
+		if n.Kind != AllowNudgeLoginNoProfile {
+			out = append(out, n.Message())
+		}
+	}
+	return out
 }
