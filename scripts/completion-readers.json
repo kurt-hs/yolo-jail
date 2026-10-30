@@ -5946,6 +5946,7 @@
 "internal/claudeview/claudeview_test.go",
 "internal/claudeview/nativecoordination_test.go",
 "internal/claudeview/sharedfile_test.go",
+"internal/cli/activeprovider_test.go",
 "internal/cli/adoptionarchiveslot_test.go",
 "internal/cli/agentupdatesref_test.go",
 "internal/cli/allow_test.go",
