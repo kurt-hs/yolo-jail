@@ -67,6 +67,8 @@ var commandHelp = []struct{ name, blurb string }{
 	{"init", "Scaffold yolo-jail.jsonc in the current workspace"},
 	{"init-user-config", "Write user-level defaults at ~/.config/yolo-jail/config.jsonc"},
 	{"config", "Edit and inspect yolo's own configuration: 'config apply', 'config drift', 'config dump'"},
+	{"allow", "Allow a broker capability in your user config, then offer this workspace's approval"},
+	{"request", "Request a broker capability in this project's config, then check it"},
 	{"surface", "Inspect and manage composed agent-config surfaces: 'surface ls', 'render', 'diff', 'reset'"},
 	{"describe", "Print the resolved environment description (--json, --hash)"},
 	// At the jail notch the verb IS the launch `yolo -- true` performs (JR-D1, apply.go), which

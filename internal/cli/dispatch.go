@@ -66,6 +66,10 @@ var registry = map[string]func(args []string) int{
 	"approve":    runApprove,
 	// A host command a human runs, delivered to the jail (hostrun.go); Main routes it early too.
 	"host-run": runHostRunVerb,
+	// The named verbs for a broker ceiling and a project's request (allow.go, request.go;
+	// docs/design/config-commands.md §4).
+	"allow":   runAllow,
+	"request": runRequest,
 }
 
 // valueTakingFlags are the flags whose value is the NEXT argv token rather than being

@@ -1,0 +1,148 @@
+package cli
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/testconfig"
+)
+
+// namedVerbFixture is a host workspace whose user config selects the shipped git and github
+// packs, with [allow] held by a config.d fragment rather than config.toml, so a test can tell
+// "the file that already holds [allow]" from the default user file.
+type namedVerbFixture struct {
+	workspace, userConfig, fragment, project string
+}
+
+func newNamedVerbFixture(t *testing.T, project, fragment string) namedVerbFixture {
+	t.Helper()
+	ws := testconfig.Workspace(t, project)
+	user := testconfig.User(t, "packs = [\"git\", \"github\"]\n")
+	fragmentPath := filepath.Join(filepath.Dir(user.Path), "config.d", "work.toml")
+	if err := os.MkdirAll(filepath.Dir(fragmentPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fragmentPath, []byte(fragment), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", user.Root)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("YOLO_WORKSPACE", "")
+	t.Setenv("YOLO_HOST_DIR", "")
+	withConfigEditCWD(t, ws.Root)
+	return namedVerbFixture{workspace: ws.Root, userConfig: user.Path, fragment: fragmentPath, project: ws.Path}
+}
+
+// gateRecord is what reached the approval gate: the workspace it was run for and the
+// capability list the effective config held AT THAT MOMENT, read through the same loader the
+// gate reads. It records the gate's input, not a mocked prompt's output.
+type gateRecord struct {
+	calls     int
+	workspace string
+	always    []any
+}
+
+func recordAllowGate(t *testing.T, interactive bool) *gateRecord {
+	t.Helper()
+	rec := &gateRecord{}
+	oldGate, oldInteractive := allowApprovalGate, allowInteractive
+	t.Cleanup(func() { allowApprovalGate, allowInteractive = oldGate, oldInteractive })
+	allowInteractive = func() bool { return interactive }
+	allowApprovalGate = func(workspace string, out, errw io.Writer) int {
+		rec.calls++
+		rec.workspace = workspace
+		cfg, err := config.LoadReadableConfig(workspace, true, func(string) {})
+		if err != nil {
+			t.Errorf("the gate's config read failed: %v", err)
+			return 1
+		}
+		if got, ok := configValueAt(cfg, "allow", "git", "always"); ok {
+			rec.always, _ = got.([]any)
+		}
+		return 0
+	}
+	return rec
+}
+
+func TestAllowWritesIntoTheFileHoldingAllowAndOffersApproval(t *testing.T) {
+	fx := newNamedVerbFixture(t, "", "[allow.github]\nalways = [\"read\"]\n")
+	userBefore := readFile(t, fx.userConfig)
+	rec := recordAllowGate(t, true)
+
+	rc, out, errs := captureStd(t, func() int { return registry["allow"]([]string{"allow", "git", "fetch"}) })
+	if rc != 0 {
+		t.Fatalf("yolo allow git fetch rc=%d stdout=%q stderr=%q", rc, out, errs)
+	}
+	got := readFile(t, fx.fragment)
+	if !strings.Contains(got, "[allow.git]") || !strings.Contains(got, "fetch") || !strings.HasPrefix(got, "[allow.github]\nalways = [\"read\"]\n") {
+		t.Fatalf("config.d/work.toml (the file holding [allow]) was not spliced:\n%s", got)
+	}
+	if after := readFile(t, fx.userConfig); after != userBefore {
+		t.Fatalf("config.toml changed although it does not hold [allow]:\n%s", after)
+	}
+	if !strings.Contains(out, fx.fragment) {
+		t.Fatalf("the written file is not named: %q", out)
+	}
+	if rec.calls != 1 || rec.workspace != fx.workspace {
+		t.Fatalf("approval gate calls=%d workspace=%q, want 1 call for %q; stdout=%q", rec.calls, rec.workspace, fx.workspace, out)
+	}
+	if !slices.Contains(rec.always, any("fetch")) {
+		t.Fatalf("the gate ran before the write was visible: allow.git.always=%v", rec.always)
+	}
+
+	// Without a terminal the verb never runs a gate nobody can answer; it names the command.
+	rec2 := recordAllowGate(t, false)
+	rc, out, errs = captureStd(t, func() int { return registry["allow"]([]string{"allow", "git", "on_request", "push"}) })
+	if rc != 0 || rec2.calls != 0 || !strings.Contains(out, "yolo config apply") {
+		t.Fatalf("non-interactive allow rc=%d gate calls=%d stdout=%q stderr=%q", rc, rec2.calls, out, errs)
+	}
+	if got := readFile(t, fx.fragment); !strings.Contains(got, "on_request") || !strings.Contains(got, "push") {
+		t.Fatalf("on_request was not written:\n%s", got)
+	}
+}
+
+func TestAllowUnknownCapabilityListsDeclared(t *testing.T) {
+	fx := newNamedVerbFixture(t, "", "")
+	rec := recordAllowGate(t, true)
+	rc, out, errs := captureStd(t, func() int { return registry["allow"]([]string{"allow", "git", "fetchh"}) })
+	if rc != 1 {
+		t.Fatalf("rc=%d, want 1; stdout=%q stderr=%q", rc, out, errs)
+	}
+	for _, want := range []string{"fetchh", "fetch", "new_branches", "push", "push_tags", "yolo allow git"} {
+		if !strings.Contains(errs, want) {
+			t.Fatalf("refusal does not name %q: %q", want, errs)
+		}
+	}
+	if got := readFile(t, fx.fragment); got != "" || rec.calls != 0 {
+		t.Fatalf("a refused allow wrote %q or ran the gate (%d)", got, rec.calls)
+	}
+
+	rc, _, errs = captureStd(t, func() int { return registry["allow"]([]string{"allow", "gitt", "fetch"}) })
+	if rc != 1 || !strings.Contains(errs, "git, github") || !strings.Contains(errs, "yolo pack add") {
+		t.Fatalf("unknown source rc=%d stderr=%q", rc, errs)
+	}
+}
+
+func TestAllowInJailPrintsHostRun(t *testing.T) {
+	fx := newNamedVerbFixture(t, "", "")
+	t.Setenv("YOLO_VERSION", "test")
+	t.Setenv("YOLO_HOST_DIR", "/home/someone/code/proj")
+	rec := recordAllowGate(t, true)
+	rc, out, errs := captureStd(t, func() int { return registry["allow"]([]string{"allow", "git", "fetch"}) })
+	if rc != 1 {
+		t.Fatalf("rc=%d, want 1; stdout=%q stderr=%q", rc, out, errs)
+	}
+	want := "yolo host-run -C /home/someone/code/proj --name allow-git-fetch -- yolo allow git fetch"
+	if !strings.Contains(errs, want) || !strings.Contains(errs, "on the host:  yolo allow git fetch") {
+		t.Fatalf("in-jail refusal does not print %q: %q", want, errs)
+	}
+	if got := readFile(t, fx.fragment); got != "" || rec.calls != 0 {
+		t.Fatalf("an in-jail allow wrote %q or ran the gate (%d)", got, rec.calls)
+	}
+}

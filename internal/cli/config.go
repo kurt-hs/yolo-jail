@@ -51,6 +51,7 @@ Subcommands:
                            the config this jail has (what it started with, plus
                            what 'config apply' applied since).
   dump                     Print the full COMPUTED config as canonical JSON.
+  why <key>                Show which file and line set a key, and what applies without it.
 
 Edit targets:
   --user, --project, --local  Select the existing scope file.
@@ -126,6 +127,8 @@ func configRunW(args []string, out, errw io.Writer) int {
 			return 0
 		}
 		return runConfigEditWithPostWriteCheck(args, out, errw, configEditWorkspace())
+	case "why":
+		return configWhy(args[1:], out, errw)
 	}
 	rest, at, rc := extractAtFlag(verb, args[1:], errw)
 	if rc != 0 {
