@@ -68,7 +68,7 @@ end)`)
 	if err != nil {
 		t.Fatalf("composing providers: %v", err)
 	}
-	resolved, err := ResolveProfiles([]*Pack{claude, zai}, nil, providers)
+	resolved, err := ResolveProfiles([]*Pack{claude, zai}, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
@@ -151,7 +151,7 @@ end)`)
 	if err != nil {
 		t.Fatalf("composing providers: %v", err)
 	}
-	resolved, err := ResolveProfiles([]*Pack{claude, zai}, nil, providers)
+	resolved, err := ResolveProfiles([]*Pack{claude, zai}, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
@@ -190,7 +190,7 @@ yolo.env("claude", function(ctx)
 end)`)
 	zai := envZaiPack(t)
 	providers, _ := ComposeProviders(nil, []*Pack{claude, zai})
-	resolved, err := ResolveProfiles([]*Pack{claude, zai}, nil, providers)
+	resolved, err := ResolveProfiles([]*Pack{claude, zai}, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestClaudeDeriveKeepsACredentialWithItsAddress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := ResolveProfiles([]*Pack{claude, vendor}, nil, providers)
+			resolved, err := ResolveProfiles([]*Pack{claude, vendor}, withShippedProviderProfiles(nil, providers), providers)
 			if err != nil {
 				t.Fatal(err)
 			}

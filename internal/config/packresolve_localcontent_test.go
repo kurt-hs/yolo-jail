@@ -228,7 +228,7 @@ func TestResolvePackPreservesExplicitEmbeddedHandleAcrossStagingAndFiltering(t *
 	if embedded == nil {
 		t.Fatalf("embedded materialization has no %q pack", entry.EmbeddedName)
 	}
-	manifestPath := filepath.Join(embedded.Root, "pack.json")
+	manifestPath := filepath.Join(embedded.Root, "pack.toml")
 	manifestBefore, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatalf("read immutable embedded manifest: %v", err)
@@ -261,9 +261,9 @@ func TestResolvePackPreservesExplicitEmbeddedHandleAcrossStagingAndFiltering(t *
 		t.Fatalf("staged embedded resolution: %v", err)
 	}
 	assertPack("staged", staged, stagedDest, embedded.Root)
-	if staged.Pack.StagedSlug() != entry.Slug() || staged.Pack.SourcePath(filepath.Join(stagedDest, "pack.json")) != manifestPath {
+	if staged.Pack.StagedSlug() != entry.Slug() || staged.Pack.SourcePath(filepath.Join(stagedDest, "pack.toml")) != manifestPath {
 		t.Errorf("staged embedded slug/source mapping changed: slug=%q source=%q", staged.Pack.StagedSlug(),
-			staged.Pack.SourcePath(filepath.Join(stagedDest, "pack.json")))
+			staged.Pack.SourcePath(filepath.Join(stagedDest, "pack.toml")))
 	}
 
 	filteredEntry := entry
@@ -276,10 +276,10 @@ func TestResolvePackPreservesExplicitEmbeddedHandleAcrossStagingAndFiltering(t *
 	assertPack("filtered staged", filtered, filteredDest, embedded.Root)
 	if filtered.Pack.StagedSlug() != entry.Slug() || slices.Contains(filtered.Staged.Staged, "README.md") ||
 		!slices.Contains(filtered.Staged.Excluded, "README.md") ||
-		filtered.Pack.SourcePath(filepath.Join(filteredDest, "pack.json")) != manifestPath {
+		filtered.Pack.SourcePath(filepath.Join(filteredDest, "pack.toml")) != manifestPath {
 		t.Errorf("filtered staged embedded slug/filter/source changed: slug=%q staged=%v excluded=%v source=%q",
 			filtered.Pack.StagedSlug(), filtered.Staged.Staged, filtered.Staged.Excluded,
-			filtered.Pack.SourcePath(filepath.Join(filteredDest, "pack.json")))
+			filtered.Pack.SourcePath(filepath.Join(filteredDest, "pack.toml")))
 	}
 
 	filteredDeclaration, err := ResolvePack(filteredEntry, ResolvePackSpec{})
@@ -291,10 +291,10 @@ func TestResolvePackPreservesExplicitEmbeddedHandleAcrossStagingAndFiltering(t *
 	}
 	assertPack("filtered declaration", filteredDeclaration, filteredDeclaration.Pack.Root, embedded.Root)
 	if filteredDeclaration.Pack.StagedSlug() != entry.Slug() ||
-		filteredDeclaration.Pack.SourcePath(filepath.Join(filteredDeclaration.Pack.Root, "pack.json")) != manifestPath {
+		filteredDeclaration.Pack.SourcePath(filepath.Join(filteredDeclaration.Pack.Root, "pack.toml")) != manifestPath {
 		t.Errorf("filtered declaration embedded slug/source changed: slug=%q source=%q",
 			filteredDeclaration.Pack.StagedSlug(),
-			filteredDeclaration.Pack.SourcePath(filepath.Join(filteredDeclaration.Pack.Root, "pack.json")))
+			filteredDeclaration.Pack.SourcePath(filepath.Join(filteredDeclaration.Pack.Root, "pack.toml")))
 	}
 	if _, err := os.Stat(filteredDeclaration.Pack.Root); !os.IsNotExist(err) {
 		t.Errorf("filtered declaration tree lifetime: temp root %q still exists or has unexpected stat error %v",

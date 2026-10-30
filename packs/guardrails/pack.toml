@@ -1,0 +1,58 @@
+name = "guardrails"
+description = "Habits worth enforcing: tools a launch refuses in favour of a better one, in a jail and in what `yolo host --` starts. Opt in by adding \"guardrails\" to packs."
+
+[[blocked_tool]]
+bin = "grep"
+message = "grep's recursive mode is blocked. Use ripgrep (rg) for recursive searches; pipe filters and single-file greps pass through."
+suggestion = "Try: rg <pattern> [path]"
+replacement = "rg"
+flags = ["--recursive", "-r", "-R", "-*[rR]*"]
+
+[[blocked_tool]]
+bin = "find"
+message = "find is blocked to prevent unintended recursive searches. Use fd for a faster, more intuitive alternative."
+suggestion = "Try: fd <pattern>"
+replacement = "fd"
+
+# Where each package name came from, one line per manager, checked 2026-10-02. Each package
+# installs `rg` on PATH: /usr/bin/rg in the file lists, bin/rg in Homebrew's formula
+# source, mainProgram "rg" in nixpkgs.
+#   brew: https://formulae.brew.sh/api/formula/ripgrep.json
+#   apt: https://packages.debian.org/trixie/amd64/ripgrep/filelist and https://packages.ubuntu.com/noble/amd64/ripgrep/filelist
+#   dnf: https://packages.fedoraproject.org/pkgs/rust-ripgrep/ripgrep/fedora-rawhide.html#files
+#   nix: https://raw.githubusercontent.com/NixOS/nixpkgs/nixos-unstable/pkgs/by-name/ri/ripgrep/package.nix
+#   pacman: https://archlinux.org/packages/extra/x86_64/ripgrep/files/
+[[program]]
+bin = "rg"
+install.brew = "ripgrep"
+install.apt = "ripgrep"
+install.dnf = "ripgrep"
+install.nix = "ripgrep"
+install.pacman = "ripgrep"
+
+# Where each package name came from, one line per manager, checked 2026-10-02. Each package
+# installs `fd` on PATH (/usr/bin/fd in the file lists, bin/fd in Homebrew's formula source,
+# mainProgram "fd" in nixpkgs) except apt's, below.
+#   brew: https://formulae.brew.sh/api/formula/fd.json
+#   apt: https://packages.debian.org/trixie/amd64/fd-find/filelist and https://packages.ubuntu.com/noble/amd64/fd-find/filelist
+#   dnf: https://packages.fedoraproject.org/pkgs/rust-fd-find/fd-find/fedora-rawhide.html#files
+#   nix: https://raw.githubusercontent.com/NixOS/nixpkgs/nixos-unstable/pkgs/by-name/fd/fd/package.nix
+#   pacman: https://archlinux.org/packages/extra/x86_64/fd/files/
+# Debian's and Ubuntu's fd-find install the binary as /usr/lib/cargo/bin/fd, with
+# /usr/bin/fdfind beside it, because /usr/bin/fd belongs to fdclone; nothing named `fd`
+# lands on PATH, so the bare package left fd missing. The apt hint is the package plus the
+# step that links it into /usr/local/bin, which is on Debian's and Ubuntu's default PATH.
+# The same two paths are in bookworm and jammy, and Debian's own note says so:
+# https://sources.debian.org/src/rust-fd-find/10.2.0-1/debian/README.Debian/
+# A bundle file cannot hold the step, so `yolo check-deps` leaves fd out of it and prints
+# this command beside the bundle's (internal/depcheck bundleToken).
+[[program]]
+bin = "fd"
+install.brew = "fd"
+install.apt = "fd-find && sudo ln -sf /usr/lib/cargo/bin/fd /usr/local/bin/fd"
+install.dnf = "fd-find"
+install.nix = "fd"
+install.pacman = "fd"
+
+[[env]]
+vars = { GIT_OPTIONAL_LOCKS = "0" }

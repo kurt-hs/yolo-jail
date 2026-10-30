@@ -1,0 +1,27 @@
+description = "git fetch and push without a credential in the jail: the jail's git reaches the git-broker on the host, which serves public HTTPS fetches anonymously even without a read grant or approved remote, and otherwise connects to this workspace's approved remotes the way the host does (its SSH keys or agent, or its git credential helper over HTTPS) only after a read grant in config allows credentials (it grants nothing by default); it streams fetches back, pushes only the branches a create-branch grant lets it create and the ones it created since (its working set), refuses every other push per ref, and audits every call."
+name = "git"
+
+[[loophole]]
+from = "loopholes/git-broker"
+
+[[briefing]]
+describes = ["intercept"]
+from = "briefing/git.md"
+
+[[intercept]]
+bin = "git-remote-yolo"
+forward = ["yolo", "git-remote", "--"]
+
+[[env]]
+served_by = "git-broker"
+vars.GIT_CONFIG_COUNT = "5"
+vars.GIT_CONFIG_KEY_0 = "url.yolo::ssh://.insteadOf"
+vars.GIT_CONFIG_VALUE_0 = "ssh://"
+vars.GIT_CONFIG_KEY_1 = "url.yolo::https://.insteadOf"
+vars.GIT_CONFIG_VALUE_1 = "https://"
+vars.GIT_CONFIG_KEY_2 = "url.yolo::git@.insteadOf"
+vars.GIT_CONFIG_VALUE_2 = "git@"
+vars.GIT_CONFIG_KEY_3 = "url.yolo::git+ssh://.insteadOf"
+vars.GIT_CONFIG_VALUE_3 = "git+ssh://"
+vars.GIT_CONFIG_KEY_4 = "url.yolo::ssh+git://.insteadOf"
+vars.GIT_CONFIG_VALUE_4 = "ssh+git://"

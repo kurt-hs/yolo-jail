@@ -1,0 +1,4 @@
+name = "hello-daemon"
+
+[[loophole]]
+from = "loopholes/hello-daemon"

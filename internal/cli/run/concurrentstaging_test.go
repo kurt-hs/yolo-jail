@@ -172,7 +172,11 @@ func TestStagingHelperProcess(t *testing.T) {
 	moduleDir := claudeBrokerModuleDir(t, staged.packs)
 	for i := 0; i < 10; i++ {
 		for _, p := range staged.packs {
-			if _, err := os.ReadFile(filepath.Join(p.Root, "pack.json")); err != nil {
+			manifest := filepath.Join(p.Root, "pack.toml")
+			if _, err := os.Stat(manifest); err != nil {
+				manifest = filepath.Join(p.Root, "pack.json")
+			}
+			if _, err := os.ReadFile(manifest); err != nil {
 				t.Fatalf("read %d: pack %s's staged manifest went missing under this launch: %v",
 					i, p.Name, err)
 			}

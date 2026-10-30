@@ -137,7 +137,7 @@ func TestNoAgentOnBedrockStartsOnAModelYoloPickedButCopilot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}

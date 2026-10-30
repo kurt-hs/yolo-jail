@@ -443,14 +443,7 @@ func TestShippedPacksDecodeUnderTheLastRelease(t *testing.T) {
 	withMetadata := runReleaseProbe(t, probe, shipped, release)
 	manifests := map[string]*packdecl.Manifest{}
 	for pack := range withMetadata {
-		raw, err := packs.FS.ReadFile(pack + "/pack.json")
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifest, problems := packdecl.Decode(raw)
-		if len(problems) != 0 {
-			t.Fatalf("current reader refused %s: %v", pack, problems)
-		}
+		manifest := shippedManifest(t, pack)
 		manifests[pack] = manifest
 		if manifest.ModelListChecks != nil {
 			repairManifest(t, filepath.Join(shipped, pack), func(v any) any {
@@ -808,8 +801,39 @@ func untarInto(t *testing.T, r io.Reader, tag, dest string) {
 	}
 }
 
+// shippedManifest decodes pack's shipped manifest with the CURRENT reader, from whichever name
+// it ships under: pack.toml once converted, pack.json for a pack still on its legacy manifest.
+func shippedManifest(t *testing.T, pack string) *packdecl.Manifest {
+	t.Helper()
+	if raw, err := packs.FS.ReadFile(pack + "/pack.toml"); err == nil {
+		manifest, problems := packdecl.DecodeTOML(raw)
+		if len(problems) != 0 {
+			t.Fatalf("current reader refused %s/pack.toml: %v", pack, problems)
+		}
+		return manifest
+	}
+	raw, err := packs.FS.ReadFile(pack + "/pack.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, problems := packdecl.Decode(raw)
+	if len(problems) != 0 {
+		t.Fatalf("current reader refused %s/pack.json: %v", pack, problems)
+	}
+	return manifest
+}
+
 // materialize copies the embed a binary built from this tree carries into dest, one directory
 // per pack: the shape a host stages into a jail's _official tree.
+//
+// THE NEW-NAME BOUNDARY (docs/design/readable-config-plan.md M1). A shipped pack is a pack.toml,
+// which a release before the TOML reader does not read at all: it would see a pack with no
+// manifest. So that this test keeps checking what its real subject is, the legacy-shaped
+// contributions that release's reader decodes, each pack.toml is also written beside itself as
+// the pack.json the same manifest means (the legacy rendering of the decoded manifest). That
+// stands in for nothing a jail does: the guard on every known break is that no old jail is ever
+// handed this tree. TestTheLastReleaseReadsNoPackToml pins the boundary itself, and fails the
+// release that learns TOML, which is when this rendering is deleted.
 func materialize(t *testing.T, dest string) {
 	t.Helper()
 	err := fs.WalkDir(packs.FS, ".", func(path string, d fs.DirEntry, err error) error {
@@ -828,6 +852,73 @@ func materialize(t *testing.T, dest string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dest, e.Name(), "pack.toml")); err != nil {
+			continue
+		}
+		legacy, err := json.Marshal(shippedManifest(t, e.Name()))
+		if err != nil {
+			t.Fatalf("rendering %s's pack.json for the last release's reader: %v", e.Name(), err)
+		}
+		if err := os.WriteFile(filepath.Join(dest, e.Name(), "pack.json"), legacy, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestTheLastReleaseReadsNoPackToml pins the new-name boundary materialize documents, with the
+// real last-release reader: a pack that is only a pack.toml reads as a pack with no manifest,
+// so it installs no program. When the last release is one that reads TOML this fails, and
+// materialize's legacy rendering is then deleted.
+func TestTheLastReleaseReadsNoPackToml(t *testing.T) {
+	root, release := lastRelease(t)
+	old := t.TempDir()
+	extractRelease(t, root, release, old)
+	probeDir := filepath.Join(old, "cmd", "yolo-release-decode-probe")
+	if err := os.MkdirAll(probeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(probeDir, "main.go"), []byte(releaseDecodeProbe), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goBin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skipf("no go toolchain on PATH to build %s's reader with", release)
+	}
+	probe := buildReleaseProbe(t, goBin, old, release)
+	tree := filepath.Join(t.TempDir(), "packs")
+	// One program, spelled both ways. "legacy" is the control that the probe sees programs at all.
+	const toml = "name = \"boundary\"\n\n[[program]]\nbin = \"boundary\"\nvia = \"npm\"\npackage = \"boundary\"\n"
+	const legacy = `{"name":"boundary","contributes":[{"kind":"program","bin":"boundary","via":"npm","package":"boundary"}]}`
+	if _, problems := packdecl.DecodeTOML([]byte(toml)); len(problems) != 0 {
+		t.Fatalf("the TOML fixture does not decode: %v", problems)
+	}
+	for name, file := range map[string]struct{ name, body string }{
+		"tomlonly": {"pack.toml", toml}, "legacy": {"pack.json", legacy},
+	} {
+		if err := os.MkdirAll(filepath.Join(tree, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tree, name, file.name), []byte(file.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := runReleaseProbe(t, probe, tree, release)
+	if len(got["legacy"]["programs"]) == 0 {
+		t.Fatalf("the control pack declares no program under %s's reader (%v), so this pin compares nothing",
+			release, got["legacy"])
+	}
+	if len(got["tomlonly"]["programs"]) != 0 {
+		t.Errorf("%s's reader now reads a pack.toml (programs %v): delete materialize's pack.json "+
+			"rendering and this test", release, got["tomlonly"]["programs"])
 	}
 }
 

@@ -195,7 +195,7 @@ func ProfileDisclosures(in ProfileDisclosureInput) []ProfileDisclosure {
 	for _, name := range names {
 		d := ProfileDisclosure{Name: name}
 		for _, p := range in.Packs {
-			if p != nil && p.Decl != nil && p.Decl.ProfileFor(name) != nil {
+			if p != nil && p.Decl != nil && (p.Decl.ProfileFor(name) != nil || declaresProviderNamed(p, name)) {
 				d.Declared = append(d.Declared, p.Name)
 			}
 		}
@@ -473,4 +473,16 @@ func ActiveSetLines(sets map[string][]string) []string {
 			set[0]+" unless the agent keeps a pick of its own inside the set")
 	}
 	return out
+}
+
+// declaresProviderNamed reports whether pack p declares a provider called name. A provider is
+// selectable by its own name (OQ-RC3), so the shipped packs declare no profile of the same name,
+// and the pack that declares the provider is the one the disclosure names.
+func declaresProviderNamed(p *Pack, name string) bool {
+	for _, provider := range p.Decl.Providers() {
+		if provider.Name == name {
+			return true
+		}
+	}
+	return false
 }

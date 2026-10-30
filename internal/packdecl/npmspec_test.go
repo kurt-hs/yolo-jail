@@ -18,7 +18,6 @@ package packdecl
 
 import (
 	"io/fs"
-	"path"
 	"strings"
 	"testing"
 
@@ -135,11 +134,11 @@ func TestNpmSelectorShapeAcceptsWhatTheShippedPacksDeclare(t *testing.T) {
 		if !ent.IsDir() {
 			continue
 		}
-		raw, err := fs.ReadFile(officialpacks.FS, path.Join(ent.Name(), ManifestName))
-		if err != nil {
+		name, raw, ok := readManifestIn(officialpacks.FS, ent.Name())
+		if !ok {
 			continue // not every embedded pack ships a manifest at the root
 		}
-		m, problems := Decode(raw)
+		m, problems := decodeManifestNamed(name, raw)
 		if len(problems) != 0 {
 			t.Errorf("Decode refused the shipped %s manifest: %v", ent.Name(), problems)
 			continue

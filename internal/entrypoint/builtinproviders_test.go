@@ -38,7 +38,7 @@ func builtInRender(t *testing.T, agentPack, use string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func codexNativeFixture(t *testing.T, userProvidersJSON string, profiles map[str
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, profiles, table)
+	resolved, err := resolveShippedProfiles(packs, profiles, table)
 	if err != nil {
 		t.Fatal(err)
 	}

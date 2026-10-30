@@ -272,12 +272,12 @@ func TestMissingSocketFailsClosed(t *testing.T) {
 // done, and the message's diagnosis would be wrong.
 func TestTheNamedSwitchIsTheDelegates(t *testing.T) {
 	name := paths.BuiltinCgroupLoopholeName
-	raw, err := fs.ReadFile(packs.FS, name+"/pack.json")
+	raw, err := fs.ReadFile(packs.FS, name+"/pack.toml")
 	if err != nil {
 		t.Fatalf("no shipped pack named %q, which the message tells the reader to select: %v",
 			name, err)
 	}
-	m, problems := packdecl.Decode(raw)
+	m, problems := packdecl.DecodeTOML(raw)
 	if len(problems) > 0 {
 		t.Fatalf("pack %q: %v", name, problems)
 	}

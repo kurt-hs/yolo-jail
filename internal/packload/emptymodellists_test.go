@@ -42,7 +42,7 @@ func emptyCheckInputWithUser(t *testing.T, p *Pack, user *jsonx.OrderedMap) Empt
 	if err != nil {
 		t.Fatalf("ComposeProviders: %v", err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatalf("ResolveProfiles: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestEmptyModelListsAppliesOnlyThenFinalUserAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	input.Providers = table
-	input.Resolved, err = ResolveProfiles(input.Packs, nil, table)
+	input.Resolved, err = ResolveProfiles(input.Packs, withShippedProviderProfiles(nil, table), table)
 	if err != nil {
 		t.Fatal(err)
 	}

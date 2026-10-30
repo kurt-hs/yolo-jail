@@ -24,7 +24,7 @@ func hostListFor(t *testing.T, home, use string) ([]modelmenu.ListEntry, error) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}

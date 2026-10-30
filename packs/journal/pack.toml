@@ -1,0 +1,4 @@
+name = "journal"
+
+[[loophole]]
+from = "loopholes/journal"

@@ -770,7 +770,7 @@ func TestHostRefusesAFetchedPacksHostHalfByName(t *testing.T) {
 func TestHostRunsALocalPacksBridgeHostHalfAndNamesItBeforeItStarts(t *testing.T) {
 	upstream, _ := fakeUpstream(t)
 	fakeHostBroker(t)
-	manifest, err := fs.ReadFile(packs.FS, "wire-bridge/pack.json")
+	manifest, err := fs.ReadFile(packs.FS, "wire-bridge/pack.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -778,7 +778,7 @@ func TestHostRunsALocalPacksBridgeHostHalfAndNamesItBeforeItStarts(t *testing.T)
 	if err := os.MkdirAll(fork, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(fork, "pack.json"), manifest, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fork, "pack.toml"), manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	repointCodexUpstream(t, upstream.URL)

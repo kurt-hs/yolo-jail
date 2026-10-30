@@ -38,7 +38,7 @@ func TestEveryShippedAndExampleInstallHintNamesItsSource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		problems, hinted, err := installHintSourceProblems(raw)
+		problems, hinted, err := installHintSourceProblemsNamed(path, raw)
 		if err != nil {
 			t.Errorf("%s: %v", path, err)
 			continue
@@ -169,6 +169,72 @@ func TestInstallHintSourceProblems(t *testing.T) {
 // every package of the hint's package part (the names before any ` && ` step), an https:// URL
 // that names it (urlNames) and is not Homebrew's page of the other kind (brewPageKindFits). It
 // also returns how many hinted contributions it read.
+func installHintSourceProblemsNamed(name string, raw []byte) (problems []string, hinted int, err error) {
+	if strings.HasSuffix(name, ManifestTOMLName) {
+		return tomlInstallHintSourceProblems(raw)
+	}
+	return installHintSourceProblems(raw)
+}
+
+// tomlInstallHintSourceProblems is installHintSourceProblems for a pack.toml, read off its text:
+// each `[[program]]` table that carries an `install.<manager> = "..."` key is one hinted
+// contribution, and its source lines are the `#` comment block directly above the table header.
+func tomlInstallHintSourceProblems(raw []byte) (problems []string, hinted int, err error) {
+	if m, probs := DecodeTOML(raw); m == nil {
+		return nil, 0, fmt.Errorf("does not decode: %v", probs)
+	}
+	lines := strings.Split(string(raw), "\n")
+	for i, l := range lines {
+		if strings.TrimSpace(l) != "[[program]]" {
+			continue
+		}
+		hints := map[string]string{}
+		bin := ""
+		for _, body := range lines[i+1:] {
+			trimmed := strings.TrimSpace(body)
+			if strings.HasPrefix(trimmed, "[") {
+				break
+			}
+			key, value, ok := strings.Cut(trimmed, "=")
+			if !ok {
+				continue
+			}
+			key, value = strings.TrimSpace(key), strings.Trim(strings.TrimSpace(value), `"`)
+			if key == "bin" {
+				bin = value
+			}
+			if mgr, found := strings.CutPrefix(key, "install."); found {
+				hints[strings.Trim(mgr, `"`)] = value
+			}
+		}
+		if len(hints) == 0 {
+			continue
+		}
+		hinted++
+		start := i
+		for start > 0 && strings.HasPrefix(strings.TrimSpace(lines[start-1]), "#") {
+			start--
+		}
+		block := lines[start:i]
+		keys := make([]string, 0, len(hints))
+		for k := range hints {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, mgr := range keys {
+			pkgs, _, _ := strings.Cut(hints[mgr], hintStepSeparator)
+			if !hasSourceLine(block, mgr, strings.Fields(pkgs)) {
+				problems = append(problems, fmt.Sprintf("[[program]] at line %d (bin %q): "+
+					"install.%s (%q) records no source: add `# %s: <https URL of the page that "+
+					"lists it>` directly above the table, a URL with the package's own name in it "+
+					"(for brew, a formula page; for brew-cask, a cask page)",
+					i+1, bin, mgr, strings.TrimSpace(pkgs), mgr))
+			}
+		}
+	}
+	return problems, hinted, nil
+}
+
 func installHintSourceProblems(raw []byte) (problems []string, hinted int, err error) {
 	m, probs := Decode(raw)
 	if m == nil {
@@ -212,7 +278,7 @@ func installHintSourceProblems(raw []byte) (problems []string, hinted int, err e
 // named by one of the line's https URLs, and that URL is not Homebrew's page of the other kind.
 func hasSourceLine(block []string, mgr string, pkgs []string) bool {
 	for _, l := range block {
-		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "//"))
+		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(l), "//"), "#"))
 		if !strings.HasPrefix(text, mgr+":") {
 			continue
 		}

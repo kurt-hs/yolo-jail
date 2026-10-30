@@ -46,20 +46,20 @@ func TestResolvePackAppliesAnEmbeddedEntrysFilters(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, "README.md")); !os.IsNotExist(err) {
 		t.Errorf("an excluded file of an embedded pack was staged (%v)", err)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "pack.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dest, "pack.toml")); err != nil {
 		t.Errorf("control: the unexcluded manifest must stage: %v", err)
 	}
 	if !strings.Contains(strings.Join(res.Staged.Excluded, ","), "README.md") {
 		t.Errorf("the exclusion must be reported: %v", res.Staged.Excluded)
 	}
-	if res.Pack.SourceRoot == "" || res.Pack.SourcePath(filepath.Join(dest, "pack.json")) ==
-		filepath.Join(dest, "pack.json") {
+	if res.Pack.SourceRoot == "" || res.Pack.SourcePath(filepath.Join(dest, "pack.toml")) ==
+		filepath.Join(dest, "pack.toml") {
 		t.Errorf("a staged pack must map its paths back to where it was staged from")
 	}
 
 	// Declaration mode reads the filtered tree too: a filter that drops the manifest drops
 	// every declaration with it.
-	entry.Exclude = []string{"pack.json"}
+	entry.Exclude = []string{"pack.toml"}
 	decl, err := ResolvePack(entry, ResolvePackSpec{})
 	if err != nil {
 		t.Fatal(err)

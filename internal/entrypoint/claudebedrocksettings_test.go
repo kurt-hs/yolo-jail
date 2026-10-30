@@ -46,7 +46,7 @@ func renderClaudeSettings(t *testing.T, names []string, userProviders string,
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, userProfiles, providers)
+	resolved, err := resolveShippedProfiles(packs, userProfiles, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

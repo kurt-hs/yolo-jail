@@ -75,8 +75,8 @@ func embeddedAudioPack(t *testing.T) *packload.Pack {
 // assert is that the tree really materialized out of the binary.
 func TestAudioPackIsEmbeddedAndMaterialized(t *testing.T) {
 	p := embeddedAudioPack(t)
-	if _, err := os.Stat(filepath.Join(p.Root, packdecl.ManifestName)); err != nil {
-		t.Errorf("pack.json not materialized: %v", err)
+	if _, err := os.Stat(filepath.Join(p.Root, "pack.toml")); err != nil {
+		t.Errorf("manifest not materialized: %v", err)
 	}
 }
 

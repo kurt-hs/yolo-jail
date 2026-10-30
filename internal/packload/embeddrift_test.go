@@ -78,7 +78,7 @@ func TestEmbeddedPackManifestNamesMatchTheirDirs(t *testing.T) {
 	for _, p := range packs {
 		dir := filepath.Base(p.Root)
 		if p.Decl.Name != "" && p.Decl.Name != dir {
-			t.Errorf("packs/%s/pack.json declares name %q — the directory name is what "+
+			t.Errorf("packs/%s manifest declares name %q — the directory name is what "+
 				"yolo uses, so the manifest's is inert; rename the dir or the field",
 				dir, p.Decl.Name)
 		}

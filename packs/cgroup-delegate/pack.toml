@@ -1,0 +1,4 @@
+name = "cgroup-delegate"
+
+[[loophole]]
+from = "loopholes/cgroup-delegate"

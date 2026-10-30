@@ -40,7 +40,7 @@ func TestADeclaredAdapterResolvesAnOtherwiseUnusablePairing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func runAgentEnvWithProfile(t *testing.T, packs []*Pack, agent, profile string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}

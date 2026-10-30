@@ -75,7 +75,7 @@ func runAgentEnv(t *testing.T, agent *Pack, vendor *Pack) ([]agentenv.Var, error
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}

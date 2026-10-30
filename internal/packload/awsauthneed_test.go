@@ -130,7 +130,7 @@ func TestEveryBedrockAgentWithBedrockGetsTheBedrockProfile(t *testing.T) {
 			if platform, _ := entry.Get("platform"); platform != "aws-bedrock" {
 				t.Errorf("the composed bedrock entry's platform = %v, want aws-bedrock", platform)
 			}
-			resolved, err := ResolveProfiles(set, nil, providers)
+			resolved, err := ResolveProfiles(set, withShippedProviderProfiles(nil, providers), providers)
 			if err != nil {
 				t.Fatal(err)
 			}

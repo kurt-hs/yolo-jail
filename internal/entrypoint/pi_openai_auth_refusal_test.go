@@ -38,7 +38,7 @@ func renderedCodexModels(t *testing.T, user map[string]packload.UserProfile, use
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, user, providers)
+	resolved, err := resolveShippedProfiles(packs, user, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

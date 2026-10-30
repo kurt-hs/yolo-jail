@@ -59,7 +59,7 @@ func agentEnvAt(t *testing.T, n notch, packs []*Pack, user *jsonx.OrderedMap,
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, userProfiles, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(userProfiles, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestAJailRefusesAUserProfileWhoseProviderItLacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(pi, user, providers)
+	resolved, err := ResolveProfiles(pi, withShippedProviderProfiles(user, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestPairingRefusalsReportsAMissingProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 	userProfiles := map[string]UserProfile{"codex": {Provider: "openai-codex"}}
-	resolved, err := ResolveProfiles(claude, userProfiles, providers)
+	resolved, err := ResolveProfiles(claude, withShippedProviderProfiles(userProfiles, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestABareProfileOnAnAgentWithNoProviderSurfaceIsDisclosedNotRefused(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, user, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(user, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}

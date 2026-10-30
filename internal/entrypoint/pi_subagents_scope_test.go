@@ -42,7 +42,7 @@ func shippedScopeRender(t *testing.T) *pioencodeRender {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"kilo": {Provider: "kilo", Options: map[string]string{"model": "deepseek-v4.1-flash"}},
 	}, providers)
 	if err != nil {
@@ -255,7 +255,7 @@ func openrouterAliasRender(t *testing.T, profileModel string) *pioencodeRender {
 	if profileModel != "" {
 		opts["model"] = profileModel
 	}
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"or": {Provider: "openrouter", Options: opts},
 	}, providers)
 	if err != nil {
@@ -312,7 +312,7 @@ func TestPiProfileAndSubagentsExactIDOutranksDefaultAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := "deepseek/deepseek-v4.1-flash:floor"
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"or": {Provider: "openrouter", Options: map[string]string{"model": model},
 			Subagents: luahook.Subagents{Default: model}},
 	}, providers)
@@ -408,7 +408,7 @@ func subagentsDeclRender(t *testing.T, sub luahook.Subagents, profileModel strin
 	if profileModel != "" {
 		opts["model"] = profileModel
 	}
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"or": {Provider: "openrouter", Options: opts, Subagents: sub},
 	}, providers)
 	if err != nil {

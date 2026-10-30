@@ -59,7 +59,7 @@ func TestTheBootNamesASubagentModelPisRegistryDoesNotHold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"or": {Provider: "openrouter", Subagents: luahook.Subagents{Default: "deepseek/deepseek-v4-flsh"}},
 	}, providers)
 	if err != nil {

@@ -79,11 +79,11 @@ func TestReadableDeclarationsForOfficialPathPackReadsItsOwnModuleFiles(t *testin
 }
 
 func TestReadableDeclarationsForPacksRejectsUnboundOfficialDeclaration(t *testing.T) {
-	raw, err := packs.FS.ReadFile("aws-auth/pack.json")
+	raw, err := packs.FS.ReadFile("aws-auth/pack.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	decl, problems := packdecl.Decode(raw)
+	decl, problems := packdecl.DecodeTOML(raw)
 	if len(problems) != 0 {
 		t.Fatalf("decode fixture declaration: %v", problems)
 	}

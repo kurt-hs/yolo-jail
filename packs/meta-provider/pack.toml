@@ -1,0 +1,40 @@
+name = "meta-provider"
+description = "Puts Meta's pi-BUILT-IN `meta` provider into yolo's provider table and declares a `meta` profile that selects it, so any launch can run Pi (and any other agent that understands the name) on the Muse subscription login Pi already holds. Name-only: `meta`'s endpoints, models and credential are Pi's own."
+
+# THE MINIMAL PROVIDER DECLARATION, AND IT IS LOAD-BEARING, NOT DECORATION.
+#
+# `meta` is a provider pi SHIPS. Pi runs it on its own client, at its own address, with
+# the Muse-subscription credential its `/login meta` holds — so there is nothing here to
+# declare: no models, no endpoints, no `api_key_env_name` (an API key is exactly what
+# this provider is not for). yolo's pi derive agrees, and writes no models.json row for a
+# provider pi ships built in.
+#
+# But a provider pi ships is NOT in the launch's provider TABLE by that fact alone. yolo
+# composes the table from the SELECTED PACKS' `provider` declarations plus the user
+# config's `providers` object; the pi pack's `built_in_providers` list only spares the
+# provider a models.json ROW in the derive — it never puts the NAME in the table. So a
+# profile naming `meta` is refused without one of the two:
+#
+#   This launch will be REFUSED: Profile "meta" uses provider "meta" for pi, but that
+#   provider is unavailable. Choose a profile that uses a provider supplied by your
+#   selected packs, or declare this provider in `providers` in your workspace configuration.
+#
+# Measured 2026-10-12 on yolo 0.13.0: reproduce it by selecting the `meta` profile with
+# this `provider` contribution removed (the profile alone is not enough), and watch the
+# refusal above; add `{kind: "provider", name: "meta"}` back and a host-notch render of
+# `pi/settings` succeeds with `defaultProvider: "meta"` and `enabledModels: ["meta/**"]`.
+#
+# TWO WAYS TO SATISFY IT TODAY. The user-config spelling is `"providers": {"meta": {}}`
+# in ~/.config/yolo-jail/config.jsonc — an empty entry, and the one the original dotfiles
+# repo used. This pack is the PACK-SHAPED spelling, which is the one that belongs
+# upstream: a pack that ships the provider name, so a user who selects the pack needs no
+# hand-written empty entry.
+#
+# THE GAP TO FIX UPSTREAM (see ../README.md): a profile naming a provider pi ships should
+# not need ANY declaration — neither a user `providers` entry nor a pack's name-only
+# `provider` contribution. yolo knows pi ships `meta` (`built_in_providers`); that list
+# should feed the provider table as well as the derive's row decision. Until it does,
+# this contribution is the workaround. A provider is selectable by its own name
+# (`-p meta`, the `profile` key), so the pack ships no same-named profile (OQ-RC3).
+[[provider]]
+name = "meta"

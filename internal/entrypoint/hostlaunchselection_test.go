@@ -38,7 +38,7 @@ func newSelectionFixture(t *testing.T, agent string, userProviders *jsonx.Ordere
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, userProfiles, table)
+	resolved, err := resolveShippedProfiles(packs, userProfiles, table)
 	if err != nil {
 		t.Fatal(err)
 	}

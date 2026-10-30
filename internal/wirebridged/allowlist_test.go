@@ -41,7 +41,12 @@ func stagedTree(t *testing.T, packs []*packload.Pack) string {
 	t.Helper()
 	root := t.TempDir()
 	for _, p := range packs {
-		raw, err := os.ReadFile(filepath.Join(p.Root, "pack.json"))
+		manifest := "pack.toml"
+		raw, err := os.ReadFile(filepath.Join(p.Root, manifest))
+		if err != nil {
+			manifest = "pack.json"
+			raw, err = os.ReadFile(filepath.Join(p.Root, manifest))
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +54,7 @@ func stagedTree(t *testing.T, packs []*packload.Pack) string {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "pack.json"), raw, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, manifest), raw, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -89,7 +94,7 @@ func bootNarrowed(t *testing.T, names []string, company string, user map[string]
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, user, providers)
+	resolved, err := resolveShippedProfiles(packs, user, providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +321,7 @@ func TestClaudesOwnSpellingOfAListedKiloModelIsAdmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

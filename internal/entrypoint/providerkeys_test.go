@@ -79,7 +79,7 @@ func (f *providerKeyFixture) boot(profile string) (map[string]any, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(f.packs, nil, providers)
+	resolved, err := resolveShippedProfiles(f.packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

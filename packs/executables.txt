@@ -4,4 +4,4 @@
 # TestEmbeddedExecutablesMatchTheTree fails when this and the on-disk modes disagree.
 chrome-devtools/bin/chrome-devtools-mcp-wrapper
 hello-daemon/loopholes/hello-daemon/bin/hello
-muse-planner/files/scripts/muse-planner-exec.sh
+muse-planner/home/.pi/agent/bin/muse-planner-exec.sh

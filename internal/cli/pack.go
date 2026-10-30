@@ -1063,7 +1063,7 @@ func reportShippedSurfaceClash(pr richtext.Printer, p *packload.Pack) {
 }
 
 // packNonContentFiles are the staged ROOT-level names that are not pack CONTENT: yolo reads
-// the first two itself (pack.json is the manifest, derive.lua is the surface producer
+// the first two itself (pack.toml and pack.json are the manifest, derive.lua is the surface producer
 // entrypoint/packsurfaces.go runs), and a human reads the rest — they are the repo-hygiene
 // files `pack init` scaffolds and any real pack carries.
 //
@@ -1078,7 +1078,7 @@ func reportShippedSurfaceClash(pr richtext.Printer, p *packload.Pack) {
 // is correct for a repository pack, so it draws an INFO line (unshippedNotes), never "nothing
 // reads this" — something does read it, just not yolo.
 var packNonContentFiles = map[string]bool{
-	"pack.json": true, "pack.jsonc": true, "derive.lua": true,
+	"pack.toml": true, "pack.json": true, "pack.jsonc": true, "derive.lua": true,
 	"README.md": true, "LICENSE": true, "LICENSE.md": true, "CHANGELOG.md": true,
 	".gitignore": true, ".gitattributes": true,
 }

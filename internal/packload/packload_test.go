@@ -22,7 +22,7 @@ func TestEmbeddedOfficialPacksMaterialize(t *testing.T) {
 	names := map[string]bool{}
 	for _, p := range got {
 		names[p.Name] = true
-		if _, err := os.Stat(filepath.Join(p.Root, "pack.json")); err != nil {
+		if _, err := os.Stat(shippedManifestPath(p.Root)); err != nil {
 			t.Errorf("%s: manifest not materialized: %v", p.Name, err)
 		}
 	}

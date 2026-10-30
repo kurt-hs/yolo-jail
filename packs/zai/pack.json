@@ -32,11 +32,6 @@
         "model": "glm-5.3",
         "pin_model": null
       }
-    },
-    {
-      "kind": "profile",
-      "name": "zai",
-      "provider": "zai"
     }
   ],
   "name": "zai"

@@ -35,11 +35,20 @@ func TestNoEmbeddedPackDeclaresARetiredHook(t *testing.T) {
 		t.Fatal("no embedded packs — this test has lost its subject")
 	}
 	for _, p := range packs {
-		data, err := os.ReadFile(filepath.Join(p.Root, packdecl.ManifestName))
+		name := "pack.toml"
+		data, err := os.ReadFile(filepath.Join(p.Root, name))
+		if err != nil {
+			name = packdecl.ManifestName
+			data, err = os.ReadFile(filepath.Join(p.Root, name))
+		}
 		if err != nil {
 			t.Fatalf("pack %s: %v", p.Name, err)
 		}
-		if _, problems := packdecl.Decode(data); len(problems) != 0 {
+		decode := packdecl.Decode
+		if name == "pack.toml" {
+			decode = packdecl.DecodeTOML
+		}
+		if _, problems := decode(data); len(problems) != 0 {
 			t.Errorf("pack %s no longer validates strictly, which is what `yolo check` "+
 				"and pack staging run:\n  %s", p.Name, strings.Join(problems, "\n  "))
 		}

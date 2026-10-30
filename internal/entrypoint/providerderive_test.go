@@ -55,8 +55,8 @@ func TestGatewayProviderPacksDeclareOnlyStableFacts(t *testing.T) {
 				t.Errorf("anthropic endpoint = %q, want %q", got, tt.anthropicURL)
 			}
 			profiles := p.Decl.Profiles()
-			if len(profiles) != 1 || profiles[0].Name != tt.pack || profiles[0].Provider != tt.pack {
-				t.Errorf("profiles = %+v, want one same-named provider profile", profiles)
+			if len(profiles) != 0 {
+				t.Errorf("profiles = %+v, want none: the provider is selectable by its own name (OQ-RC3)", profiles)
 			}
 			bridge := false
 			for _, need := range p.Decl.DeclaredNeeds() {

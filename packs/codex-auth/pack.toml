@@ -1,0 +1,36 @@
+description = "The OpenAI (ChatGPT) subscription as one provider and profile, and the one machine-wide owner for its login and refresh-token rotation. It installs nothing; the codex pack brings it, and you may select it without codex."
+# The name this pack had before OQ-PE3 (docs/design/provider-enablement.md PE-D7): a config
+# still naming it is refused naming this one. The pinned endpoint is PE-D4: the bridge routes
+# claude through it, and a user providers.openai-codex entry may not re-point it.
+formerly = { packs = ["openai-auth"] }
+name = "codex-auth"
+
+[[loophole]]
+from = "loopholes/openai-auth-broker"
+
+[[provider]]
+capabilities = ["web_search"]
+endpoints.openai-responses.base_url = "https://chatgpt.com/backend-api/codex"
+endpoints.openai-responses.wire_api = "openai-responses"
+pinned_endpoint = true
+model_options.gpt-6-astra.context_window = "272000"
+model_options.gpt-6-astra.description = "Frontier"
+model_options.gpt-6-astra.long_context_window = "1000000"
+model_options.gpt-6-astra.name = "GPT-6 Astra"
+model_options.gpt-6-astra.order = "2"
+model_options.gpt-6-luna.context_window = "272000"
+model_options.gpt-6-luna.description = "Fast"
+model_options.gpt-6-luna.long_context_window = "1000000"
+model_options.gpt-6-luna.name = "GPT-6 Luna"
+model_options.gpt-6-luna.order = "3"
+model_options."gpt-6.1-sol".context_window = "272000"
+model_options."gpt-6.1-sol".description = "Balanced"
+model_options."gpt-6.1-sol".long_context_window = "1000000"
+model_options."gpt-6.1-sol".name = "GPT-6.1 Sol"
+model_options."gpt-6.1-sol".order = "1"
+models = { gpt-6-astra = "gpt-6-astra", gpt-6-luna = "gpt-6-luna", "gpt-6.1-sol" = "gpt-6.1-sol" }
+name = "openai-codex"
+
+[[profile]]
+name = "codex"
+provider = "openai-codex"

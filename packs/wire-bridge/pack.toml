@@ -1,0 +1,16 @@
+name = "wire-bridge"
+
+[[adapter]]
+adapts = { from = "openai", from_platforms = ["aws-bedrock"], to = "anthropic" }
+address = "http://127.0.0.1:8214"
+
+[[adapter]]
+adapts = { from = "openai-responses", to = "anthropic" }
+address = "http://127.0.0.1:8215"
+
+[[service]]
+endpoint = "wire-bridge.endpoint"
+host_daemon = { cmd = ["yolo", "internal", "daemon", "wire-bridge"] }
+jail_daemon = { cmd = ["yolo-jaild", "wire-bridge"], restart = "on-failure" }
+name = "wire-bridge"
+via_address = "http://127.0.0.1:8216"

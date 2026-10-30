@@ -5,8 +5,6 @@ package packdecl
 // names, and the shipped pi pack's one declaration. Through Decode and the real validator.
 
 import (
-	"io/fs"
-	"path"
 	"reflect"
 	"testing"
 
@@ -69,14 +67,7 @@ func TestASessionHomeDeclarationRefuses(t *testing.T) {
 // The shipped pi pack decodes strictly and declares exactly one session home: its config dir,
 // stock pi's own relocation variable, and the shared names the plan's measurements list.
 func TestTheShippedPiPackDeclaresOneSessionHome(t *testing.T) {
-	raw, err := fs.ReadFile(officialpacks.FS, path.Join("pi", ManifestName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, problems := Decode(raw)
-	if len(problems) != 0 {
-		t.Fatalf("pi's manifest: %v", problems)
-	}
+	m := decodeShippedPack(t, officialpacks.FS, "pi")
 	homes := m.SessionHomes()
 	if len(homes) != 1 {
 		t.Fatalf("pi declares %d session homes, want 1: %+v", len(homes), homes)

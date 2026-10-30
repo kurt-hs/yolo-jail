@@ -98,7 +98,7 @@ func TestHostResolverAppliesAnEmbeddedEntrysFilters(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.Root, "README.md")); !os.IsNotExist(err) {
 		t.Errorf("the host resolver handed out an embedded pack with the file its entry excludes (%v)", err)
 	}
-	if _, err := os.Stat(filepath.Join(p.Root, "pack.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(p.Root, "pack.toml")); err != nil {
 		t.Errorf("control: the rest of the pack must be there: %v", err)
 	}
 }
@@ -128,7 +128,7 @@ func TestPackExplainExplainsAnEmbeddedEntrysFilters(t *testing.T) {
 	}
 	got := out.String()
 	if !strings.Contains(got, "filtered out 1 file") || !strings.Contains(got, "README.md") ||
-		!strings.Contains(got, "pack.json") {
+		!strings.Contains(got, "pack.toml") {
 		t.Errorf("explain must list what stages and what the filter dropped:\n%s", got)
 	}
 }

@@ -68,8 +68,8 @@ func TestEmbeddedCacheTreeCarriesTheExecBit(t *testing.T) {
 		t.Fatalf("muse-planner not embedded: %v", EmbeddedProblems())
 	}
 	for rel, want := range map[string]os.FileMode{
-		"files/scripts/muse-planner-exec.sh": 0o555,
-		"files/agents/muse-planner.md":       0o444,
+		"home/.pi/agent/bin/muse-planner-exec.sh": 0o555,
+		"home/.pi/agent/agents/muse-planner.md":   0o444,
 	} {
 		fi, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {

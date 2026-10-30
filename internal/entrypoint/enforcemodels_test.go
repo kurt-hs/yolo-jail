@@ -55,7 +55,7 @@ func renderEnforce(t *testing.T, user map[string]packload.UserProfile, profile s
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, user, providers)
+	resolved, err := resolveShippedProfiles(packs, user, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

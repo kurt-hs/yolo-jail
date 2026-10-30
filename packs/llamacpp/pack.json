@@ -29,11 +29,6 @@
         "supports_strict_mode": "false",
         "supports_usage_in_streaming": "true"
       }
-    },
-    {
-      "kind": "profile",
-      "name": "llamacpp",
-      "provider": "llamacpp"
     }
   ],
   "name": "llamacpp"

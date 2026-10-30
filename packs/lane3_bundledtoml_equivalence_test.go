@@ -57,17 +57,20 @@ func TestLane3BundledLoopholeTOMLSemanticEquivalence(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			shippedRoot := filepath.Join(".", tc.name)
-			shippedManifest, err := os.ReadFile(filepath.Join(shippedRoot, packdecl.ManifestLegacyJSONName))
+			shippedManifest, err := os.ReadFile(filepath.Join(shippedRoot, packdecl.ManifestTOMLName))
 			if err != nil {
 				t.Fatal(err)
 			}
-			shippedDecl, shippedProblems := packdecl.Decode(shippedManifest)
+			if string(shippedManifest) != tc.toml {
+				t.Fatalf("shipped %s/%s differs from the frozen TOML fixture:\n%s", tc.name, packdecl.ManifestTOMLName, shippedManifest)
+			}
+			shippedDecl, shippedProblems := packdecl.DecodeTOML(shippedManifest)
 			frozenDecl, frozenProblems := packdecl.Decode([]byte(tc.legacy))
 			if len(shippedProblems) != 0 || len(frozenProblems) != 0 {
 				t.Fatalf("decode shipped/frozen legacy manifest: shipped=%v frozen=%v", shippedProblems, frozenProblems)
 			}
 			if !reflect.DeepEqual(lane3ManifestSemantics(shippedDecl), lane3ManifestSemantics(frozenDecl)) {
-				t.Fatalf("frozen legacy fixture no longer matches shipped %s/%s", tc.name, packdecl.ManifestLegacyJSONName)
+				t.Fatalf("frozen legacy fixture no longer means what shipped %s/%s does", tc.name, packdecl.ManifestTOMLName)
 			}
 
 			legacyRoot := t.TempDir()

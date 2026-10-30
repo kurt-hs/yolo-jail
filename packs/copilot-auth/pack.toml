@@ -1,0 +1,29 @@
+description = "GitHub Copilot as one provider and profile: the Copilot CLI's own login, and the GitHub Copilot client pi, opencode and oh-omp have built in. It installs nothing; the copilot pack brings it, and you may select it without copilot."
+# The names this pack and its profile had before OQ-PE3 (docs/design/provider-enablement.md
+# PE-D7): a config still naming either is refused naming the new one.
+formerly = { packs = ["github-copilot"], profiles = { github-copilot = "copilot" } }
+name = "copilot-auth"
+
+# GITHUB COPILOT AS A PROVIDER, SELECTABLE WITH NO DECLARATION (providers.md, "A provider the
+# agent has built in"; docs/design/provider-enablement.md OQ-PE3, PE-D5): the provider and a
+# profile named for the agent, the way packs/codex-auth ships `openai-codex` and `codex`.
+# packs/copilot needs this pack, so selecting the Copilot CLI brings it; selected without
+# copilot, beside pi, it makes `-p pi=copilot` and the mixed set
+# `"profile": {"pi": ["bedrock", "copilot"]}` work with nothing in the user's config.
+#
+# The provider names no endpoint and no credential, and keeps the id the agents' own clients
+# key it by (PE-D6). An agent that has it built in (pi, opencode, oh-omp: their
+# `built_in_providers`) runs it on its own client, list and login. The Copilot CLI runs it on
+# its own GitHub login: its pack needs this one, and a pack binds a platform by needing a pack
+# that ships a provider of it. The `platform` is the one fact the provider offers about
+# itself, so an agent with no GitHub Copilot client of its own (claude, codex) is told a bare
+# `-p copilot` reaches nothing for it. `-p copilot` (a bare profile for every agent) and
+# `-p copilot=<profile>` (the Copilot CLI's selection) are told apart by the `=`.
+[[provider]]
+name = "github-copilot"
+pinned_endpoint = true
+platform = "github-copilot"
+
+[[profile]]
+name = "copilot"
+provider = "github-copilot"

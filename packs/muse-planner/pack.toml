@@ -1,0 +1,25 @@
+name = "muse-planner"
+description = "A read-only pi-subagents child backed by Meta's Muse Code CLI (`muse exec`) on the local Muse login: the parent session calls it by name for a plan or an analysis and returns the text; it never edits the repository. Pi-shaped (pi-subagents), delivered through yolo's `files` kind — inert if pi-subagents is not installed."
+# THE WRAPPER the `muse-planner` agent's runner runs. It lands in `~/.pi/agent/bin`,
+# beside the definition. The agent definition deliberately does NOT invoke it by its bare
+# name: the external-cli runner resolves a bare command on PATH requiring the exec bit
+# (pi-subagents' `resolveBinary` -> `X_OK`), and a `files` tree may not land on the
+# jail's PATH (packdecl's appendJailPathProblems refuses it). The
+# definition therefore invokes `bash -c 'exec "$HOME/.pi/agent/bin/muse-planner-exec.sh"'`:
+# `bash` is always executable, and `-c` lets `$HOME` resolve the path without a shell
+# expanding `~`. (It was also the workaround for the EMBEDDED channel carrying no exec bit,
+# which packs/executables.txt has since closed.) The file ships executable at every notch,
+# so it can be run directly too.
+#
+# It reads the child's prompt from stdin and hands it to
+# `muse exec --prompt-file` under `--disable-approval` (sandbox kept), a bounded
+# `--max-model-steps` and a per-run `:read-only` permission profile, with its own deadline
+# and the CLI's exit codes propagated. The profile id carries its leading colon (the bare
+# `read-only` resolves to nothing), and the wrapper's `-c` value is JSON, so it is quoted.
+# The file's own header is the reference.
+# THE AGENT DEFINITION. `~/.pi/agent/agents/` is pi-subagents' user agent directory
+# (`getAgentDir()/agents`; `~/.agents` is the other user scope it also reads). A
+# definition needs `name` and `description` or it is skipped entirely, and `runner` is the
+# block that makes it an external CLI rather than a Pi child. No `adapter`: only a
+# code-owned id (codex-exec, claude-code, cursor-agent and their -writer twins) may set
+# one, and this is the generic one-shot-stdin runner.

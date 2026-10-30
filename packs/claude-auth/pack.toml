@@ -1,0 +1,27 @@
+description = "The Claude subscription as one provider and profile, and the machine-wide broker that serializes its OAuth refreshes. It installs nothing; the claude pack brings it, and you may select it without claude."
+name = "claude-auth"
+
+# THE CLAUDE SUBSCRIPTION AS A PROVIDER (docs/design/provider-enablement.md OQ-PE1, OQ-PE5):
+# the provider and the profile named for the agent, `-p pi=claude`, and the credential broker
+# that keeps the subscription's single-use refresh token from being burnt by two jails at
+# once. packs/claude needs this pack, so selecting Claude Code brings it; a user may also
+# select it without claude, beside pi, opencode or oh-omp, to run their own anthropic client.
+#
+# The provider keeps the id the agents' own clients key it by (PE-D6), because
+# `built_in_providers.names` matches the yolo provider's name. It names no endpoint in v1
+# (PE-D3) and no key, so Claude Code on the `claude` profile stays on its own login with no
+# ANTHROPIC_* written, and an agent with no anthropic client of its own is told the profile
+# reaches nothing for it. The address is pinned (PE-D4): a user `providers.anthropic` entry
+# may not add one, because Claude Code sends the subscription's bearer token to whatever
+# address it is given.
+[[loophole]]
+from = "loopholes/claude-oauth-broker"
+
+[[provider]]
+name = "anthropic"
+pinned_endpoint = true
+platform = "anthropic"
+
+[[profile]]
+name = "claude"
+provider = "anthropic"

@@ -115,7 +115,7 @@ func TestClaudeDeclaresTheProtocolItsDeriveReads(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := ResolveProfiles(packs, nil, providers)
+			resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -167,7 +167,7 @@ func TestPiCodexProfilePassesProtocolResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestCodexCodexProfilePassesProtocolResolution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestTheShippedClaudeDeriveNoLongerReadsTheShorthand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}

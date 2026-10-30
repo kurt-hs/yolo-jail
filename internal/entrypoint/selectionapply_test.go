@@ -80,7 +80,7 @@ func (r *selectionRender) render(t *testing.T, profilesJSON string) map[string]a
 	if err != nil {
 		t.Fatalf("composing the provider table: %v", err)
 	}
-	resolved, err := packload.ResolveProfiles(nil, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(nil, map[string]packload.UserProfile{
 		"llamacpp": {Provider: "llamacpp"},
 		"vllm":     {Provider: "vllm"},
 	}, providers)
@@ -153,7 +153,7 @@ func TestSelectionTransitionsToCodexNativeAndNoProfilePreservesUserSettings(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"custom": {Provider: "llamacpp"},
 		"native": {Provider: "openai", Options: map[string]string{"model": "fast"}},
 	}, providers)

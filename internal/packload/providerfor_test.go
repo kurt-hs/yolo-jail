@@ -76,7 +76,7 @@ func TestProviderForAnswersWhatResolveProfilesResolved(t *testing.T) {
 
 	// With no user entry at all, the pack's own declaration is what lands in the table —
 	// the shipped `-p glm` case, which must keep working through the table.
-	resolved, err = ResolveProfiles(packs, nil, composePacks(t, packs))
+	resolved, err = ResolveProfiles(packs, withShippedProviderProfiles(nil, composePacks(t, packs)), composePacks(t, packs))
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}

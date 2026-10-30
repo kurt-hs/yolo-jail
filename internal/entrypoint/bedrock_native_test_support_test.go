@@ -62,7 +62,7 @@ func bedrockTablesFor(t *testing.T, packs []*packload.Pack, userProvidersJSON st
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, userProfiles, providers)
+	resolved, err := resolveShippedProfiles(packs, userProfiles, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -127,7 +127,7 @@ func TestPiOnBedrockBridgeIsHandedTheProvidersRegion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

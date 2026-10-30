@@ -137,7 +137,7 @@ func TestCopilotStartsOnANarrowedListsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestCodexSelectsANarrowedListsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func zaiNarrowedTo(t *testing.T, agent string, user map[string]packload.UserProf
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, user, table)
+	resolved, err := resolveShippedProfiles(packs, user, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestOpencodeWhitelistsANarrowedListOnItsOwnBedrockClient(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := packload.ResolveProfiles(packs, tc.user, table)
+			resolved, err := resolveShippedProfiles(packs, tc.user, table)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -449,7 +449,7 @@ func TestPiNarrowedListCarriesItsProfilesModelSwitch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := packload.ResolveProfiles(packs, tc.user, table)
+			resolved, err := resolveShippedProfiles(packs, tc.user, table)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -485,7 +485,7 @@ func narrowedPiRender(t *testing.T, provider, contributes string) *pioencodeRend
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}

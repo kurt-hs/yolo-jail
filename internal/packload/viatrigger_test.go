@@ -13,7 +13,10 @@ import (
 // viaWhatIf is the what-if of a notch serving nothing yet, over carrierLaunch's packs.
 func viaWhatIf(t *testing.T, active map[string]string) ViaWhatIf {
 	t.Helper()
-	return ViaWhatIf{Packs: embeddedNamed(t, carrierLaunch...), Served: NothingServed().AtHost(), Active: active}
+	// bedrock is selectable by the provider's own name (OQ-RC3): the config layer supplies that
+	// profile to a launch, so the what-if is handed it as the user's.
+	return ViaWhatIf{Packs: embeddedNamed(t, carrierLaunch...), Served: NothingServed().AtHost(), Active: active,
+		Profiles: map[string]UserProfile{"bedrock": {Provider: "bedrock"}}}
 }
 
 // THE TRIGGER FIRES FOR A VIA AND FOR A CARRIER, AND FOR NOTHING ELSE: pi on bedrock-bridge (its

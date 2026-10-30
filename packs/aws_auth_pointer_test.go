@@ -4,7 +4,7 @@ package packs_test
 // could not check each other: THE PORT.
 //
 // The loophole manifest starts the adapter (`yolo-jaild aws-credential-adapter --listen …`)
-// and the pack's `env` contribution in [`aws-auth/pack.json`](./aws-auth/pack.json) tells
+// and the pack's `env` contribution in [`aws-auth/pack.toml`](./aws-auth/pack.toml) tells
 // every AWS SDK in the jail where to find it (AWS_CONTAINER_CREDENTIALS_FULL_URI). A drifted
 // pair produced a jail whose adapter was up, whose pointer was set, and whose every credential
 // fetch was a connection refused three retries deep inside somebody's SDK. Since
@@ -32,15 +32,7 @@ import (
 
 func awsAuthPack(t *testing.T) *packdecl.Manifest {
 	t.Helper()
-	data, err := fs.ReadFile(packs.FS, "aws-auth/"+packdecl.ManifestName)
-	if err != nil {
-		t.Fatalf("reading the embedded aws-auth pack: %v", err)
-	}
-	m, problems := packdecl.Decode(data)
-	if len(problems) != 0 {
-		t.Fatalf("aws-auth/pack.json: %v", problems)
-	}
-	return m
+	return shippedManifest(t, "aws-auth")
 }
 
 // TestAWSAuthPointerAndAdapterAgreeOnThePort is the drift guard described above: the pointer
@@ -101,16 +93,23 @@ func TestEveryShippedListenPointerNamesADaemonThatDeclaresOne(t *testing.T) {
 			listens[m.Name] = m.JailDaemon.Listen
 		}
 	}
-	packFiles, err := fs.Glob(packs.FS, "*/"+packdecl.ManifestName)
+	packDirs, err := fs.ReadDir(packs.FS, ".")
 	if err != nil {
 		t.Fatal(err)
 	}
 	seen := map[string]bool{}
-	for _, path := range packFiles {
-		m, problems := packdecl.Decode(mustRead(t, path))
-		if len(problems) != 0 {
-			t.Fatalf("%s: %v", path, problems)
+	for _, dir := range packDirs {
+		if !dir.IsDir() {
+			continue
 		}
+		path := dir.Name() + "/pack.toml"
+		if _, err := fs.Stat(packs.FS, path); err != nil {
+			path = dir.Name() + "/" + packdecl.ManifestName
+			if _, err := fs.Stat(packs.FS, path); err != nil {
+				continue
+			}
+		}
+		m := shippedManifest(t, dir.Name())
 		check := func(vars map[string]string, servedBy string) {
 			for k, v := range vars {
 				if !strings.Contains(v, loopholedecl.TokenListen) {

@@ -191,7 +191,17 @@ that deletes a file it does not convert is code written for nobody.
   `"convert_later": true` is in the old user file ([§3](#3-the-order-of-releases) step 1).
 - **`"convert_later"` in a TOML file:** refused; it has nothing to say there.
 - **A project file in a jail:** an agent may run the migration on it.
-- **Shipped packs:** migrated in the commit that changes the reader.
+- **Shipped packs:** migrated in the commit that changes the reader, except where converting would
+  change what a pack means. Two cases keep a pack on `pack.json` for now, and
+  `TestNoShippedPackHasAJSONManifest` names each pack with its reason and fails a pack that no
+  longer needs it. (1) A JSON null: TOML has none, and the two spellings that look like one change
+  behavior, since dropping an option key un-declares it (a profile that sets it is refused as
+  undeclared) and `""` hands a derive a value where it had none. (2) A program whose
+  `install_hints` name only some package managers: the grouped reader gives every manager the
+  program does not name the bin as its package, so converting would invent `apt install pi` for a
+  program installed as `pi-coding-agent`, and turn provisioner and check-deps answers of "no
+  recipe" into recipes. Coordinator decision 2026-10-30, W3-M1; a grouped spelling for "declared,
+  no default" and for "no hint for this manager" retires the lists.
 - **A local pack in the old format:** refused, naming `yolo pack migrate <path>`
   ([`pack-manifests.md`](pack-manifests.md#5-the-migration)).
 - **A yolo older than the TOML release:** starts empty on a migrated file; nothing reaches it

@@ -240,7 +240,7 @@ func TestClaudeEnvIgnoresAVia(t *testing.T) {
 		}
 		return b.String()
 	}
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}

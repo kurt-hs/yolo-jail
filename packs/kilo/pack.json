@@ -17,11 +17,6 @@
         "model": null,
         "pin_model": null
       }
-    },
-    {
-      "kind": "profile",
-      "name": "kilo",
-      "provider": "kilo"
     }
   ],
   "name": "kilo",

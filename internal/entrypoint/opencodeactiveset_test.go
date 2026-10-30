@@ -284,7 +284,7 @@ func TestABedrockEntryAfterTheFirstKeepsItsOwnModelSwitch(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := packload.ResolveProfiles(packs, tc.user, table)
+			resolved, err := resolveShippedProfiles(packs, tc.user, table)
 			if err != nil {
 				t.Fatal(err)
 			}

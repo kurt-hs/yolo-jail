@@ -42,7 +42,7 @@ func (h *claudeHome) boot(profile string) map[string]any {
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(h.packs, h.profiles, providers)
+	resolved, err := resolveShippedProfiles(h.packs, h.profiles, providers)
 	if err != nil {
 		h.t.Fatal(err)
 	}

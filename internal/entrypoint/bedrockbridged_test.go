@@ -27,7 +27,7 @@ func bridgedBedrockEnv(t *testing.T, agent, pack, profile string, extra ...strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestCopilotReachesBedrockThroughTheBridgeOnEitherProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestAProfilesModelReplacesCopilotsBedrockDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, map[string]packload.UserProfile{
+	resolved, err := resolveShippedProfiles(packs, map[string]packload.UserProfile{
 		"mine": {Provider: "bedrock", Via: "wire-bridge", Options: map[string]string{"model": mine}}}, table)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestABedrockListAPackSuppliesReachesCopilotsProvidersFileWhole(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestOmpReachesBedrockThroughTheBridgeOnPlainBedrock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,20 +13,27 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
-// shippedPackDirs is every pack directory the repository ships that still carries a legacy
-// manifest. W3-M1 flips this to pack.toml once the shipped packs are converted.
+// shippedPackDirs is every pack directory the repository ships that carries a manifest: a
+// pack.toml for every converted pack, and a pack.json for the few that stay on their legacy
+// manifest because they hold a JSON null (TestNoShippedPackHasAJSONManifest names them).
 func shippedPackDirs(t *testing.T) []string {
 	t.Helper()
-	manifests, err := filepath.Glob(filepath.Join("..", "..", "packs", "*", packdecl.ManifestLegacyJSONName))
-	if err != nil {
-		t.Fatal(err)
+	seen := map[string]bool{}
+	var dirs []string
+	for _, name := range []string{packdecl.ManifestTOMLName, packdecl.ManifestLegacyJSONName} {
+		manifests, err := filepath.Glob(filepath.Join("..", "..", "packs", "*", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, manifest := range manifests {
+			if dir := filepath.Dir(manifest); !seen[dir] {
+				seen[dir] = true
+				dirs = append(dirs, dir)
+			}
+		}
 	}
-	if len(manifests) == 0 {
-		t.Fatal("no shipped packs/*/pack.json found: the round trip is not reading the tree it exists for")
-	}
-	dirs := make([]string, len(manifests))
-	for i, manifest := range manifests {
-		dirs[i] = filepath.Dir(manifest)
+	if len(dirs) == 0 {
+		t.Fatal("no shipped packs/*/pack.toml found: the round trip is not reading the tree it exists for")
 	}
 	return dirs
 }

@@ -31,7 +31,7 @@ func copilotEnvOnBedrock(t *testing.T, profile string, fetched []packload.Fetche
 	entry.Delete("models")
 	entry.Delete("model_options")
 	packload.SetFetchedModels(table, "bedrock", fetched)
-	resolved, err := packload.ResolveProfiles(packs, nil, table)
+	resolved, err := resolveShippedProfiles(packs, nil, table)
 	if err != nil {
 		t.Fatal(err)
 	}

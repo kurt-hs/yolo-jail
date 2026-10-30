@@ -45,7 +45,7 @@ func TestPiCodexProfileSeedsFreshAuthBeforeNpmLauncherExec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(closure, nil, providers)
+	resolved, err := resolveShippedProfiles(closure, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

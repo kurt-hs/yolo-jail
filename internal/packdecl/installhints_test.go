@@ -190,8 +190,8 @@ func shippedAndExampleManifests(t *testing.T) []string {
 	t.Helper()
 	var manifests []string
 	for _, pattern := range []string{
-		"../../packs/*/pack.json", "../../packs/*/pack.jsonc",
-		"../../docs/examples/*/pack.json", "../../docs/examples/*/pack.jsonc",
+		"../../packs/*/pack.toml", "../../packs/*/pack.json", "../../packs/*/pack.jsonc",
+		"../../docs/examples/*/pack.toml", "../../docs/examples/*/pack.json", "../../docs/examples/*/pack.jsonc",
 	} {
 		got, err := filepath.Glob(pattern)
 		if err != nil {
@@ -219,13 +219,13 @@ func TestEveryShippedAndExamplePackHasNoInstallHintProblem(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m, probs := Decode(data)
+		m, probs := decodeManifestNamed(path, data)
 		if m == nil {
 			t.Errorf("%s does not decode: %v", path, probs)
 			continue
 		}
 		// The tolerant read is the jail's boot, where any problem is fatal.
-		_, tprobs, _ := DecodeTolerant(data)
+		_, tprobs, _ := decodeManifestNamedTolerant(path, data)
 		for _, p := range append(probs, tprobs...) {
 			if strings.Contains(p, "install_hints") {
 				t.Errorf("%s: %s", path, p)

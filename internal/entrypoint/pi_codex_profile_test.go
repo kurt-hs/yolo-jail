@@ -43,7 +43,7 @@ func TestPiCodexProfileSelectsBuiltInProviderAndExplicitModel(t *testing.T) {
 		t.Fatalf("the composed table has no openai-codex provider, so the shadow assertion "+
 			"measures nothing: %v", providers.Keys())
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestPiCodexProfileSelects1MContextModel(t *testing.T) {
 			Options:  map[string]string{"model": "gpt-6-astra[1m]"},
 		},
 	}
-	resolved, err := packload.ResolveProfiles(packs, userProfiles, providers)
+	resolved, err := resolveShippedProfiles(packs, userProfiles, providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestPiCatalogNeverWritesAModelsMapWhereAnArrayBelongs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

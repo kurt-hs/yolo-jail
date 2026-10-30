@@ -47,7 +47,7 @@ func TestStagePacksAppliesAnEmbeddedEntrysFilters(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(staged, "README.md")); !os.IsNotExist(err) {
 		t.Errorf("the entry excludes README.md and the jail's tree still has it (%v)", err)
 	}
-	if _, err := os.Stat(filepath.Join(staged, "pack.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(staged, "pack.toml")); err != nil {
 		t.Errorf("control: the rest of the pack must stage: %v", err)
 	}
 	if len(loaded) != 1 || loaded[0].Root != staged {

@@ -271,7 +271,7 @@ func TestCheckResolvesEveryShippedPiProfileModelReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(shipped, nil, providers)
+	resolved, err := resolveShippedProfiles(shipped, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

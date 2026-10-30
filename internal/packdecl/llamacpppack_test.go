@@ -29,11 +29,15 @@ import (
 
 func llamacppManifest(t *testing.T) *Manifest {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(packsRepoRoot(t), "packs", "llamacpp", "pack.json"))
+	name := ManifestName
+	data, err := os.ReadFile(filepath.Join(packsRepoRoot(t), "packs", "llamacpp", name))
 	if err != nil {
-		t.Fatal(err)
+		name = ManifestTOMLName
+		if data, err = os.ReadFile(filepath.Join(packsRepoRoot(t), "packs", "llamacpp", name)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	m, problems := Decode(data)
+	m, problems := decodeManifestNamed(name, data)
 	if len(problems) > 0 {
 		t.Fatalf("the shipped manifest does not decode clean: %v", problems)
 	}
@@ -42,7 +46,7 @@ func llamacppManifest(t *testing.T) *Manifest {
 
 // The mode is a BUNDLE: one provider carrying both protocols, and one profile selecting
 // it. Either half alone is a switch that can half-land, which is the failure OQ-LM1 cites.
-func TestLlamacppShipsOneProviderAndTheProfileOverIt(t *testing.T) {
+func TestLlamacppShipsOneProviderAndNoProfileOverIt(t *testing.T) {
 	m := llamacppManifest(t)
 	providers := m.Providers()
 	if len(providers) != 1 || providers[0].Name != "llamacpp" {
@@ -73,9 +77,9 @@ func TestLlamacppShipsOneProviderAndTheProfileOverIt(t *testing.T) {
 		t.Errorf("endpoints = %v, want exactly the two protocols an agent here speaks", p.Endpoints)
 	}
 
-	profiles := m.Profiles()
-	if len(profiles) != 1 || profiles[0].Name != "llamacpp" || profiles[0].Provider != "llamacpp" {
-		t.Fatalf("profiles = %+v, want one selection over the provider", profiles)
+	// The provider is selectable by its own name (OQ-RC3), so the pack ships no profile over it.
+	if profiles := m.Profiles(); len(profiles) != 0 {
+		t.Fatalf("profiles = %+v, want none: a profile named for its provider is the provider's own name", profiles)
 	}
 }
 

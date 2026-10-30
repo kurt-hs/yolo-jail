@@ -29,7 +29,7 @@ func launchEnvOf(packs []*packload.Pack, profiles map[string]string, agent strin
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		return nil, err
 	}

@@ -156,9 +156,16 @@ func TestDecodeForUseMatchesDecodeWhenNothingIsSkipped(t *testing.T) {
 	manifests := map[string][]byte{
 		"malformed": []byte(`{"name":"p","contributes":[{"kind":"skills"},{"kind":"files","from":"/etc"}]}`),
 	}
-	shipped, err := filepath.Glob(filepath.Join("..", "..", "packs", "*", ManifestName))
-	if err != nil || len(shipped) == 0 {
-		t.Fatalf("no shipped manifests found: %v", err)
+	var shipped []string
+	for _, name := range []string{ManifestTOMLName, ManifestName} {
+		found, err := filepath.Glob(filepath.Join("..", "..", "packs", "*", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		shipped = append(shipped, found...)
+	}
+	if len(shipped) == 0 {
+		t.Fatal("no shipped manifests found")
 	}
 	for _, path := range shipped {
 		data, err := os.ReadFile(path)
@@ -168,8 +175,8 @@ func TestDecodeForUseMatchesDecodeWhenNothingIsSkipped(t *testing.T) {
 		manifests[path] = data
 	}
 	for name, data := range manifests {
-		strictM, strictP := Decode(data)
-		useM, useP, skipped := DecodeForUse(data)
+		strictM, strictP := decodeManifestNamed(name, data)
+		useM, useP, skipped := decodeManifestNamedForUse(name, data)
 		if len(skipped) != 0 {
 			t.Errorf("%s: skipped %q from a manifest this build reads whole", name, skipped)
 		}

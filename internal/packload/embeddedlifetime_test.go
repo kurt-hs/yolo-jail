@@ -105,7 +105,7 @@ func TestEmbeddedUsesOneTreePerBuild(t *testing.T) {
 func TestEmbeddedRootsAreReadableForTheProcess(t *testing.T) {
 	isolated(t)
 	for _, p := range mustEmbedded(t) {
-		if _, err := os.Stat(filepath.Join(p.Root, "pack.json")); err != nil {
+		if _, err := os.Stat(shippedManifestPath(p.Root)); err != nil {
 			t.Errorf("pack %s: %v — Pack.Root must stay readable for the whole process", p.Name, err)
 		}
 	}
@@ -380,7 +380,7 @@ func TestReleaseEmbeddedKeepsTheSharedTreeAndReadopts(t *testing.T) {
 	if r, _ := packload.EmbeddedLocation(); r != "" || packload.EmbeddedLoaded() {
 		t.Errorf("after release: location %q loaded=%v, want forgotten", r, packload.EmbeddedLoaded())
 	}
-	if _, err := os.Stat(filepath.Join(first[0].Root, "pack.json")); err != nil {
+	if _, err := os.Stat(shippedManifestPath(first[0].Root)); err != nil {
 		t.Fatalf("ReleaseEmbedded deleted the shared tree: %v", err)
 	}
 	if st, unlock, _ := packload.ProbeLease(root); st != packload.LeaseFree {
@@ -420,7 +420,7 @@ func TestReleaseEmbeddedRemovesTheFallbackTree(t *testing.T) {
 	if len(again) != len(first) {
 		t.Fatalf("Embedded() after release returned %d packs, want %d", len(again), len(first))
 	}
-	if _, err := os.Stat(filepath.Join(again[0].Root, "pack.json")); err != nil {
+	if _, err := os.Stat(shippedManifestPath(again[0].Root)); err != nil {
 		t.Errorf("re-materialized pack %s: %v", again[0].Name, err)
 	}
 	packload.ReleaseEmbedded()

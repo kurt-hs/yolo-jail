@@ -42,7 +42,7 @@ func renderOpencodeOver(t *testing.T, packs []*packload.Pack, userProviders stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, user, table)
+	resolved, err := resolveShippedProfiles(packs, user, table)
 	if err != nil {
 		t.Fatal(err)
 	}

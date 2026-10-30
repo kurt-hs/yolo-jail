@@ -108,7 +108,7 @@ func TestAProfileOnAPlanTheAgentHasNoProviderOfItsOwnForSaysSo(t *testing.T) {
 func TestTheGateRelaysThePlansKeyAndNoTierOnABuiltInProvider(t *testing.T) {
 	packs := embeddedNamed(t, "pi", "opencode", "claude", "zai", "llamacpp")
 	providers := compose(t, userProviders(t, `{"zai": {"models": {"fast": "glm-5.3-flash"}}}`), packs)
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestTheCodexListStaysYolosForAnAgentThatRendersIt(t *testing.T) {
 	}
 
 	providers := compose(t, userProviders(t, `{"openai-codex": {"models": {"fast": "gpt-6-luna"}}}`), packs)
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestTheCodexListStaysYolosForAnAgentThatRendersIt(t *testing.T) {
 func TestARepointedKeyReachesTheAgentsOwnClient(t *testing.T) {
 	packs := embeddedNamed(t, "pi", "opencode", "omp", "openrouter")
 	providers := compose(t, userProviders(t, `{"openrouter": {"api_key_env_name": "OR_KEY"}}`), packs)
-	resolved, err := ResolveProfiles(packs, nil, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(nil, providers), providers)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -208,7 +208,7 @@ func TestNormalizeLegacyProviderConsumersMatchesActualShippedOptionModelSemantic
 		if err != nil {
 			t.Fatal(err)
 		}
-		profiles, err := packload.ResolveProfiles([]*packload.Pack{pack}, map[string]packload.UserProfile{
+		profiles, err := resolveShippedProfiles([]*packload.Pack{pack}, map[string]packload.UserProfile{
 			"custom": {Provider: name, Options: map[string]string{"model": "user-choice"}},
 		}, providers)
 		if err != nil {
@@ -299,7 +299,7 @@ func TestNormalizeLegacyProviderConsumersMatchesComposerAndResolverWithoutLosing
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacyProfiles, err := packload.ResolveProfiles(packs, userProfiles, providers)
+	legacyProfiles, err := resolveShippedProfiles(packs, userProfiles, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

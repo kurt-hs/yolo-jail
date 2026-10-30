@@ -182,7 +182,7 @@ func TestActiveProviderSelectsProviderVariantAndAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, profiles, providers)
+	resolved, err := resolveShippedProfiles(packs, profiles, providers)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/gitproto"
 	"github.com/mschulkind-oss/yolo-jail/internal/gitremote"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostservice"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/svcendpoint"
 )
@@ -332,7 +333,16 @@ func serve(t *testing.T, handler hostservice.Handler) string {
 
 func packGitRewriteEnv(t *testing.T) []string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "packs", "git", "pack.json"))
+	toml, err := os.ReadFile(filepath.Join("..", "..", "packs", "git", "pack.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, problems := packdecl.DecodeTOML(toml)
+	if len(problems) != 0 {
+		t.Fatalf("the git pack's manifest: %v", problems)
+	}
+	// The legacy `contributes` rendering of the decoded manifest: the shape read below.
+	data, err := json.Marshal(decl)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -96,15 +96,14 @@ func TestBriefingAgreesWithTheBlockedToolDefault(t *testing.T) {
 	if !strings.Contains(bullet, `"guardrails"`) {
 		t.Fatalf("the blocking bullet no longer names the guardrails pack:\n%s", bullet)
 	}
-	raw, err := os.ReadFile(filepath.Join("..", "..", "packs", "guardrails", "pack.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "packs", "guardrails", "pack.toml"))
 	if err != nil {
 		t.Fatalf("the briefing names a guardrails pack the tree does not ship: %v", err)
 	}
-	// packdecl.Decode, the reader yolo itself uses: a pack.json is JSONC, and the guardrails
-	// one carries comments recording where its install hints came from.
-	manifest, problems := packdecl.Decode(raw)
+	// packdecl.DecodeTOML, the reader yolo itself uses on a pack.toml.
+	manifest, problems := packdecl.DecodeTOML(raw)
 	if len(problems) > 0 {
-		t.Fatalf("decode packs/guardrails/pack.json: %v", problems)
+		t.Fatalf("decode packs/guardrails/pack.toml: %v", problems)
 	}
 	blocks := 0
 	for _, c := range manifest.Contributes {

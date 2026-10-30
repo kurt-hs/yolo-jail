@@ -55,7 +55,7 @@ func capabilityJailVars(t *testing.T, packs []*packload.Pack, servers map[string
 		// emits as an empty table (jsonDumpsOrEmptyObj).
 		providers = jsonx.NewOrderedMap()
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatalf("ResolveProfiles: %v", err)
 	}

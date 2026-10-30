@@ -1,0 +1,4 @@
+name = "serial"
+
+[[loophole]]
+from = "loopholes/serial"

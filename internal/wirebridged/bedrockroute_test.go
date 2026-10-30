@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/sigv4"
 )
@@ -31,7 +32,7 @@ func shippedBridgeTables(t *testing.T, user string) (*jsonx.OrderedMap, map[stri
 	if err != nil {
 		t.Fatalf("composing the shipped providers: %v", err)
 	}
-	resolved, err := packload.ResolveProfiles(packs, nil, providers)
+	resolved, err := resolveShippedProfiles(packs, nil, providers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +322,16 @@ func TestTheSignerKeysOnTheProvidersPlatform(t *testing.T) {
 // implemented would compose an address the daemon idles on, and one implemented and not declared
 // would never be reached.
 func TestTheAdapterFrontsExactlyThePlatformsTheDaemonReaches(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "packs", "wire-bridge", "pack.json"))
+	toml, err := os.ReadFile(filepath.Join("..", "..", "packs", "wire-bridge", "pack.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl, problems := packdecl.DecodeTOML(toml)
+	if len(problems) != 0 {
+		t.Fatalf("the wire-bridge pack's manifest: %v", problems)
+	}
+	// The legacy `contributes` rendering of the decoded manifest: the shape read below.
+	raw, err := json.Marshal(decl)
 	if err != nil {
 		t.Fatal(err)
 	}

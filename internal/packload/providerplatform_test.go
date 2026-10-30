@@ -50,7 +50,7 @@ func launchSelection(t *testing.T, packs []*Pack, user *jsonx.OrderedMap, userPr
 	profiles map[string]string) (*jsonx.OrderedMap, map[string]ResolvedProfile, GateSelection) {
 	t.Helper()
 	providers := compose(t, user, packs)
-	resolved, err := ResolveProfiles(packs, userProfiles, providers)
+	resolved, err := ResolveProfiles(packs, withShippedProviderProfiles(userProfiles, providers), providers)
 	if err != nil {
 		t.Fatalf("resolving profiles: %v", err)
 	}
