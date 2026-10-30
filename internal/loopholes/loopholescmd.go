@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -597,7 +596,7 @@ func CmdSetEnabled(deps Deps, name string, enabled bool, opts SetEnabledOptions)
 		return setBrokerSwitch(deps, found, enabled, opts)
 	}
 	if opts.Global {
-		return setEnabledGlobally(deps, name, enabled)
+		return setEnabledGlobally(deps, found, enabled)
 	}
 	ws := opts.Workspace
 	if !workspaceUsable(deps, verb, name, enabled, ws) {
@@ -698,21 +697,33 @@ func setBrokerSwitch(deps Deps, lp *Loophole, enabled bool, opts SetEnabledOptio
 	return 1
 }
 
-// setEnabledGlobally is `--global`: the user-config block that switches name for every
-// workspace, printed to paste, never written (OQ-BB12), and exit 1, since nothing changed.
-func setEnabledGlobally(deps Deps, name string, enabled bool) int {
-	// The user config may be TOML or legacy JSONC, so the instruction is the verb that
-	// edits whichever file is live (`yolo config set`), not a snippet in one format, and the
-	// file named is the one the reader reads, not the legacy default.
-	fmt.Fprintf(deps.Err,
-		"yolo loopholes %s --global writes nothing: yolo does not edit your user config here.\n"+
-			"To switch %s for every workspace, run on the host:\n"+
-			"  yolo config set %s --user\n"+
-			"which sets `loopholes.%s.enabled` to %t in %s.\n"+
-			"To switch it for one workspace only, run `yolo loopholes %s %s` in it, which writes "+
-			"that workspace's own file beside the user config.\n",
-		verbFor(enabled), name, shquote.JoinDisplay([]string{"loopholes." + name + ".enabled", strconv.FormatBool(enabled)}), name, enabled,
-		paths.UserConfigDisplayPath(), verbFor(enabled), name)
+// setEnabledGlobally is `--global`: the every-workspace switch. In the readable config `packs` is
+// the only switch (docs/design/config-user.md A.4): a loophole is on user-wide when the pack that
+// ships it is selected, so the instruction names the pack verb, not a `loopholes.*` key (which
+// `yolo config set` refuses). It writes nothing and exits 1, since nothing changed here
+// (OQ-BB12). lp is the installed loophole, whose Pack says who ships it ("" when config does).
+func setEnabledGlobally(deps Deps, lp *Loophole, enabled bool) int {
+	verb, name := verbFor(enabled), lp.Name
+	perWS := fmt.Sprintf("To switch it for one workspace only, run `yolo loopholes %s %s` in it, which writes "+
+		"that workspace's own file beside the user config.\n", verb, name)
+	if lp.Pack == "" {
+		fmt.Fprintf(deps.Err, "yolo loopholes %s --global writes nothing: no pack ships %s (it is declared "+
+			"in config), so there is no pack to %s. `yolo pack ls` shows the selected packs and "+
+			"`yolo loopholes list` where each loophole comes from.\n%s", verb, name,
+			map[bool]string{true: "select", false: "deselect"}[enabled], perWS)
+		return 1
+	}
+	pack := shquote.JoinDisplay([]string{lp.Pack})
+	if enabled {
+		fmt.Fprintf(deps.Err, "yolo loopholes enable --global writes nothing: %s is on for every workspace "+
+			"whenever the pack that ships it is selected, and `%s` is (to select it again after removing it: "+
+			"`yolo pack add %s`, which edits %s). A workspace turns it off with `off = true` on its pack entry.\n%s",
+			name, lp.Pack, pack, paths.UserConfigDisplayPath(), perWS)
+		return 1
+	}
+	fmt.Fprintf(deps.Err, "yolo loopholes disable --global writes nothing: %s is on for every workspace "+
+		"because the pack that ships it, `%s`, is selected. To turn it off everywhere, run `yolo pack remove %s` "+
+		"(it edits %s).\n%s", name, lp.Pack, pack, paths.UserConfigDisplayPath(), perWS)
 	return 1
 }
 

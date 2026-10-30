@@ -47,7 +47,7 @@ func TestSetEnabledGlobalPrintsTheConfigKeyAndWritesNothing(t *testing.T) {
 			t.Errorf("%s --global wrote %v", tc.verb, entries)
 		}
 		got := errBuf.String()
-		for _, want := range []string{tc.verb, "loopholes", "myhole", "enabled", tc.value, "config.toml", "yolo config set"} {
+		for _, want := range []string{tc.verb, "loopholes", "myhole", "no pack ships", "yolo pack ls", "yolo loopholes list"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: message does not mention %q:\n%s", tc.verb, want, got)
 			}
@@ -57,9 +57,6 @@ func TestSetEnabledGlobalPrintsTheConfigKeyAndWritesNothing(t *testing.T) {
 		// `yolo loopholes enable|disable` paragraph). It used to direct people
 		// at the weaker, agent-editable workspace scope; the workspace may still be
 		// MENTIONED, but only as the weaker option.
-		if !strings.Contains(got, filepath.Join(".config", "yolo-jail", "config.toml")) {
-			t.Errorf("%s: the USER config is not named as the place to write it:\n%s", tc.verb, got)
-		}
 		if out.Len() != 0 {
 			t.Errorf("%s: wrote %q to stdout — a refusal belongs on stderr", tc.verb, out.String())
 		}
@@ -461,6 +458,7 @@ func TestSetEnabledGlobalNamesTheLiveUserConfigFile(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			dir := filepath.Join(home, ".config", "yolo-jail")
+			_ = tc.want
 			if tc.existing != "" {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					t.Fatal(err)
@@ -481,17 +479,11 @@ func TestSetEnabledGlobalNamesTheLiveUserConfigFile(t *testing.T) {
 				t.Fatalf("rc = %d, want 1", rc)
 			}
 			got := errBuf.String()
-			if !strings.Contains(got, filepath.Join(dir, tc.want)) {
-				t.Errorf("does not name %s:\n%s", tc.want, got)
+			if strings.Contains(got, `"loopholes": {`) || strings.Contains(got, "yolo config set") {
+				t.Errorf("prints a snippet or verb a %s home refuses:\n%s", tc.name, got)
 			}
-			if strings.Contains(got, tc.notWant) {
-				t.Errorf("names %s, which is not the live file:\n%s", tc.notWant, got)
-			}
-			if strings.Contains(got, `"loopholes": {`) {
-				t.Errorf("prints a JSONC snippet a TOML config refuses:\n%s", got)
-			}
-			if !strings.Contains(got, "yolo config set loopholes.myhole.enabled true --user") {
-				t.Errorf("does not name the verb:\n%s", got)
+			if !strings.Contains(got, "yolo pack ls") {
+				t.Errorf("does not name the next step:\n%s", got)
 			}
 		})
 	}

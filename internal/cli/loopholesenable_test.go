@@ -134,7 +134,7 @@ func TestLoopholesEnableRefusesWhatItCannotDo(t *testing.T) {
 			[]string{"this is a jail", "yolo loopholes enable journal --workspace /home/someone/code/app",
 				"fresh jail"}},
 		{"--global for another loophole", []string{"loopholes", "enable", "journal", "--global"}, nil, "",
-			[]string{"writes nothing", "yolo config set loopholes.journal.enabled true --user", "config.jsonc"}},
+			[]string{"writes nothing", "yolo pack add journal", "config.jsonc"}},
 		// A block naming nothing installed is one the launch then warns about, or, for a pack
 		// selected later, refuses: --global checks the name first, as the per-project form does.
 		{"--global for an unknown name", []string{"loopholes", "enable", "no-such", "--global"}, nil, "",
@@ -385,5 +385,35 @@ func TestLoopholesDisableRemovesABrokersOldSwitch(t *testing.T) {
 		if _, set := wf.LoopholeSwitch("github-broker"); set {
 			t.Errorf("the old switch is still in %s: %q", wf.Path, wf.Switches())
 		}
+	}
+}
+
+// TestLoopholesGlobalAdviceIsACommandThatRuns: the command `--global` prints must not be refused
+// by the verb it names (the dead end where `yolo config set loopholes.*` pointed back at
+// `yolo loopholes enable`). `disable --global` of a pack-shipped loophole names
+// `yolo pack remove <pack>`; run through the dispatch registry it succeeds and takes the pack
+// out of the user config.
+func TestLoopholesGlobalAdviceIsACommandThatRuns(t *testing.T) {
+	_, userCfg, _, _ := enableHome(t)
+	rc, _, stderr := captureDispatchRC(t, []string{"loopholes", "disable", "journal", "--global"})
+	if rc != 1 {
+		t.Fatalf("disable --global rc = %d, want 1 (nothing changed)\n%s", rc, stderr)
+	}
+	var cmd string
+	for _, l := range strings.Split(stderr, "\n") {
+		if i := strings.Index(l, "`yolo pack remove "); i >= 0 {
+			cmd = strings.TrimSpace(strings.SplitN(l[i+1:], "`", 2)[0])
+		}
+	}
+	if cmd != "yolo pack remove journal" {
+		t.Fatalf("the advice names %q, want `yolo pack remove journal`:\n%s", cmd, stderr)
+	}
+	rc, stdout, stderr2 := captureDispatchRC(t, strings.Fields(cmd)[1:])
+	if rc != 0 {
+		t.Fatalf("the printed command was refused: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, stdout, stderr2)
+	}
+	after, _ := os.ReadFile(userCfg)
+	if strings.Contains(string(after), `"journal"`) {
+		t.Errorf("the printed command left journal in the user config:\n%s", after)
 	}
 }
