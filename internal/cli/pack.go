@@ -75,8 +75,8 @@ its briefing/ dir reach every selected agent. A root AGENTS.md, CLAUDE.md or GEM
 is NEVER shipped — agent tools read those names as the pack REPOSITORY's own
 instructions — so shipped prose lives under briefing/.
 
-A pack.json adds a "contributes" list, one typed entry per effect, with a "kind" from a
-closed set. A "skills" or "briefing" entry naming neither "into" nor "agents" is a
+A pack.toml (or the legacy pack.json, which "yolo pack migrate" converts) adds one typed
+entry per effect, with a "kind" from a closed set. A "skills" or "briefing" entry naming neither "into" nor "agents" is a
 broadcast, to every agent. Each entry governs only the files its "from" names (an
 omitted briefing "from" names every briefing/*.md no other entry names), so declaring
 one file's audience never stops another file from shipping:
@@ -162,7 +162,7 @@ See ` + "`yolo config-ref`" + ` (the "packs" section) for the full per-kind fiel
 
 The packs yolo ships are selected by NAME, and none is on by default:
 
-  "packs": ["claude"]        # or copilot, codex, opencode, pi, agy
+  yolo pack add claude       # or copilot, codex, opencode, pi, agy
 
 ANY pack may read the host home — reads-host, a config surface's readsHost, mount, an
 installer program, or a host-prepending briefing — whoever shipped it. There is no approval prompt: naming a pack
@@ -252,9 +252,9 @@ yolo pack install or yolo pack update re-fetches a tag its author re-pointed.
                               a launch to record one. It writes nothing in the pack.
   yolo pack --help, -h        this text (also 'yolo pack help', and after any verb)
 
-Packs are configured in ~/.config/yolo-jail/config.jsonc under "packs" (USER scope
-only — a workspace config cannot name one), as a bare name for a pack yolo ships or an
-address for one from elsewhere:
+Packs are selected with "yolo pack add <name>", which writes your user config's "packs"
+list (USER scope only — a workspace config cannot name one), as a bare name for a pack
+yolo ships or an address for one from elsewhere. In a legacy JSONC config the list reads:
 
   "packs": ["claude",
             "file:///home/me/code/my-pack",
@@ -1472,8 +1472,8 @@ func packLs(out, errw io.Writer, color bool) int {
 	}
 	pr := richtext.Printer{W: out, Color: color}
 	if len(entries) == 0 {
-		pr.Printf("[dim]No packs configured. Add them under \"packs\" in " +
-			"~/.config/yolo-jail/config.jsonc (user scope only).[/dim]")
+		pr.Printf("[dim]No packs configured. Select one with `yolo pack add <name>` " +
+			"(your user config; user scope only).[/dim]")
 		return 0
 	}
 	pr.Printf("[bold]%-20s %-8s %s[/bold]", "NAME", "KIND", "SOURCE")

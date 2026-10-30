@@ -121,3 +121,20 @@ func TestPackAddInJailPrintsHostRun(t *testing.T) {
 		t.Fatalf("jailed pack edit wrote: %q", after)
 	}
 }
+
+// The pack help's own advice names the verb that selects a pack, not a file to hand-edit, and
+// the verb it names is one the same help dispatches.
+func TestPackHelpNamesYoloPackAddAsTheWayToSelectAPack(t *testing.T) {
+	var out, errw bytes.Buffer
+	if rc := packMain([]string{"--help"}, &out, &errw, false); rc != 0 {
+		t.Fatalf("pack --help rc=%d: %s", rc, errw.String())
+	}
+	for _, want := range []string{"yolo pack add claude", `"yolo pack add <name>"`, "pack.toml"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("pack --help lacks %q", want)
+		}
+	}
+	if strings.Contains(out.String(), "configured in ~/.config/yolo-jail/config.jsonc") {
+		t.Error("pack --help still tells a reader to hand-edit config.jsonc to select a pack")
+	}
+}

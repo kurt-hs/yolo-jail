@@ -32,7 +32,7 @@ func TestPackUsageAnswersWhatPacksAreFor(t *testing.T) {
 	// needs. They have just been told their jail has no agent; help that discusses packs
 	// abstractly leaves them exactly where they were. It must show the shortest working
 	// entry, by name.
-	if !strings.Contains(got, `"packs": ["claude"]`) {
+	if !strings.Contains(got, "yolo pack add claude") {
 		t.Errorf("pack help must show the shortest working entry — a user arriving from "+
 			"the no-agent warning needs the literal thing to type:\n%s", got)
 	}
@@ -42,10 +42,10 @@ func TestPackUsageAnswersWhatPacksAreFor(t *testing.T) {
 	// Where the list lives, and how to make an entry take effect. A user who reads
 	// only this text must be able to get from zero packs to one.
 	for _, want := range []string{
-		"~/.config/yolo-jail/config.jsonc", // the file to edit
-		`"packs"`,                          // the key
-		"file://",                          // an address they can copy
-		"yolo pack install",                // the step that fetches
+		"yolo pack add <name>", // the verb that writes the list
+		`"packs"`,              // the key it writes
+		"file://",              // an address they can copy
+		"yolo pack install",    // the step that fetches
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("pack help missing %q — a user cannot get from zero packs to one:\n%s",
