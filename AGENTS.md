@@ -29,7 +29,7 @@ packs install no CLI at all. `rg -l '"kind": "program"' packs/*/pack.json` lists
 something and `rg -l loophole packs/*/pack.json` the loophole list; writing either membership down here is
 what rots. Two structural facts, not guessable from a manifest:
 
-- `openai-auth` declares the `openai-codex` PROVIDER (its capabilities, its Responses endpoint and
+- `codex-auth` declares the `openai-codex` PROVIDER (its capabilities, its Responses endpoint and
   the subscription's ONE model list — no credential pointer) and the `codex` profile selecting it,
   rather than an agent pack owning it. Consumers render that list, so a model is added there and
   nowhere else ([ML-D1](docs/design/model-lists-and-pickers.md#ML-D1)).
@@ -40,7 +40,10 @@ what rots. Two structural facts, not guessable from a manifest:
 
 **Every loophole yolo ships is a pack's, and there is no other channel**
 ([`OQ-A10`](docs/reference/loophole-system.md#oq-a10)). `claude-oauth-broker` is a contribution of
-`packs/claude`, not a pack of its own. Do not reintroduce `bundled_loopholes/`,
+`packs/claude-auth`, which `packs/claude` needs, not a pack of its own
+([OQ-PE5](docs/design/provider-enablement.md#OQ-PE5)). The subscription packs are named
+`<agent>-auth` and their profiles for the agent; a former pack or profile name is refused naming
+the new one through the manifest's `formerly` key ([PE-D7](docs/design/provider-enablement.md#PE-D7)). Do not reintroduce `bundled_loopholes/`,
 `paths.BuiltinLoopholeNames` or `loopholes.ReservedLoopholeNames`; the top-level `journal` and
 `host_processes` config keys are refusals naming their replacements, and `publishes: "endpoint"`,
 `jail_env` and an absolute `requires.file_exists` are refused for every manifest yolo reads.

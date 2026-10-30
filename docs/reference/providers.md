@@ -50,7 +50,7 @@ covers:
   - packs/kilo/pack.json
   - packs/llamacpp/pack.json
   - packs/aws-auth/pack.json
-  - packs/openai-auth/pack.json
+  - packs/codex-auth/pack.json
   - packs/codex/pack.json
   - packs/opencode/pack.json
   - packs/opencode/plugins/yolo-openai-auth.js
@@ -721,7 +721,7 @@ that writes a launch's environment for one notch or backend. There are three:
     Neither line calls the name withheld, because the command holds it anyway
     ([ES-D10 to ES-D12](../design/credential-sources-separation.md#10-decision-ledger)).
   - **A profile the wire bridge serves starts the bridge for its one command.** `yolo host
-    -p cerebras -- claude`, and `-p codex -- claude` with `"packs": ["claude", "openai-auth"]`, start
+    -p cerebras -- claude`, and `-p codex -- claude` with `"packs": ["claude", "codex-auth"]`, start
     the bridge's host half as a child of that launch, on a loopback port it picked, and point
     claude at it with the launch's caller token as `ANTHROPIC_AUTH_TOKEN`; the bridge stops when
     claude exits ([`wire-bridge.md`](wire-bridge.md#at-the-host-notch),
@@ -1144,7 +1144,7 @@ the next selection writes over it again.
 
 ### Selecting `openai-codex` for codex
 
-`openai-codex` is the subscription provider the `openai-auth` pack ships — codex's own
+`openai-codex` is the subscription provider the `codex-auth` pack ships — codex's own
 first-party ChatGPT login, backed by the host's `openai-auth` broker — and codex's derive treats
 it differently from every other provider:
 
@@ -1169,7 +1169,7 @@ protocol the `openai-codex` entry serves, so pointing codex at it resolves like 
 opencode has its own ChatGPT-subscription client: its built-in `openai` provider, which its
 built-in ChatGPT login puts on the subscription whenever an `oauth` credential is stored under
 `openai` (read from opencode 1.18.34, never run). The `codex` profile over `openai-codex` is
-`packs/openai-auth`'s, the one profile every agent selects it by, and opencode's derive treats the
+`packs/codex-auth`'s, the one profile every agent selects it by, and opencode's derive treats the
 provider by name, as codex's and pi's do ([OQ-1, OQ-2](../design/pi-codex-provider-shadowing.md#10-decision-ledger)):
 
 - **No yolo row for `openai-codex`**, a via row included. A row would put opencode on another SDK
@@ -1217,7 +1217,7 @@ expires, and the request fails.
 
 ### The `openai-codex` model list
 
-The subscription's models are declared once, on the `openai-codex` provider the `openai-auth`
+The subscription's models are declared once, on the `openai-codex` provider the `codex-auth`
 pack ships, and every agent that can use the provider renders that one list
 ([ML-D1](../design/model-lists-and-pickers.md#ML-D1)):
 
@@ -1334,21 +1334,23 @@ oh-omp and opencode, and `openai-codex`, the first case. For such a provider:
   `options.api_key` reaches no client, since only the row carried it, and the profile line warns
   and names the fix: put the key in a variable named under `api_key_env_name`.
 - **`openai-codex` on pi and opencode keeps yolo's list**: both run it on their own client but on
-  the one list `packs/openai-auth` declares ([ML-D1](../design/model-lists-and-pickers.md#ML-D1)),
+  the one list `packs/codex-auth` declares ([ML-D1](../design/model-lists-and-pickers.md#ML-D1)),
   which their packs say with `yolo_lists`, so its `YOLO_MODEL_<ROLE>` tiers are composed and the
   profile line names its `openai-responses` endpoint. oh-omp runs it on its own list.
-- **`github-copilot` is its own pack, provider and profile, which `copilot` brings**
-  ([BI-D14](../design/pi-codex-provider-shadowing.md#BI-D14)). Selecting the `copilot` pack
-  brings `packs/github-copilot` by an unconditional `needs`; selecting it without `copilot`,
-  beside pi, is enough for `-p pi=github-copilot`, or beside Bedrock for
-  `"profile": {"pi": ["bedrock", "github-copilot"]}`, whose scoped list and pi-subagents scope
+- **`github-copilot` is the provider of the `copilot-auth` pack, whose profile is `copilot`, and
+  `copilot` brings it** ([BI-D14](../design/pi-codex-provider-shadowing.md#BI-D14),
+  [OQ-PE3](../design/provider-enablement.md#OQ-PE3)). Selecting the `copilot` pack
+  brings `packs/copilot-auth` by an unconditional `needs`; selecting it without `copilot`,
+  beside pi, is enough for `-p pi=copilot`, or beside Bedrock for
+  `"profile": {"pi": ["bedrock", "copilot"]}`, whose scoped list and pi-subagents scope
   then hold `github-copilot/**` and `github-copilot/*` beside Bedrock's. With pi selected and
-  neither pack, `github-copilot` is undeclared, and the refusal names adding the pack. The
+  neither pack, `copilot` is undeclared, and the refusal names adding the pack; the former
+  profile name `github-copilot` is refused naming `copilot`. The
   provider names no endpoint and no key: pi signs in with its own `/login`, which is not the
   Copilot CLI's. It names the platform `github-copilot`, so opencode and oh-omp, which have it
   built in, run it on their own clients; the Copilot CLI runs it on its own GitHub login, since
   its pack needs a pack that ships a provider of that platform; and for an agent with no client
-  of its own (claude, codex) a bare `-p github-copilot` reaches nothing, which the launch's
+  of its own (claude, codex) a bare `-p copilot` reaches nothing, which the launch's
   profile line says with the `-p <agent>=` next step.
 - **A plan the agent has no provider of its own for** (a `null` plan) gets nothing written, and
   the launch's profile line says the profile reaches nothing for that agent, naming
@@ -2833,7 +2835,7 @@ above explains what each is for; this table is the only place the exact spelling
 | Where that line goes | `<workspace>/.yolo/boot.log` (the previous boot's is `boot.log.prev`); never the terminal | `entrypoint.bootLogName`, `Env.note` |
 | Id-writing surfaces with a host layer | pi's `settings` (`~/.pi/agent/settings.json`) only; codex's `config.toml` and opencode's `opencode.json` declare no `readsHost` | `packs/{pi,codex,opencode}/pack.json` |
 | codex's model for `openai-codex` | the profile's `model` option; the first declared `openai-codex` id when the profile names none or names `default` (`gpt-6.1-sol` as shipped); no `model` when the list is empty | `packs/codex/derive.lua` |
-| The `openai-codex` model list | ids `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-luna` in that order, each with a `[1m]` variant at 1,000,000 tokens after it; declared as `models` (alias = id) plus `model_options` facts `order`, `name`, `description`, `context_window`, `long_context_window` | `packs/openai-auth/pack.json` |
+| The `openai-codex` model list | ids `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-luna` in that order, each with a `[1m]` variant at 1,000,000 tokens after it; declared as `models` (alias = id) plus `model_options` facts `order`, `name`, `description`, `context_window`, `long_context_window` | `packs/codex-auth/pack.json` |
 | pi's copy of that list | `~/.pi/agent/yolo-openai-codex-models.json`, the computed surface `pi/codex-models`: `{"models": [{"id", "base", "name", "contextWindow"}, …], "enforce": <bool>}`, `enforce` being the switch of the profile that governs `openai-codex` (`piEnforceFor`); `{}` for an empty list. Read by the openai-auth extension at load, which refuses an unlisted id only when `enforce` is `true`. `yolo host apply` renders it at the host notch too, over the configured profile ([OQ-HC1](host-agent-environment.md#oq-hc1)) | `packs/pi/pack.json`, `packs/pi/derive.lua`, `packs/pi/extensions/yolo-openai-auth.js` |
 | opencode on `openai-codex` | `provider.openai` in `~/.config/opencode/opencode.json`: `models` keyed by each listed id (`name`; `limit` `{context, input}` at the declared window, `output` 0; `id` the base for a `[1m]` variant), `options.apiKey` the literal `yolo-chatgpt-subscription-needs-the-shared-login`, `whitelist` the ids while `enforce_models` is on; no `npm`, no `baseURL`; `model`/`small_model` `openai/<id>`, `enabled_providers` `openai`. The prelaunch `--opencode-auth` writes `{"openai": {"type": "oauth", "refresh": "yolo-broker:<n>", "access", "expires", "accountId"}}` into `~/.local/share/opencode/auth.json`, keeping every other key; the plugin `~/.config/opencode/plugins/yolo-openai-auth.js` serves requests on that credential | `packs/opencode/pack.json`, `packs/opencode/derive.lua`, `packs/opencode/plugins/yolo-openai-auth.js`, `internal/openauthclient/opencode.go` |
 | User config keys | `providers` (merged-scope — **except the ADDRESS**), `profiles` / `profile` (user-scope-only); `use_profiles` and `agent_profiles` refused by name as old spellings of `profile` | `internal/config` |
@@ -2880,7 +2882,7 @@ above explains what each is for; this table is the only place the exact spelling
 | Kilo reachability | Claude and Copilot use the wire bridge — through the adapter's composed `anthropic` address, not a Kilo-declared one; Pi and OpenCode use the direct OpenAI route; Codex has no documented Responses route and receives no entry | `packs/kilo/pack.json`, `packs/wire-bridge/pack.json`, `packs/{claude,codex,pi,opencode,copilot}/derive.lua` |
 | Kilo credential variable | `KILO_API_KEY` | `packs/kilo/pack.json` |
 | Gateway model catalogs | Neither gateway pack declares a model or model default. The user supplies `providers.<gateway>.models`; profiles name an alias with their `model` option. | `packs/{openrouter,kilo}/pack.json` |
-| The `codex` profile | `{"name": "codex", "provider": "openai-codex"}`, declared by the openai-auth pack alone; select `openai-auth` in `packs` to use it, since no agent pack `needs` it | `packs/openai-auth/pack.json` |
+| The `codex` profile | `{"name": "codex", "provider": "openai-codex"}`, declared by the codex-auth pack alone, which `codex` needs; select `codex-auth` in `packs` to use it without `codex` | `packs/codex-auth/pack.json` |
 | copilot BYOK variables | `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_WIRE_API`, `COPILOT_MODEL`, `COPILOT_PROVIDER_API_KEY`, `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` | `packs/copilot/derive.lua` |
 | copilot's placeholder credential | `local`, for a loopback base URL with no key, and for a bridge-served endpoint whose own credential is unhydrated | `packs/copilot/derive.lua` |
 | oh-omp program | executable `oh-omp`, npm package `@oh-labs/oh-omp@0.15.3` | `packs/omp/pack.json` |

@@ -238,7 +238,7 @@ designs chose, not of what the maintainer ruled.
    each socat's (`startPortForwards`, `internal/cli/run/network.go`) and a host-wide daemon's spawn
    (`realSpawn`, `internal/broker/brokerlifecycle.go`). That third site was missing from this item:
    the two large logs measured below are host-wide daemons' (`scope: "host"` in
-   `packs/claude/loopholes/claude-oauth-broker/manifest.jsonc` and
+   `packs/claude-auth/loopholes/claude-oauth-broker/manifest.jsonc` and
    `packs/aws-auth/loopholes/aws-auth/manifest.jsonc`), which `broker.EnsureSingleton` spawns,
    not the run pipeline. A fourth followed the same day: a launch-owned service's host half
    (`launchservice.Start`, `internal/launchservice/launchservice.go`), whose

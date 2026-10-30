@@ -203,7 +203,7 @@ condition under which the dependency is live:
   `claude` CLI", which is exactly "claude is in use". Multiple bins are OR'd. No condition means
   unconditional: `packs/claude` names `wire-bridge` that way, so the bridge joins every launch
   with claude and idles unless claude's selection routes through it. The OpenAI credential
-  service is not a need: `packs/openai-auth`, which declares the `codex` profile and the service,
+  service is not a need: `packs/codex-auth`, which declares the `codex` profile and the service,
   joins a launch only when the user selects it.
 
 **Resolution happens host-side, at selection, before staging** — because the mount is the filter,
@@ -370,12 +370,13 @@ Exactly one is used per request, so a signature and a bearer never travel togeth
 ### The Codex Responses route
 
 The second translating route runs claude on the ChatGPT subscription. The `codex` profile, which
-`packs/openai-auth` declares over its `openai-codex` provider, sends Claude Code's Anthropic
+`packs/codex-auth` declares over its `openai-codex` provider, sends Claude Code's Anthropic
 Messages requests to this route, which calls the Codex Responses service. Claude keeps speaking
 its native protocol: the bridge translates only after claude has been routed to the loopback.
 Neither the profile nor the route changes a normal claude launch. Using the profile takes
-`openai-auth` in the user's `packs`, since no agent pack `needs` it; claude's own `needs` names
-only `wire-bridge` ([`needs`](#needs--a-conditional-pack-dependency)).
+`codex-auth` in the user's `packs`, or `codex`, which `needs` it
+([OQ-PE2](../design/provider-enablement.md#OQ-PE2)); claude's own `needs` names `claude-auth` and
+`wire-bridge` ([`needs`](#needs--a-conditional-pack-dependency)).
 
 The route reads no provider key. It asks the OpenAI credential service for a **credential
 view** *(a term coined for this route)*: a deliberately restricted broker response that carries
@@ -1265,12 +1266,12 @@ launch, for the one agent it runs, stopped when that agent exits). The mechanism
 ```console
 $ yolo host -p codex -- claude
 yolo host: + wire-bridge (needed by claude)
-yolo host: Profile codex: declared by openai-auth; claude → provider "openai-codex", on its "anthropic" endpoint
+yolo host: Profile codex: declared by codex-auth; claude → provider "openai-codex", on its "anthropic" endpoint
 yolo host: started the "wire-bridge" service (pack "wire-bridge", pid 96868) for claude on 127.0.0.1:36501; it answers only this launch's caller token and stops when claude exits. Its log: ~/.local/share/yolo-jail/logs/launch-service-wire-bridge.log
 ```
 
 That is the stderr of `TestHostCodexClaudeRunsThroughALaunchOwnedBridge`'s launch, on
-`"packs": ["claude", "openai-auth"]`, with the log path shortened and the lines about where
+`"packs": ["claude", "codex-auth"]`, with the log path shortened and the lines about where
 claude was found and the test environment's `AWS_REGION` left out; the pid and port are the kernel's, the cause lines are [WB-D12](#wb-d12)'s, and a
 machine never logged in to OpenAI prints the prelaunch's login lines before the service line. <a id="no-macos-user-bridge"></a>On **macos-user** the same host half runs
 outside Seatbelt, started after the launch's host services and stopped when the sandboxed command

@@ -121,9 +121,9 @@ selection step this deletes.
 
 The OpenAI credential service was the complementary multi-agent case: one service owns one
 rotating grant that several agent packs use (`codex`, and the `codex` profiles `claude` and `pi`
-ship), so `openai-auth-broker` belongs to the separate `openai-auth` pack and every agent pack
-that uses it declares it through `needs` (`rg -l '"pack": "openai-auth"' packs/*/pack.json` is
-the list). Selecting any of those agents therefore joins the same dependency automatically;
+ship), so `openai-auth-broker` belongs to the separate `codex-auth` pack (named `openai-auth` until
+2026-10-29), and every agent pack that uses it declares it through `needs`
+(`rg -l '"pack": "codex-auth"' packs/*/pack.json` is the list). Selecting any of those agents therefore joins the same dependency automatically;
 users still do not select an authentication implementation by hand, and selecting several does
 not declare several daemon owners.
 
@@ -1005,14 +1005,18 @@ a config.
 > anything renders a loophole in a jail, it is not the entrypoint's surface loop. A derived
 > `true` would make the census assert something no code reads.
 
-## The Claude OAuth broker, a contribution of the claude pack
+<a id="the-claude-oauth-broker-a-contribution-of-the-claude-pack"></a>
+
+## The Claude OAuth broker, a contribution of the claude-auth pack
 
 The broker is the loophole whose move emptied the last bundled channel, and three of its
 properties are not guessable from its manifest.
 
-**It is a contribution of `packs/claude`**, declared as a `loophole` kind from
-`packs/claude/loopholes/claude-oauth-broker/`, not a pack of its own ([`OQ-A10`](#oq-a10)).
-Selecting the claude pack is the dependency the old `requires.command_on_path: "claude"` sniff
+**It is a contribution of `packs/claude-auth`**, declared as a `loophole` kind from
+`packs/claude-auth/loopholes/claude-oauth-broker/`, not a pack of its own ([`OQ-A10`](#oq-a10)).
+It was `packs/claude`'s own contribution until 2026-10-29, when it moved beside the provider it
+serves ([OQ-PE5](../design/provider-enablement.md#OQ-PE5)); `packs/claude` `needs` `claude-auth`,
+so selecting the claude pack still brings it. Selecting the claude pack is the dependency the old `requires.command_on_path: "claude"` sniff
 approximated, so the manifest has no such sniff. It runs like every pack loophole: its host
 daemon publishes `socket` behind the framework front and is spawned by the launch that needs it
 ([`HD-R1`](../design/host-daemon-ownership.md#HD-R1) retired the `scope: "host"` singleton the

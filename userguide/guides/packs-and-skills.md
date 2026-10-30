@@ -43,9 +43,10 @@ with its permission prompts off, since the jail is the safety boundary.
 
 **Model providers.** Each adds a provider and a profile of the same name, so you can point an agent
 at it with `yolo -p <name> -- <agent>`: `zai`, `openrouter`, `kilo`, `cerebras`, `llamacpp`,
-`bedrock` and `github-copilot`. The `copilot` pack brings `github-copilot`, and you can also select
-it without `copilot`, to run pi, opencode or oh-omp on the GitHub Copilot client they have built in:
-`"packs": ["pi", "github-copilot"]`, then `yolo -p pi=github-copilot -- pi`.
+`bedrock`. The subscription packs are named for their agent, and their profiles for the agent too:
+`claude-auth` (profile `claude`), `codex-auth` (`codex`) and `copilot-auth` (`copilot`). Each agent
+brings its own, and you can also select one without its agent, to run pi, opencode or oh-omp on a
+subscription they have built in: `"packs": ["pi", "copilot-auth"]`, then `yolo -p pi=copilot -- pi`.
 [Providers and Models](providers-and-models.md) explains them.
 
 **Host connections.** Each ships a **loophole**, a named connection from the jail to one capability
@@ -57,10 +58,10 @@ your host's login.
 **Habits.** `guardrails` makes recursive `grep` and `find` refuse and point at `rg` and `fd`.
 [Packages and Tools](packages-and-tools.md#blocked-tools) covers blocking tools.
 
-Some packs bring others with them: `claude` brings `wire-bridge`, `copilot` brings
-`github-copilot`, `bedrock` brings `aws-auth`, and `cerebras` and `kilo` bring `wire-bridge` when
+Some packs bring others with them: `claude` brings `claude-auth` and `wire-bridge`, `codex` brings
+`codex-auth`, `copilot` brings `copilot-auth`, `bedrock` brings `aws-auth`, and `cerebras` and `kilo` bring `wire-bridge` when
 `claude` or `copilot` is selected. The launch prints the full set it resolved, so what you see there
-can be longer than what you typed. A pack brought this way cannot be left out, but `github-copilot`
+can be longer than what you typed. A pack brought this way cannot be left out, but `copilot-auth`
 only declares a provider and a profile: it runs nothing until you select that profile.
 
 ### Packs from elsewhere

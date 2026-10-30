@@ -9,7 +9,7 @@ own on the host for the jail, declared straight in your config, see
 The shipped loopholes are the best examples to read alongside this page. Each lives in its pack's
 folder in the repository:
 
-- [`claude-oauth-broker`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/claude/loopholes/claude-oauth-broker),
+- [`claude-oauth-broker`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/claude-auth/loopholes/claude-oauth-broker),
   in the `claude` pack: a host service that intercepts Claude's login refreshes and takes them one
   at a time.
 - [`host-processes`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/host-processes):
@@ -20,7 +20,7 @@ folder in the repository:
 - [`journal`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/journal),
   [`serial`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/serial),
   [`aws-auth`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/aws-auth),
-  [`openai-auth-broker`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/openai-auth/loopholes/openai-auth-broker)
+  [`openai-auth-broker`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/codex-auth/loopholes/openai-auth-broker)
   and [`cgroup-delegate`](https://github.com/mschulkind-oss/yolo-jail/blob/main/packs/cgroup-delegate).
 
 Every loophole comes from a pack, yolo's own included. Start yours in the **local pack**, the

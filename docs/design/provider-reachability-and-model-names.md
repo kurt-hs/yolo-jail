@@ -105,7 +105,7 @@ three read the declaration, and the fourth answers from the composed table alone
 
 **Walk it with pi's `meta`.** `meta` is one of pi's names ([`packs/pi/pack.json`](../../packs/pi/pack.json#L21)).
 No pack yolo ships declares a provider called `meta` — the shipped provider set is `openai-codex`
-([`packs/openai-auth`](../../packs/openai-auth/pack.json)), `zai`, `openrouter`, `llamacpp`,
+([`packs/codex-auth`](../../packs/codex-auth/pack.json)), `zai`, `openrouter`, `llamacpp`,
 `cerebras`, `kilo` and `bedrock` (`rg '"kind": "provider"' packs/*/pack.json`).
 So a launch with a profile selecting `meta` for pi composes a table that does not hold it, and:
 

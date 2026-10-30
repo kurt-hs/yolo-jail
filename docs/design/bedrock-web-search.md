@@ -194,7 +194,7 @@ MEASURED at `6f21b82c`, from the code and [`mcp-configuration.md`](../reference/
 - **Tavily is the worked example; yolo ships no Tavily server.** A user's `mcp_servers.tavily`
   with `provides: "web_search"` and `requires_env: ["TAVILY_API_KEY"]` is delivered under Kilo and
   suppressed where `web_search` is declared (`rg -n web_search packs/*/pack.json`: the claude and
-  agy program contributions, the `zai` provider, and `openai-codex` in `packs/openai-auth`).
+  agy program contributions, the `zai` provider, and `openai-codex` in `packs/codex-auth`).
   claude's `bedrock` provider declares no capabilities, so under `-p bedrock` such a server already
   reaches claude. INFERRED from the resolver; not run.
 - **pi projects the table** into `~/.pi/agent/mcp.json`, the file pi's own MCP client (0.99.0 and

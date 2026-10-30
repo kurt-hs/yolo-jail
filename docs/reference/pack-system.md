@@ -983,7 +983,7 @@ the built-in providers the program runs on its own client but on YOLO's model li
 renders from yolo's declaration of the provider. `packs/pi`, `packs/omp` and `packs/opencode`
 declare it; opencode's `plans` map `zai` to its own `zai-coding-plan`, which reads
 `ZHIPU_API_KEY`, and `openai-codex` to its own `openai`; pi's and opencode's `yolo_lists` name
-`openai-codex`, whose one list `packs/openai-auth` declares
+`openai-codex`, whose one list `packs/codex-auth` declares
 ([ML-D1](../design/model-lists-and-pickers.md#ML-D1)). Core reads it three ways: every derive's
 `ctx.built_in_providers` (`{ id, api_key_env_name, yolo_list }`, or `false` for a `null` plan),
 the launch's profile line, which names the agent's own client or says a `null` plan's profile

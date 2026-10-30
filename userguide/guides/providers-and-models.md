@@ -107,11 +107,23 @@ A launch where nothing was overridden prints no such line. See
 | `kilo` | [Kilo](https://kilo.ai) gateway | Claude Code and Copilot through the wire bridge; pi and opencode directly | `KILO_API_KEY` |
 | `cerebras` | [Cerebras](https://www.cerebras.ai) | Claude Code and Copilot through the wire bridge; pi and opencode directly | `CEREBRAS_API_KEY` |
 | `llamacpp` | a [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` you run on port 8080 | Claude Code, Copilot, pi, opencode | none |
-| `github-copilot` | [GitHub Copilot](https://github.com/features/copilot), on each agent's own GitHub login | Copilot, pi, opencode, oh-omp | none: each agent signs in itself |
+| `copilot-auth` | [GitHub Copilot](https://github.com/features/copilot), on each agent's own GitHub login | Copilot, pi, opencode, oh-omp | none: each agent signs in itself |
+| `claude-auth` | the Claude subscription, on each agent's own Claude login | Claude Code, pi, opencode, oh-omp | none: each agent signs in itself |
+| `codex-auth` | the ChatGPT subscription, through one shared login ([Logins](authentication.md#a-shared-chatgpt-login-for-codex-and-pi)) | Codex, pi, opencode, and Claude Code through the wire bridge | none |
 
-The `copilot` pack brings `github-copilot`; select it without `copilot` to run pi, opencode or oh-omp
-on GitHub Copilot, as `"packs": ["pi", "github-copilot"]` with `yolo -p pi=github-copilot -- pi`,
-or beside Bedrock as `"profile": {"pi": ["bedrock", "github-copilot"]}`. Claude Code and Codex
+Each subscription's pack is named for the agent you know it by, and so is its profile: `claude`
+brings `claude-auth`, `codex` brings `codex-auth` and `copilot` brings `copilot-auth`. Select one
+without its agent to run another agent on that subscription: `"packs": ["pi", "copilot-auth"]` with
+`yolo -p pi=copilot -- pi`, or beside Bedrock as `"profile": {"pi": ["bedrock", "copilot"]}`. The
+former names `openai-auth` and `github-copilot` are refused, naming the new one.
+
+For a provider an agent has built in that no pack ships, such as pi's `groq`, the launch refuses
+the undeclared profile and prints the two lines to add to your user config:
+
+```jsonc
+"providers": {"groq": {"platform": "groq"}},
+"profiles": {"groq": {"provider": "groq"}}
+``` Claude Code and Codex
 have no GitHub Copilot client, and the launch says the profile reaches nothing for them.
 
 pi, opencode and oh-omp have zai, cerebras and openrouter built in, and opencode and oh-omp have

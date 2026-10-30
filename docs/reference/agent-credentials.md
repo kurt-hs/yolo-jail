@@ -41,8 +41,8 @@ covers:
   - internal/awscredadapter/
   - internal/packdecl/envoverride.go
   - internal/packload/envoverride.go
-  - packs/claude/loopholes/claude-oauth-broker/
-  - packs/openai-auth/
+  - packs/claude-auth/loopholes/claude-oauth-broker/
+  - packs/codex-auth/
   - packs/aws-auth/
 tags: [credentials, security, boundary, env_sources, host_files, broker, oauth, aws, bedrock, sso]
 ---
@@ -435,7 +435,8 @@ It bundles two jobs.
    under its flock.
 
 **Selecting the `claude` pack is the dependency.** The broker is a *contribution* of
-`packs/claude`, not a pack of its own, because the dependency is structural. Its manifest ships
+`packs/claude-auth`, which `packs/claude` needs, not a pack of its own, because the dependency is
+structural ([OQ-PE5](../design/provider-enablement.md#OQ-PE5) moved it there from `packs/claude`). Its manifest ships
 `default_enabled: true`, which is what makes selecting the pack *sufficient*. One other shipped
 manifest does the same, `openai-auth-broker`, for the same reason: every other loophole is host
 access you ask for, and these two keep a credential you already asked for from being burnt.
@@ -491,7 +492,7 @@ a view yet; the measures it waits on, and the deletion of the interception after
 The broker's `{state}` directory is keyed by the loophole **name**, so an upgrading host keeps its
 existing CA and every already-running jail keeps trusting it. Its `state_files` crosses only the
 CA cert and the server cert/key, leaving the CA *key* host-side. Nothing protects the name by
-reservation any more: what protects it is `packs/claude` **occupying** it, since loophole names are
+reservation any more: what protects it is `packs/claude-auth` **occupying** it, since loophole names are
 sole-owned across packs, fatally, plus the origin gate.
 
 There is a second off switch, and it is the right one for a user on a different auth route: the
@@ -597,7 +598,7 @@ its binary).
 ### The OpenAI subscription credential service
 
 Codex, Pi and opencode use one machine-wide OpenAI subscription grant without sharing any agent's
-whole home. The `openai-auth` pack owns a host service named `openai-auth-broker`, one copy per
+whole home. The `codex-auth` pack owns a host service named `openai-auth-broker`, one copy per
 jail sharing one credentials file and the lock beside it, and every
 agent pack that can use the subscription `needs` that pack, so selecting any of them selects the
 same service rather than declaring a second refresh owner ([`OQ-OA1`](#oq-oa1)). Sharing the
@@ -1589,9 +1590,9 @@ $ rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc
 | Shared credentials file | `<global home>/.claude-shared-credentials/.credentials.json`, what an interception jail's Claude reads | `internal/storage` (`ensure.go`), `internal/oauthbroker` (`LegacyCredsPath`) |
 | Claude credential view | opted in by `YOLO_CLAUDE_CREDENTIAL_VIEW=1` in the host environment, off by default on every backend; the view is `<workspace>/.yolo/home/<claude dir>/.credentials.json`, one registration per workspace under `<broker state>/claude-views` | `internal/claudeview` (`SwitchEnv`, `DefaultOn`, `ViewRel`); `internal/oauthbroker/store.go` (`ViewRegistryDir`) |
 | Claude host verbs | `yolo claude-auth status`, `inspect <file>`, `refresh`, `logout`; `refresh` and `logout` refuse inside a jail | `internal/cli/claudeauth.go` |
-| Broker daemon | `yolo internal daemon claude-oauth-broker`, one per jail, `detach: true` | `internal/broker`; `packs/claude/loopholes/claude-oauth-broker/manifest.jsonc` |
-| OpenAI canonical state | `<loophole state>/credentials.json`, mode `0600`; parent and lock are private | `internal/openaiauth`; `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
-| OpenAI credential daemon | `yolo internal daemon openai-auth-broker`, one per jail, `detach: true` | `internal/openaiauthdaemon`; `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
+| Broker daemon | `yolo internal daemon claude-oauth-broker`, one per jail, `detach: true` | `internal/broker`; `packs/claude-auth/loopholes/claude-oauth-broker/manifest.jsonc` |
+| OpenAI canonical state | `<loophole state>/credentials.json`, mode `0600`; parent and lock are private | `internal/openaiauth`; `packs/codex-auth/loopholes/openai-auth-broker/manifest.jsonc` |
+| OpenAI credential daemon | `yolo internal daemon openai-auth-broker`, one per jail, `detach: true` | `internal/openaiauthdaemon`; `packs/codex-auth/loopholes/openai-auth-broker/manifest.jsonc` |
 | OpenAI jail endpoint | `YOLO_SERVICE_OPENAI_AUTH_BROKER_ENDPOINT` | `internal/openauthclient` |
 | OpenAI refresh lead, and the proactive tick (verified at `d4e435a3`) | 5 min; checked every minute | `openaiauth.DefaultRefreshLead`; the daemon's `-refresh-interval` (`internal/openaiauthdaemon`) |
 | OpenAI login callback (verified at `d4e435a3`) | `http://localhost:<port>/auth/callback`, port `1455`, else `1457`; abandoned after 15 min | `internal/openaiauthdaemon` (`loginPorts`, the daemon's `-login-timeout`) |
@@ -1610,7 +1611,7 @@ $ rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc
 | AWS canonical state | `<loophole state>/credentials.json`, mode `0600` in a `0700` directory | `internal/awsauth` (`state.go`) |
 | AWS model list | the `bedrock-models` action, host socket only, `{"region", "budget_ms"}`; answered from `<loophole state>/bedrock-models.json` (`0600`) when the region's list is under a day old, else fetched within the launch's budget (at most **5 s**), else the cache's last good list with why. A launch asks no running service: it runs the same fetch itself before it starts its own ([`HD-D22`](../design/host-daemon-ownership.md#HD-D22)) | `internal/awsauth` (`modellist.go`, `modelcache.go`), `internal/awsauthdaemon` (`modellists.go`), `internal/cli/run` (`bedrockmodels.go`) |
 | AWS jail endpoint | `YOLO_SERVICE_AWS_AUTH_ENDPOINT`, read by the in-jail adapter, which listens on `127.0.0.1:1461` (its `jail_daemon.listen`), or on a port the launch picked when the jail shares its launcher's network namespace. Emitted by any launch where the loophole is active and its pack may run host code, like every other credential daemon's (`detach: true`) — `hostServicesMountArgs` derives the set from the manifests rather than naming services one by one, which it did until 2026-09-20 (two names, and this one was the third, so the adapter answered `ServiceUnreachable` for every request while the launch reported a healthy jail). On `macos-user` the launch runs the adapter outside the sandbox instead, through `jail_daemon.host_cmd`, and `yolo host --` runs it the same way for an agent on a Bedrock provider, handing the adapter the endpoint of a front of its own in its input file (`internal/cli/run/hostdoorways.go`). ⚠ Not on Apple Container, which starts no aws-auth service | `internal/awscredadapter` (`EndpointEnv`); `internal/cli/run/assemble_parts.go` |
-| Codex refresh adapter | `http://{listen}/oauth/token`: `127.0.0.1:1460` on a jail with its own network namespace, a port the launch picked on one sharing its launcher's (`network.mode: "host"`, or nested) | `internal/openaiauthadapter`; the pointer in `packs/codex/pack.json`, the port as `jail_daemon.listen` in `packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc` |
+| Codex refresh adapter | `http://{listen}/oauth/token`: `127.0.0.1:1460` on a jail with its own network namespace, a port the launch picked on one sharing its launcher's (`network.mode: "host"`, or nested) | `internal/openaiauthadapter`; the pointer in `packs/codex/pack.json`, the port as `jail_daemon.listen` in `packs/codex-auth/loopholes/openai-auth-broker/manifest.jsonc` |
 | Git identity keys carried | `user.name`, `user.email`, plus an in-jail `core.excludesFile` | `internal/cli/run` (`composeGitconfig`), `internal/entrypoint/identity.go` |
 | `macos-user` identity replay vars | `YOLO_GIT_NAME`, `YOLO_GIT_EMAIL`, from the launch env; `YOLO_GLOBAL_GITIGNORE`, the staged copy of the global gitignore, set on the bootstrap by the plan | `internal/macosuser` (`MacosSandboxEnv`, `buildBootstrapEnv`), `internal/entrypoint/identity.go` |
 | Config keys in this story | `env_sources`, `host_files`, `host_services`, `loopholes` | `yolo config-ref` |

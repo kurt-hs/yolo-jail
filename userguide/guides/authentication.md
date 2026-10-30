@@ -72,8 +72,9 @@ does not log in Claude Code on your host, and the reverse.
 
 ## A shared ChatGPT login for Codex, pi and opencode
 
-The `codex`, `pi` and `opencode` packs bring `openai-auth`, a service on your host that holds one
-ChatGPT subscription login for the whole machine. The first time you start `codex` or `pi`
+The `codex` pack brings `codex-auth`, a service on your host that holds one ChatGPT subscription
+login for the whole machine; add `codex-auth` to `packs` to use it from pi or opencode without
+`codex`. The first time you start `codex` or `pi`
 without a login, or `opencode` on the `codex` profile, it prints a browser link, and opens it on
 the host when it can. After that one login, Codex, pi and opencode in every project use it, and
 the service handles refreshing it; opencode never refreshes it itself.

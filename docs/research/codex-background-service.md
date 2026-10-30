@@ -475,7 +475,7 @@ launched started one** (INFERRED: no yolo launch was run).
   [`unix_socket.rs:256-263`](https://github.com/openai/codex/blob/rust-v0.159.0/codex-rs/app-server-transport/src/transport/unix_socket.rs#L256-L263)).
 - **The refresh doorway stays right.** On a jail with its own network namespace the doorway listens
   at the fixed `127.0.0.1:1460` for the jail's life
-  ([`manifest.jsonc`](../../packs/openai-auth/loopholes/openai-auth-broker/manifest.jsonc#L53-L66)).
+  ([`manifest.jsonc`](../../packs/codex-auth/loopholes/openai-auth-broker/manifest.jsonc#L53-L66)).
   The **doorway** is the thin adapter an agent's client talks to, which checks the launch's caller
   token and forwards to the host service
   ([HS-D15](../design/host-notch-services.md#HS-D15)). A daemon that inherits that URL keeps a
@@ -483,7 +483,7 @@ launched started one** (INFERRED: no yolo launch was run).
 - **It goes stale after every Codex update yolo installs.** The launcher moves the CLI with
   `codex update` at most hourly ([`shims.go:1462`](../../internal/entrypoint/shims.go#L1462)). The next launch's TUI starts the **old** selected package, prints
   the skew notice and lists the old version's models. yolo's `-p codex` default, `gpt-6.1-sol`
-  since `5e6220e8` ([`packs/openai-auth/pack.json`](../../packs/openai-auth/pack.json#L33-L44)),
+  since `5e6220e8` ([`packs/codex-auth/pack.json`](../../packs/codex-auth/pack.json#L33-L44)),
   is not at risk from a 0.157-or-later daemon: its catalog minimum is 0.153.0, and nothing shows the
   server gating it higher ([§1](#1-the-short-answer)). A model the server does gate above the
   daemon's version would be missing. About five minutes in, the updater loop installs the new release and restarts the server,
