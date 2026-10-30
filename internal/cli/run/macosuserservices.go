@@ -124,7 +124,7 @@ func (o *Options) composedProvidersFor(cfg *jsonx.OrderedMap, packs []*packload.
 	addresses, _ := config.LoadAdapterAddresses(nil)
 	addresses = launchservice.WithoutOverrides(addresses, packs, launchservice.Names(o.launchServices))
 	return packload.ComposeProvidersAt(cfgMap(cfg, "providers"), packs, addresses, served,
-		packload.WithModelFacts(cfgMap(cfg, "model_facts")))
+		packload.WithModelFacts(cfgMap(cfg, "model_facts")), config.WithOfflineModelCatalog(cfg, packs))
 }
 
 // planMacosUserService answers a channel composition that refused: added reports that it planned

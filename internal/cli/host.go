@@ -3155,7 +3155,7 @@ func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 		addresses := launchservice.WithoutOverrides(hostAdapterAddresses(), packs,
 			launchservice.Names(services))
 		return packload.ComposeProvidersAt(user, packs, addresses, launchservice.Served(services),
-			packload.WithModelFacts(shared))
+			packload.WithModelFacts(shared), config.WithOfflineModelCatalog(cfg, packs))
 	}
 	// NO ADDRESS A PACK'S OWN SERVICE SERVES (docs/design/credential-sources-separation.md
 	// ES-D18): `yolo host` starts no jail daemon, so nothing is served at this notch
@@ -3167,7 +3167,7 @@ func composedHostProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	// composeHostVars words. The same composition every notch calls (ComposeProvidersAt),
 	// with this notch's served set as its input (notch convergence item 2).
 	return packload.ComposeProvidersAt(user, packs, hostAdapterAddresses(), packload.NothingServed(),
-		packload.WithModelFacts(shared))
+		packload.WithModelFacts(shared), config.WithOfflineModelCatalog(cfg, packs))
 }
 
 // hostAdapterAddresses is the user's adapter address overrides, read the same way the jail

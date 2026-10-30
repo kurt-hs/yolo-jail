@@ -101,7 +101,7 @@ func unnarrowedMenuReport(r *reporter, packs []*packload.Pack, merged *jsonx.Ord
 		return
 	}
 	providers, err := packload.ComposeProviders(subMap(merged, "providers"), packs,
-		packload.WithModelFacts(subMap(merged, "model_facts")))
+		packload.WithModelFacts(subMap(merged, "model_facts")), config.WithOfflineModelCatalog(merged, packs))
 	if err != nil || providers == nil {
 		return
 	}
@@ -137,7 +137,7 @@ func unnarrowedMenuReport(r *reporter, packs []*packload.Pack, merged *jsonx.Ord
 // launch runs, and the model works, only unpinned.
 func inertRoutingReport(r *reporter, packs []*packload.Pack, merged *jsonx.OrderedMap) {
 	providers, err := packload.ComposeProviders(subMap(merged, "providers"), packs,
-		packload.WithModelFacts(subMap(merged, "model_facts")))
+		packload.WithModelFacts(subMap(merged, "model_facts")), config.WithOfflineModelCatalog(merged, packs))
 	if err != nil || providers == nil {
 		return
 	}
@@ -209,7 +209,7 @@ func chatCompletionsEndpoint(entry *jsonx.OrderedMap) bool {
 // started and no network is reached, so an agent that is not installed is one it could not ask.
 func (o *Options) modelCatalogReport(r *reporter, packs []*packload.Pack, merged *jsonx.OrderedMap) {
 	providers, err := packload.ComposeProviders(subMap(merged, "providers"), packs,
-		packload.WithModelFacts(subMap(merged, "model_facts")))
+		packload.WithModelFacts(subMap(merged, "model_facts")), config.WithOfflineModelCatalog(merged, packs))
 	if err != nil || providers == nil {
 		return
 	}

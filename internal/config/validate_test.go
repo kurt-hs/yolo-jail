@@ -605,6 +605,9 @@ func TestValidateProviderModelObjects(t *testing.T) {
 		// same wire id (the downstream handoff's fix 14).
 		`{"openrouter": {"models": {"floor": {"id": "deepseek/deepseek-v4.1-flash:floor"}, "floor-200k": {"id": "deepseek/deepseek-v4.1-flash:floor@200k", "wire_id": "deepseek/deepseek-v4.1-flash:floor", "context_window": 204800}}}}`,
 		`{"openrouter": {"models": {"x": {"id": "m", "wire_id": null}}}}`,
+		// The readable rows (RC-D29): keyed by the id they send, with no `id`, beside a provider's
+		// `every_model`, a twin and a compaction window, and an empty row the catalog fills (C7).
+		`{"bedrock": {"every_model": {"context": 200000, "price": {"input": 1, "output": 2}}, "models": {"global.anthropic.claude-opus-5-5": {"name": "Opus 5.5", "compact_at": 150000}, "opus-200k": {"twin_of": "global.anthropic.claude-opus-5-5", "context": 200000}, "zai.glm-5": {}, "legacy": "wire-x"}}}`,
 	}
 	for _, body := range valid {
 		if errs := providerErrors(t, body); len(errs) != 0 {
@@ -614,7 +617,11 @@ func TestValidateProviderModelObjects(t *testing.T) {
 
 	invalid := []struct{ body, want string }{
 		{`{"kilo": {"models": {"default": 5}}}`, ".models.default: expected a model id string or an object"},
-		{`{"kilo": {"models": {"default": {"reasoning": true}}}}`, ".models.default.id: required"},
+		// A row without `id` is a readable row only when it spells no legacy-only key (RC-D29); one
+		// that writes `context_window`, `input` or `cost` is a legacy row missing its wire id.
+		{`{"kilo": {"models": {"default": {"context_window": 1000}}}}`, ".models.default.id: required"},
+		{`{"kilo": {"models": {"default": {"reasoning": true, "foo": 1}}}}`, "providers.kilo.models.default.foo"},
+		{`{"kilo": {"every_model": {"context": "big"}}}`, "providers.kilo"},
 		{`{"kilo": {"models": {"default": {"id": ""}}}}`, ".models.default.id: expected a non-empty string"},
 		{`{"kilo": {"models": {"default": {"id": "m", "foo": 1}}}}`, ".models.default.foo: unknown key"},
 		{`{"kilo": {"models": {"default": {"id": "m", "reasoning": "true"}}}}`, ".models.default.reasoning: expected a boolean"},

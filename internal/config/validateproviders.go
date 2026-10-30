@@ -65,6 +65,7 @@ func validateProviderEntries(config *jsonx.OrderedMap, errs, warns *[]string) {
 			add(errs, path+": expected an object or null")
 			continue
 		}
+		cfg = splitReadableModels(name, cfg, errs)
 		reportUnknownKeys(cfg, knownProviderKeys, path, errs)
 		if base, has := cfg.Get("base_url"); has && base != nil {
 			// REMOVED (protocol-resolution.md), and this is the entry's ONLY message

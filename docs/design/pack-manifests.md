@@ -3,7 +3,7 @@ title: "Pack manifests: the same rules, shown on the maintainer's own packs"
 date: 2026-10-25
 status: accepted
 stage: DECIDED
-next: "Carry a model said once (every_model, twin_of, compact_at) into a launch's provider table, and give the shipped loophole manifests their TOML form"
+next: "Give the shipped loophole manifests their TOML form"
 tags: [packs, manifest, toml, conventions, design]
 summary: "Each of the maintainer's twelve packs, before and after: a manifest-less folder for the simple ones, a short TOML manifest for the rest, models declared once, and flags that add instead of replace. Every section is ruled. Part of the readable-config redesign."
 ---
@@ -11,8 +11,8 @@ summary: "Each of the maintainer's twelve packs, before and after: a manifest-le
 # Pack manifests: the same rules, shown on the maintainer's own packs
 
 **Status:** accepted 2026-10-25 (the maintainer, after reading every document: *"it all sounds
-good and I want to move forward"*). Built by 2026-10-30, and every shipped pack is a `pack.toml`, except that a model said once
-(`every_model`, `twin_of`, `compact_at`) does not reach a launch yet and the shipped loophole
+good and I want to move forward"*). Built by 2026-10-30, and every shipped pack is a `pack.toml`, a model said once
+(`every_model`, `twin_of`, `compact_at`) included ([RC-D29](readable-config.md#RC-D29)), except that the shipped loophole
 manifests are still JSONC; the [ledger](readable-config.md#decision-ledger) names each. A legacy
 `pack.json` is still read for a few releases, and `yolo pack migrate` converts one. The "today"
 manifests are the maintainer's twelve

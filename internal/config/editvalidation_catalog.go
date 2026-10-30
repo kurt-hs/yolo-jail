@@ -27,9 +27,44 @@ func explicitProviderCatalog(ctx *editValidationContext, config *jsonx.OrderedMa
 	if err != nil {
 		return nil, fmt.Errorf("compose provider declarations for offline catalog: %w", err)
 	}
+	factsByID, err := offlineCatalogFacts(ctx.rawUser, ctx.packs)
+	if err != nil {
+		return nil, err
+	}
+	for _, declaration := range declarations {
+		if len(factsByID) == 0 {
+			break
+		}
+		providerFacts := make(map[string]packdecl.ProviderModel, len(factsByID))
+		for id, facts := range factsByID {
+			providerFacts[id] = facts
+		}
+		catalog[declaration.Name] = providerFacts
+	}
+	return catalog, nil
+}
 
+// WithOfflineModelCatalog is the launch's catalog for the readable model rows
+// (packload.WithModelCatalog; docs/design/config-user.md §8 C7, docs/design/readable-config.md
+// RC-D29): the same offline facts an edit's validation fills a row from, read from the host floor's
+// provisioned packages, so a model named without facts launches with the facts `yolo config set`
+// checked it against. user is the config the host floor and provisioner keys are read from. The
+// read runs only when the composed table holds a readable row; a host floor with no catalog leaves
+// the rows with what they wrote.
+func WithOfflineModelCatalog(user *jsonx.OrderedMap, packs []*packload.Pack) packload.ComposeOption {
+	return packload.WithModelCatalog(func() (map[string]packdecl.ProviderModel, error) {
+		if user == nil {
+			user = jsonx.NewOrderedMap()
+		}
+		return offlineCatalogFacts(user, packs)
+	})
+}
+
+// offlineCatalogFacts reads every selected pack's offline model catalog from the host floor's
+// provisioned npm packages: the facts by model id, the first package to name an id winning.
+func offlineCatalogFacts(rawUser *jsonx.OrderedMap, packs []*packload.Pack) (map[string]packdecl.ProviderModel, error) {
 	var packPrograms []hostfloor.PackPrograms
-	for _, pack := range ctx.packs {
+	for _, pack := range packs {
 		installs, _ := pack.HonoredInstalls()
 		packPrograms = append(packPrograms, hostfloor.PackPrograms{Pack: pack.Name, Installs: installs})
 	}
@@ -38,7 +73,7 @@ func explicitProviderCatalog(ctx *editValidationContext, config *jsonx.OrderedMa
 	for _, program := range programs {
 		programByBin[program.Bin()] = program
 	}
-	wire := hostFloorWire(ctx.rawUser)
+	wire := hostFloorWire(rawUser)
 	floor := &hostfloor.Floor{
 		Dir: paths.HostFloorDir(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
 		NodeFloor: hostfloor.HighestNodeFloor(programs),
@@ -47,12 +82,12 @@ func explicitProviderCatalog(ctx *editValidationContext, config *jsonx.OrderedMa
 			return allowed
 		},
 		Outranked: hostfloor.Outranker(func(bin string) []string {
-			return provisionerOrder(ctx.rawUser, ProvisionerEnvHost, bin)
+			return provisionerOrder(rawUser, ProvisionerEnvHost, bin)
 		}, func(bin string) (string, error) { return exec.LookPath(bin) }),
 	}
 
 	var sources []explicitOfflineCatalog
-	for _, pack := range ctx.packs {
+	for _, pack := range packs {
 		installs, _ := pack.HonoredInstalls()
 		for _, install := range installs {
 			if install.Kind != "npm" || len(install.ModelCatalog) == 0 {
@@ -96,15 +131,5 @@ func explicitProviderCatalog(ctx *editValidationContext, config *jsonx.OrderedMa
 		}
 	}
 
-	for _, declaration := range declarations {
-		if len(factsByID) == 0 {
-			break
-		}
-		providerFacts := make(map[string]packdecl.ProviderModel, len(factsByID))
-		for id, facts := range factsByID {
-			providerFacts[id] = facts
-		}
-		catalog[declaration.Name] = providerFacts
-	}
-	return catalog, nil
+	return factsByID, nil
 }

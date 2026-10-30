@@ -1206,7 +1206,7 @@ func composedProviders(cfg *jsonx.OrderedMap, packs []*packload.Pack,
 	// the packs declared rather than refusing over a key it could not parse.
 	addresses, _ := config.LoadAdapterAddresses(nil)
 	return packload.ComposeProvidersAt(cfgMap(cfg, "providers"), packs, addresses, served,
-		packload.WithModelFacts(cfgMap(cfg, "model_facts")))
+		packload.WithModelFacts(cfgMap(cfg, "model_facts")), config.WithOfflineModelCatalog(cfg, packs))
 }
 
 // servedDaemons is the "served at this notch" set for a launch whose composed jail-daemon

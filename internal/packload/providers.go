@@ -104,22 +104,25 @@ func ComposeProviders(user *jsonx.OrderedMap, packs []*Pack, opts ...ComposeOpti
 			cfg.modelListPresence(name, supplied)
 		}
 	}
-	if user == nil {
-		// The adapter pass runs on EVERY return, not only the one with a user layer: a
-		// launch whose providers are entirely pack-shipped is the common bridged case, and
-		// an early return that skipped it would leave exactly that launch unresolved.
-		liftModelFacts(out, cfg.modelFacts)
-		adaptEndpoints(out, packs, cfg)
-		reportPresence()
-		return orderedOrNil(out), nil
+	// THE READABLE MODEL ROWS (readablemodels.go), on every return like the passes below: a
+	// pack's `pack.toml` rows compose with no user layer at all. Before liftModelFacts, so a
+	// row's `extends` resolves as a legacy alias's does; `every_model` reaches the legacy
+	// aliases after it, as the layer under all of their own facts (RC-D29).
+	fills, err := lowerReadableModels(out, cfg)
+	if err != nil {
+		return nil, err
 	}
+	// The adapter pass runs on EVERY return, with or without a user layer: a launch whose
+	// providers are entirely pack-shipped is the common bridged case, and an early return that
+	// skipped it would leave exactly that launch unresolved.
+	liftModelFacts(out, cfg.modelFacts)
+	fillEveryModel(out, fills)
 	// LAST, over the finished table (protocol-resolution.md, outcome 2). An adapter
 	// contributes an address for a protocol a provider does not offer, and it is applied
 	// here rather than at delivery because the composed table is what every consumer of an
 	// address reads — each agent's derive, and the adapter's own daemon deciding where to
 	// listen. Below the user layer so an explicit `endpoints.<protocol>.base_url` always
 	// wins: an adapter fills a hole, and a user who wrote an address did not leave one.
-	liftModelFacts(out, cfg.modelFacts)
 	adaptEndpoints(out, packs, cfg)
 	reportPresence()
 	return orderedOrNil(out), nil
@@ -175,7 +178,7 @@ func composeProviderTable(user *jsonx.OrderedMap, packs []*Pack, cfg composeOpts
 		out.Set(selected.prov.Name, encode(selected.prov))
 		shipper[selected.prov.Name] = selected.pack
 		pinned[selected.prov.Name] = selected.prov.PinnedEndpoint
-		providerSupplied[selected.prov.Name] = selected.prov.Models != nil
+		providerSupplied[selected.prov.Name] = selected.prov.Models != nil || selected.prov.ModelRows != nil
 	}
 	// THE `models` CONTRIBUTIONS remain between the packs' own providers and the user's entries.
 	contributed := applyModelContributions(out, user, packs, cfg.modelNote)
@@ -206,6 +209,9 @@ func composeProviderTable(user *jsonx.OrderedMap, packs []*Pack, cfg composeOpts
 			if !ok {
 				out.Set(name, override)
 				continue
+			}
+			if err := readableRowOverAlias(name, base, override); err != nil {
+				return nil, nil, nil, err
 			}
 			before := pinnedAddresses(base)
 			dropRepointedVendors(base, override)
@@ -435,22 +441,29 @@ func canonicalProviderModel(model packdecl.ProviderModel) *jsonx.OrderedMap {
 	if model.Thinking != nil {
 		value.Set("thinking", stringSliceAny(model.Thinking))
 	}
+	// Objects as ordered maps, the shape a user's entry decodes to, so a user's `price` over a
+	// pack row's merges per rate in mergeUnder rather than replacing the whole.
 	if model.Images != nil {
-		value.Set("images", map[string]any{"max_width": model.Images.MaxWidth, "max_height": model.Images.MaxHeight, "max_bytes": model.Images.MaxBytes, "jpeg_quality": model.Images.JPEGQuality})
+		images := jsonx.NewOrderedMap()
+		images.Set("max_width", jsonx.IntValue(model.Images.MaxWidth))
+		images.Set("max_height", jsonx.IntValue(model.Images.MaxHeight))
+		images.Set("max_bytes", jsonx.IntValue(model.Images.MaxBytes))
+		images.Set("jpeg_quality", jsonx.IntValue(model.Images.JPEGQuality))
+		value.Set("images", images)
 	}
 	if model.Price != nil {
-		price := map[string]any{}
+		price := jsonx.NewOrderedMap()
 		if model.Price.Input != nil {
-			price["input"] = *model.Price.Input
+			price.Set("input", *model.Price.Input)
 		}
 		if model.Price.Output != nil {
-			price["output"] = *model.Price.Output
+			price.Set("output", *model.Price.Output)
 		}
 		if model.Price.CacheRead != nil {
-			price["cache_read"] = *model.Price.CacheRead
+			price.Set("cache_read", *model.Price.CacheRead)
 		}
 		if model.Price.CacheWrite != nil {
-			price["cache_write"] = *model.Price.CacheWrite
+			price.Set("cache_write", *model.Price.CacheWrite)
 		}
 		value.Set("price", price)
 	}
@@ -872,6 +885,9 @@ func dropRepointedVendors(shipped, user *jsonx.OrderedMap) {
 
 // childMap is m's object-valued member k, or nil for an absent or non-object one.
 func childMap(m *jsonx.OrderedMap, k string) *jsonx.OrderedMap {
+	if m == nil {
+		return nil
+	}
 	v, _ := m.Get(k)
 	c, _ := v.(*jsonx.OrderedMap)
 	return c
@@ -1508,6 +1524,30 @@ func shippedProviderEntry(prov packdecl.ProviderContribution) *jsonx.OrderedMap 
 			models.Set(alias, prov.Models[alias])
 		}
 		entry.Set("models", models)
+	}
+	// A `pack.toml`'s readable rows and its `every_model` (pack-manifests.md §4), in their own
+	// shape under the keys a user's entry spells them, so the user layer merges over them per
+	// field; lowerReadableModels lowers both once the layers are composed. A pack that writes
+	// neither (every shipped pack) composes exactly as before.
+	if prov.EveryModel != nil {
+		entry.Set(everyModelKey, canonicalProviderModel(*prov.EveryModel))
+	}
+	if len(prov.ModelRows) > 0 {
+		models := childMap(entry, "models")
+		if models == nil {
+			models = jsonx.NewOrderedMap()
+			entry.Set("models", models)
+		}
+		for _, id := range prov.ModelOrder {
+			if row, ok := prov.ModelRows[id]; ok {
+				models.Set(id, canonicalProviderModel(row))
+			}
+		}
+		for _, id := range sortedProviderModelIDs(prov.ModelRows) {
+			if _, already := models.Get(id); !already {
+				models.Set(id, canonicalProviderModel(prov.ModelRows[id]))
+			}
+		}
 	}
 	if len(prov.ModelOptions) > 0 {
 		options := jsonx.NewOrderedMap()

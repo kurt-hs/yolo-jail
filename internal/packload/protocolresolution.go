@@ -40,6 +40,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 // Adaptation is one declared protocol conversion, with the pack that declared it: the
@@ -108,6 +109,9 @@ type composeOpts struct {
 	// modelFacts is the user's top-level `model_facts` (WithModelFacts): facts a model's routes
 	// share, laid under each route's own by liftModelFacts.
 	modelFacts *jsonx.OrderedMap
+	// modelCatalog reads the offline catalog's facts by model id (WithModelCatalog), called at
+	// most once, and only when a readable model row is composed.
+	modelCatalog func() (map[string]packdecl.ProviderModel, error)
 }
 
 // ServiceAdaptations returns the conversions packs declare whose own pack serves them with a

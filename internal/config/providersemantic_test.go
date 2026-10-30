@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/agentcfg/luahook"
+	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
@@ -445,7 +446,13 @@ func TestProjectProviderModelsReportsUnsupportedCanonicalFactsByName(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"api", "compact_at", "images", "thinking"}
+	// compact_at reaches every derive as the flat context_window (RC-D29), so it is not unsupported.
+	want := []string{"api", "images", "thinking"}
+	options, _ := projection.ProviderEntry.Get("model_options")
+	row, _ := options.(*jsonx.OrderedMap).Get("openai/model-x")
+	if got, _ := row.(*jsonx.OrderedMap).Get("context_window"); got != "100" {
+		t.Fatalf("compact_at must lower to the flat context_window, got %#v", got)
+	}
 	got := projection.Unsupported["openai/model-x"]
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unsupported canonical facts = %v, want %v", got, want)
