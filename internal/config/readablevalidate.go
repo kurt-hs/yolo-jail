@@ -17,7 +17,7 @@ func validateReadableTOML(values *jsonx.OrderedMap, scope SchemaScope, label str
 			if !ok {
 				return readableTOMLError(label, index, path, locationPath, readableUnknownMessage(path))
 			}
-			if !readableTypeMatches(rule.Type, value, rule.Removal) {
+			if !readableTypeMatches(rule.Type, value, rule.Removal) && !readableLegacyShapeAccepted(path, value) {
 				return readableTOMLError(label, index, path, locationPath, fmt.Sprintf("expected %s (got %s)", schemaTypeName(rule.Type), reprAny(value)))
 			}
 			userOnly := rule.Scope == SchemaScopeUserOnly || (len(path) == 1 && WorkspaceUserScopeOnlyKey(path[0]))
@@ -89,6 +89,25 @@ func readableSchemaRule(path []string) (SchemaKey, bool) {
 		}
 	}
 	return selected, selectedWildcards != int(^uint(0)>>1)
+}
+
+// readableLegacyShapeAccepted names the spellings the legacy JSONC reader accepts for a key that
+// the readable schema types differently, so converting a legacy file never changes a value's
+// type to satisfy the reader (RC-D31). An MCP server's command may be the program as one
+// string ("npx"), as the legacy reader takes it, as well as an argv list; a pids limit may be a
+// boolean, as the legacy one counts it.
+func readableLegacyShapeAccepted(path []string, value any) bool {
+	switch {
+	case len(path) == 3 && path[0] == "mcp_servers" && path[2] == "command":
+		_, ok := asStr(value)
+		return ok
+	case len(path) == 3 && path[0] == "machine" && path[1] == "resources" && path[2] == "pids_limit":
+		// The legacy resources.pids_limit counts a boolean as an integer (true is 1), and
+		// machine.resources.cpus is already typed to take one.
+		_, ok := value.(bool)
+		return ok
+	}
+	return false
 }
 
 func readableTypeMatches(typ SchemaType, value any, removal RemovalPolicy) bool {

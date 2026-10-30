@@ -317,3 +317,30 @@ func TestConfigMigrateKeepsADefaultTwoFilesWrite(t *testing.T) {
 		t.Fatalf("the project's bridge was dropped: %v\n%s", err, data)
 	}
 }
+
+// TestConfigMigrateKeepsTheShapesTheLegacyReaderAccepts pins RC-D31 through the verb: a key the
+// legacy reader takes in a shape the readable schema types differently (an MCP server's command
+// as one string, a pids limit as a boolean) converts and reads back equal, instead of the
+// reader refusing the file the migration just wrote. It fails if either spelling is refused
+// again, or if the converted value changes type to get past the reader.
+func TestConfigMigrateKeepsTheShapesTheLegacyReaderAccepts(t *testing.T) {
+	for _, tc := range []struct{ name, old, keeps string }{
+		{"mcp command as a string", `{"mcp_servers":{"tavily":{"command":"npx","args":["-y","tavily-mcp"],"env":{"K":"v"}}}}`, `command = "npx"`},
+		{"pids limit as a boolean", `{"resources":{"pids_limit":true}}`, `pids_limit = true`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newMigrateEnv(t)
+			writeMigrateFile(t, filepath.Join(e.ws, "yolo-jail.jsonc"), tc.old)
+			if rc, out, errw := runConfigMigrateVerb(t, "--dry-run"); rc != 0 {
+				t.Fatalf("--dry-run: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errw)
+			}
+			if rc, out, errw := runConfigMigrateVerb(t, "--yes"); rc != 0 {
+				t.Fatalf("--yes: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errw)
+			}
+			data, err := os.ReadFile(filepath.Join(e.ws, "yolo-jail.toml"))
+			if err != nil || !strings.Contains(string(data), tc.keeps) {
+				t.Fatalf("the converted file lost %q: %v\n%s", tc.keeps, err, data)
+			}
+		})
+	}
+}
