@@ -909,7 +909,7 @@ without `agy`, creates a real `/Users/_yolojail/.gemini`. Every later launch sel
 state folder that is, is then refused by `darwin_home_layout`, with the next step
 `sudo rm -rf /Users/_yolojail` rather than the one folder. The refused launch still writes agy's
 generated config into the real folder, and nothing warns ahead of time
-([lab report §3](../lab-reports/2026-10-30-mac-sandbox-home-collisions-and-check-nudges.md#3-a-files-delivery-into-another-packs-state-folder)).
+([lab report §3](../lab-reports/2026-10-30-mac-sandbox-home-collisions-and-check-nudges.md#3-a-files-delivery-into-another-packs-state-folder); designed in [`pack-files-for-agent-state.md`](../design/pack-files-for-agent-state.md)).
 
 ### <a id="check-nudge-false-warnings"></a>🔧 **Two `yolo check` warnings name fixes that do not apply**
 

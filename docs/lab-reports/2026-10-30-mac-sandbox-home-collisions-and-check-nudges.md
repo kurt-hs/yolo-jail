@@ -105,6 +105,8 @@ The maintainer's config does not select `agy` (the launch reports `agy/settings 
 agy pack is not selected)`), so their own launches are not affected today. If they select it later,
 it will be refused until `/Users/_yolojail/.gemini` is removed.
 
+The fix is designed in [`pack-files-for-agent-state.md`](../design/pack-files-for-agent-state.md).
+
 ## 4. False check warnings
 
 `yolo check --no-build` on the maintainer's config:
