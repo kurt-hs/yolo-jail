@@ -38,6 +38,7 @@ var legacyNullAcceptedWholeWorkspaceScopeKeys = map[string]struct{}{
 var legacyMixedWorkspaceScopeRestrictions = []WorkspaceScopeRestriction{
 	{Path: "config.brokered.*.grant_kinds"},
 	{Path: "config.brokered.*.sets"},
+	{Path: "config.env_sources[*]", When: "file entry resolves outside the workspace"},
 	{Path: "config.host_files[*]", When: "entry names a host source (including string shorthand)"},
 	{Path: "config.loopholes.*", When: "entry declares a command (install)"},
 	{Path: "config.loopholes.*.doctor_cmd", When: "entry is not backed by a manifest"},

@@ -603,7 +603,14 @@
     declared it — for the user config that is
     ~/.config/yolo-jail/, for each include the include's own directory,
     and for the workspace config the workspace root (so
-    workspace-relative spelling behaves exactly as it reads).  `yolo
+    workspace-relative spelling behaves exactly as it reads).  A file
+    entry in the WORKSPACE config (yolo-jail.jsonc or yolo-jail.toml,
+    where the list is [env] files, its local sibling, their includes)
+    must resolve inside the workspace, symlinks
+    followed: a workspace config travels with the repository, so `~/…`,
+    an absolute path elsewhere, a `../` escape or a link pointing out is
+    refused, and the refusal gives the same entry to put in your user
+    config, where any path is fine.  `yolo
     host` additionally refuses any relative entry that reaches it
     unanchored, which in practice never happens for configs yolo loaded.
     Missing files warn

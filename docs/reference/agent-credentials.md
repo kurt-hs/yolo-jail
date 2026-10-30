@@ -308,6 +308,26 @@ what an inline `null` is for), nothing about inline entries, `null` removals or 
 not a secrets-management design. Its rulings are [`OQ-E1`](#oq-e1) and [`OQ-E2`](#oq-e2) in
 [Why it's this way](#why-its-this-way).
 
+#### Where an `env_sources` file may be
+
+**A file entry in a workspace config must be inside the workspace**, spelled `env_sources` or,
+in TOML, `[env] files`. The workspace config (`yolo-jail.toml` or `yolo-jail.jsonc`, its local
+sibling, and whatever either includes) travels with the repository,
+so an entry there naming `~/.aws.env` or `/etc/secrets.env` would let a cloned repository feed the
+user's host files into the jail's environment. `yolo check` and the launch refuse such an entry,
+name it at its line, and give the fix: the same entry in the user config, where any path may be
+named. A relative entry is given there as the absolute path it reads, because in the user config
+it would anchor beside that file instead.
+
+The path judged is the one the launch reads: the entry after
+[anchoring](#where-a-relative-env_sources-path-resolves) and `~` expansion, with every symlink
+resolved, since reading a file follows them. A `../` escape and an in-workspace symlink to a host
+file are refused like an absolute path elsewhere; a file not there yet is judged by the directory
+it would be read from. The user config and its per-workspace files are unchanged, inline object
+entries are not paths, and read-only `mounts` stay legal in a workspace config by design. The
+check is `validateEnvSourceScope` in `internal/config`; the ruling is
+[OQ-AS3](../research/agent-safehouse.md#OQ-AS3).
+
 ### User-declared host files (`host_files`)
 
 `host_files` lets a user bring **any** host file into the jail as a composed surface. It reopens,
@@ -1529,6 +1549,7 @@ Rulings a future change would otherwise undo, kept with their original IDs.
 | **MCP `${VAR}` is passed through verbatim** | An interpolated secret entered the file without passing through any provenance layer, and sourced config content from process env at render time. Resolution one step later, by the consumer, loses nothing. |
 | <a id="oq-e1"></a>[**OQ-E1**](#oq-e1) (`env_sources`, 2026-08-30): declaring-file anchoring replaces the host-notch refusal of relative entries | The refusal had the right security and the wrong shape: it banned a useful spelling instead of fixing what the spelling meant. It survives as the backstop for unanchored entries. |
 | <a id="oq-e2"></a>[**OQ-E2**](#oq-e2) (`env_sources`, 2026-08-30): the anchoring is unified across both notches, jail included | Host-only anchoring is the rejected after-the-merge option wearing this one's implementation: one spelling, two meanings, plus a wrong-file guess for includes. The cost of unifying, a user-config entry's meaning changing inside a jail launch, was the fix's whole point. |
+| [**OQ-AS3**](../research/agent-safehouse.md#OQ-AS3) (`env_sources`, 2026-10-29): a workspace config's file entries must resolve inside the workspace | The maintainer: *"env sources in a workspace should not be able to specify outside the workspace, no. read only mounts are there by design."* A workspace config is the repository's, so it may not reach the user's host files; the user config may ([where a file may be](#where-an-env_sources-file-may-be)). |
 | **[OQ-SSO1](#sso-decision-ledger), [OQ-SSO10](#OQ-SSO10)**: explicit user-only permission-mode choice; `unnarrowed: true` is false by default and valid when the assigned profile permissions are intended. The 2026-10-07 owner ruling supersedes the older per-launch notice requirement: no unnarrowed-only launch warning is printed | The credential is available to same-user processes in the jail, while AWS policies on the selected profile or role still define its permitted actions. Explicit opt-in preserves the distinction between omission and this route; role/session-policy restriction remains optional. Repeated mode notices obscure failures, so the valid mode is not an alarm. Generic pack disclosures, selected-pack trust banners and actual configuration/credential/runtime failures remain visible. |
 | **[The lapse rules](#when-the-sso-session-lapses), [SSO-D1](#SSO-D1)**: a session that is missing, lapsed or for a profile the host lacks is a launch WARNING, never a refusal, asked through a declared `launch_check` | The human may be about to log in, and a jail that will not start is worse than a first request that fails clearly. The launch asks the daemon rather than probing AWS itself so the words are the one classifier's, and it asks by declaration because a test of the loophole's name would be a switch on a tool name in the loop that renders every pack. |
 | **[OQ-SSO2](#sso-decision-ledger)**: one `aws-auth` service per machine, its cache keyed by profile | The mint is the slow step and a fetch has about a second, so a warm shared cache is what keeps fetches inside the budget. Keying by profile keeps a distinct AWS identity per jail without a second daemon. |

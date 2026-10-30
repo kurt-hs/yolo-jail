@@ -127,6 +127,7 @@ func TestWorkspaceScopeFactsDescribeCurrentSchemaAndConditionalDeciders(t *testi
 		{Path: "config.brokered.*.grant_kinds"},
 		{Path: "config.providers", When: "providers value is null"},
 		{Path: "config.providers.*", When: "provider value is null"},
+		{Path: "config.env_sources[*]", When: "file entry resolves outside the workspace"},
 		{Path: "config.providers.*.endpoints"},
 		{Path: "config.providers.*.endpoints.*.base_url"},
 		{Path: "config.providers.*.platform"},
