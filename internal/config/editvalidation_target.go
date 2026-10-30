@@ -793,25 +793,3 @@ func roleName(scope ExplicitEditScope) string {
 		return "unknown"
 	}
 }
-
-// renamedKeyHint names the readable key that replaced a legacy key the edit verbs no longer
-// address (packages is install.nix), so the refusal says what to type instead. It is empty for
-// a key with no rename that names a plain key path.
-func renamedKeyHint(parts []string) string {
-	old := strings.Join(parts, ".")
-	for _, d := range RenameDescriptors() {
-		if d.OldPath != old {
-			continue
-		}
-		var plain []string
-		for _, r := range d.Replacements {
-			if r != "" && !strings.ContainsAny(r, " <>*\n") {
-				plain = append(plain, r)
-			}
-		}
-		if len(plain) > 0 {
-			return fmt.Sprintf("; %s was renamed, so use %s instead", old, strings.Join(plain, " or "))
-		}
-	}
-	return ""
-}
