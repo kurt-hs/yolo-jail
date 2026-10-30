@@ -660,5 +660,5 @@ _0.1.0, March 2026._
 
 The first public release: a container jail in which Copilot and Gemini run in YOLO mode with no
 access to your SSH keys, git identity or cloud credentials, configured by
-[`yolo-jail.jsonc`](yolo-jail.jsonc). Blocked tools explain themselves and suggest what to use
+`yolo-jail.jsonc`. Blocked tools explain themselves and suggest what to use
 instead.

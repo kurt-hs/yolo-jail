@@ -44,6 +44,7 @@ build/
 __pycache__/
 .research/
 yolo-jail.local.jsonc
+yolo-jail.local.toml
 
 # audit/test scratch artifacts (reviewer-created; never commit)
 /scratchpad/

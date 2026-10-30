@@ -144,7 +144,7 @@ for skills, was ruled on 2026-09-27 as a staged mirror outside `packs`, so it di
 | [`USER_GUIDE.md`](../../userguide/README.md) | An "MCP Presets" section with an availability table, an enable example, a disable example, and a troubleshooting line |
 | [`mcp-configuration.md`](../reference/mcp-configuration.md) | Presets in the pipeline diagram, in the loader rules, and two rows of its Current values table |
 | [`README.md`](../../README.md) | One sentence naming `mcp_presets` beside `mcp_servers` |
-| [`yolo-jail.jsonc`](../../yolo-jail.jsonc), `template_tail.txt` | A commented example line carrying both names |
+| `yolo-jail.jsonc` (this repository's, before it became `yolo-jail.toml`), `template_tail.txt` | A commented example line carrying both names |
 | [`macos-user-nix-and-features.md`](../reference/macos-user-nix-and-features.md), [`../reference/macos-user-provisioning.md`](../reference/macos-user-provisioning.md) | `mcp_presets` as an inert key on that backend |
 | [`configuring-the-jail`](../../internal/jailcontent/builtinskills/configuring-the-jail) (built-in skill) | Lists the key among the config surfaces it covers |
 

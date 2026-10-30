@@ -36,7 +36,7 @@ var citingExts = map[string]bool{
 // keep a citation on one line.)
 var (
 	citingDirs      = []string{"internal", "cmd", "packs", "integration", "scripts", ".github"}
-	citingRootFiles = []string{"flake.nix", "Justfile", ".goreleaser.yaml", "yolo-jail.jsonc", "mise.toml"}
+	citingRootFiles = []string{"flake.nix", "Justfile", ".goreleaser.yaml", "yolo-jail.toml", "mise.toml"}
 )
 
 // fixtureCitations are strings that LOOK like doc citations and are not: paths
