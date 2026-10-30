@@ -216,7 +216,6 @@ func TestATOMLEnvSetReachesTheJail(t *testing.T) {
 // active_provider in the user config.toml, including the reserved "native", is accepted by a
 // launch, and the launch log records the agent as left to its own login.
 func TestActiveProviderNativeInTOMLLaunches(t *testing.T) {
-	t.Skip("defect: a host launch refuses a user config.toml carrying active_provider with `config.active_provider: unknown key` (the key is not in knownTopLevelConfigKeys, internal/config/validate.go:84); see the lane report for the reproduction")
 	requireJail(t)
 
 	writeUserTOML(t, "packs = [\"claude\"]\n[active_provider]\nclaude = \"native\"\n")
@@ -225,7 +224,12 @@ func TestActiveProviderNativeInTOMLLaunches(t *testing.T) {
 	if r.rc != 0 {
 		t.Fatalf("a launch on active_provider = native must succeed: rc %d\n%s", r.rc, r.combined())
 	}
-	if !strings.Contains(r.combined(), "claude=none") {
-		t.Errorf("native should leave claude with no profile:\n%s", r.combined())
+	// The profile record is the launch log's (run.ProfileRecord), not the terminal's.
+	logBody, err := os.ReadFile(filepath.Join(dir, ".yolo", "launch.log"))
+	if err != nil {
+		t.Fatalf("read the launch log: %v", err)
+	}
+	if !strings.Contains(string(logBody), "claude=none (config active_provider.claude)") {
+		t.Errorf("native should leave claude with no profile, selected by active_provider.claude:\n%s", logBody)
 	}
 }
