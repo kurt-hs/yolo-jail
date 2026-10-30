@@ -10,11 +10,28 @@ import (
 // approved by the Git source's narrow SSH comparison.
 func scopeContains(f brokerscope.File, remote string) bool {
 	for _, approved := range f.Repos {
-		if approved == remote || equivalentSSHEndpoint(approved, remote) {
+		if approved == remote || equivalentEndpoint(approved, remote) {
 			return true
 		}
 	}
 	return false
+}
+
+// equivalentEndpoint is the one matcher the broker's scope checks use: the SSH comparison, plus
+// the HTTPS spellings of a github.com repository a project's request approves (RC-D26).
+func equivalentEndpoint(approved, request string) bool {
+	return equivalentSSHEndpoint(approved, request) || equivalentGitHubHTTPS(approved, request)
+}
+
+// equivalentGitHubHTTPS reports whether two https://github.com URLs name one repository, differing
+// only by one trailing slash and one trailing .git. It admits no user name, port, query, other
+// host or other path shape, so it equates no more than the SSH comparison above does.
+func equivalentGitHubHTTPS(approved, request string) bool {
+	const prefix = "https://github.com/"
+	if !strings.HasPrefix(approved, prefix) || !strings.HasPrefix(request, prefix) {
+		return false
+	}
+	return githubRelativeAbsolutePath(strings.TrimSuffix(approved, "/")[len(prefix):], strings.TrimSuffix(request, "/")[len(prefix):])
 }
 
 // equivalentSSHEndpoint compares the SSH target Git will use, without equating aliases,

@@ -307,7 +307,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		return refuse("out-of-scope", "remote not in the approved scope", outOfScope(req.URL, f), brokercore.ExitUsage)
 	}
 	if !httpsFetch {
-		if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentSSHEndpoint); err != nil {
+		if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentEndpoint); err != nil {
 			return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
 		}
 	}
@@ -333,7 +333,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		if !scopeContains(live, req.URL) {
 			return false, outOfScope(req.URL, live), nil
 		}
-		if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentSSHEndpoint); err != nil {
+		if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentEndpoint); err != nil {
 			return false, "", err
 		}
 		if !brokerscope.ReadCovers(live.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
@@ -346,7 +346,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 		// anonymous request. An out-of-scope public URL may be tried without credentials, but
 		// cannot become approved by that attempt.
 		if scopeContains(f, req.URL) {
-			if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentSSHEndpoint); err != nil {
+			if err := brokerscope.ValidateCurrentWithMatcher(b.scopeFile, b.bound, req.URL, equivalentEndpoint); err != nil {
 				return refuse("refused", err.Error(), "refused: "+err.Error()+"; nothing ran.", brokercore.ExitUsage)
 			}
 		}
@@ -445,7 +445,15 @@ func outOfScope(remote string, f brokerscope.File) string {
 		how = "ask the user to run `yolo config apply` on the host, in this workspace, and approve the new remote at " +
 			"its config-change gate; this jail's running broker takes it at its next call"
 	}
+	add := "add it with `git remote add <name> <url>` in the workspace"
+	// A github.com repository joins by the project's request, which reaches the GitHub broker and
+	// this one's read scope alike (RC-D26); any other host joins only as a remote.
+	if id, err := gitproto.Identity(remote); err == nil {
+		if repo, ok := strings.CutPrefix(id, brokerscope.GitHubHost+"/"); ok && brokerscope.ValidRepo(repo) {
+			add = "request it with `yolo request github repos " + repo + "` in the workspace (or add a remote with `git remote add <name> <url>`)"
+		}
+	}
 	return "the remote " + remote + " is not in this workspace's approved scope (" + scope + "), so nothing ran and " +
-		"the host's ssh was not started. A remote joins the scope only at the config-change gate on the host: add it " +
-		"with `git remote add <name> <url>` in the workspace, then " + how + ". Nothing sent through git adds a remote."
+		"the host's ssh was not started. A remote joins the scope only at the config-change gate on the host: " + add +
+		", then " + how + ". Nothing sent through git adds a remote."
 }

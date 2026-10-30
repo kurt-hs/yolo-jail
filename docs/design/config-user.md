@@ -284,8 +284,9 @@ prompt, and this is not an exception to it.
 
 ```console
 $ git -C /workspace/vendor/other fetch
-fatal: github.com/acme/other is not in this workspace's scope.
-  Add it: yolo config add requests.github.repos acme/other   (then yolo check, and the human runs yolo config apply)
+fatal: the remote https://github.com/acme/other is not in this workspace's approved scope ...
+  request it with `yolo request github repos acme/other` in the workspace, then ask the user to run
+  `yolo config apply` on the host and approve it at the config-change gate
 ```
 
 **A public repository passes through without asking** (ruled 2026-10-25,

@@ -519,11 +519,29 @@ func scopeCheckFromReadable(workspace string, brokers []ScopeBroker, input Reada
 			for _, entry := range current.Entry {
 				source.Entry = appendReadableEntry(source.Entry, entry)
 			}
-			var unrepresentable []ReadableRepository
+			// A requested repository no remote names (RC-D26): on a source for any host it joins the
+			// READ scope as the exact URLs a fetch of it spells, and only a github.com repository can,
+			// the one forge whose URLs are known here. Any other stays unrepresentable, with the notice.
+			var unrepresentable, requestedOnly []ReadableRepository
 			for _, target := range current.Targets {
 				if broker.RemoteHost == brokerscope.AnyRemoteHost && strings.HasPrefix(target.Origin, "requests.") && !hasMatchingRemoteTarget(current.Targets, target) {
+					if urls := brokerscope.RequestedRepoURLs(target.RemoteHost, target.Repository); len(urls) > 0 {
+						requestedOnly = append(requestedOnly, target)
+						for _, u := range urls {
+							source.Entry = appendReadableEntry(source.Entry, EntryRepo{Repo: u, Files: cloneOrigins(target.Files)})
+						}
+						continue
+					}
 					unrepresentable = append(unrepresentable, target)
 				}
+			}
+			matchesTarget := func(repo string, targets []ReadableRepository) bool {
+				for _, target := range targets {
+					if strings.EqualFold(repo, target.RemoteHost+"/"+target.Repository) {
+						return true
+					}
+				}
+				return false
 			}
 			if len(unrepresentable) > 0 {
 				for _, target := range unrepresentable {
@@ -535,26 +553,20 @@ func scopeCheckFromReadable(workspace string, brokers []ScopeBroker, input Reada
 					}
 				}
 			}
+			// Requested repositories join the read scope only, never a push: every other grant on one
+			// is dropped here, however the user's config came to name it.
 			source.Grants = append([]brokerscope.Grant(nil), current.Grants...)
-			if len(unrepresentable) > 0 {
-				filtered := source.Grants[:0]
-				for _, grant := range source.Grants {
-					matches := false
-					for _, target := range unrepresentable {
-						matches = matches || strings.EqualFold(grant.Repo, target.RemoteHost+"/"+target.Repository)
-					}
-					if !matches {
-						filtered = append(filtered, grant)
-					}
+			filtered := source.Grants[:0]
+			for _, grant := range source.Grants {
+				if matchesTarget(grant.Repo, unrepresentable) || (grant.Kind != brokerscope.KindRead && matchesTarget(grant.Repo, requestedOnly)) {
+					continue
 				}
-				source.Grants = filtered
+				filtered = append(filtered, grant)
 			}
+			source.Grants = filtered
 			for _, decision := range current.Decisions {
-				unrepresentableDecision := false
-				for _, target := range unrepresentable {
-					unrepresentableDecision = unrepresentableDecision || strings.EqualFold(decision.Grant.Repo, target.RemoteHost+"/"+target.Repository)
-				}
-				if unrepresentableDecision {
+				if matchesTarget(decision.Grant.Repo, unrepresentable) ||
+					(decision.Grant.Kind != brokerscope.KindRead && matchesTarget(decision.Grant.Repo, requestedOnly)) {
 					continue
 				}
 				for _, origin := range decision.Origins {

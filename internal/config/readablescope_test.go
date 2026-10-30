@@ -241,13 +241,16 @@ func TestReadableScopeAdaptsLegacyUserReadCeilingForReadableWorkspaceRequest(t *
 	}
 }
 
-func TestReadableNamedRepositoryForRemoteURLBrokerFailsClosedWithTypedTargetNotice(t *testing.T) {
+// RC-D26: a github.com repository a project requests joins the remote-url broker's scope as its
+// HTTPS and SSH URLs and a READ grant, and a push grant the user's own config offers for every
+// repository (`requests.git.push`) never reaches it.
+func TestReadableNamedRepositoryJoinsRemoteURLBrokerReadScopeOnly(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
-	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\n[allow.github]\nalways = [\"read\"]\n")
+	writeReadableScopeUser(t, home, "[allow.git]\nalways = [\"fetch\"]\non_request = [\"push\"]\n[allow.github]\nalways = [\"read\"]\n")
 	workspace := t.TempDir()
-	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/private\"]\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, WorkspaceTOMLConfigName), []byte("[requests.github]\nrepos = [\"acme/private\"]\n[requests.git]\npush = [\"main\"]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	read, err := ReadWorkspaceForGate(workspace)
@@ -255,7 +258,7 @@ func TestReadableNamedRepositoryForRemoteURLBrokerFailsClosedWithTypedTargetNoti
 		t.Fatal(err)
 	}
 	brokers := []ScopeBroker{
-		readableScopeBroker("git", "git", "git-broker", "*", "fetch", nil, nil),
+		readableScopeBroker("git", "git", "git-broker", "*", "fetch", []string{"branch"}, map[string]string{"branch": "push"}),
 		readableScopeBroker("github", "github", "github-broker", "github.com", "read", nil, nil),
 	}
 	check := NewScopeCheck(workspace, brokers, read)
@@ -271,11 +274,24 @@ func TestReadableNamedRepositoryForRemoteURLBrokerFailsClosedWithTypedTargetNoti
 			github = &check.Sources[i]
 		}
 	}
-	if git == nil || !strings.Contains(git.Read.Problem, "github.com/acme/private") || !strings.Contains(git.Read.Problem, "git remote add") {
-		t.Fatalf("unrepresentable typed target was silently lost instead of failing closed: %#v", check)
+	if git == nil || git.Read.Problem != "" {
+		t.Fatalf("a requested github.com repository is still called unrepresentable: %#v", git)
 	}
-	if containsGrant(git.Grants, brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/private"}) {
-		t.Fatalf("unrepresentable target gained Git broker grant: %#v", git.Grants)
+	for _, url := range []string{"https://github.com/acme/private", "git@github.com:acme/private.git"} {
+		if !readableScopeEntry(git.Entry, url, WorkspaceTOMLConfigName) {
+			t.Errorf("the git broker's scope lacks the requested repository's URL %q: %#v", url, git.Entry)
+		}
+	}
+	if git.EntryKey != "requests.github.repos" {
+		t.Errorf("remediation names %q, want the request's own key", git.EntryKey)
+	}
+	if !containsGrant(git.Grants, brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/private"}) {
+		t.Fatalf("the requested repository gained no read grant on the git broker: %#v", git.Grants)
+	}
+	for _, g := range git.Grants {
+		if g.Kind != brokerscope.KindRead {
+			t.Errorf("a requested repository gained a %q grant on the git broker: %#v", g.Kind, git.Grants)
+		}
 	}
 	if github == nil || !readableScopeEntry(github.Entry, "acme/private", WorkspaceTOMLConfigName) || !containsGrant(github.Grants, brokerscope.Grant{Kind: brokerscope.KindRead, Repo: "github.com/acme/private"}) {
 		t.Fatalf("the named-host broker lost its representable target: %#v", github)
