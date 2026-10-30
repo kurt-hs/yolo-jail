@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/cli/run"
+	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 )
 
@@ -164,41 +167,129 @@ func TestMacosUserContentProbeReadsARealLayout(t *testing.T) {
 	}
 }
 
-// THE INHERITED USER SCOPE ON A REAL LAUNCH (OQ-LP9): the generated ~/.config/yolo-jail/config.jsonc
-// a container mounts as a single `:ro` file arrives in the sandbox through the home overlay, carries
-// the user's packs, is what an in-sandbox `yolo pack ls` reads as its user scope, and is
-// write-protected — while the directory around it stays the agent's own (R8), so a --user-layer
-// file can be written beside it. Unit-pinned on Linux (run.TestMacosUserOverlayCarriesTheInheritedUserScope,
-// entrypoint.TestDarwinOverlayInstallsTheInheritedUserScopeBesideTheAgentsOwnFiles); only a Mac
-// shows the kernel refusing the write.
+// THE INHERITED USER SCOPE ON A REAL LAUNCH (OQ-LP9): the generated user scope a container
+// mounts as a single `:ro` file arrives in the sandbox through the home overlay, carries the
+// user's packs, is what an in-sandbox `yolo pack ls` reads as its user scope, and is
+// write-protected — while the directory around it stays the agent's own (R8), so a
+// --user-layer file can be written beside it. Unit-pinned on Linux
+// (run.TestMacosUserOverlayCarriesTheInheritedUserScope,
+// entrypoint.TestDarwinOverlayInstallsTheInheritedUserScopeBesideTheAgentsOwnFiles); only a
+// Mac shows the kernel refusing the write.
+//
+// THE PROBED FILE IS THE ONE THE LAUNCH DELIVERS, in both of its forms. A scope TOML can
+// represent arrives as ~/.config/yolo-jail/config.toml; one it cannot (a top-level
+// `loopholes` key) falls back to the legacy config.jsonc. This test once hard-coded
+// config.jsonc and went stale when TOML delivery landed (7e2d1ba93): the probe found no
+// file, and its own append and rename then CREATED one, so three rows failed on a scope the
+// kernel did protect (docs/lab-reports/2026-10-29-mac-native-witnesses-runbook.md §4.1). The
+// path now comes from inheritedPreflightDelivery, which asks the launch's own functions.
 func TestMacosUserInheritedUserScopeArrivesReadOnly(t *testing.T) {
 	requireMacosUser(t)
-	packHome(t, `{"packs": ["claude"]}`)
-	ws := macosUserWorkspace(t, `{}`)
-	r := runMacosUser(t, ws, strings.Join([]string{
-		`f="$HOME/.config/yolo-jail/config.jsonc"`,
-		`echo "=== SCOPE ==="`,
-		`if grep -q '"claude"' "$f" 2>/dev/null; then echo "file|PACKS"; else echo "file|MISSING"; fi`,
-		`if yolo pack ls 2>&1 | grep -q claude; then echo "pack-ls|CLAUDE"; else echo "pack-ls|NONE"; fi`,
-		`if ( printf '' >> "$f" ) 2>/dev/null; then echo "append|ALLOWED"; else echo "append|DENIED"; fi`,
-		`if ( mv "$f" "$f.yolo-it" ) 2>/dev/null; then mv "$f.yolo-it" "$f"; echo "rename|ALLOWED"; else echo "rename|DENIED"; fi`,
-		`if ( printf '{}\n' > "$HOME/.config/yolo-jail/layer.jsonc" && rm "$HOME/.config/yolo-jail/layer.jsonc" ) 2>/dev/null; then echo "layer|ALLOWED"; else echo "layer|DENIED"; fi`,
-		`echo "=== END SCOPE ==="`,
-	}, "\n"))
-	if r.rc != 0 || !strings.Contains(r.stdout, "=== END SCOPE ===") {
-		t.Fatalf("the macos-user launch did not run its probe (rc %d).\nstdout:\n%s\nstderr:\n%s",
-			r.rc, r.stdout, r.stderr)
+	for _, fx := range inheritedScopeFixtures {
+		t.Run(fx.name, func(t *testing.T) {
+			packHome(t, fx.userConfig)
+			ws := macosUserWorkspace(t, `{}`)
+			rel, format := inheritedPreflightDelivery(t, ws)
+			if format != fx.format {
+				t.Fatalf("fixture %q now renders as %v, not %v, so it no longer exercises the "+
+					"form it is named for; give it a user config that does", fx.name, format, fx.format)
+			}
+			r := runMacosUser(t, ws, strings.Join([]string{
+				`f="$HOME/` + rel + `"`,
+				`echo "=== SCOPE ==="`,
+				`if grep -q '"claude"' "$f" 2>/dev/null; then echo "file|PACKS"; else echo "file|MISSING"; fi`,
+				`if yolo pack ls 2>&1 | grep -q claude; then echo "pack-ls|CLAUDE"; else echo "pack-ls|NONE"; fi`,
+				`if ( printf '' >> "$f" ) 2>/dev/null; then echo "append|ALLOWED"; else echo "append|DENIED"; fi`,
+				`if ( mv "$f" "$f.yolo-it" ) 2>/dev/null; then mv "$f.yolo-it" "$f"; echo "rename|ALLOWED"; else echo "rename|DENIED"; fi`,
+				`if ( printf '{}\n' > "$HOME/.config/yolo-jail/layer.jsonc" && rm "$HOME/.config/yolo-jail/layer.jsonc" ) 2>/dev/null; then echo "layer|ALLOWED"; else echo "layer|DENIED"; fi`,
+				`echo "=== END SCOPE ==="`,
+			}, "\n"))
+			if r.rc != 0 || !strings.Contains(r.stdout, "=== END SCOPE ===") {
+				t.Fatalf("the macos-user launch did not run its probe (rc %d).\nstdout:\n%s\nstderr:\n%s",
+					r.rc, r.stdout, r.stderr)
+			}
+			got := macosUserHomeProbeFields(t, r.stdout, "SCOPE")
+			for key, want := range map[string]string{
+				"file":    "PACKS",
+				"pack-ls": "CLAUDE",
+				"append":  "DENIED",
+				"rename":  "DENIED",
+				"layer":   "ALLOWED",
+			} {
+				if got[key] != want {
+					t.Errorf("%s|%s, want %s (probed ~/%s)\nfull output:\n%s", key, got[key], want, rel, r.stdout)
+				}
+			}
+		})
 	}
-	got := macosUserHomeProbeFields(t, r.stdout, "SCOPE")
-	for key, want := range map[string]string{
-		"file":    "PACKS",
-		"pack-ls": "CLAUDE",
-		"append":  "DENIED",
-		"rename":  "DENIED",
-		"layer":   "ALLOWED",
-	} {
-		if got[key] != want {
-			t.Errorf("%s|%s, want %s\nfull output:\n%s", key, got[key], want, r.stdout)
-		}
+}
+
+// inheritedScopeFixtures are the two forms an inherited user scope is delivered in, each
+// with a user config that selects it.
+var inheritedScopeFixtures = []struct {
+	name, userConfig string
+	format           configdoc.Format
+}{
+	{"toml", `{"packs": ["claude"]}`, configdoc.TOML},
+	// A top-level `loopholes` key is not representable by the TOML reader, so the launch
+	// falls back to generated JSONC; the maintainer's own config takes this route.
+	{"jsonc-fallback", `{"packs": ["claude"], "loopholes": {"claude-oauth-broker": {"enabled": true}}}`, configdoc.JSONC},
+}
+
+// inheritedPreflightDelivery returns the home-relative path, and the format, at which a
+// launch from workspace ws under the current HOME delivers its inherited preflight user
+// scope. It composes the config and picks the format with the calls the launch makes
+// (run's effectiveConfigForInherit and inheritScopeFilesWithSelector), and names the path
+// with run.InheritedScopeRel, so a change of delivery format moves the probe with it.
+func inheritedPreflightDelivery(t *testing.T, ws string) (string, configdoc.Format) {
+	t.Helper()
+	effective, src, err := config.LoadConfigWithoutWorkspaceFileWithSources(ws, false, func(string) {})
+	if err != nil {
+		t.Fatalf("composing the user config the launch inherits: %v", err)
+	}
+	filtered, _, err := config.FilterInheritErr(effective, config.InheritPreflight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filtered.Len() == 0 {
+		t.Fatal("the user config leaves no inherited preflight scope, so a launch delivers no file")
+	}
+	_, format, _, err := config.RenderFilteredForDelivery(filtered, src, config.InheritPreflight, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run.InheritedScopeRel(config.InheritPreflight, format), format
+}
+
+// TestInheritedScopeFixturesSelectTheirDeliveryForm runs under -short, on any host. It pins
+// that each fixture of the macOS-only test above still selects the form it is named for and
+// that the path probed for that form is where the launch delivers it, so drift is caught by
+// `just check-ci` rather than on a Mac.
+func TestInheritedScopeFixturesSelectTheirDeliveryForm(t *testing.T) {
+	want := map[configdoc.Format]string{
+		configdoc.TOML:  ".config/yolo-jail/config.toml",
+		configdoc.JSONC: ".config/yolo-jail/config.jsonc",
+	}
+	for _, fx := range inheritedScopeFixtures {
+		t.Run(fx.name, func(t *testing.T) {
+			home := resolvedTempDir(t)
+			t.Setenv("HOME", home)
+			t.Setenv("YOLO_VERSION", "")
+			t.Setenv("XDG_CONFIG_HOME", "")
+			dir := filepath.Join(home, ".config", "yolo-jail")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(fx.userConfig), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			rel, format := inheritedPreflightDelivery(t, resolvedTempDir(t))
+			if format != fx.format {
+				t.Errorf("fixture renders as %v, want %v", format, fx.format)
+			}
+			if rel != want[fx.format] {
+				t.Errorf("probe path %q, want %q", rel, want[fx.format])
+			}
+		})
 	}
 }

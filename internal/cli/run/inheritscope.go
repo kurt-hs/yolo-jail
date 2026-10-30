@@ -155,7 +155,7 @@ func inheritScopeFilesWithSelector(effective *jsonx.OrderedMap, src *config.Sour
 				fallbackReason = "a regular legacy JSON or JSONC sibling already occupies the in-jail destination family"
 			}
 		}
-		rel := inheritScopeRel(scope, format)
+		rel := InheritedScopeRel(scope, format)
 		files = append(files, inheritScopeFile{scope: scope, rel: rel, body: body, format: format, fallbackReason: fallbackReason, keys: filtered.Len()})
 		return nil
 	}
@@ -382,7 +382,11 @@ func lstatHomeFile(wsState, rel string) (os.FileInfo, bool, error) {
 	return nil, false, fmt.Errorf("invalid home-relative path %q", rel)
 }
 
-func inheritScopeRel(scope config.InheritScope, format configdoc.Format) string {
+// InheritedScopeRel is the home-relative path a launch delivers an inherited scope at,
+// for the format config.RenderFilteredForDelivery chose. It is exported for the
+// integration suite, whose probes must read the file a launch really delivers rather
+// than a spelling that goes stale when the delivery format changes.
+func InheritedScopeRel(scope config.InheritScope, format configdoc.Format) string {
 	if scope == config.InheritPreflight {
 		if format == configdoc.TOML {
 			return inheritPreflightRel
