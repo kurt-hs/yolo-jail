@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,12 +48,19 @@ func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv ma
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+":/bin:/usr/bin")
-	// PINNED, not inherited: with YOLO_VERSION unset (a host or CI run) the launch is not in a jail,
-	// so offerConfigMigration discovers the fixture's config.jsonc as old-format and, at a terminal,
-	// reads the first stdin line as ITS answer, leaving the restart prompt with end of input (a "yes"
-	// then declined: "a yes did not stop the jail: stops=[]"). In a jail it never looks at the user
-	// config, which is why the dev jail never saw it.
-	t.Setenv("YOLO_VERSION", "9.9.9-test")
+	// A RUNNING JAIL HAS A KEEPER HOLDING ITS LIVENESS LOCK, and that is what keeps the config
+	// migration offer off an attach (launchWillAttach probes it). Without it, a host run (YOLO_VERSION
+	// unset, so the fixture's config.jsonc is discovered as old-format) offered the conversion at the
+	// terminal and read the first stdin line as its answer, leaving the restart prompt at end of input
+	// ("a yes did not stop the jail: stops=[]"). The lock is let go when the jail is stopped, as a
+	// keeper's is, so the restart's fresh launch does not wait on it.
+	keeper, kerr := holdLivenessLock(yoloruntime.FromWorkspace(ws))
+	if kerr != nil {
+		t.Fatal(kerr)
+	}
+	var keeperOnce sync.Once
+	dropKeeper := func() { keeperOnce.Do(func() { releaseLock(keeper) }) }
+	t.Cleanup(dropKeeper)
 	r := packSkewRun{rt: &skewRuntime{env: env, execIDs: "1"}}
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "podman", &stdout, &stderr, nil)
@@ -62,6 +70,9 @@ func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv ma
 		}
 	}
 	o.Exec = func(argv []string, dir string, e []string, d time.Duration) ExecResult {
+		if len(argv) > 1 && argv[1] == "stop" {
+			dropKeeper()
+		}
 		return r.rt.exec(argv, dir, e, d)
 	}
 	o.IsTTYStdin = func() bool { return tty }
