@@ -867,6 +867,17 @@ refusal on purpose (commit `5be28a2d6`), so changing it reverses a deliberate de
 unreachable, because program captures run only for a Linux capture jail's platform
 (`programcapturedemand.go`). Revisit it when darwin program captures arrive.
 
+### <a id="macos-unshared-parent-loop"></a>🔧 **A macos-user workspace under a private parent loops between two refusals**
+
+A workspace outside the shared root `/Users/Shared/yolo` and outside every home (a `mktemp -d`
+under `$TMPDIR`, whose `T` parent is `drwx------`) is refused for missing the sandbox group's
+access-control entry, with text saying it was "MOVED or copied into /Users/Shared/yolo". The named
+`yolo macos-fix-permissions <workspace>` succeeds, but the sandbox account still cannot get past the
+parent, so the next launch fails six boot steps with `permission denied` and names the same
+command again. The sharing precondition checks only the workspace's own entry, never its
+parents. Found natively on 2026-10-29
+([lab report §4](../lab-reports/2026-10-29-mac-native-fix-checks-and-unshared-ancestor.md#4-new-defect-a-workspace-under-a-private-parent-loops)).
+
 ### Settled, kept for the record
 
 | # | Item | Disposition |
