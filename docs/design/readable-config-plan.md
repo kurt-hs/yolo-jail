@@ -19,7 +19,7 @@ summary: "Tree-grounded implementation handoff for the readable-config redesign,
 
 **Written against:** `c729692223d8d8a884887875b44da5639a154448`, 2026-10-26; the
 [verified implementation state](#verified-implementation-state) was re-checked 2026-10-30 against
-`b1ca5ce40`. Sections 2 to 9 are the hand-off as it was written for the build, kept until
+`ff750a9f4`. Sections 2 to 9 are the hand-off as it was written for the build, kept until
 graduation; where their "present", "pending" or "unbuilt" wording disagrees with that list, the
 list is the current state.
 
@@ -61,7 +61,7 @@ unrelated subsystem or silently enlarge the fence. New files below are explicitl
 
 ### Verified implementation state
 
-Verified 2026-10-30 against `b1ca5ce40`. The front door's
+Verified 2026-10-30 against `ff750a9f4`. The front door's
 [ledger](readable-config.md#decision-ledger) carries each ruling's landing commit and pinning test;
 this list is the state by component.
 

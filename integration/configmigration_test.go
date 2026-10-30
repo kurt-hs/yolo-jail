@@ -425,7 +425,7 @@ func TestConfigMigrateKeepsPreMigrateCopiesAndRespellsRecords(t *testing.T) {
 // An ATTACH to a running jail is not offered the conversion: that jail's config was frozen at its
 // boot, so a conversion under it is a change it would not see, and every extra terminal would be
 // asked again. The first launch holds the jail open; the second, at a terminal, attaches and is
-// asked nothing, and the old files are as the first left them (dc4a9f3a3).
+// asked nothing, and the old files are as the first left them (fed00b301).
 func TestAnAttachIsNotOfferedTheConversion(t *testing.T) {
 	requireJail(t)
 	g := newOldGraph(t, "")
