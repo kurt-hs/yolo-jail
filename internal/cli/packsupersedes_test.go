@@ -56,7 +56,7 @@ func writeSupersedesPack(t *testing.T, manifest string) string {
 	t.Helper()
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	if rc := packMain([]string{"init", dir}, &out, &errw, false); rc != 0 {
+	if rc := packInitLegacyManifest(dir, &out, &errw); rc != 0 {
 		t.Fatalf("pack init rc = %d\n%s%s", rc, out.String(), errw.String())
 	}
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {

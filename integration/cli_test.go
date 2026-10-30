@@ -103,7 +103,7 @@ func TestShimPersistence(t *testing.T) {
 	}
 }
 
-// TestYoloInit confirms `yolo init` scaffolds yolo-jail.jsonc in an empty dir.
+// TestYoloInit confirms `yolo init` writes the yolo-jail.toml pointer file in an empty dir.
 func TestYoloInit(t *testing.T) {
 	requireJail(t)
 	dir := t.TempDir()
@@ -111,8 +111,8 @@ func TestYoloInit(t *testing.T) {
 	if r.rc != 0 {
 		t.Fatalf("expected rc 0 from yolo init, got %d\n%s", r.rc, r.combined())
 	}
-	if _, err := os.Stat(filepath.Join(dir, "yolo-jail.jsonc")); err != nil {
-		t.Fatalf("yolo init did not create yolo-jail.jsonc: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "yolo-jail.toml")); err != nil {
+		t.Fatalf("yolo init did not create yolo-jail.toml: %v", err)
 	}
 }
 

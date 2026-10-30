@@ -68,7 +68,7 @@ need to know.
   [bold]Your job is to set up the jail and hand the work across — then stop.[/bold]
   All real work happens inside the jail, where the agent has full tool access.
 
-  1. [bold]Review yolo-jail.jsonc[/bold] — edit it [bold]only[/bold] if you need extra packages,
+  1. [bold]Review the workspace config (the path above)[/bold] — edit it [bold]only[/bold] if you need extra packages,
      mounts, ports, env, or loopholes the work needs. Provision the access now, so the
      jail agent doesn't have to ask for it from inside.
      • "packages": nix packages baked into the image (rebuilds on change).
@@ -76,7 +76,7 @@ need to know.
      • "mise_tools": tools installed via mise (no rebuild needed).
      Most tasks need NO config changes. Skip this step if unsure.
 
-  2. [bold]Run `yolo check`[/bold] after [bold]EVERY[/bold] `yolo-jail.jsonc` edit to validate
+  2. [bold]Run `yolo check`[/bold] after [bold]EVERY[/bold] workspace config edit to validate
      the config and preflight the build. Use `yolo check --no-build` inside a
      running jail if you only need config/entrypoint validation. Do this before
      asking the human to enter the jail.

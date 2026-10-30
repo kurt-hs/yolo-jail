@@ -78,7 +78,7 @@ func TestPackInitDoesNotClobber(t *testing.T) {
 func TestPackLintReportsStagingRefusals(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	outside := filepath.Join(t.TempDir(), "secret")
 	if err := os.WriteFile(outside, []byte("k"), 0o600); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestPackLintReportsStagingRefusals(t *testing.T) {
 func TestPackLintReportsStagingRefusalAndManifestTogether(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	outside := filepath.Join(t.TempDir(), "secret")
 	if err := os.WriteFile(outside, []byte("k"), 0o600); err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestPackLintReportsStagingRefusalAndManifestTogether(t *testing.T) {
 func TestPackLintAndFootprintAcceptAnExecutable(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	tool := filepath.Join(dir, "skills", "s", "references", "check.sh")
 	if err := os.MkdirAll(filepath.Dir(tool), 0o755); err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestPackLintAndFootprintAcceptAnExecutable(t *testing.T) {
 func TestPackLintNamesTheOwningPack(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	// One destination an agent pack owns, one nobody owns (agy moved off this path). Two
 	// SOURCES, because one source named by two contributions is refused (OQ-PB5).
 	manifest := `{"name":"t","contributes":[` +
@@ -219,7 +219,7 @@ func TestPackLintNamesTheOwningPack(t *testing.T) {
 func TestPackLintCatchesSkillDirWithoutManifest(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	broken := filepath.Join(dir, "skills", "broken")
 	if err := os.MkdirAll(broken, 0o755); err != nil {
 		t.Fatal(err)
@@ -444,7 +444,7 @@ func TestPackLintTypoedFromDrawsOneDiagnosis(t *testing.T) {
 func TestPackLintValidatesManifest(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false) // valid skeleton (skills + briefing/)
+	packInitLegacyManifest(dir, &out, &errw) // valid skeleton (skills + briefing/)
 
 	// A manifest with an unknown kind AND a missing required field.
 	manifest := `{"contributes":[{"kind":"nonsense"},{"kind":"program","bin":"x","via":"npm"}]}`
@@ -471,7 +471,7 @@ func TestPackLintValidatesManifest(t *testing.T) {
 func TestPackLintPrintsFootprint(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	manifest := `{"contributes":[{"kind":"env","vars":{"ACME_MODE":"fast"}}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
@@ -491,7 +491,7 @@ func TestPackLintPrintsFootprint(t *testing.T) {
 func TestPackFootprintAcceptsLocalPath(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	manifest := `{"contributes":[{"kind":"mount","host":"datasets/acme","into":"acme-data"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
@@ -525,7 +525,7 @@ func TestPackExplainReportsFilteredFiles(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	var out, errw bytes.Buffer
-	packMain([]string{"init", pack}, &out, &errw, false)
+	packInitLegacyManifest(pack, &out, &errw)
 
 	cfgDir := filepath.Join(home, ".config", "yolo-jail")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
@@ -1024,7 +1024,7 @@ func TestPackLintFootprintNamesSkillsSource(t *testing.T) {
 func TestPackLintCatchesAFilesFromThatStagesNothing(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	// The tree really does carry `files/`; the manifest names `filez/`.
 	if err := os.MkdirAll(filepath.Join(dir, "files"), 0o755); err != nil {
 		t.Fatal(err)
@@ -1063,7 +1063,7 @@ func TestPackLintCatchesAFilesFromThatStagesNothing(t *testing.T) {
 func TestPackLintAcceptsAFilesFromNamingOneFile(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	if err := os.MkdirAll(filepath.Join(dir, "files"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -179,14 +179,19 @@ func TestPackInitAdviceAddsToTheBroadcast(t *testing.T) {
 	}
 	for _, want := range []string{
 		// narrowing is a contribution NAMING a briefing/ file (pack-system.md#briefing-lint-listing)
-		`"from": "briefing/scaf.md", "agents": ["claude"]`,
+		"`[[briefing]]` with `from = \"briefing/scaf.md\"` and `agents = [\"claude\"]`",
 		"still reaches every agent",
 	} {
 		if !strings.Contains(string(readme), want) {
 			t.Errorf("the README advice is missing %q:\n%s", want, readme)
 		}
 	}
-	writeFile(t, filepath.Join(dir, "pack.json"), manifest)
+	// The advice says to APPEND the table to the pack.toml the scaffold wrote.
+	scaffolded, err := os.ReadFile(filepath.Join(dir, "pack.toml"))
+	if err != nil {
+		t.Fatalf("init wrote no pack.toml for the advice to append to: %v", err)
+	}
+	writeFile(t, filepath.Join(dir, "pack.toml"), string(scaffolded)+"\n"+manifest+"\n")
 	writeFile(t, filepath.Join(dir, "prose", "claude.md"), "Claude only.\n")
 
 	rc, report := lintReport(t, dir)

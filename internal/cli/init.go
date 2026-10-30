@@ -1,7 +1,7 @@
 // init.go implements `yolo init` and `yolo init-user-config` — the config
-// scaffolders. The workspace template writes yolo-jail.jsonc (with a
-// --mount-driven mounts block), appends .yolo/ to .gitignore, and prints an
-// agent briefing; init-user-config writes the user-level defaults.
+// scaffolders. `init` writes a three-line pointer file, yolo-jail.toml, adds .yolo/ to
+// .git/info/exclude and prints an agent briefing; it scaffolds no defaults, because a project
+// with no settings needs none. init-user-config writes the user-level defaults.
 package cli
 
 import (
@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -18,81 +19,124 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
 
-//go:embed template_head.txt
-var templateHead string
-
-//go:embed template_tail.txt
-var templateTail string
-
 //go:embed userconfig.jsonc
 var userConfigContent string
 
 //go:embed briefing.txt
 var briefingContent string
 
-// mountsBlock builds the mounts section of the workspace template. Mirrors
-// init()'s branch: with --mount entries, a real `mounts` array (each entry via
-// json.dumps == jsonx compact string, trailing comma trimmed on the last);
-// without, the commented-out placeholder.
-func mountsBlock(mounts []string) string {
+// workspacePointerHead is the whole of what `yolo init` writes: three comment lines and no key.
+// A project with no file runs on defaults, so the file exists only to say where settings go
+// (docs/design/config-project.md §2, convention C5). It names the docs and the one command that
+// adds a key, which is what a reader opening an empty config wants to know.
+const workspacePointerHead = "# yolo-jail: this project needs no settings; with none, yolo runs on its defaults.\n" +
+	"# What can go here: https://docs.yolo-jail.mschulkind.dev, or `yolo config-ref` for every key.\n" +
+	"# Add a key with:  yolo config set <key> <value> --project\n"
+
+// pointerFile is the pointer text, plus a `mounts` list when the user passed --mount: an
+// explicit request is not default scaffolding, so it is written, as TOML.
+func pointerFile(mounts []string) string {
 	if len(mounts) == 0 {
-		return "  // Extra host paths to mount read-only into the jail for context.\n" +
-			"  // Each entry is a host path (mounted at /ctx/<basename>) or \"host:container\".\n" +
-			"  // Pass --mount/-m on `yolo init` to populate this automatically, e.g.\n" +
-			"  //   yolo init -m ~/code/shared-lib -m ~/notes\n" +
-			"  // \"mounts\": [\n" +
-			"  //   \"~/code/other-repo\",\n" +
-			"  //   \"~/code/shared-lib:/ctx/shared-lib\"\n" +
-			"  // ]\n"
+		return workspacePointerHead
 	}
 	var b strings.Builder
-	b.WriteString("  // Extra host paths to mount read-only into the jail at /ctx/.\n")
-	b.WriteString("  // Each entry is a host path (mounted at /ctx/<basename>) or \"host:container\".\n")
-	b.WriteString("  \"mounts\": [\n")
+	b.WriteString(workspacePointerHead)
+	b.WriteString("\n# Extra host paths mounted read-only at /ctx/<basename>, or \"host:container\".\nmounts = [\n")
 	for _, m := range mounts {
-		// json.dumps(m) — a plain string, so jsonx compact of the string.
 		enc, _ := jsonx.DumpsCompact(m)
-		b.WriteString("    " + enc + ",\n")
+		b.WriteString("  " + enc + ",\n")
 	}
-	b.WriteString("  ],\n")
-	// Trim the trailing comma on the last list entry.
-	return strings.Replace(b.String(), ",\n  ],", "\n  ],", 1)
+	b.WriteString("]\n")
+	return b.String()
 }
 
-// Init runs `yolo init` in cwd. Writes yolo-jail.jsonc (unless the workspace
-// already has a config the loader reads: that file, or the yolo-jail.json it
-// falls back to), appends .yolo/ to .gitignore, and prints the briefing to out
-// (color per the caller). Returns the exit code (0).
+// existingWorkspaceConfig names the workspace config the loader would read, in either format:
+// yolo-jail.toml first, then the .jsonc and .json it still reads. Empty when there is none.
+func existingWorkspaceConfig(cwd string) string {
+	for _, name := range []string{paths.WorkspaceConfigTOMLName, config.WorkspaceConfigName,
+		strings.TrimSuffix(config.WorkspaceConfigName, "c")} {
+		if _, err := os.Stat(filepath.Join(cwd, name)); err == nil {
+			return name
+		}
+	}
+	return ""
+}
+
+// Init runs `yolo init` in cwd. It writes the pointer file yolo-jail.toml (unless the workspace
+// already has a config of either format, which it leaves byte-for-byte alone), adds `.yolo/` to the
+// repository's .git/info/exclude when there is a git directory (the project's own .gitignore is
+// never touched), and prints the briefing to out (color per the caller). Returns the exit code.
 func Init(cwd string, mounts []string, out io.Writer, color bool) int {
-	// The loader's own answer (config.ResolveWorkspaceConfigPath): checking the `.jsonc` name
-	// alone wrote a yolo-jail.jsonc beside an existing yolo-jail.json, which the loader then read
-	// in its place at every launch.
-	configPath, configName := config.ResolveWorkspaceConfigPath(cwd, config.WorkspaceConfigName)
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Fprint(out, configName, " ", richtext.Render("[yellow]already exists.[/yellow]\n", color))
-		printBriefing(out, configPath, color)
+	if name := existingWorkspaceConfig(cwd); name != "" {
+		fmt.Fprint(out, name, " ", richtext.Render("[yellow]already exists.[/yellow]\n", color))
+		printBriefing(out, filepath.Join(cwd, name), color)
 		return 0
 	}
-
-	content := templateHead + mountsBlock(mounts) + templateTail
-	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+	configName := paths.WorkspaceConfigTOMLName
+	configPath := filepath.Join(cwd, configName)
+	if err := os.WriteFile(configPath, []byte(pointerFile(mounts)), 0o644); err != nil {
 		printInitStatus(out, color, "bold red", fmt.Sprintf("Error writing config: %v", err))
 		return 1
 	}
 	printInitStatus(out, color, "green", "Created "+configName)
 
-	// Append .yolo/ to .gitignore (create if absent).
-	gitignore := filepath.Join(cwd, ".gitignore")
-	if data, err := os.ReadFile(gitignore); err == nil {
-		if !strings.Contains(string(data), ".yolo/") {
-			appendFile(gitignore, "\n# YOLO Jail workspace state\n.yolo/\n")
-		}
-	} else {
-		_ = os.WriteFile(gitignore, []byte("# YOLO Jail workspace state\n.yolo/\n"), 0o644)
+	if excluded, err := excludeWorkspaceState(cwd); err != nil {
+		fmt.Fprintf(out, "Could not add .yolo/ to the repository's exclude file: %v\n"+
+			"Add the line `.yolo/` to .git/info/exclude yourself, so the jail's state stays out of commits.\n", err)
+	} else if excluded != "" {
+		fmt.Fprintf(out, "Added .yolo/ to %s\n", excluded)
 	}
 
 	printBriefing(out, configPath, color)
 	return 0
+}
+
+// excludeWorkspaceState appends `.yolo/` to the repository's info/exclude and returns the file's
+// path, or "" when cwd is no git work tree or the line is already there. info/exclude is local to
+// the clone, so the project's tracked .gitignore stays the project's.
+func excludeWorkspaceState(cwd string) (string, error) {
+	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--git-path", "info/exclude")
+	raw, err := cmd.Output()
+	if err != nil {
+		return "", nil // not a work tree, or no git: nothing to exclude from
+	}
+	path := strings.TrimSpace(string(raw))
+	if path == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(cwd, path)
+	}
+	existing, readErr := os.ReadFile(path)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return "", readErr
+	}
+	for _, line := range strings.Split(string(existing), "\n") {
+		if t := strings.TrimSpace(line); t == ".yolo/" || t == ".yolo" || t == "/.yolo/" || t == "/.yolo" {
+			return "", nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	entry := ".yolo/\n"
+	if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+		entry = "\n" + entry
+	}
+	if err := appendString(path, entry); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func appendString(path, s string) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(s)
+	return err
 }
 
 // InitUserConfig runs `yolo init-user-config`. Writes the user-level defaults at
@@ -171,13 +215,4 @@ func printBriefing(out io.Writer, configPath string, color bool) {
 		}
 	}
 	io.WriteString(out, "\n")
-}
-
-func appendFile(path, s string) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.WriteString(s)
 }

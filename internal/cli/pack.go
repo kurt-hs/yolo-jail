@@ -298,6 +298,10 @@ func packMain(args []string, out, errw io.Writer, color bool) int {
 		}
 	}
 	switch args[0] {
+	case "add":
+		return packAdd(args[1:], out, errw)
+	case "remove":
+		return packRemove(args[1:], out, errw)
 	case "init":
 		return packInit(args[1:], out, errw)
 	case "lint":
@@ -411,6 +415,7 @@ func packInit(args []string, out, errw io.Writer) int {
 	briefingRel := scaffoldBriefingRel(name)
 	type packFile struct{ rel, content string }
 	files := []packFile{
+		{packdecl.ManifestTOMLName, scaffoldManifestTOML(name)},
 		{briefingRel, "# " + name + "\n\n" +
 			"Replace this with instructions an agent should follow in every project using\n" +
 			"this pack. Every *.md directly inside briefing/ is appended to every selected\n" +
@@ -448,33 +453,44 @@ func scaffoldBriefingRel(name string) string {
 	return rel
 }
 
-// scaffoldAddressedExample is the one-contribution manifest the scaffold's README tells an author
-// to write to ADD prose for one agent. A function, not a literal inside the README, so the test
+// scaffoldManifestTOML is the pack.toml `pack init` writes: the pack's name and a description to
+// replace, and nothing a folder already says. The folders (briefing/, skills/) are the pack; the
+// manifest exists for what a folder cannot say (docs/design/pack-manifests.md §3). A string, not a
+// struct, so the comments reach the author; strict packdecl.DecodeTOML pins it.
+func scaffoldManifestTOML(name string) string {
+	quoted, _ := json.Marshal(name) // a JSON string is a valid TOML basic string, and a directory name may carry a quote
+	return "# pack.toml says only what a folder cannot: a program to install, a source to fetch,\n" +
+		"# a build, a model. Prose in briefing/ and skills in skills/ need no entry here.\n" +
+		"name = " + string(quoted) + "\n" +
+		"description = \"Replace this with what the pack gives a jail.\"\n"
+}
+
+// scaffoldAddressedExample is the table the scaffold's README tells an author to append to
+// pack.toml to ADD prose for one agent. A function, not a literal inside the README, so the test
 // that follows the advice (packlintdeliveries_test.go) writes the same bytes the author reads.
 func scaffoldAddressedExample(name string) string {
-	quoted, _ := json.Marshal(name) // a directory name may carry a quote
-	return `{"name": ` + string(quoted) + `, "contributes": [` + "\n" +
-		`  {"kind": "briefing", "from": "prose/claude.md", "agents": ["claude"]}]}`
+	return "[[briefing]]\nfrom = \"prose/claude.md\"\nagents = [\"claude\"]"
 }
 
 // scaffoldReadme is the scaffolded README: how to consume the pack, and how its prose is routed.
 func scaffoldReadme(name, abs, briefingRel string) string {
 	return "# " + name + "\n\n" +
-		"A yolo-jail agent config pack. Consume it by adding to\n" +
-		"`~/.config/yolo-jail/config.jsonc`:\n\n" +
-		"```jsonc\n\"packs\": [\"file://" + abs + "\"]\n```\n\n" +
+		"A yolo-jail agent config pack. Consume it by running\n" +
+		"`yolo pack add file://" + abs + "`, or by adding it to `packs` in\n" +
+		"`~/.config/yolo-jail/config.toml`:\n\n" +
+		"```toml\npacks = [\"file://" + abs + "\"]\n```\n\n" +
 		"Validate changes with `yolo pack lint`, which lists every delivery.\n\n" +
 		"## Briefing prose\n\n" +
 		"Every `*.md` directly inside `briefing/` reaches every selected agent's briefing,\n" +
-		"with no manifest. A root `AGENTS.md` or `CLAUDE.md` is this repository's own agent\n" +
+		"with no manifest entry. A root `AGENTS.md` or `CLAUDE.md` is this repository's own agent\n" +
 		"instructions and is never shipped.\n\n" +
 		"To ADD prose for one agent, keep the broadcast and declare only the new file's\n" +
-		"audience, in a `pack.json`:\n\n" +
-		"```json\n" + scaffoldAddressedExample(name) + "\n```\n\n" +
+		"audience, by appending this to `pack.toml`:\n\n" +
+		"```toml\n" + scaffoldAddressedExample(name) + "\n```\n\n" +
 		"`" + briefingRel + "` still reaches every agent; `prose/claude.md` reaches claude\n" +
 		"only. Where that agent reads is its own pack's business.\n\n" +
 		"To NARROW a file that is already in `briefing/`, name it:\n" +
-		"`{\"kind\": \"briefing\", \"from\": \"" + briefingRel + "\", \"agents\": [\"claude\"]}`.\n" +
+		"`[[briefing]]` with `from = \"" + briefingRel + "\"` and `agents = [\"claude\"]`.\n" +
 		"Every other `briefing/` file keeps broadcasting.\n"
 }
 
@@ -588,6 +604,14 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 	// separate, install-time concern.
 	pack, manifestProblems := packload.LoadDir(staged, packDirName)
 	problems = append(problems, manifestProblems...)
+	if pack == nil {
+		// A manifest that does not decode loads no pack, and every check below reads one: the
+		// problems already gathered ARE the report, as they are for a staging refusal above.
+		for _, p := range problems {
+			pr.Printf("[red]✗[/red] %s", p)
+		}
+		return 1
+	}
 
 	// A `loophole` contribution points at a module dir, so validating the pack.json entry is
 	// only half of it: the manifest INSIDE that dir is the half that declares what runs on

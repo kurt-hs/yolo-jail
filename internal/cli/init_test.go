@@ -26,23 +26,6 @@ func TestInitAlreadyExists(t *testing.T) {
 	}
 }
 
-func TestInitGitignore(t *testing.T) {
-	dir := t.TempDir()
-	Init(dir, nil, &bytes.Buffer{}, false)
-	gi, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if !strings.Contains(string(gi), ".yolo/") {
-		t.Errorf(".gitignore missing .yolo/: %q", gi)
-	}
-	// Re-running doesn't duplicate the entry (config now exists → early return,
-	// but even the append guard checks containment).
-	before := string(gi)
-	Init(dir, nil, &bytes.Buffer{}, false)
-	after, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if string(after) != before {
-		t.Errorf(".gitignore changed on re-run:\n%q\n->\n%q", before, after)
-	}
-}
-
 var initStatusANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // TestInitStatusColorsThroughDispatch drives both scaffolders through their
@@ -61,13 +44,13 @@ func TestInitStatusColorsThroughDispatch(t *testing.T) {
 			name:    "init create",
 			command: "init",
 			setup: func(t *testing.T, cwd, _ string) string {
-				p := filepath.Join(cwd, "yolo-jail.jsonc")
+				p := filepath.Join(cwd, "yolo-jail.toml")
 				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 					t.Fatal(err)
 				}
-				return "Created yolo-jail.jsonc\n"
+				return "Created yolo-jail.toml\n"
 			},
-			wantANSI: "\x1b[32mCreated yolo-jail.jsonc\x1b[0m",
+			wantANSI: "\x1b[32mCreated yolo-jail.toml\x1b[0m",
 		},
 		{
 			name:    "init existing",
@@ -82,7 +65,7 @@ func TestInitStatusColorsThroughDispatch(t *testing.T) {
 			name:    "init error",
 			command: "init",
 			setup: func(t *testing.T, cwd, _ string) string {
-				p := filepath.Join(cwd, "yolo-jail.jsonc")
+				p := filepath.Join(cwd, "yolo-jail.toml")
 				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 					t.Fatal(err)
 				}
@@ -161,6 +144,7 @@ func TestInitStatusColorsThroughDispatch(t *testing.T) {
 				t.Run(mode.name, func(t *testing.T) {
 					t.Setenv("HOME", home)
 					t.Setenv("NO_COLOR", mode.noColor)
+					t.Setenv("GIT_CEILING_DIRECTORIES", root)
 					t.Chdir(cwd)
 					want := tc.setup(t, cwd, home)
 					standInTerminal(t)
@@ -176,8 +160,8 @@ func TestInitStatusColorsThroughDispatch(t *testing.T) {
 					if !strings.Contains(plainStdout, want) {
 						t.Fatalf("status %q missing from stdout after ANSI strip:\n%s", want, plainStdout)
 					}
-					if tc.command == "init" && !strings.Contains(plainStdout,
-						filepath.Join(cwd, "yolo-jail.jsonc")) {
+					if tc.command == "init" && !strings.Contains(plainStdout, filepath.Join(cwd, "yolo-jail.toml")) &&
+						!strings.Contains(plainStdout, filepath.Join(cwd, "yolo-jail.jsonc")) {
 						t.Errorf("the user-controlled config path was altered by markup rendering:\n%s", plainStdout)
 					}
 					if mode.noColor == "" {

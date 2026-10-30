@@ -186,7 +186,7 @@ func TestFootprintReviewTailNamesHostExecution(t *testing.T) {
 func TestLintRefusesLoopholeFromNamingNoDirectory(t *testing.T) {
 	dir := t.TempDir()
 	var out, errw bytes.Buffer
-	packMain([]string{"init", dir}, &out, &errw, false)
+	packInitLegacyManifest(dir, &out, &errw)
 	pj := `{"contributes":[{"kind":"loophole","from":"loopholes/ghost"},` +
 		`{"kind":"skills","from":"skills","into":".acme/skills"}]}`
 	if err := os.WriteFile(filepath.Join(dir, "pack.json"), []byte(pj), 0o644); err != nil {
