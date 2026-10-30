@@ -1,0 +1,11 @@
+{
+  "name": "cgroup-delegate",
+  "description": "Lets a jail set its own cgroup limits (yolo-cglimit). The delegate hands the jail control of ITS OWN cgroup; it reads no host state.",
+  "version": 1,
+  "default_enabled": false,
+  "platforms": [
+    "linux"
+  ],
+  "transport": "none",
+  "lifecycle": "external"
+}

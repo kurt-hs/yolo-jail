@@ -1,0 +1,32 @@
+{
+  "name": "journal",
+  "description": "Read the host's systemd journal from inside the jail (yolo-journalctl). Every request is forced to --user unless this loophole's own `full` setting says otherwise.",
+  "version": 1,
+  "default_enabled": false,
+  "platforms": [
+    "linux"
+  ],
+  "transport": "loopback-tls",
+  "lifecycle": "spawned",
+  "settings": {
+    "full": {
+      "type": "bool",
+      "scope": "user",
+      "default": false,
+      "description": "pass journalctl args through unchanged, reading the WHOLE host journal (needs host journal read access); false forces --user onto every request"
+    }
+  },
+  "host_daemon": {
+    "cmd": [
+      "yolo",
+      "internal",
+      "daemon",
+      "journal",
+      "--socket",
+      "{socket}",
+      "--settings",
+      "{settings}"
+    ],
+    "publishes": "socket"
+  }
+}

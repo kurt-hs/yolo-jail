@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packmigrate"
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
@@ -26,8 +27,10 @@ import (
 const packMigrateUsage = `Usage: yolo pack migrate <path> [--dry-run] [--yes] [--keep-install-hints]
 
 Rewrite the pack at <path> from its legacy pack.json (or pack.jsonc) to a grouped pack.toml,
-keeping every comment in order, and move its plain-copy "files" content into home/. In a git
-checkout each file moves with git mv, so history follows.
+keeping every comment in order, and move its plain-copy "files" content into home/. Each loophole
+module the pack ships on a legacy manifest.jsonc becomes a loophole.toml in the same directory,
+comments kept in order (a pack already on pack.toml still gets its loophole modules converted).
+In a git checkout each file moves with git mv, so history follows.
 
 It proves the migrated pack says and delivers the same thing (manifest meaning, every delivered
 file's content and mode, the posture rows) before it writes, checks again after, and undoes the
@@ -100,6 +103,9 @@ func packMigrate(args []string, in io.Reader, interactive bool, out, errw io.Wri
 		}
 		question := fmt.Sprintf("Write %s and move %d %s? [y/N] ", packdecl.ManifestTOMLName,
 			len(m.Moves), plural(len(m.Moves), "file", "files"))
+		if m.Manifest == nil {
+			question = fmt.Sprintf("Write %d %s? [y/N] ", len(m.Loopholes), loopholeTOMLName(len(m.Loopholes)))
+		}
 		if !tty.Confirm(errw, in, question, false) {
 			fmt.Fprintln(errw, "Nothing was changed.")
 			return 1
@@ -116,14 +122,16 @@ func packMigrate(args []string, in io.Reader, interactive bool, out, errw io.Wri
 // writePackMigrationPlan is what a pack migration shows before it asks: the manifest it
 // replaces, the moves, what stays declared and why, and the equality verdict.
 func writePackMigrationPlan(out io.Writer, m *packmigrate.Migration) {
-	legacy := filepath.Join(m.Dir, m.Legacy)
-	oldLines := 0
-	if data, err := os.ReadFile(legacy); err == nil {
-		oldLines = lineCount(data)
+	if m.Manifest != nil {
+		legacy := filepath.Join(m.Dir, m.Legacy)
+		oldLines := 0
+		if data, err := os.ReadFile(legacy); err == nil {
+			oldLines = lineCount(data)
+		}
+		fmt.Fprintf(out, "--- %s\n+++ %s\n", legacy, filepath.Join(m.Dir, packdecl.ManifestTOMLName))
+		fmt.Fprintf(out, "  (%d lines → %d; %d %s kept, in order)\n", oldLines, lineCount(m.Manifest),
+			len(m.Comments), plural(len(m.Comments), "comment", "comments"))
 	}
-	fmt.Fprintf(out, "--- %s\n+++ %s\n", legacy, filepath.Join(m.Dir, packdecl.ManifestTOMLName))
-	fmt.Fprintf(out, "  (%d lines → %d; %d %s kept, in order)\n", oldLines, lineCount(m.Manifest),
-		len(m.Comments), plural(len(m.Comments), "comment", "comments"))
 	if len(m.Moves) > 0 {
 		fmt.Fprintf(out, "Moved into home/ (%d %s):\n", len(m.Moves), plural(len(m.Moves), "file", "files"))
 		for _, mv := range m.Moves {
@@ -133,8 +141,17 @@ func writePackMigrationPlan(out io.Writer, m *packmigrate.Migration) {
 	for _, k := range m.Kept {
 		fmt.Fprintf(out, "Left declared: files entry %d (from %q): %s.\n", k.Index, k.From, k.Reason)
 	}
-	fmt.Fprintln(out, "Manifest meaning, delivered files and modes, and posture: identical (checked before writing).")
+	for _, l := range m.Loopholes {
+		fmt.Fprintf(out, "--- %s\n+++ %s\n", filepath.Join(m.Dir, l.Dir, l.Legacy), filepath.Join(m.Dir, l.Dir, loopholedecl.ManifestTOMLName))
+		fmt.Fprintf(out, "  (%d %s kept, in order; the loophole decodes to the identical manifest, checked before writing)\n",
+			len(l.Comments), plural(len(l.Comments), "comment", "comments"))
+	}
+	if m.Manifest != nil {
+		fmt.Fprintln(out, "Manifest meaning, delivered files and modes, and posture: identical (checked before writing).")
+	}
 }
+
+func loopholeTOMLName(n int) string { return plural(n, "loophole.toml", "loophole.toml files") }
 
 func lineCount(data []byte) int {
 	if len(data) == 0 {

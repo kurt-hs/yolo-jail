@@ -17,12 +17,12 @@ import (
 // version before HD-R1 shipped it: `scope: "host"` where `detach` now is.
 func oldShippedManifest(t *testing.T, pack, name string) string {
 	t.Helper()
-	src := filepath.Join("..", "..", "packs", pack, "loopholes", name, "manifest.jsonc")
+	src := filepath.Join("..", "..", "packs", pack, "loopholes", name, "loophole.toml")
 	data, err := os.ReadFile(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := strings.Replace(string(data), `"detach": true`, `"scope": "host"`, 1)
+	old := strings.Replace(string(data), `detach = true`, `scope = "host"`, 1)
 	if old == string(data) {
 		t.Fatalf("%s declares no detach to turn back into scope host", src)
 	}
@@ -30,7 +30,7 @@ func oldShippedManifest(t *testing.T, pack, name string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.jsonc"), []byte(old), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "loophole.toml"), []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir

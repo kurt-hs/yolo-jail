@@ -287,7 +287,7 @@ func TestTheNamedSwitchIsTheDelegates(t *testing.T) {
 			continue
 		}
 		dir := name + "/" + c.From
-		data, err := fs.ReadFile(packs.FS, dir+"/manifest.jsonc")
+		data, err := fs.ReadFile(packs.FS, dir+"/loophole.toml")
 		if err != nil {
 			t.Fatalf("loophole %s: %v", dir, err)
 		}

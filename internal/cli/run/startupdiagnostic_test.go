@@ -21,7 +21,7 @@ func TestAWSUnnarrowedRoutineDisclosureDoesNotSuppressOtherPackDisclosures(t *te
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	emptyLoopholeDirs(t)
 
-	awsPath := filepath.Join("..", "..", "..", "packs", "aws-auth", "loopholes", "aws-auth", "manifest.jsonc")
+	awsPath := filepath.Join("..", "..", "..", "packs", "aws-auth", "loopholes", "aws-auth", "loophole.toml")
 	awsManifest, err := loopholedecl.LoadDir(filepath.Dir(awsPath))
 	if err != nil {
 		t.Fatal(err)

@@ -350,4 +350,4 @@ forever.
 | mint, cache, host-wide lock, narrowing | `internal/awsauth` |
 | the host daemon and its `--self-check` | `internal/awsauthdaemon` |
 | the jail-side container-credentials endpoint | `internal/awscredadapter` |
-| the loophole manifest | [`loopholes/aws-auth/manifest.jsonc`](loopholes/aws-auth/manifest.jsonc) |
+| the loophole manifest | [`loopholes/aws-auth/loophole.toml`](loopholes/aws-auth/loophole.toml) |

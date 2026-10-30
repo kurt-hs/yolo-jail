@@ -1,0 +1,59 @@
+{
+  "name": "host-processes",
+  "description": "Allowlisted view of host processes (yolo-ps). Visibility is controlled by this loophole's own `visible` setting.",
+  "version": 1,
+  "settings": {
+    "visible": {
+      "type": "string_list",
+      "scope": "workspace",
+      "default": [],
+      "description": "process comm names yolo-ps may reveal; `yolo-ps --tree` also shows every process below one, with its command line (empty = show nothing)"
+    },
+    "fields": {
+      "type": "string_list",
+      "scope": "workspace",
+      "default": [
+        "pid",
+        "comm",
+        "args",
+        "etime",
+        "%cpu",
+        "%mem",
+        "rss"
+      ],
+      "description": "ps -o columns returned to the jail"
+    }
+  },
+  "default_enabled": false,
+  "platforms": [
+    "linux",
+    "darwin"
+  ],
+  "requires": {
+    "command_on_path": "ps"
+  },
+  "transport": "loopback-tls",
+  "lifecycle": "spawned",
+  "host_daemon": {
+    "cmd": [
+      "yolo",
+      "internal",
+      "daemon",
+      "host-processes",
+      "--socket",
+      "{socket}",
+      "--settings",
+      "{settings}"
+    ],
+    "publishes": "socket"
+  },
+  "doctor_cmd": [
+    "yolo",
+    "internal",
+    "daemon",
+    "host-processes",
+    "--self-check",
+    "--settings",
+    "{settings}"
+  ]
+}

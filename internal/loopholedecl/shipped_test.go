@@ -124,7 +124,7 @@ func shippedManifest(t *testing.T, name string) []byte {
 	if !ok {
 		t.Fatalf("no shippedManifestHome row for %q", name)
 	}
-	data, err := fs.ReadFile(packs.FS, pack+"/loopholes/"+name+"/"+loopholedecl.ManifestName)
+	data, err := fs.ReadFile(packs.FS, pack+"/loopholes/"+name+"/"+loopholedecl.ManifestTOMLName)
 	if err != nil {
 		t.Fatalf("embedded manifest for pack %s loophole %s: %v", pack, name, err)
 	}

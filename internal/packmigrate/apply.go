@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
@@ -44,35 +45,65 @@ func Apply(m *Migration) error {
 		}
 		done = append(done, s)
 	}
-	manifestStep, err := writeManifest(m, git)
-	if err != nil {
-		return undo(fmt.Errorf("%s: writing %s: %w", m.Dir, packdecl.ManifestTOMLName, err))
+	if m.Manifest != nil {
+		manifestStep, err := writeManifest(m.Dir, m.Legacy, packdecl.ManifestTOMLName, m.Manifest, m.legacyBytes, git)
+		if err != nil {
+			return undo(fmt.Errorf("%s: writing %s: %w", m.Dir, packdecl.ManifestTOMLName, err))
+		}
+		done = append(done, manifestStep)
 	}
-	done = append(done, manifestStep)
+	for _, l := range m.Loopholes {
+		s, err := writeManifest(m.Dir, path.Join(l.Dir, l.Legacy), path.Join(l.Dir, loopholedecl.ManifestTOMLName), l.TOML, l.legacyBytes, git)
+		if err != nil {
+			return undo(fmt.Errorf("%s: writing %s: %w", m.Dir, path.Join(l.Dir, loopholedecl.ManifestTOMLName), err))
+		}
+		done = append(done, s)
+	}
 
 	pack, problems := packload.LoadDir(m.Dir, "")
 	if len(problems) != 0 {
 		return undo(fmt.Errorf("%s: the migrated pack does not load:\n  %s", m.Dir, strings.Join(problems, "\n  ")))
 	}
-	delivery, err := Delivery(pack)
-	if err != nil {
-		return undo(fmt.Errorf("%s: reading what the migrated pack delivers: %w", m.Dir, err))
+	for _, l := range m.Loopholes {
+		got, err := loopholedecl.LoadDir(filepath.Join(m.Dir, filepath.FromSlash(l.Dir)))
+		if err != nil {
+			return undo(fmt.Errorf("%s: the migrated loophole %s does not read: %v", m.Dir, l.Dir, err))
+		}
+		if err := LoopholeDifference(l.want, got); err != nil {
+			return undo(fmt.Errorf("%s: %s: %w", m.Dir, l.Dir, err))
+		}
 	}
-	if diffs := DeliveryDifferences(m.delivery, delivery); len(diffs) != 0 {
-		return undo(fmt.Errorf("%s: the migrated pack delivers different files:\n  %s", m.Dir, strings.Join(diffs, "\n  ")))
+	if m.Manifest != nil {
+		delivery, err := Delivery(pack)
+		if err != nil {
+			return undo(fmt.Errorf("%s: reading what the migrated pack delivers: %w", m.Dir, err))
+		}
+		if diffs := DeliveryDifferences(m.delivery, delivery); len(diffs) != 0 {
+			return undo(fmt.Errorf("%s: the migrated pack delivers different files:\n  %s", m.Dir, strings.Join(diffs, "\n  ")))
+		}
 	}
 	removeEmptiedDirs(m.Dir, m.Moves)
 	return nil
 }
 
 func recheck(m *Migration) error {
-	current, err := os.ReadFile(filepath.Join(m.Dir, m.Legacy))
-	if err != nil || !bytes.Equal(current, m.legacyBytes) {
-		return fmt.Errorf("%s: %s changed since the migration was planned; nothing was changed — run `yolo pack migrate %s` again", m.Dir, m.Legacy, m.Dir)
-	}
 	var collisions []Collision
-	if _, err := os.Lstat(filepath.Join(m.Dir, packdecl.ManifestTOMLName)); err == nil {
-		collisions = append(collisions, Collision{Path: packdecl.ManifestTOMLName, Reason: "already exists"})
+	if m.Manifest != nil {
+		current, err := os.ReadFile(filepath.Join(m.Dir, m.Legacy))
+		if err != nil || !bytes.Equal(current, m.legacyBytes) {
+			return fmt.Errorf("%s: %s changed since the migration was planned; nothing was changed — run `yolo pack migrate %s` again", m.Dir, m.Legacy, m.Dir)
+		}
+		if _, err := os.Lstat(filepath.Join(m.Dir, packdecl.ManifestTOMLName)); err == nil {
+			collisions = append(collisions, Collision{Path: packdecl.ManifestTOMLName, Reason: "already exists"})
+		}
+	}
+	for _, l := range m.Loopholes {
+		if !l.unchanged(m.Dir) {
+			return fmt.Errorf("%s: %s/%s changed since the migration was planned; nothing was changed — run `yolo pack migrate %s` again", m.Dir, l.Dir, l.Legacy, m.Dir)
+		}
+		if _, err := os.Lstat(filepath.Join(m.Dir, filepath.FromSlash(l.Dir), loopholedecl.ManifestTOMLName)); err == nil {
+			collisions = append(collisions, Collision{Path: path.Join(l.Dir, loopholedecl.ManifestTOMLName), Reason: "already exists"})
+		}
 	}
 	for _, move := range m.Moves {
 		if info, err := os.Lstat(filepath.Join(m.Dir, filepath.FromSlash(move.From))); err != nil || !info.Mode().IsRegular() {
@@ -90,8 +121,10 @@ func recheck(m *Migration) error {
 type step struct {
 	from, to string // pack-relative
 	git      bool
-	// manifest-only: the new file's bytes were written over the moved legacy file
-	manifest bool
+	// manifest-only: the new file's bytes were written over the moved legacy file, whose own
+	// bytes a rollback puts back
+	manifest    bool
+	legacyBytes []byte
 }
 
 func inCheckout(dir string) bool {
@@ -128,22 +161,26 @@ func moveOne(dir, from, to string, git bool) (step, error) {
 	return step{from: from, to: to}, nil
 }
 
-func writeManifest(m *Migration, git bool) (step, error) {
-	legacy := filepath.Join(m.Dir, m.Legacy)
+// writeManifest replaces the legacy manifest at legacyRel with the new file's bytes at newRel,
+// moving it with the version-control move where it is tracked so history follows. Both names
+// are pack-relative.
+func writeManifest(dir, legacyRel, newRel string, body, legacyBytes []byte, git bool) (step, error) {
+	legacy := filepath.Join(dir, filepath.FromSlash(legacyRel))
 	info, err := os.Stat(legacy)
 	if err != nil {
 		return step{}, err
 	}
-	s := step{from: m.Legacy, to: packdecl.ManifestTOMLName, manifest: true}
-	if git && tracked(m.Dir, m.Legacy) {
-		if err := gitMove(m.Dir, m.Legacy, packdecl.ManifestTOMLName); err != nil {
+	target := filepath.Join(dir, filepath.FromSlash(newRel))
+	s := step{from: legacyRel, to: newRel, manifest: true, legacyBytes: legacyBytes}
+	if git && tracked(dir, legacyRel) {
+		if err := gitMove(dir, legacyRel, newRel); err != nil {
 			return step{}, err
 		}
 		s.git = true
-	} else if err := os.Rename(legacy, filepath.Join(m.Dir, packdecl.ManifestTOMLName)); err != nil {
+	} else if err := os.Rename(legacy, target); err != nil {
 		return step{}, err
 	}
-	if err := os.WriteFile(filepath.Join(m.Dir, packdecl.ManifestTOMLName), m.Manifest, info.Mode().Perm()); err != nil {
+	if err := os.WriteFile(target, body, info.Mode().Perm()); err != nil {
 		return s, err
 	}
 	return s, nil
@@ -155,7 +192,7 @@ func rollback(m *Migration, done []step) error {
 	for i := len(done) - 1; i >= 0; i-- {
 		s := done[i]
 		if s.manifest {
-			if err := os.WriteFile(filepath.Join(m.Dir, s.to), m.legacyBytes, 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(m.Dir, filepath.FromSlash(s.to)), s.legacyBytes, 0o644); err != nil {
 				failures = append(failures, err.Error())
 				continue
 			}

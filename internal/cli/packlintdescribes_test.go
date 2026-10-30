@@ -16,7 +16,7 @@ func TestPackLintNamesTheDescribesGateOnTheDeliveryLine(t *testing.T) {
 	// The SHIPPED github pack, copied out of the embed, so the line is the one its author sees.
 	dir := filepath.Join(t.TempDir(), "github")
 	for _, rel := range []string{"pack.toml", "briefing/gh.md",
-		"loopholes/github-broker/manifest.jsonc"} {
+		"loopholes/github-broker/loophole.toml"} {
 		raw, err := officialpacks.FS.ReadFile("github/" + rel)
 		if err != nil {
 			t.Fatal(err)

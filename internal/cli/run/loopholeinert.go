@@ -100,7 +100,7 @@ func backendInertReason(rt string) string {
 		// `aws-auth` (2026-09-18) landed within the week and made it six of NINE, and a count
 		// in a comment is one more thing to keep true every time a pack ships a loophole —
 		// AGENTS.md's rule for the cmd/ table, applied to the same failure one file over.
-		// `rg -l '"transport": "loopback-tls"' packs/*/loopholes/*/manifest.jsonc` is the list.
+		// `rg -l '^transport = "loopback-tls"' packs/*/loopholes/*/loophole.toml` is the list.
 		// OQ-BP-4's ledger entry in docs/design/backend-parity.md keeps the original four by
 		// name, which is correct there: it records what was measured on 2026-09-14.
 		//

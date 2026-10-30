@@ -1,0 +1,104 @@
+{
+  "name": "aws-auth",
+  "description": "Serve Bedrock-scoped AWS credentials to the jail from a host SSO session, minted per profile and narrowed before they cross.",
+  "version": 1,
+  "default_enabled": false,
+  "serves": [
+    "aws-container-credentials"
+  ],
+  "transport": "loopback-tls",
+  "lifecycle": "spawned",
+  "settings": {
+    "profile": {
+      "type": "string",
+      "scope": "user",
+      "default": "",
+      "description": "the AWS profile this service resolves (the one you `aws sso login --profile`). Absent: the daemon refuses at spawn naming this key"
+    },
+    "role_arn": {
+      "type": "string",
+      "scope": "user",
+      "default": "",
+      "description": "a role to assume before serving, so the jail holds that role's permissions rather than the whole permission set"
+    },
+    "session_policy": {
+      "type": "string",
+      "scope": "user",
+      "default": "",
+      "description": "an inline IAM session policy (JSON) attached to that AssumeRole, narrowing inside Bedrock. Needs role_arn; checked for parseability at spawn"
+    },
+    "unnarrowed": {
+      "type": "bool",
+      "scope": "user",
+      "default": false,
+      "description": "serve the configured profile's permission set as-is, without an additional AssumeRole or session policy"
+    }
+  },
+  "host_daemon": {
+    "cmd": [
+      "yolo",
+      "internal",
+      "daemon",
+      "aws-auth",
+      "--socket",
+      "{socket}",
+      "--state-file",
+      "{state}/credentials.json",
+      "--settings",
+      "{settings}"
+    ],
+    "settings_check": [
+      "yolo",
+      "internal",
+      "daemon",
+      "aws-auth",
+      "--settings-check",
+      "--settings",
+      "{settings}"
+    ],
+    "publishes": "socket",
+    "launch_check": true,
+    "startup_reason": true,
+    "detach": true
+  },
+  "jail_daemon": {
+    "cmd": [
+      "yolo-jaild",
+      "aws-credential-adapter",
+      "--listen",
+      "{listen}"
+    ],
+    "listen": "127.0.0.1:1461",
+    "restart": "on-failure",
+    "caller_token": true,
+    "host_cmd": [
+      "yolo",
+      "internal",
+      "daemon",
+      "aws-credential-adapter",
+      "--listen",
+      "{listen}"
+    ]
+  },
+  "inherit_from_parent_jail": {
+    "vars": [
+      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+      "AWS_CONTAINER_AUTHORIZATION_TOKEN"
+    ],
+    "disclose": "the nested jail uses this jail's own Bedrock credentials (narrowed by the host; no daemon started)"
+  },
+  "state_files": [
+    ".mount-sentinel"
+  ],
+  "doctor_cmd": [
+    "yolo",
+    "internal",
+    "daemon",
+    "aws-auth",
+    "--self-check",
+    "--state-file",
+    "{state}/credentials.json",
+    "--settings",
+    "{settings}"
+  ]
+}

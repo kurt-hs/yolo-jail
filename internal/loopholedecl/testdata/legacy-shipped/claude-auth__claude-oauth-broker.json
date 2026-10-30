@@ -1,0 +1,49 @@
+{
+  "name": "claude-oauth-broker",
+  "description": "Serializes Claude OAuth refreshes so multi-jail setups don't burn the single-use refresh token. TLS termination lives inside each jail; a host-side daemon owns the flock + shared credentials file.",
+  "version": 1,
+  "default_enabled": true,
+  "serves": [
+    "claude-oauth-refresh"
+  ],
+  "transport": "loopback-tls",
+  "lifecycle": "spawned",
+  "intercepts": [
+    {
+      "host": "platform.claude.com"
+    }
+  ],
+  "broker_ip": "127.0.0.1",
+  "ca_cert": "{state}/ca.crt",
+  "state_files": [
+    "ca.crt",
+    "server.crt",
+    "server.key"
+  ],
+  "host_daemon": {
+    "cmd": [
+      "yolo",
+      "internal",
+      "daemon",
+      "claude-oauth-broker",
+      "--socket",
+      "{socket}"
+    ],
+    "publishes": "socket",
+    "detach": true
+  },
+  "jail_daemon": {
+    "cmd": [
+      "yolo-jaild",
+      "oauth-terminator"
+    ],
+    "restart": "on-failure"
+  },
+  "doctor_cmd": [
+    "yolo",
+    "internal",
+    "daemon",
+    "claude-oauth-broker",
+    "--self-check"
+  ]
+}

@@ -55,7 +55,7 @@ func TestAWSAuthPointerAndAdapterAgreeOnThePort(t *testing.T) {
 	}
 
 	manifest, err := loopholedecl.Decode(
-		mustRead(t, "aws-auth/loopholes/aws-auth/"+loopholedecl.ManifestName), "/loopholes/aws-auth")
+		mustRead(t, "aws-auth/loopholes/aws-auth/"+loopholedecl.ManifestTOMLName), "/loopholes/aws-auth")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +80,12 @@ func TestAWSAuthPointerAndAdapterAgreeOnThePort(t *testing.T) {
 // other shipped one.
 func TestEveryShippedListenPointerNamesADaemonThatDeclaresOne(t *testing.T) {
 	listens := map[string]string{}
-	manifests, err := fs.Glob(packs.FS, "*/loopholes/*/"+loopholedecl.ManifestName)
+	manifests, err := fs.Glob(packs.FS, "*/loopholes/*/"+loopholedecl.ManifestTOMLName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range manifests {
-		m, err := loopholedecl.Decode(mustRead(t, path), "/"+strings.TrimSuffix(path, "/"+loopholedecl.ManifestName))
+		m, err := loopholedecl.Decode(mustRead(t, path), "/"+strings.TrimSuffix(path, "/"+loopholedecl.ManifestTOMLName))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -251,7 +251,7 @@ func TestAWSAuthInheritsExactlyItsPointer(t *testing.T) {
 		}
 	}
 	manifest, err := loopholedecl.Decode(
-		mustRead(t, "aws-auth/loopholes/aws-auth/"+loopholedecl.ManifestName), "/loopholes/aws-auth")
+		mustRead(t, "aws-auth/loopholes/aws-auth/"+loopholedecl.ManifestTOMLName), "/loopholes/aws-auth")
 	if err != nil {
 		t.Fatal(err)
 	}

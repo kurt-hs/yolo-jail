@@ -86,9 +86,8 @@ this list is the state by component.
   - `yolo config migrate` converts losslessly and drops written defaults but does not fold
     repeated facts ([OQ-RC18](readable-config.md#decision-ledger), [RC-D27](readable-config.md#RC-D27));
   - this repository's own `yolo-jail.jsonc` is not converted, which waits on the owner installing
-    a TOML-reading `yolo` on the host first ([RC-D22](readable-config.md#RC-D22)), and the shipped
-    loophole `manifest.jsonc` files have no TOML form yet
-    ([OQ-RC2](readable-config.md#decision-ledger)).
+    a TOML-reading `yolo` on the host first ([RC-D22](readable-config.md#RC-D22)); the shipped
+    loophole manifests are `loophole.toml` ([RC-D28](readable-config.md#RC-D28)).
 
 ## 2. First-landed contracts
 

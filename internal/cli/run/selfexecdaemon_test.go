@@ -30,7 +30,7 @@ func shippedSelfExecDaemons(t *testing.T) []string {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !(strings.HasSuffix(p, ".json") || strings.HasSuffix(p, ".jsonc")) {
+		if d.IsDir() || !(strings.HasSuffix(p, ".json") || strings.HasSuffix(p, ".jsonc") || strings.HasSuffix(p, ".toml")) {
 			return nil
 		}
 		body, err := os.ReadFile(p)

@@ -2275,7 +2275,7 @@ tool to consume the hook exposed the seam.
 #### `loophole`
 
 A loophole MODULE the pack ships: `from` names a pack-relative directory holding a
-`manifest.jsonc`. The contribution **points at** the module rather than inlining the
+`loophole.toml` (a legacy `manifest.jsonc` is still read). The contribution **points at** the module rather than inlining the
 manifest, so the on-disk shape is the one a user loophole already has — one loader reads
 every source, and an author can develop a loophole standalone and drop it into a pack
 unchanged. `from` is required (the directory's basename *is* the loophole's name) and there
@@ -3554,7 +3554,7 @@ the **implementation**, and a pack should only ever have to know the invariant.
 Two verbs, and the asymmetry between them is a principle in its own right:
 
 ```jsonc
-// a loophole's manifest.jsonc — a statement about ITSELF
+// a loophole's loophole.toml (`serves = [...]`) — a statement about ITSELF
 "serves": ["claude-oauth-refresh"]
 
 // a pack manifest — a claim about SOMETHING ELSE, so it costs more to make

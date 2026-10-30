@@ -87,7 +87,7 @@ func TestLoadDirTolerantFSUsesJSONFallbackAndReportsMissingPath(t *testing.T) {
 	}
 	missingDir := filepath.Join(root, "missing")
 	_, _, err = LoadDirTolerantFS(os.DirFS(root), "missing", missingDir)
-	if err == nil || err.Error() != filepath.Join(missingDir, "manifest.jsonc")+" not found" {
+	if err == nil || err.Error() != filepath.Join(missingDir, "loophole.toml")+" not found (a loophole module holds loophole.toml, or the legacy manifest.jsonc)" {
 		t.Fatalf("missing error = %v", err)
 	}
 }

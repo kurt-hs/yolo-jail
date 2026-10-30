@@ -63,7 +63,14 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
 )
 
-// ManifestName is the file a loophole module declares itself in.
+// ManifestTOMLName is the file a loophole module declares itself in
+// (docs/design/readable-config.md RC-D28): the same keys and meaning the legacy JSONC form had,
+// in their TOML spellings.
+const ManifestTOMLName = "loophole.toml"
+
+// ManifestName is the LEGACY manifest file, still read for the legacy window (third-party
+// packs written before loophole.toml; `yolo pack migrate` converts one). A module holding both
+// it and ManifestTOMLName is refused by name (readManifestWith), never read as one of them.
 const ManifestName = "manifest.jsonc"
 
 // Error is a manifest that failed to parse or validate.
@@ -463,7 +470,25 @@ func readManifest(dir string) ([]byte, error) {
 }
 
 // readManifestWith is the shared filename selection for path and fs.FS readers.
+//
+// loophole.toml wins; manifest.jsonc, then manifest.json, are the legacy window. A module
+// holding loophole.toml AND a legacy file is refused naming the legacy file to delete (RC-D19's
+// rule for pack.json beside pack.toml): reading one of two files that may disagree is a choice
+// nobody made.
 func readManifestWith(dir string, stat func(string) (fs.FileInfo, error), readFile func(string) ([]byte, error), manifestPath, diagnosticDir string, join func(string, string) string) ([]byte, error) {
+	regular := func(name string) bool {
+		fi, err := stat(join(dir, name))
+		return err == nil && fi.Mode().IsRegular()
+	}
+	if regular(ManifestTOMLName) {
+		for _, legacy := range []string{ManifestName, "manifest.json"} {
+			if regular(legacy) {
+				return nil, Errorf("%s holds both %s and %s; delete %s (a yolo that reads %s ignores it), "+
+					"or delete %s to stay on the legacy form",
+					diagnosticDir, ManifestTOMLName, legacy, legacy, ManifestTOMLName, ManifestTOMLName)
+			}
+		}
+	}
 	diagnosticPath := filepath.Join(diagnosticDir, filepath.Base(manifestPath))
 	if fi, err := stat(manifestPath); err == nil && fi.Mode().IsRegular() {
 		raw, err := readFile(manifestPath)
@@ -481,19 +506,16 @@ func readManifestWith(dir string, stat func(string) (fs.FileInfo, error), readFi
 		}
 		return raw, nil
 	}
-	return nil, Errorf("%s not found", diagnosticPath)
+	return nil, Errorf("%s not found (a loophole module holds %s, or the legacy %s)", diagnosticPath, ManifestTOMLName, ManifestName)
 }
 
 func manifestPathWith(dir string, join func(string, string) string, stat func(string) (fs.FileInfo, error)) string {
-	jsoncPath := join(dir, ManifestName)
-	if _, err := stat(jsoncPath); err == nil {
-		return jsoncPath
+	for _, name := range []string{ManifestTOMLName, ManifestName, "manifest.json"} {
+		if _, err := stat(join(dir, name)); err == nil {
+			return join(dir, name)
+		}
 	}
-	jsonPath := join(dir, "manifest.json")
-	if _, err := stat(jsonPath); err == nil {
-		return jsonPath
-	}
-	return jsoncPath
+	return join(dir, ManifestTOMLName)
 }
 
 // ManifestPath returns where a module directory's manifest lives.
@@ -534,7 +556,13 @@ func decodeMode(data []byte, dir string, strict, readRetiredScope bool) (*Manife
 
 // decodeAt is decodeMode with the already-resolved manifest path, used by filesystem readers.
 func decodeAt(data []byte, dir, manifestPath string, strict, readRetiredScope bool) (*Manifest, []string, error) {
-	decoded, err := json5.Decode(data)
+	var decoded any
+	var err error
+	if looksLikeTOML(data) {
+		decoded, err = decodeTOML(data)
+	} else {
+		decoded, err = json5.Decode(data)
+	}
 	if err != nil {
 		// The decoder's exception text is not stable, but only the prefix
 		// matters here: discovery skips malformed manifests with a warning.

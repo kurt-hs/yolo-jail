@@ -163,13 +163,13 @@ func (p *Pack) loopholeModules(root string, moduleDir func(string) (string, bool
 			refusals = append(refusals, fmt.Sprintf(
 				"pack %s declares `loophole` from %q, which is not a directory in its content — "+
 					"a loophole contribution points at a module dir holding %s (check the path, "+
-					"and any only/exclude filters)", p.Name, rel, loopholedecl.ManifestName))
+					"and any only/exclude filters)", p.Name, rel, loopholedecl.ManifestTOMLName))
 			continue
 		}
 		mod := LoopholeModule{From: rel, Name: name, Dir: dir}
 		decl, derr := load(modulePath, rel)
 		if derr != nil {
-			mod.Problem = fmt.Sprintf("its %s could not be read", loopholedecl.ManifestName)
+			mod.Problem = fmt.Sprintf("its %s could not be read", loopholedecl.ManifestTOMLName)
 			warnings = append(warnings, fmt.Sprintf(
 				"pack %s: loophole %q (from %q): %v — it will not be discovered, and its "+
 					"host access is claimed as UNENUMERABLE rather than as nothing",

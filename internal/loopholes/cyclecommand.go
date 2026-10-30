@@ -1,7 +1,6 @@
 package loopholes
 
 import (
-	"path/filepath"
 	"strconv"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
@@ -44,6 +43,6 @@ func missingStateFileStep(m *Loophole, rel string) string {
 			" does not"
 	default:
 		return "nothing yolo runs writes it: create it, or remove " + strconv.Quote(rel) +
-			" from `state_files` in " + filepath.Join(m.Path, loopholedecl.ManifestName)
+			" from `state_files` in " + loopholedecl.ManifestPath(m.Path)
 	}
 }

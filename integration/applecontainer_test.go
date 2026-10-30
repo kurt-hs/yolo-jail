@@ -466,7 +466,7 @@ func TestAppleContainerHonorsReadOnlyBinds(t *testing.T) {
 // covers none of them. (This said "FOUR of the six shipped loopholes"; the count is dropped
 // rather than incremented, for the reason loopholeinert.go's own retraction gives — two
 // loopholes landed in the week after it was written. `rg -l '"transport": "loopback-tls"'
-// packs/*/loopholes/*/manifest.jsonc` is the list.)
+// packs/*/loopholes/*/loophole.toml` is the list.)
 // What nobody has ever measured is the premise underneath: whether a container here can reach
 // a listener bound to the Mac's own 127.0.0.1 at all. `advertiseHostFor` excludes Apple
 // Container before it even reads the network mode, so the tree has no answer to "what address

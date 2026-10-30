@@ -1,0 +1,61 @@
+# The OpenAI subscription credential service shared by Codex and Pi. Agent packs depend on the
+# containing `openai-auth` pack, so selecting either client is sufficient to start the one refresh
+# owner.
+name = "openai-auth-broker"
+description = "Serializes OpenAI subscription refreshes across agents, workspaces, hosts, and jails."
+version = 1
+# On, like the Claude broker (see packs/claude-auth): selecting the pack is what starts it.
+default_enabled = true
+serves = ["openai-oauth-refresh"]
+transport = "loopback-tls"
+lifecycle = "spawned"
+# An absent or empty list mounts the entire host state directory read-only. Keep this list nonempty
+# or credentials.json would cross into every jail. The launcher writes this inert marker before it
+# assembles the mounts, for every loophole whose list names it (PrepareMountSentinels).
+state_files = [".mount-sentinel"]
+doctor_cmd = [
+  "yolo", "internal", "daemon", "openai-auth-broker", "--self-check",
+  "--state-file", "{state}/credentials.json",
+]
+
+# One daemon per jail, started by the launch and stopped with it
+# (docs/design/host-daemon-ownership.md, HD-R1). Every copy reads one state file and takes the
+# refresh flock beside it before it submits the canonical refresh token to OpenAI. The framework
+# publishes this jail's authenticated loopback-TLS front over the daemon's AF_UNIX socket.
+[host_daemon]
+cmd = [
+  "yolo", "internal", "daemon", "openai-auth-broker",
+  "--socket", "{socket}",
+  "--state-file", "{state}/credentials.json",
+]
+publishes = "socket"
+# A jail's end SIGTERMs this daemon and leaves it to finish a refresh in flight, which writes the
+# shared state file (docs/design/host-daemon-ownership.md §1.3).
+detach = true
+
+# Codex can override only its refresh URL, not the transport used to reach a yolo endpoint file.
+# This adapter exposes the native OAuth token endpoint shape on jail loopback and forwards it
+# through the authenticated service front named by YOLO_SERVICE_OPENAI_AUTH_BROKER_ENDPOINT.
+#
+# `caller_token`: the adapter listens on a loopback port that every process sharing that loopback
+# can reach (a jail on `network.mode = "host"`, a nested podman forced onto `--net=host`), and the
+# broker's stale-caller arm answers any generation marker with the current access and id tokens. So
+# the launcher mints this launch's caller token (YOLO_SERVICE_OPENAI_AUTH_BROKER_TOKEN), the Codex
+# launcher's auth.json writer binds it into the refresh marker Codex sends back, and the adapter
+# refuses a refresh without it (docs/plans/notch-convergence.md §2.3).
+#
+# `listen` is the one place the port is written. The argv takes it as `{listen}`, and so does
+# packs/codex's CODEX_REFRESH_TOKEN_URL_OVERRIDE, so the launcher composes both from it: 1460 on a
+# jail with a network namespace of its own, and a port it picked on one that shares the launcher's
+# (docs/plans/notch-convergence.md §2.4).
+#
+# `host_cmd` opens the same doorway on the host for a launch whose agent shares the host's loopback
+# (docs/design/host-notch-services.md HS-D15; OQ-OA6 route (b)): a macos-user launch runs it
+# outside the sandbox as a listener it owns, on the port it picked for `listen`, and stops it when
+# the sandboxed command exits. It serves the adapter `yolo host -- codex` serves.
+[jail_daemon]
+cmd = ["yolo-jaild", "openai-auth-adapter", "--listen", "{listen}"]
+listen = "127.0.0.1:1460"
+restart = "on-failure"
+caller_token = true
+host_cmd = ["yolo", "internal", "daemon", "openai-auth-adapter", "--listen", "{listen}"]

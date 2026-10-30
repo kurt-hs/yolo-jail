@@ -1,0 +1,67 @@
+# The `journal` loophole, shipped by the official `journal` pack: a read-only window onto the host's
+# systemd journal, reached from inside the jail as `yolo-journalctl`. internal/journald is the
+# daemon and cmd/yolo-journalctl the jail-side client, both baked: an official pack may name a
+# baked client.
+#
+# It was a builtin service before it was a loophole, and three things follow from that:
+#
+#  1. There is no top-level `journal` config key. Core's schema names no loophole
+#     (docs/reference/loophole-system.md §1.4, OQ-A6; pack-config-keys.md OQ-K4), and a config that
+#     still writes the key is refused, naming this block.
+#
+#  2. The mode has a scope, which is the security half. `"journal": "full"` was an agent-settable
+#     host-journal passthrough, and a workspace config is a file the agent inside the jail can
+#     rewrite. It is now the declared `full` setting below, `scope = "user"`.
+#
+#  3. The name is not reserved. A name yolo answers to itself and a name a pack ships cannot be the
+#     same name (`PackLoopholeNameConflicts` is fatal).
+name = "journal"
+description = "Read the host's systemd journal from inside the jail (yolo-journalctl). Every request is forced to --user unless this loophole's own `full` setting says otherwise."
+version = 1
+default_enabled = false
+# Linux only, declared rather than probed: `requires` asks whether a thing is present, `platforms`
+# whether it exists for this machine at all. systemd's journal is Linux; the macOS analog is the
+# separate `macos-log` loophole. `journalctl` itself is not a `requires.command_on_path` probe: a
+# Linux host without systemd is a real machine, and the honest report there is the daemon answering
+# "journalctl not found on host" (exit 127, per request) rather than a loophole that vanishes from
+# `yolo loopholes list` (docs/reference/loophole-system.md R3).
+platforms = ["linux"]
+transport = "loopback-tls"
+lifecycle = "spawned"
+
+# One boolean, where the old key had three strings (`off | user | full`). Off is the loophole
+# being switched off, so the only thing left to declare is whether this bridge may read past the launching
+# user's own journal. A `string` would have been the unsafe port: the settings type set is closed
+# (`string`, `bool`, `int`, `string_list`) with no `enum`, so core could not refuse
+# `mode = "usr"`, and ParseRequest's test is `mode == "user"`, so every other spelling would behave
+# as full. A bool cannot spell itself wrong, and core type-checks it before it is written.
+[settings.full]
+type = "bool"
+# User config only, by ruling (OQ-K4: "the declared key gets a scope, which is the security half").
+# A workspace may still switch the bridge on and get the narrow view; what it cannot do is widen what
+# the bridge may read.
+scope = "user"
+default = false
+description = "pass journalctl args through unchanged, reading the WHOLE host journal (needs host journal read access); false forces --user onto every request"
+
+# `publishes = "socket"` is required of a pack-shipped loophole (internal/loopholedecl/packshipped.go):
+# the daemon binds a plain AF_UNIX socket at `{socket}` and yolo runs the front over it, so the
+# endpoint file's mode, key persistence, constant-time token compare and length cap are the
+# framework's code. The jail-facing names (YOLO_SERVICE_JOURNAL_ENDPOINT, and the in-jail path
+# /run/yolo-services/journal.endpoint) are functions of the loophole name and the transport alone.
+#
+# `preamble` stays at its default (on), and internal/journald's ServeFrontedUnix consumes the frame.
+# Getting that pairing wrong is total: the daemon's request parser reads to the first newline, so
+# an unconsumed preamble becomes the request and every call answers "malformed request".
+# `request_end` stays at "framed": the request is one newline-terminated line, never read to EOF.
+#
+# `{settings}` resolves to the file yolo writes from the declarations above after validating the
+# user's values. It is a path and not an env map on purpose: `loopholes.<name>.env` is user-scope
+# only because it reaches a host daemon's spawn environment, and a path is the one thing a spawn
+# may carry.
+[host_daemon]
+cmd = ["yolo", "internal", "daemon", "journal", "--socket", "{socket}", "--settings", "{settings}"]
+publishes = "socket"
+# No `doctor_cmd`: whether `journalctl` exists on the host is reported per request (exit 127,
+# naming it), and whether the bridge is reachable is what the launch's readiness probe and the
+# in-jail reachability witness already measure.

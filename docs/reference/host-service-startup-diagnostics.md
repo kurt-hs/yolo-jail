@@ -21,7 +21,7 @@ covers:
   - internal/cli/check/sections_loopholes.go
   - internal/awsauthdaemon/main.go
   - internal/awsauth/settings.go
-  - packs/aws-auth/loopholes/aws-auth/manifest.jsonc
+  - packs/aws-auth/loopholes/aws-auth/loophole.toml
 tags: [reference, diagnostics, host-services, loopholes, launch, credentials]
 summary: "How a pack-declared host service's settings are validated before any shared state changes, how a cooperative daemon reports one attempt-specific refusal, and how that cause reaches every launch front door ahead of its socket and reachability symptoms."
 ---

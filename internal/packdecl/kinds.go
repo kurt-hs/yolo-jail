@@ -218,7 +218,7 @@ const (
 	// nothing on the host and runs nothing.
 	KindModels Kind = "models"
 	// KindLoophole: a loophole MODULE the pack ships — a directory holding a
-	// `manifest.jsonc`, named by `from`
+	// `loophole.toml` (or a legacy `manifest.jsonc`), named by `from`
 	// (docs/reference/loophole-system.md#the-loophole-contribution-kind).
 	//
 	// It POINTS AT the module rather than inlining the manifest, so the on-disk shape

@@ -35,17 +35,17 @@ sets a variable pointing at it:
 ```bash
 mkdir -p ~/.config/yolo-jail/local/loopholes/hello/assets
 echo "hello from the host" > ~/.config/yolo-jail/local/loopholes/hello/assets/greeting.txt
-cat > ~/.config/yolo-jail/local/loopholes/hello/manifest.jsonc <<'EOF'
-{
-  "name": "hello",
-  "description": "Smoke test: mounts a greeting into every jail",
-  "version": 1,
-  "default_enabled": true,
-  "transport": "none",
-  "host_bind_mounts": [
-    {"host": "{loophole_dir}/assets", "container": "/opt/hello", "readonly": true}
-  ]
-}
+cat > ~/.config/yolo-jail/local/loopholes/hello/loophole.toml <<'EOF'
+name = "hello"
+description = "Smoke test: mounts a greeting into every jail"
+version = 1
+default_enabled = true
+transport = "none"
+
+[[host_bind_mounts]]
+host = "{loophole_dir}/assets"
+container = "/opt/hello"
+readonly = true
 EOF
 cat > ~/.config/yolo-jail/local/pack.toml <<'EOF'
 name = "local"
@@ -56,14 +56,17 @@ from = "loopholes/hello"
 [[env]]
 vars = { HELLO_FILE = "/opt/hello/greeting.txt" }
 EOF
-yolo pack lint ~/.config/yolo-jail/local       # checks the manifest
+yolo pack lint ~/.config/yolo-jail/local       # checks the loophole
 yolo loopholes list                            # shows hello as active
 yolo -- bash -c 'cat "$HELLO_FILE"'            # prints the greeting
 ```
 
 If your local pack already has a `pack.toml`, add the two entries to it instead of replacing the
-file. A local pack still written as `pack.json` is read too, and `yolo pack migrate
-~/.config/yolo-jail/local` converts it. To remove the loophole, delete its folder and its two entries.
+file. A local pack still written as `pack.json`, or a loophole still written as `manifest.jsonc`
+(the same keys in JSON), is read too, and `yolo pack migrate ~/.config/yolo-jail/local` converts
+both, keeping every comment. A loophole folder holding both `loophole.toml` and `manifest.jsonc` is
+refused, naming the `manifest.jsonc` to delete. To remove the loophole, delete its folder and its
+two entries.
 
 ## The files
 
@@ -71,7 +74,7 @@ file. A local pack still written as `pack.json` is read too, and `yolo pack migr
 ~/.config/yolo-jail/local/
 ├── pack.toml                  # names the loophole: [[loophole]] from = "loopholes/<name>"
 └── loopholes/<name>/
-    ├── manifest.jsonc         # required
+    ├── loophole.toml          # required
     ├── ca.crt                 # optional; a certificate the jail trusts
     ├── <your program>         # optional; what runs on the host (or a download, below)
     └── README.md              # optional; for people using it
@@ -83,61 +86,65 @@ file. A local pack still written as `pack.json` is read too, and `yolo pack migr
 - **A loophole name belongs to one pack.** Two selected packs shipping the same name stop the
   launch, naming both.
 
-## The manifest
+## The loophole file
 
-```jsonc
-{
-  "name": "my-loophole",          // required; must match the folder name
-  "description": "…",             // one-line summary, shown by `yolo loopholes list`
-  "version": 1,                   // manifest format; currently 1
-  "default_enabled": false,       // on when the pack is selected? Absent means off
-  "transport": "loopback-tls",    // or "none" for no host program; default "loopback-tls"
-  "lifecycle": "spawned",         // "spawned" when yolo starts a host_daemon, else "external"
-  "intercepts": [                 // optional; TLS hostnames the jail is sent to you for
-    {"host": "example.com"}
-  ],
-  "broker_ip": "host-gateway",    // intercepts only; where those hostnames point
-  "ca_cert": "ca.crt",            // intercepts only; mounted and trusted in the jail
-  "state_files": ["ca.crt"],      // optional; which state files the jail may read
-  "doctor_cmd": ["bin", "--ok"],  // optional; run by `yolo check` and `yolo loopholes status`
-  "host_daemon": {                // optional; a program yolo runs ON THE HOST
-    "cmd": ["python3", "{loophole_dir}/my-daemon.py", "--socket", "{socket}"],
-    "env": {"FOO": "bar"},        // optional; the program's environment, never the jail's
-    "publishes": "socket",        // required in a pack: write it every time
-    "request_end": "framed",      // or "eof"; default "framed"
-    "preamble": true,             // default true
-    "detach": false,              // let work in flight finish when the jail ends; default false
-    "launch_check": false         // answers the launch's check, below; default false
-  },
-  "jail_daemon": {                // optional; a program run INSIDE the jail
-    "cmd": ["{jail_loophole_dir}/my-agent", "--listen", "{listen}"],
-    "listen": "127.0.0.1:1470",   // optional; the jail address it serves at
-    "restart": "on-failure",      // or "always" / "no"; default "on-failure"
-    "caller_token": true,         // optional; default false
-    "host_cmd": ["yolo", "…", "--listen", "{listen}"]  // optional; yolo's own packs only, below
-  },
-  "inherit_from_parent_jail": {   // optional; a nested jail reuses its launching jail's, below
-    "vars": ["MY_POINTER_URL", "MY_POINTER_TOKEN"],
-    "disclose": "the nested jail uses this jail's own …"
-  },
-  "host_bind_mounts": [           // optional; host paths mounted into the jail
-    {"host": "{loophole_dir}/assets", "container": "/opt/thing", "readonly": true}
-  ],
-  "host_devices": ["/dev/snd"],   // optional; device nodes passed through
-  "requires": {                   // optional; if unmet, the loophole is inactive
-    "command_on_path": "claude",
-    "file_exists": ".config/pulse/cookie"   // relative to your home
-  },
-  "platforms": ["linux", "darwin/arm64"],  // optional; omit for every platform
-  "binaries": {                   // optional; programs downloaded for it, below
-    "my-agent": {"linux/amd64": {"url": "https://…", "sha256": "…"}}
-  },
-  "settings": {}                  // optional; config keys of its own, below
-}
+```toml
+name = "my-loophole"            # required; must match the folder name
+description = "…"               # one-line summary, shown by `yolo loopholes list`
+version = 1                     # file format; currently 1
+default_enabled = false         # on when the pack is selected? Absent means off
+transport = "loopback-tls"      # or "none" for no host program; default "loopback-tls"
+lifecycle = "spawned"           # "spawned" when yolo starts a host_daemon, else "external"
+intercepts = [{ host = "example.com" }]  # optional; TLS hostnames the jail is sent to you for
+broker_ip = "host-gateway"      # intercepts only; where those hostnames point
+ca_cert = "ca.crt"              # intercepts only; mounted and trusted in the jail
+state_files = ["ca.crt"]        # optional; which state files the jail may read
+doctor_cmd = ["bin", "--ok"]    # optional; run by `yolo check` and `yolo loopholes status`
+host_devices = ["/dev/snd"]     # optional; device nodes passed through
+platforms = ["linux", "darwin/arm64"]  # optional; omit for every platform
+
+[host_daemon]                   # optional; a program yolo runs ON THE HOST
+cmd = ["python3", "{loophole_dir}/my-daemon.py", "--socket", "{socket}"]
+env = { FOO = "bar" }           # optional; the program's environment, never the jail's
+publishes = "socket"            # required in a pack: write it every time
+request_end = "framed"          # or "eof"; default "framed"
+preamble = true                 # default true
+detach = false                  # let work in flight finish when the jail ends; default false
+launch_check = false            # answers the launch's check, below; default false
+
+[jail_daemon]                   # optional; a program run INSIDE the jail
+cmd = ["{jail_loophole_dir}/my-agent", "--listen", "{listen}"]
+listen = "127.0.0.1:1470"       # optional; the jail address it serves at
+restart = "on-failure"          # or "always" / "no"; default "on-failure"
+caller_token = true             # optional; default false
+host_cmd = ["yolo", "…", "--listen", "{listen}"]  # optional; yolo's own packs only, below
+
+[inherit_from_parent_jail]      # optional; a nested jail reuses its launching jail's, below
+vars = ["MY_POINTER_URL", "MY_POINTER_TOKEN"]
+disclose = "the nested jail uses this jail's own …"
+
+[[host_bind_mounts]]            # optional; host paths mounted into the jail
+host = "{loophole_dir}/assets"
+container = "/opt/thing"
+readonly = true
+
+[requires]                      # optional; if unmet, the loophole is inactive
+command_on_path = "claude"
+file_exists = ".config/pulse/cookie"   # relative to your home
+
+[binaries.my-agent."linux/amd64"]       # optional; programs downloaded for it, below
+url = "https://…"
+sha256 = "…"
+
+[settings.visible]              # optional; config keys of its own, below
+type = "string_list"
 ```
 
+The keys are the same ones a legacy `manifest.jsonc` spells in JSON, with the same meanings; only
+the spelling is TOML.
+
 Only `name` is required. A key yolo does not know is an error in `yolo pack lint`, so a typo is
-caught while you write; a launch only warns about one, so a manifest written for a newer yolo still
+caught while you write; a launch only warns about one, so a loophole written for a newer yolo still
 loads.
 
 ### Keys for turning it on
@@ -149,8 +156,8 @@ each other out.
 
 **`loopholes.<name>.enabled`** in a config file is the user's switch, and it overrides yours in
 either direction. The user writes it, or runs `yolo loopholes enable <name>` in a project to switch
-it for that project alone; see [The loopholes yolo ships](loopholes.md#the-loopholes-yolo-ships). A manifest that
-still says `enabled`, the key's old name, is refused with a message naming the rename.
+it for that project alone; see [The loopholes yolo ships](loopholes.md#the-loopholes-yolo-ships). A loophole file
+that still says `enabled`, the key's old name, is refused with a message naming the rename.
 
 **`requires`** makes the loophole inactive on a machine that lacks something:
 `command_on_path` names a program that must be on the host's `PATH`, and `file_exists` names a
@@ -164,7 +171,7 @@ not support, the launch names the loophole and the platforms it does support.
 
 ### Placeholders
 
-A manifest can name files that ship beside it. The loophole's folder has one path on the host and
+A loophole file can name files that ship beside it. The loophole's folder has one path on the host and
 another in the jail, so there is a placeholder for each:
 
 | Placeholder | Becomes | Use it in |
@@ -187,12 +194,11 @@ A loophole whose host program runs commands with a login of yours, such as the `
 `github-broker`, declares a **`brokered`** block, so it only ever touches the project's own
 repositories:
 
-```jsonc
-"brokered": {
-  "source": "github",                 // the name the approved list is kept under
-  "remote_host": "github.com",        // whose git remotes make up the list
-  "credential_paths": ["~/.config/gh", "$GH_CONFIG_DIR"]  // where the login lives on the host
-}
+```toml
+[brokered]
+source = "github"                 # the name the approved list is kept under
+remote_host = "github.com"        # whose git remotes make up the list
+credential_paths = ["~/.config/gh", "$GH_CONFIG_DIR"]  # where the login lives on the host
 ```
 
 At every fresh launch that starts the program, yolo reads the project's git remotes on
@@ -204,7 +210,7 @@ must name that placeholder, and the program must refuse anything outside the lis
 selected, a project's `mounts` entry that reaches a `credential_paths` entry, or yolo's own broker
 folder, is refused.
 
-A `brokered` loophole has no switch: it runs whenever its pack is selected, so its manifest may
+A `brokered` loophole has no switch: it runs whenever its pack is selected, so its loophole file may
 not set `default_enabled` to `true`, no config file may switch it, and `yolo loopholes enable`
 refuses for it. The scope file also carries the grants the human approved, a `read` grant among
 them when the user granted one. yolo's own brokers refuse every call no `read` grant covers, so
@@ -213,7 +219,7 @@ it does not ship.
 
 ### A program on the host
 
-A **host daemon** is a program yolo starts on your machine for the jail. With `transport:
+A **host daemon** is a program yolo starts on your machine for the jail. With `transport =
 "loopback-tls"`, the default, and a `host_daemon`, it works like this:
 
 1. Your program listens on a plain Unix socket at the path yolo puts in `{socket}`. Any language
@@ -223,7 +229,7 @@ A **host daemon** is a program yolo starts on your machine for the jail. With `t
    `YOLO_SERVICE_<NAME>_ENDPOINT` in the jail names that file.
 3. When the jail exits, yolo stops your program.
 
-`"publishes": "socket"` selects this, and a pack must write it: the other value, which is also the
+`publishes = "socket"` selects this, and a pack must write it: the other value, which is also the
 default, has your program implement the encrypted front itself, and packs may not do that. The
 messages that travel over the socket follow yolo's
 [frame protocol](https://github.com/mschulkind-oss/yolo-jail/blob/main/docs/reference/loophole-protocol.md).
@@ -244,9 +250,9 @@ Three keys shape the connection:
   is doing, instead of waiting for it and then killing it. Use it when cutting off a request half
   way would lose something, such as a refreshed login already paid for. Your program must still
   exit soon after the signal.
-- **`scope`** is retired. `"jail"` is the only value left. A manifest that still says `"host"` runs
+- **`scope`** is retired. `"jail"` is the only value left. A loophole file that still says `"host"` runs
   one copy per jail with a warning, and `yolo pack lint` refuses it: delete the line, and add
-  `"detach": true` if the program must finish its work in flight.
+  `detach = true` if the program must finish its work in flight.
 
 **`launch_check: true`** lets your program warn the user before their jail starts. Right after
 starting your program, the launch sends it one request,
@@ -255,7 +261,7 @@ starting your program, the launch sends it one request,
 each note as a dim one, and then the jail starts anyway. Answer within the budget, from what your
 program already knows; a program that does not answer in time, or at all, gets a dim line saying
 so. If your program answers `unknown action: launch-check` on stderr with a non-zero exit, the
-launch prints a yellow line saying your manifest declares a check your program does not answer,
+launch prints a yellow line saying your loophole declares a check your program does not answer,
 and goes on. The launch asks only when the jail uses your loophole's jail program, or when you
 declare none, and a new agent attaching to a running jail is asked about the same way, but is
 never stopped. `aws-auth` uses it to say that an SSO session has lapsed. The
@@ -323,16 +329,18 @@ one build per machine. So a loophole can name its program as a
 **download** instead: one build per platform, each with an `https` address and the file's
 `sha256`, which is required.
 
-```jsonc
-"binaries": {
-  "my-agent": {
-    "linux/amd64": {"url": "https://example.com/releases/v1/my-agent-linux-amd64",
-                    "sha256": "<64 hex digits, as sha256sum prints them>"},
-    "linux/arm64": {"url": "https://example.com/releases/v1/my-agent-linux-arm64",
-                    "sha256": "…"}
-  }
-},
-"jail_daemon": {"cmd": ["{jail_binary:my-agent}", "--listen", "{listen}"], "listen": "127.0.0.1:1470"}
+```toml
+[binaries.my-agent."linux/amd64"]
+url = "https://example.com/releases/v1/my-agent-linux-amd64"
+sha256 = "<64 hex digits, as sha256sum prints them>"
+
+[binaries.my-agent."linux/arm64"]
+url = "https://example.com/releases/v1/my-agent-linux-arm64"
+sha256 = "…"
+
+[jail_daemon]
+cmd = ["{jail_binary:my-agent}", "--listen", "{listen}"]
+listen = "127.0.0.1:1470"
 ```
 
 - **The platform** is an OS and an architecture, both, spelled the way Go spells them. A program
@@ -370,7 +378,7 @@ marker, a file that holds nothing secret, before every launch, so the list mount
 
 ### Mounts and devices
 
-`host_bind_mounts` mounts host paths into the jail, and must stay `readonly: true`. A host path may
+`host_bind_mounts` mounts host paths into the jail, and must stay `readonly = true`. A host path may
 use `{loophole_dir}`, `$HOME` or an absolute path, but not `..` or `:`. A read-only mount does
 **not** protect a Unix socket: a jail can still talk both ways over it, so treat a socket mount as
 full access to whatever is behind it. Name a socket `*.sock` so that yolo describes it that way.
@@ -397,15 +405,15 @@ way.
 This works only for a loophole that mounts something or runs a jail daemon: an entry marked
 `served_by` a loophole that does neither is never set, even with the loophole on.
 
-### What a pack's manifest may not use
+### What a pack's loophole may not use
 
-yolo holds every manifest to a few rules, because a pack is something other people install:
+yolo holds every loophole file to a few rules, because a pack is something other people install:
 
 | Not allowed | Use instead |
 |---|---|
 | `jail_env` | a pack `env` contribution. It applies whenever the pack is selected, even if the loophole is not active. If the variable points at something the loophole mounts or at its jail daemon, mark it `served_by` the loophole and it follows the loophole (see [Mounts and devices](#mounts-and-devices) and [A program in the jail](#a-program-in-the-jail)). Marked `served_by` a loophole that does neither, it is never set |
-| `readonly: false` in a mount | a read-only mount, or a host daemon that does the writing |
-| `publishes` left out, or `"endpoint"` | `"publishes": "socket"` |
+| `readonly = false` in a mount | a read-only mount, or a host daemon that does the writing |
+| `publishes` left out, or `"endpoint"` | `publishes = "socket"` |
 | an absolute or `$VAR` path in `ca_cert` or `requires.file_exists` | a path inside the loophole's folder; `{state}/…` for `ca_cert`; a path relative to your home for `file_exists` |
 | a name another selected pack uses | a different folder name |
 
@@ -416,16 +424,13 @@ yolo holds every manifest to a few rules, because a pack is something other peop
 
 A loophole can declare config keys for the user to set, with types and defaults:
 
-```jsonc
-// in the manifest
-"settings": {
-  "visible": {
-    "type": "string_list",     // string, bool, int or string_list
-    "scope": "workspace",      // "workspace" (either config file) or "user" (user config only)
-    "default": [],
-    "description": "process names this loophole may reveal"
-  }
-}
+```toml
+# in loophole.toml
+[settings.visible]
+type = "string_list"     # string, bool, int or string_list
+scope = "workspace"      # "workspace" (either config file) or "user" (user config only)
+default = []
+description = "process names this loophole may reveal"
 ```
 
 ```jsonc
@@ -437,7 +442,7 @@ A loophole can declare config keys for the user to set, with types and defaults:
 
 - A key you did not declare, or a value of the wrong type, is a config error that names the keys
   that exist.
-- A key with no `scope` can be set only in the user config. Write `"scope": "workspace"` to let a
+- A key with no `scope` can be set only in the user config. Write `scope = "workspace"` to let a
   project's `yolo-jail.jsonc` set it too. For a list, a project can only add entries, never remove
   the user's.
 - yolo reads the values once, when the jail starts, and writes them to a file your program gets
@@ -448,7 +453,7 @@ A loophole can declare config keys for the user to set, with types and defaults:
 Before selecting your pack, a user can run `yolo pack footprint <pack>`: it lists everything the
 pack's loopholes do on the host, one line each, and marks a host program
 `⚠ RUNS CODE ON YOUR MACHINE`. Every launch lists the same things again before it starts anything.
-The lines come straight from your manifest, so your program's command appears as you wrote it.
+The lines come straight from your loophole file, so your program's command appears as you wrote it.
 
 Anyone who can add your pack to their config can already run programs as themselves, so selecting
 the pack is the whole decision; yolo asks nothing more. Because a pack can change between fetches,

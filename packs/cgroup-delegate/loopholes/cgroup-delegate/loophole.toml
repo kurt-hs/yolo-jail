@@ -1,0 +1,29 @@
+# The `cgroup-delegate` loophole, shipped by the official `cgroup-delegate` pack: the jail's own
+# control over its own cgroup, which `yolo-cglimit` uses.
+#
+# This file declares no daemon, and that is not an omission. The delegate is yolo's own in-process
+# goroutine on the launcher side (startCgroupDelegateInProc), bound to an AF_UNIX socket, and it is
+# the one service not on the loopback-TLS transport: `create_and_join` writes the peer's
+# host-namespace pid, read off the connection by SO_PEERCRED and never sent by the caller, into the
+# job cgroup's cgroup.procs. A TCP connection carries no peer credential, and a loopback-TLS front
+# would make SO_PEERCRED attest yolo's own pid (docs/reference/security-shim.md §2).
+#
+# So this file is a switch and an identity: it puts the delegate in `yolo loopholes list`,
+# `yolo check` and the briefing under the same vocabulary as every other loophole. It is off until
+# asked for (`default_enabled = false`; docs/reference/loophole-system.md OQ-A4).
+name = "cgroup-delegate"
+description = "Lets a jail set its own cgroup limits (yolo-cglimit). The delegate hands the jail control of ITS OWN cgroup; it reads no host state."
+version = 1
+default_enabled = false
+# Linux only, declared rather than probed: cgroups are a Linux kernel feature. That the kernel runs
+# cgroup v2 with the controllers delegated is a fact about one host and is reported where an
+# operator can act on it, in startCgroupDelegateInProc.
+platforms = ["linux"]
+# `none` means no daemon, not a different transport: the socket is yolo's own in-process listener,
+# and the jail reads YOLO_SERVICE_CGROUP_DELEGATE_SOCKET.
+transport = "none"
+lifecycle = "external"
+# No `settings`: the delegate does one operation (create a job cgroup and move the caller into it)
+# against the jail's own subtree, and the limits are arguments the jail passes per call.
+#
+# No `doctor_cmd`: "is the socket there" is answered by the entrypoint's own boot output.

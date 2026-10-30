@@ -122,7 +122,7 @@ one file's audience never stops another file from shipping:
                    converted wire is served, so an agent speaking one wire can be
                    pointed at a provider offering the other; says nothing about who
                    runs it, and the PAIR is sole-owned across packs
-  loophole         ship a host-capability loophole: a module dir with a manifest.jsonc
+  loophole         ship a host-capability loophole: a module dir with a loophole.toml
   service          contribute a daemon to a namespace — a yolo-jaild subcommand in the
                    jail and/or a host daemon — plus its endpoint file under
                    /run/yolo-services/; no host grant, no boundary crossing
@@ -1117,7 +1117,7 @@ func stagedContent(staged []string, pack *packload.Pack, delivered []string) (cl
 		switch c.Kind {
 		// KindLoophole is here for the same reason as `files`: its `from` names a
 		// DIRECTORY of content a reader picks up — internal/loopholes loads
-		// <from>/manifest.jsonc, and everything the manifest references ({loophole_dir}/x)
+		// <from>/loophole.toml (or the legacy manifest.jsonc), and everything the manifest references ({loophole_dir}/x)
 		// resolves inside that dir. Omitted, `pack lint` rejected every pack whose only
 		// contribution is a loophole ("stages N file(s) nothing reads", naming the manifest
 		// the whole pack exists to deliver), which is the accepted-and-ignored shape this

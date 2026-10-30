@@ -1,0 +1,158 @@
+# The AWS credential service: one host daemon that turns a live host `aws sso login` into a
+# short-lived, narrowed credential, and one jail-side adapter that hands it to any AWS SDK over the
+# container-credentials protocol.
+#
+# How it behaves, and the rulings cited below by id, are in
+# docs/reference/agent-credentials.md#sso-backed-bedrock-credentials-aws-auth. The host half is
+# internal/awsauth (mint, cache, lock, narrowing) wrapped by internal/awsauthdaemon; the jail half
+# is internal/awscredadapter. Nothing here is per agent: the protocol is one every AWS SDK already
+# speaks.
+#
+# What never crosses into the jail: no credential, in any form. The jail gets a loopback URL and
+# asks for a body; the mint, the SSO cache, the `aws` CLI and ~/.aws all stay host-side.
+# `state_files` is what keeps the minted-credential cache from crossing with the state dir.
+#
+# Never grant `~/.aws` alongside this. `fromIni` sits ahead of the container provider in every
+# SDK's chain, so a `host_files` mount of ~/.aws holding credentials for the resolved profile does
+# not duplicate this loophole: it disables it while looking like it works. The launch refuses the
+# bearer and the static key pair, and warns about the grant (a region-only ~/.aws does not
+# override); the pack's `env` contribution in ../../pack.toml declares all three under
+# `overridden_by` (OQ-SSO8).
+name = "aws-auth"
+description = "Serve Bedrock-scoped AWS credentials to the jail from a host SSO session, minted per profile and narrowed before they cross."
+version = 1
+default_enabled = false
+# Off until asked for (`default_enabled = false`), and that is load-bearing here: with no profile
+# configured it should not start, and it is not an error ("a selected pack with no configuration is
+# inert"). A jail that enables it without a profile gets the daemon's loud spawn refusal naming the
+# key to write.
+serves = ["aws-container-credentials"]
+transport = "loopback-tls"
+lifecycle = "spawned"
+# An absent or empty list would mount the entire host state directory read-only, and this state
+# dir holds credentials.json: the minted credentials for every profile this machine serves. Keep
+# the list nonempty, or the cache crosses into every jail and the service's one job is undone. The
+# launcher writes this inert marker before it assembles the mounts (PrepareMountSentinels).
+state_files = [".mount-sentinel"]
+# `yolo check` runs this and grades its lines (OK:/NOTE:/FAIL:). It reports the resolved profile,
+# the configured permission mode and which SSO config form the profile uses, so the login cadence
+# is visible, and then mints once: the only check short of an agent turn that proves the host's
+# session is live and the role assumable.
+doctor_cmd = [
+  "yolo", "internal", "daemon", "aws-auth", "--self-check",
+  "--state-file", "{state}/credentials.json",
+  "--settings", "{settings}",
+]
+
+# The four config keys this loophole owns. There is no top-level `aws_auth` key and there must not
+# be one: OQ-SSO4 rules the profile, the role and the policy user-config only, and this mechanism
+# already says that per key.
+#
+# `scope = "user"` on every one, including the two that only narrow. The workspace yolo-jail.jsonc
+# is a file the jail's own agent can rewrite, so a workspace-settable `profile` would let an agent
+# point this service at the `admin` profile, and a workspace-settable `role_arn` or
+# `session_policy` would let it swap the narrowing for one of its own choosing. Core writes the
+# resolved values to the 0600 file `{settings}` names, and internal/awsauth reads them from there
+# and nowhere else.
+[settings.profile]
+type = "string"
+scope = "user"
+default = ""
+description = "the AWS profile this service resolves (the one you `aws sso login --profile`). Absent: the daemon refuses at spawn naming this key"
+
+[settings.role_arn]
+type = "string"
+scope = "user"
+default = ""
+description = "a role to assume before serving, so the jail holds that role's permissions rather than the whole permission set"
+
+[settings.session_policy]
+type = "string"
+scope = "user"
+default = ""
+description = "an inline IAM session policy (JSON) attached to that AssumeRole, narrowing inside Bedrock. Needs role_arn; checked for parseability at spawn"
+
+# The one widening key, and a bool for the reason packs/journal states: the settings type set has
+# no `enum`, so core cannot refuse a misspelled string, and a typo must never be the spelling that
+# grants. OQ-SSO1: absence is never un-narrowed. With neither this nor `role_arn` set the daemon
+# refuses and names both.
+[settings.unnarrowed]
+type = "bool"
+scope = "user"
+default = false
+description = "serve the configured profile's permission set as-is, without an additional AssumeRole or session policy"
+
+# One per jail, started by the launch and stopped with it (docs/design/host-daemon-ownership.md,
+# HD-R1). The cache is keyed by profile so one process serves several AWS identities (OQ-SSO2), and
+# it is the shared `{state}/credentials.json`, so a jail's copy starts warm from what another
+# jail's copy minted: the mint is the slow step and the adapter's serve budget is under 200 ms.
+#
+# `publishes = "socket"` is required of a pack-shipped loophole: the daemon binds a plain AF_UNIX
+# socket at `{socket}` and yolo runs the authenticated loopback-TLS front per jail. `preamble` stays
+# at its default (on), which is what makes the `jail=` on the audit lines host-asserted.
+#
+# No `requires.command_on_path` for `aws`, deliberately: a loophole whose program is missing should
+# fail loudly at spawn, not disappear from `yolo loopholes list`. The daemon runs `aws --version`
+# at spawn and says so.
+#
+# `launch_check` is the launch warning for a profile configured with no SSO session (the
+# `aws sso login` command, then the launch proceeds; docs/reference/agent-credentials.md SSO-D1).
+# The daemon answers from its cache when warm, otherwise from the mint the first Bedrock request
+# would make, within hostservice.LaunchCheckBudget.
+[host_daemon]
+cmd = [
+  "yolo", "internal", "daemon", "aws-auth",
+  "--socket", "{socket}",
+  "--state-file", "{state}/credentials.json",
+  "--settings", "{settings}",
+]
+settings_check = ["yolo", "internal", "daemon", "aws-auth", "--settings-check", "--settings", "{settings}"]
+publishes = "socket"
+launch_check = true
+startup_reason = true
+# A jail's end SIGTERMs this daemon alone and leaves it to finish a mint in flight, whose `aws`
+# child is not signaled, so the cache it fills is warm for the next jail
+# (docs/design/host-daemon-ownership.md §1.3).
+detach = true
+
+# The jail half: an HTTP endpoint on jail loopback speaking the protocol every AWS SDK already
+# knows, forwarding each request through the front named by YOLO_SERVICE_AWS_AUTH_ENDPOINT. It
+# holds nothing across a request.
+#
+# The port is declared once, as `listen`: the argv takes it as `{listen}`, and so does the pack's
+# AWS_CONTAINER_CREDENTIALS_FULL_URI, so the launcher composes both from it: 1461 on a jail with a
+# network namespace of its own, and a port it picked on one that shares the launcher's
+# (docs/plans/notch-convergence.md §2.4). 1460 is the OpenAI adapter's; the wire bridge's two
+# adaptations are declared in packs/wire-bridge/pack.toml.
+#
+# The SDK speaks plain http only to 127.0.0.0/8, and loopback is not the jail: a jail on
+# `network.mode = "host"` puts this port on the host's real loopback. So the adapter demands this
+# launch's caller token (`caller_token`; YOLO_SERVICE_AWS_AUTH_TOKEN), which the pack's `env`
+# contribution scopes as AWS_CONTAINER_AUTHORIZATION_TOKEN, exported only to an agent whose
+# profile selects `bedrock`. The adapter starts only when some agent's profile selects `bedrock`.
+# Inside the jail that is no boundary against a same-uid file read: the caller token authenticates
+# the adapter hop and does not isolate same-user processes; AWS permissions on the selected profile
+# or role govern what the credentials can do.
+#
+# `host_cmd` opens the same doorway on the host for a launch whose agent shares the host's loopback
+# (docs/design/host-notch-services.md HS-D15): a macos-user launch runs it outside the sandbox as a
+# listener it owns, on the port it picked for `listen`, exactly when the jail daemon would start,
+# and stops it when the sandboxed command exits.
+[jail_daemon]
+cmd = ["yolo-jaild", "aws-credential-adapter", "--listen", "{listen}"]
+listen = "127.0.0.1:1461"
+restart = "on-failure"
+caller_token = true
+host_cmd = ["yolo", "internal", "daemon", "aws-credential-adapter", "--listen", "{listen}"]
+
+# A nested jail borrows this jail's pointer rather than starting a service of its own
+# (docs/reference/agent-credentials.md SSO-D2 to SSO-D5). Inside a jail there is no `aws` CLI and
+# no SSO session, so a nested launch's host daemon could never mint. A podman jail launched from
+# inside a jail is forced onto that jail's network namespace, so the launching jail's adapter is on
+# the nested jail's loopback too. When the environment carries both variables below, the launch
+# starts neither daemon above and hands the nested Bedrock agents those two values as their
+# pointer: they reach exactly what the launching jail reaches, credentials the host already
+# narrowed, and never more. Anywhere else this block changes nothing.
+[inherit_from_parent_jail]
+vars = ["AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN"]
+disclose = "the nested jail uses this jail's own Bedrock credentials (narrowed by the host; no daemon started)"

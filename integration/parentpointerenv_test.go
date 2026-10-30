@@ -25,14 +25,14 @@ import (
 // names, read from the embedded packs, so a loophole that adopts the block is covered with no edit
 // here. A manifest that does not decode names nothing; the packs' own tests refuse it.
 func parentJailPointerVars() []string {
-	manifests, _ := fs.Glob(packs.FS, "*/loopholes/*/"+loopholedecl.ManifestName)
+	manifests, _ := fs.Glob(packs.FS, "*/loopholes/*/"+loopholedecl.ManifestTOMLName)
 	var out []string
 	for _, path := range manifests {
 		data, err := fs.ReadFile(packs.FS, path)
 		if err != nil {
 			continue
 		}
-		m, err := loopholedecl.Decode(data, "/"+strings.TrimSuffix(path, "/"+loopholedecl.ManifestName))
+		m, err := loopholedecl.Decode(data, "/"+strings.TrimSuffix(path, "/"+loopholedecl.ManifestTOMLName))
 		if err != nil || m.InheritFromParentJail == nil {
 			continue
 		}

@@ -1,0 +1,49 @@
+{
+  "name": "git-broker",
+  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only using those credentials against this workspace's approved git remotes and read grant (brokered.git.grants). A public HTTPS fetch is tried anonymously even without a grant or approved remote. A push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares, by name or pattern; yolo approve lists them), or on a tag a tag grant in the workspace config names; every other push of branches or tags files a request the host user answers with yolo approve <id> (Allow once, for that exact push run again within 15 minutes) and is refused per ref until then, and every call is audited on the host (yolo audit --service git).",
+  "version": 1,
+  "transport": "loopback-tls",
+  "lifecycle": "spawned",
+  "brokered": {
+    "source": "git",
+    "remote_host": "*",
+    "grants": [
+      "create-branch",
+      "branch",
+      "tag"
+    ],
+    "read_capability": "fetch",
+    "kind_capabilities": {
+      "create-branch": "new_branches",
+      "branch": "push",
+      "tag": "push_tags"
+    },
+    "pending_capabilities": [],
+    "credential_paths": [
+      "~/.ssh",
+      "$SSH_AUTH_SOCK",
+      "~/.git-credentials",
+      "~/.config/git/credentials"
+    ]
+  },
+  "host_daemon": {
+    "cmd": [
+      "yolo",
+      "internal",
+      "daemon",
+      "git-broker",
+      "--socket",
+      "{socket}",
+      "--scope-file",
+      "{repository_scope}"
+    ],
+    "publishes": "socket"
+  },
+  "doctor_cmd": [
+    "yolo",
+    "internal",
+    "daemon",
+    "git-broker",
+    "--self-check"
+  ]
+}

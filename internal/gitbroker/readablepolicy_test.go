@@ -278,11 +278,11 @@ func writeDuplicateGitBrokerPack(t *testing.T) string {
 	if err := os.MkdirAll(module, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := os.ReadFile(filepath.Join(gitPack.Root, "loopholes", "git-broker", "manifest.jsonc"))
+	manifest, err := os.ReadFile(filepath.Join(gitPack.Root, "loopholes", "git-broker", "loophole.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(module, "manifest.jsonc"), manifest, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(module, "loophole.toml"), manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	packManifest := `{"name":"duplicate","contributes":[{"from":"loopholes/git-broker","kind":"loophole"}]}`

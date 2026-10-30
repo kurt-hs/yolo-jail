@@ -48,6 +48,8 @@ func TestPackageImportsOnlyMeasuredLeaves(t *testing.T) {
 		"github.com/mschulkind-oss/yolo-jail/internal/json5":  true,
 		"github.com/mschulkind-oss/yolo-jail/internal/jsonx":  true,
 		"github.com/mschulkind-oss/yolo-jail/internal/pytext": true,
+		// loophole.toml's reader; its own dependencies are jsonx alone.
+		"github.com/mschulkind-oss/yolo-jail/internal/tomlx": true,
 	}
 	entries, err := os.ReadDir(".")
 	if err != nil {

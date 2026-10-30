@@ -80,8 +80,8 @@ func endpointVarsIn(args []string) []string {
 // shippedDetachedLoopholeDirs walks the repo's own packs and returns the module dir of
 // every loophole whose manifest declares `host_daemon.detach: true`, plus their names.
 //
-// ⚠ IT DERIVES THE CENSUS, WHICH IS THE WHOLE POINT. `rg -n '"detach": true'
-// packs/*/loopholes/*/manifest.jsonc` is the only enumeration of this set anywhere in the
+// ⚠ IT DERIVES THE CENSUS, WHICH IS THE WHOLE POINT. `rg -n '^detach = true'
+// packs/*/loopholes/*/loophole.toml` is the only enumeration of this set anywhere in the
 // tree, and the defect this file exists for is what happened when a second, hand-written
 // enumeration lived in the run pipeline: `aws-auth` shipped, nobody added the third `if`,
 // and its adapter answered ServiceUnreachable for every request while the launch reported
@@ -90,7 +90,7 @@ func endpointVarsIn(args []string) []string {
 func shippedDetachedLoopholeDirs(t *testing.T) (dirs []string, names []string) {
 	t.Helper()
 	root := repoRoot(t)
-	matches, err := filepath.Glob(filepath.Join(root, "packs", "*", "loopholes", "*", "manifest.jsonc"))
+	matches, err := filepath.Glob(filepath.Join(root, "packs", "*", "loopholes", "*", "loophole.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func shippedDetachedLoopholeDirs(t *testing.T) (dirs []string, names []string) {
 		// The same string the census command greps for. A manifest that spells it
 		// differently would be invisible here AND to the command AGENTS.md names, which
 		// is a problem with the spelling rather than with this test.
-		if !strings.Contains(string(body), `"detach": true`) {
+		if !strings.Contains(string(body), "\ndetach = true") {
 			continue
 		}
 		dir := filepath.Dir(m)

@@ -63,7 +63,7 @@ long answer that lives in the vendor binary, not in this tree.
 
 | Component | Lives in |
 | :--- | :--- |
-| The interception declaration | `packs/claude-auth/loopholes/claude-oauth-broker/manifest.jsonc` (`intercepts`, `broker_ip`, `ca_cert`, `state_files`) |
+| The interception declaration | `packs/claude-auth/loopholes/claude-oauth-broker/loophole.toml` (`intercepts`, `broker_ip`, `ca_cert`, `state_files`) |
 | `--add-host` emission, state-file mounts, the CA env var | `internal/loopholes/runtime.go` (`runtimeArgsWith`) |
 | The in-jail TLS terminator | `internal/oauthterminator` (`makeHandler`, `IsRefreshGrant`, `Refresh`, `ProxyUpstream`) |
 | The host daemon: refresh, proxy, mirror | `internal/oauthbroker` (`DoRefresh`, `DoProxy`, `maybePropagateTokenResponse`) |
@@ -105,11 +105,11 @@ $ rg -n '"intercepts"' packs/ internal/ --glob '!*_test.go'
 ```
 
 That returns the manifest declaration at
-[`manifest.jsonc:68-70`](../../packs/claude-auth/loopholes/claude-oauth-broker/manifest.jsonc) —
-`"intercepts": [{"host": "platform.claude.com"}]`, a one-element list — plus the schema key at
+[`intercepts` in `loophole.toml`](../../packs/claude-auth/loopholes/claude-oauth-broker/loophole.toml) —
+`intercepts = [{ host = "platform.claude.com" }]`, a one-element list — plus the schema key at
 [`keys.go:30`](../../internal/loopholedecl/keys.go). No other shipped loophole manifest declares the
 key at all. The routing is emitted from that list alone, with the manifest's `broker_ip`
-(`manifest.jsonc:74`, `127.0.0.1`):
+(`127.0.0.1`):
 
 ```go
 // internal/loopholes/runtime.go:328-330
@@ -219,8 +219,8 @@ Interception only works because the jail trusts a yolo-minted leaf, and that tru
 independent paths.
 
 - **The anchor crosses as a narrowed per-file mount.** The manifest declares
-  `"ca_cert": "{state}/ca.crt"` (`manifest.jsonc:80`) and
-  `"state_files": ["ca.crt", "server.crt", "server.key"]` (`:86`); `runtime.go:341-358` emits one
+  `ca_cert = "{state}/ca.crt"` and
+  `state_files = ["ca.crt", "server.crt", "server.key"]`; `runtime.go:341-358` emits one
   `-v <src>:/var/lib/yolo-jail/loopholes/<name>/<rel>:ro` per declared file and `:366-386` collects
   the CA path. The CA's **private** key never crosses, because it never exists on disk at all — see
   [the broker's CA](#the-brokers-ca-minting-rotation-and-a-nested-host). Verified live: that directory holds `ca.crt`, `server.crt` and `server.key` (mode `0600`) and
@@ -1267,13 +1267,13 @@ offset for re-measurement.
 
 | Value | Setting | Defined in |
 | :--- | :--- | :--- |
-| Intercepted host | `platform.claude.com`, mapped to `broker_ip` `127.0.0.1` via `--add-host` | `packs/claude-auth/loopholes/claude-oauth-broker/manifest.jsonc` (`intercepts`, `broker_ip`); emitted by `internal/loopholes/runtime.go` (`runtimeArgsWith`) |
+| Intercepted host | `platform.claude.com`, mapped to `broker_ip` `127.0.0.1` via `--add-host` | `packs/claude-auth/loopholes/claude-oauth-broker/loophole.toml` (`intercepts`, `broker_ip`); emitted by `internal/loopholes/runtime.go` (`runtimeArgsWith`) |
 | Terminator listener | `127.0.0.1:443`, HTTP/1.1 pinned, keep-alives disabled | `internal/oauthterminator/oauthterminatorcmd.go` (flag defaults, `srv`) |
 | Terminated request shape | `POST` + path prefix `/v1/oauth/token` + JSON `grant_type == "refresh_token"` | `internal/oauthterminator` (`makeHandler`, `IsRefreshGrant`) |
 | Proxy destination | `https://` + `UpstreamHost` + path — a constant, not the request's `Host` | `internal/oauthbroker/oauthbroker.go` (`UpstreamHost`); `internal/oauthbroker/http.go` (`DoProxy`) |
 | Jail→host hop | the `0600` endpoint file named by `YOLO_SERVICE_CLAUDE_OAUTH_BROKER_ENDPOINT`, re-read on every dial | `internal/oauthterminator/client.go` (`BrokerEndpointEnv`, `AskHostBroker`); `internal/svcendpoint` |
 | Per-hop deadline | 30s on each side | `internal/oauthterminator/client.go`; `internal/oauthbroker/http.go` (`httpClient`) |
-| Jail-side trust files | `ca.crt`, `server.crt`, `server.key` under `/var/lib/yolo-jail/loopholes/<name>/`, each `:ro` per file; the CA **key** never crosses | `manifest.jsonc` (`state_files`, `ca_cert`); `internal/loopholes/runtime.go`; `internal/oauthbroker/cert.go` |
+| Jail-side trust files | `ca.crt`, `server.crt`, `server.key` under `/var/lib/yolo-jail/loopholes/<name>/`, each `:ro` per file; the CA **key** never crosses | `loophole.toml` (`state_files`, `ca_cert`); `internal/loopholes/runtime.go`; `internal/oauthbroker/cert.go` |
 | Served leaf | `CN=platform.claude.com`, `SAN DNS:platform.claude.com, DNS:localhost` | `internal/oauthbroker/cert.go` (leaf template) |
 | CA and leaf key algorithm | ECDSA P-256, minted in-process; the CA key is never written | `internal/oauthbroker/cert.go` (`mintCAAndLeaf`) |
 | CA and leaf lifetime | 10 years (`10 * 365 * 24h`), matching the retired `-days 3650` | `internal/oauthbroker/cert.go` (`certLifetime`) |

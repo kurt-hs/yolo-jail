@@ -1,0 +1,68 @@
+# The `audio` loophole, shipped by the official `audio` pack. Read the pack's README before changing
+# anything here: two things in this file are forced by measurement rather than taste.
+#
+#  1. The socket binds say `readonly = true` and are still bidirectional. The pack-shipped subset
+#     refuses `readonly = false`, and for a socket that costs nothing: a read-only bind of an
+#     AF_UNIX socket is fully connectable and read-write, because the kernel's read-only check
+#     exempts inodes that are not regular files, directories or links (the docker.sock:ro result).
+#     It does cost the claim's class: packload's bindIsIPC splits the read-write-host-IPC claim
+#     from the mount claim on `readonly = false` or a `.sock`/`.socket` basename, and these sockets
+#     are called `native` and `pipewire-0`. They land in the mount class, whose text carries the
+#     socket caveat verbatim ("an AF_UNIX SOCKET here is read-write host IPC regardless of `:ro`"),
+#     so nothing is understated.
+#
+#  2. `jail_env` is absent, and the variables (PULSE_SERVER, PIPEWIRE_REMOTE) live in the pack's
+#     `env` contribution, marked `served_by = "audio"` (docs/design/loophole-packaging.md LP-D1).
+#     `jail_env` is refused for a pack-shipped loophole, and `served_by` naming this loophole makes
+#     the variables follow the binds below: a launch serves the name only where its container argv
+#     carries them, so `yolo host`, macos-user and a jail with this loophole off withhold both. A
+#     socket bind added here whose client needs a variable gets it in that same contribution.
+#
+# The pack-shipped subset once refused a bind host that expands ${XDG_RUNTIME_DIR}; that rule was
+# withdrawn (OQ-LP14), and these sockets are why. If they draw a subset refusal again, read that
+# question before changing this file.
+name = "audio"
+description = "PipeWire/PulseAudio socket pass-through + ALSA→PipeWire routing — enables microphone and playback inside the jail (Claude Code /voice, sox, ffmpeg, pipewire-rs, libasound clients)."
+version = 1
+default_enabled = false
+# Linux only, declared rather than probed with `requires`: `requires` asks whether a thing is
+# present (the fix is to install it), `platforms` asks whether it exists for this machine at all
+# (there is no fix). ALSA and the PipeWire/Pulse socket layout are Linux. A host with no audio
+# socket gets RuntimeArgsFor's per-mount "skipping bind mount, host source missing" warning.
+platforms = ["linux"]
+# No TLS intercept, no daemon: this loophole grants access to existing host sockets and ships a
+# config file.
+transport = "none"
+lifecycle = "external"
+# The /dev/snd character-device tree: ALSA-seq for MIDI, raw hardware ALSA, mixers. Passed with
+# --device so the cgroup device-allow rules permit reads and writes (a bare bind mount would
+# surface the nodes and rootless podman would deny the access). Skipped silently on a host whose
+# snd kernel module is not loaded. No verification loop in this repo can observe this line:
+# RuntimeArgsFor skips device passthrough when the launcher is itself in a jail, so a change to it
+# can only be proven on a real desktop.
+host_devices = ["/dev/snd"]
+
+[[host_bind_mounts]]
+# The PulseAudio socket. Works for PipeWire (which ships a Pulse-compatible socket via
+# pipewire-pulse) and for classic PulseAudio.
+host = "${XDG_RUNTIME_DIR}/pulse/native"
+container = "/run/pulse/native"
+readonly = true
+
+[[host_bind_mounts]]
+# The native PipeWire socket. On a pure-PulseAudio host this path does not exist and
+# RuntimeArgsFor skips the mount with a warning.
+host = "${XDG_RUNTIME_DIR}/pipewire-0"
+container = "/run/pipewire/pipewire-0"
+readonly = true
+
+[[host_bind_mounts]]
+# {loophole_dir} is content the pack ships, which packstage already vetted for exec bits and
+# escaping symlinks.
+host = "{loophole_dir}/asound.conf"
+# Not /etc/asound.conf: alsa-lib reads /etc/alsa/conf.d before /etc/asound.conf, this spelling is
+# the one measured working with a real libasound client, and podman refuses two binds on one
+# destination whose sources differ ("duplicate mount destination"), so a collision at
+# /etc/asound.conf would be a jail that refuses to start rather than a file that loses.
+container = "/etc/alsa/conf.d/50-yolo-audio-alsa.conf"
+readonly = true

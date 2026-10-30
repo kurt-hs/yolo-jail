@@ -52,6 +52,9 @@ type Migration struct {
 	Kept []KeptFiles
 	// Comments is every legacy comment, as carried into the new manifest, in document order.
 	Comments []string
+	// Loopholes are the pack's loophole modules rewritten from manifest.jsonc to loophole.toml
+	// (RC-D28). A pack that already holds pack.toml still migrates these: Manifest is then nil.
+	Loopholes []LoopholeMigration
 
 	legacyBytes []byte
 	delivery    map[string]DeliveredFile
@@ -88,6 +91,9 @@ var conventionalDirs = []string{"home", "skills", "briefing", "overlays", "patch
 // that is already grouped, has no manifest, does not read cleanly, holds a value grouped TOML
 // cannot say (packdecl.UnrepresentableError), or whose destinations are taken (CollisionError).
 func Plan(dir string, opts Options) (*Migration, error) {
+	if _, err := os.Lstat(filepath.Join(dir, packdecl.ManifestTOMLName)); err == nil {
+		return planLoopholesOnly(dir)
+	}
 	legacyName, legacyBytes, err := legacyManifest(dir)
 	if err != nil {
 		return nil, err
@@ -184,7 +190,27 @@ func Plan(dir string, opts Options) (*Migration, error) {
 	if diffs := ManifestDifferences(&want, got); len(diffs) != 0 {
 		return nil, fmt.Errorf("%s: the encoded pack.toml would change what the pack does, so nothing was changed:\n  %s", dir, strings.Join(diffs, "\n  "))
 	}
+	if m.Loopholes, err = planLoopholes(dir, oldPack.Decl.LoopholeSources()); err != nil {
+		return nil, err
+	}
 	return m, nil
+}
+
+// planLoopholesOnly is the migration of a pack that already holds pack.toml: only its loophole
+// modules still on a legacy manifest.jsonc are rewritten.
+func planLoopholesOnly(dir string) (*Migration, error) {
+	pack, problems := packload.LoadDir(dir, "")
+	if len(problems) != 0 || pack == nil {
+		return nil, fmt.Errorf("%s: the pack does not load:\n  %s\nFix those, check with `yolo pack lint %s`, then migrate", dir, strings.Join(problems, "\n  "), dir)
+	}
+	loopholes, err := planLoopholes(dir, pack.Decl.LoopholeSources())
+	if err != nil {
+		return nil, err
+	}
+	if len(loopholes) == 0 {
+		return nil, fmt.Errorf("%s already has %s; there is nothing to migrate", dir, packdecl.ManifestTOMLName)
+	}
+	return &Migration{Dir: dir, Loopholes: loopholes}, nil
 }
 
 func legacyManifest(dir string) (string, []byte, error) {

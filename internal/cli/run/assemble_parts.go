@@ -538,7 +538,7 @@ func (o *Options) fwdSocketDir(cname string) string {
 // with a longer fuse. What the two branches actually computed — ACTIVE and MAY-RUN-HOST-
 // CODE — is a predicate, and promisedEndpoints applies it to every loopback-tls record
 // declaring `host_daemon.detach: true` (endpointPromisedAtAssembly says why that key, since
-// HD-R1 retired `scope: "host"`, and why loopback-tls). `rg -n '"detach": true' packs/*/loopholes/*/manifest.jsonc` is
+// HD-R1 retired `scope: "host"`, and why loopback-tls). `rg -n '^detach = true' packs/*/loopholes/*/loophole.toml` is
 // the whole census; nothing here counts it or spells it.
 //
 // THE ENV IS GATED ON THE LOOPHOLE BEING ACTIVE, not on a daemon's socket existing at

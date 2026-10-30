@@ -160,7 +160,7 @@
 
     mkdir -p ~/.local/share/mypack/loopholes/mine   # NOT ~/mypack — the home
                                                     # ROOT is read-only
-    ...write pack.json and loopholes/mine/manifest.jsonc...
+    ...write pack.json and loopholes/mine/loophole.toml...
     cat > ~/.config/yolo-jail/my-layer.jsonc <<'EOF'
     { "packs": [ { "source": "file:///home/agent/.local/share/mypack" } ] }
     EOF
@@ -356,7 +356,7 @@
 
       It is the USER's answer, and it outranks whatever the loophole's manifest
       declared, in both directions.  DO NOT CONFUSE IT WITH "default_enabled",
-      which is a key on a loophole's manifest.jsonc and is not valid here: that
+      which is a key on a loophole's loophole.toml and is not valid here: that
       one is the PACK AUTHOR's default — what happens when nobody has spoken —
       and an ABSENT "default_enabled" means the loophole is OFF (presence never
       activates; docs/reference/loophole-system.md R1/R2).  So a loophole whose
@@ -415,7 +415,7 @@
 
     "settings" (object, optional) is THE LOOPHOLE'S OWN CONFIG KEYS.  Unlike every
     other key here, what may go inside it is not fixed by yolo: the loophole's
-    [cyan]manifest.jsonc[/cyan] DECLARES its settable keys, each with a type, an
+    [cyan]loophole.toml[/cyan] DECLARES its settable keys, each with a type, an
     optional default and a scope, and yolo validates what you write against that
     declaration.
 
@@ -457,7 +457,7 @@
         SIGKILL after the container exits.
       • stdout/stderr captured to ~/.local/share/yolo-jail/logs/host-service-<name>.log
 
-    A loophole with a [cyan]manifest.jsonc[/cyan] publishes an ENDPOINT FILE — one
+    A loophole with a [cyan]loophole.toml[/cyan] publishes an ENDPOINT FILE — one
     line naming a 127.0.0.1 listener, the exact certificate a client must pin, and
     a per-jail bearer token.  That file IS A CREDENTIAL: it is written 0600 into
     this jail's own directory and is never shared between jails.  There is
@@ -2228,8 +2228,9 @@
                     PAIR is sole-owned, so two selected packs converting one wire into
                     another is an error naming both; one pack may declare several pairs.
       loophole      {from} — a loophole MODULE dir the pack ships, holding a
-                    manifest.jsonc (the same on-disk shape a bundled loophole has, so a
-                    loophole can be developed standalone and dropped into a pack).
+                    loophole.toml (a legacy manifest.jsonc is still read, and
+                    `yolo pack migrate` converts one), so a loophole can be developed
+                    standalone and dropped into a pack.
                     `from` is REQUIRED and there is no `into`: the host half runs on the
                     host and the jail half mounts at a path core owns.  A `from` naming
                     a dir the pack lacks is refused BY NAME, not skipped.  The loophole's

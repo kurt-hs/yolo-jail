@@ -52,7 +52,7 @@ loophole is on only because something said so, and a manifest that says nothing 
 | State retirement on deselect, and its sweeper | `internal/packstage` (`RetireLoopholeState`), `internal/cli/run` (`loopholeretire.go`), `internal/prune` (`PruneRetiredLoopholeState`) |
 | Config validation, scope refusals, workspace-switch disclosure, settings | `internal/config` (`validate_loopholes.go`, `validate_loopholesettings.go`, `WorkspaceLoopholeSwitches`) |
 | The host-target refusal and the jail-census exclusion | `internal/render` (`fieldset.go`) |
-| The shipped loopholes themselves | `packs/*/loopholes/*/manifest.jsonc` |
+| The shipped loopholes themselves | `packs/*/loopholes/*/loophole.toml` |
 
 **Reads with:** [`../guides/loopholes.md`](../../userguide/guides/loopholes.md) — the authoring guide,
 and the user-facing half of everything here: the manifest keys one by one, the config
@@ -160,8 +160,10 @@ exemptions was the point of the work rather than tidying after it.
   declared channel. Not a sandbox escape (that is a bug, and undeclared) and not a plain
   network route (that carries no policy).
 - **Module directory** *(coined in the packaging design this reference replaces)* — the
-  on-disk unit a loophole *is*: a directory holding `manifest.jsonc` plus whatever else
-  that loophole needs. The shape is identical wherever it comes from, which is what makes
+  on-disk unit a loophole *is*: a directory holding `loophole.toml` plus whatever else
+  that loophole needs. The same keys in JSON, a `manifest.jsonc`, are still read for the
+  legacy window, and a module holding both files is refused naming the one to delete
+  ([RC-D28](../design/readable-config.md#RC-D28)). The shape is identical wherever it comes from, which is what makes
   a loophole developable standalone and then droppable into a pack unchanged.
 - **Contribution** — one entry in a pack's `contributes[]`. A loophole arrives as
   `{ "kind": "loophole", "from": "loopholes/<name>" }`, which **points at** a module
@@ -320,7 +322,7 @@ through the traversal guard every path-bearing field of every kind gets, so abso
   pack shipping three loopholes is ordinary.
 - **A name collision is FATAL**, naming both sides and both declared `from` values.
 
-**A missing `from` refuses; an unloadable `manifest.jsonc` warns**, and that is a *layer*
+**A missing `from` refuses; an unloadable `loophole.toml` warns**, and that is a *layer*
 split rather than an inconsistency. A missing `from` is a pack-manifest error, decidable
 without loading any loophole, in a tree the user explicitly selected: refusing is a fix.
 An unloadable manifest is discovered in the loophole loader, whose contract across every

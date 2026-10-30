@@ -40,6 +40,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
 )
@@ -48,7 +49,7 @@ import (
 // hand-placed loopholes dir, sorted. Empty when the directory is absent, empty, or
 // holds nothing that looks like a loophole module.
 //
-// "Looks like a loophole module" is a directory holding a manifest.jsonc, and it is
+// "Looks like a loophole module" is a directory holding a loophole.toml or manifest.jsonc, and it is
 // deliberately the WEAKEST test available: this reports what a user has to migrate,
 // so it must catch a manifest the loader would have rejected too. Decoding here would
 // hide exactly the module whose owner most needs to be told it is inert.
@@ -67,13 +68,23 @@ func RetiredUserLoopholes() []string {
 		if fi, err := os.Stat(filepath.Join(dir, name)); err != nil || !fi.IsDir() {
 			continue
 		}
-		if fi, err := os.Stat(filepath.Join(dir, name, "manifest.jsonc")); err != nil || fi.IsDir() {
+		if !holdsAManifest(filepath.Join(dir, name)) {
 			continue
 		}
 		out = append(out, name)
 	}
 	sort.Strings(out)
 	return out
+}
+
+// holdsAManifest reports whether a module directory holds either spelling of the manifest.
+func holdsAManifest(dir string) bool {
+	for _, name := range []string{loopholedecl.ManifestTOMLName, loopholedecl.ManifestName} {
+		if fi, err := os.Stat(filepath.Join(dir, name)); err == nil && !fi.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // RetiredUserLoopholeNotice returns the migration message for a still-populated

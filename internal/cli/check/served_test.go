@@ -57,7 +57,7 @@ func TestGitRewriteServedWhereverItsBrokerRuns(t *testing.T) {
 	os.Unsetenv("YOLO_VERSION")
 	wd, _ := os.Getwd()
 	module := filepath.Join(wd, "..", "..", "..", "packs", "git", "loopholes", "git-broker")
-	if _, err := os.Stat(filepath.Join(module, "manifest.jsonc")); err != nil {
+	if _, err := os.Stat(filepath.Join(module, "loophole.toml")); err != nil {
 		t.Fatalf("the git pack's loophole module: %v", err)
 	}
 	loopholes.SetPackModules([]loopholes.PackModule{{Dir: module, HostExecApproved: true}})

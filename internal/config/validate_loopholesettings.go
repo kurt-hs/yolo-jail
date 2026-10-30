@@ -60,7 +60,7 @@ func validateLoopholeSettings(spec *jsonx.OrderedMap, path string, info *Loophol
 	if settings.Len() > 0 && len(info.Settings) == 0 {
 		add(errs, path+".settings: "+pytext.Repr(info.Name)+" declares no settings, so there is "+
 			"nothing to configure here — a loophole's settable keys are declared in its "+
-			"manifest.jsonc under 'settings', and only declared keys may be supplied")
+			"loophole.toml (or a legacy manifest.jsonc) under 'settings', and only declared keys may be supplied")
 		return
 	}
 	for _, key := range settings.Keys() {

@@ -2537,7 +2537,7 @@ func orPlaceholder(v, placeholder string) string {
 // contribution, in declaration order, deduplicated.
 //
 // THE accessor for the kind, and deliberately the ONLY thing this package offers for it:
-// what a loophole DOES lives in <from>/manifest.jsonc, which is outside pack.json and
+// what a loophole DOES lives in <from>/loophole.toml, which is outside pack.json and
 // therefore outside this package's reach (it has no pack root and no internal imports —
 // kinds.go). Everything else — the footprint claims, the approval strings, discovery —
 // goes through packload, which has a Root and may import internal/loopholedecl.

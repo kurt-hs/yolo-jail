@@ -1,0 +1,25 @@
+# The `hello-daemon` loophole: the experiment behind docs/reference/pack-binaries.md, asking whether
+# a pack can ship the executable its jail-side daemon runs. See ../../README.md for what it
+# measured.
+#
+# It ships a shell script rather than a compiled binary on purpose. Every property under test (a
+# file the pack ships, delivered through pack staging, mounted `:ro`, named by the token, and
+# executed by the kernel from that mount) is the same for a `#!` script and an ELF image. What a
+# script cannot exercise is the ELF and nix-ld half, which the README names as unproven. A
+# committed ELF would ride in every yolo binary and every hermetic image build, because `packs/` is
+# inside flake.nix's `goSrc` fileset and packs/embed.go.
+name = "hello-daemon"
+description = "Experiment: runs a two-line program this pack ships, to prove a pack can deliver a jail-side daemon's executable (docs/reference/pack-binaries.md)."
+version = 1
+default_enabled = false
+# No daemon on the host, so no transport: `none` is the enum's word for that, and declaring it
+# keeps this file from claiming a loopback-TLS endpoint nothing publishes.
+transport = "none"
+
+# `{jail_loophole_dir}` resolves to /etc/yolo-jail/loopholes/hello-daemon, the container mount
+# point the launch binds for any loophole that declares a jail_daemon. One shot: the evidence is a
+# line in ~/.local/state/yolo-jail-daemons/hello-daemon.log, so `restart = "no"`, which also covers
+# a start that fails (a non-executable file is logged as `spawn failed` and not retried).
+[jail_daemon]
+cmd = ["{jail_loophole_dir}/bin/hello"]
+restart = "no"
