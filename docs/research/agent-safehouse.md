@@ -5,7 +5,7 @@ status: in-review
 tags: [research, macos, seatbelt, macos-user, packs, threat-model, comparison]
 summary: "Agent Safehouse confines an agent that runs AS YOU, by enumerating what it may touch; yolo-jail gives the agent a different machine and a different identity, so there is nothing of yours to enumerate. On the one axis where they build the same artifact — the macos-user Seatbelt profile — theirs is decisively tighter and ours is barely tested, and that is the adoption surface. Their per-agent prose is the better human artifact and the worse machine one: measured on their own repo, the enforced half moved 106 commits to the documented half's 3, and their opencode investigation documents a program three major versions and one whole reimplementation behind the profile that ships beside it."
 stage: DESIGN
-next: "Build OQ-AS3: refuse a workspace env_sources file outside the workspace"
+next: "None owed; every question is ruled and built"
 vantage:
   status-chip: true
 ---
@@ -946,7 +946,7 @@ Re-check these before quoting them; everything here moved within the last six mo
    workspace, no. read only mounts are there by design."* A workspace config's `env_sources` file
    entry must resolve inside the workspace, and a path outside it is refused, naming user config
    as the place for it. Read-only `mounts` stay allowed from a workspace config, by design.
-   Not yet built. Evidence: [§9.1](#91-the-scope-rule-applied-unevenly-mounts-and-env_sources).
+   Built in `51b3dae94` (`[env] files` in TOML too). Evidence: [§9.1](#91-the-scope-rule-applied-unevenly-mounts-and-env_sources).
 
 ## 13. Sources
 
