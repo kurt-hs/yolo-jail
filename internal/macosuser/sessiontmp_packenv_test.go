@@ -7,11 +7,26 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
+
+// shippedPackManifestName is the manifest file the shipped pack holds: its pack.toml, or a
+// legacy pack.json.
+func shippedPackManifestName(t *testing.T, pack string) string {
+	t.Helper()
+	for _, name := range []string{packdecl.ManifestTOMLName, packdecl.ManifestLegacyJSONName} {
+		if _, err := os.Stat(filepath.Join("..", "..", "packs", pack, name)); err == nil {
+			return name
+		}
+	}
+	t.Fatalf("the shipped %s pack holds no manifest", pack)
+	return ""
+}
 
 func stagedShippedClaudePack(t *testing.T) string {
 	t.Helper()
-	manifest, err := os.ReadFile(filepath.Join("..", "..", "packs", "claude", "pack.json"))
+	name := shippedPackManifestName(t, "claude")
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "packs", "claude", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +35,7 @@ func stagedShippedClaudePack(t *testing.T) string {
 	if err := os.MkdirAll(pack, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pack, "pack.json"), manifest, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pack, name), manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "_pack-tree.json"),

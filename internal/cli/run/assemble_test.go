@@ -14,6 +14,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostpath"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/setupcensus"
@@ -847,7 +848,7 @@ func TestAppleContainerPackTreeReplacesThePreviousLaunchs(t *testing.T) {
 			"not merge into it", dropped)
 	}
 	if _, err := os.Stat(filepath.Join(wsState, acPackRootRel, "_official", "claude",
-		"pack.json")); err != nil {
+		packdecl.ManifestTOMLName)); err != nil {
 		t.Errorf("the replace took the live pack with it: %v", err)
 	}
 }

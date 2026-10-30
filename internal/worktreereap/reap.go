@@ -7,7 +7,7 @@
 // removes anything beneath the durable dir (docs/reference/jail-home.md DS-D3): the
 // workspace's `.git/config` is jail-writable and names programs git runs. In the jail, git
 // running the jail's own config is the jail running its own code. The caller is the pack that
-// pointed the tool at the directory (packs/pi/extensions/yolo-durable-worktrees.js, through
+// pointed the tool at the directory (packs/pi/home/.pi/agent/extensions/yolo-durable-worktrees.js, through
 // `yolo-jaild reap-worktrees`); core knows no tool's name, only the directory and the name
 // prefix the pack hands it.
 //

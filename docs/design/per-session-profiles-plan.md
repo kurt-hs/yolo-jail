@@ -79,7 +79,7 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
 | `internal/entrypoint/prism.go`, `surfaceloop.go`, `packsurfaces.go`, `env.go` | redirect on a session pass; per-session baseline sidecars, shared overlay; render lock | 2 |
 | `internal/entrypoint/prelaunchrefresh.go` (~`:160`, `:194`, `:247`) | a due-on-change / only-if file under a declared directory resolves under the relocation variable when it is set | 2 |
 | `packs/pi/pack.json` | the declaration | 2 |
-| `packs/pi/extensions/yolo-model-lists.js` (`:36`), `yolo-openai-auth.js` (`:110`) | resolve under `PI_CODING_AGENT_DIR` | 3 |
+| `packs/pi/home/.pi/agent/extensions/yolo-model-lists.js` (`:36`), `yolo-openai-auth.js` (`:110`) | resolve under `PI_CODING_AGENT_DIR` | 3 |
 | `internal/entrypoint/pi_model_lists_extension_test.go`, `pi_openai_auth_extension_test.go` | cases for the variable | 3 |
 | `internal/entrypoint/sessionhome.go`, `prism.go` | capture every session home into the shared overlay; pid1 captures then deletes leftovers; strays named | 4 |
 | `internal/cli/host.go`, `internal/cli/hostsessionhome.go` (new), `internal/prune/` | `yolo host` per-launch session home | 5 |
@@ -104,7 +104,7 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
   is expanded; `Target.SidecarDir` (`target.go:383`) the one sidecar root.
 - `linkIntoSharedDir` (`packhooks.go:271`): shape of a home-relative link with refusal on a
   non-link occupant.
-- Extension idiom: `subagentConfigPath(env)` in `packs/pi/extensions/yolo-durable-worktrees.js:27-40`
+- Extension idiom: `subagentConfigPath(env)` in `packs/pi/home/.pi/agent/extensions/yolo-durable-worktrees.js:27-40`
   (handles `~`, `~/`, absent). Copy it; do not import across extensions.
 - Extension tests run the JS under node via `requireNode` (`internal/entrypoint/requirenode_test.go:16`).
 - Host: `entrypoint.RenderHostPack(p, homeDir, ownership, observe, overlays, in, only...)`
@@ -286,7 +286,7 @@ on one machine do not today. Ledgered as SP-D10; never link a `*.lock` name.
 - **Tests first:** in the two extension tests, a case with `PI_CODING_AGENT_DIR=<tmp>` and the list
   file only there: the extension enforces it; `~` and `~/x` forms; unset falls back to
   `~/.pi/agent`. Red: `go test ./internal/entrypoint -run 'ModelLists|OpenAIAuth'`.
-- **Fences:** only `packs/pi/extensions/yolo-model-lists.js`, `yolo-openai-auth.js` and their tests.
+- **Fences:** only `packs/pi/home/.pi/agent/extensions/yolo-model-lists.js`, `yolo-openai-auth.js` and their tests.
 - **Commit:** `fix(pi): resolve yolo's model-list files under PI_CODING_AGENT_DIR`.
 
 ### Task 4 — capture from session homes (after 2)

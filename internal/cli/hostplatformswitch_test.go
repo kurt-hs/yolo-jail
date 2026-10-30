@@ -15,6 +15,7 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/json5"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
@@ -187,7 +188,11 @@ func claudeForkWithRMWSettings(t *testing.T) string {
 	if err := os.CopyFS(fork, os.DirFS(claude.Root)); err != nil {
 		t.Fatal(err)
 	}
-	manifest := filepath.Join(fork, "pack.json")
+	manifest := packManifestFile(t, fork)
+	if filepath.Base(manifest) == packdecl.ManifestTOMLName {
+		claudeTOMLWithRMWSettings(t, manifest)
+		return fork
+	}
 	doc, err := json5.Decode([]byte(readFileT(t, manifest)))
 	decl, _ := doc.(*jsonx.OrderedMap)
 	if err != nil || decl == nil {
@@ -233,4 +238,31 @@ func claudeForkWithRMWSettings(t *testing.T) string {
 	}
 	writeFile(t, manifest, out+"\n")
 	return fork
+}
+
+// claudeTOMLWithRMWSettings declares `mode = "rmw"` on the claude/settings surface of the
+// pack.toml at manifest: the one `[[config]]` group's `config = [...]` row naming "settings"
+// (the autonomy groups' `autonomous.config`/`guarded.config` rows are layers, not the surface).
+func claudeTOMLWithRMWSettings(t *testing.T, manifest string) {
+	t.Helper()
+	lines := strings.Split(readFileT(t, manifest), "\n")
+	found := 0
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "config = [") || !strings.Contains(line, `name = "settings"`) {
+			continue
+		}
+		if strings.Contains(line, "mode = ") {
+			t.Fatalf("fixture: claude/settings already declares a mode: %s", line)
+		}
+		lines[i] = strings.Replace(line, `name = "settings"`, `mode = "rmw", name = "settings"`, 1)
+		found++
+	}
+	if found != 1 {
+		t.Fatalf("fixture: %d claude/settings config surfaces in the shipped pack, want 1", found)
+	}
+	if err := os.Chmod(manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, manifest, strings.Join(lines, "\n"))
+	decodePackManifestFile(t, manifest)
 }

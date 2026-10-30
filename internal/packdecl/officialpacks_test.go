@@ -24,11 +24,11 @@ func TestNoOfficialPackDeclaresAPrebuilt(t *testing.T) {
 		if !ent.IsDir() {
 			continue
 		}
-		raw, err := fs.ReadFile(officialpacks.FS, path.Join(ent.Name(), ManifestName))
+		raw, err := fs.ReadFile(officialpacks.FS, path.Join(ent.Name(), ManifestTOMLName))
 		if err != nil {
 			continue // not every embedded pack ships a manifest at the root
 		}
-		m, problems := Decode(raw)
+		m, problems := DecodeTOML(raw)
 		if len(problems) != 0 {
 			t.Errorf("Decode refused the shipped %s manifest: %v", ent.Name(), problems)
 			continue

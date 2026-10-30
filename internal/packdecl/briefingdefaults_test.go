@@ -290,7 +290,7 @@ func TestDuplicateContentSourcesAreStrictOnly(t *testing.T) {
 // into every jail and read at every launch, so a shipped manifest that trips one is a refused
 // launch for everyone selecting it.
 func TestShippedManifestsSurviveTheBriefingDefaultsRefusals(t *testing.T) {
-	manifests, err := filepath.Glob(filepath.Join(packsRepoRoot(t), "packs", "*", ManifestName))
+	manifests, err := filepath.Glob(filepath.Join(packsRepoRoot(t), "packs", "*", ManifestTOMLName))
 	if err != nil || len(manifests) == 0 {
 		t.Fatalf("no shipped manifests found (%v)", err)
 	}
@@ -299,7 +299,7 @@ func TestShippedManifestsSurviveTheBriefingDefaultsRefusals(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, probs := Decode(data); len(probs) != 0 {
+		if _, probs := DecodeTOML(data); len(probs) != 0 {
 			t.Errorf("%s: %v", p, probs)
 		}
 	}

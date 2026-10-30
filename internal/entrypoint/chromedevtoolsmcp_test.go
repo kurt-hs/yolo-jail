@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	officialpacks "github.com/mschulkind-oss/yolo-jail/packs"
 )
@@ -186,7 +187,7 @@ func newWrapperWorld(t *testing.T) wrapperWorld {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skip("no /bin/sh")
 	}
-	body, err := officialpacks.FS.ReadFile("chrome-devtools/bin/chrome-devtools-mcp-wrapper")
+	body, err := officialpacks.FS.ReadFile("chrome-devtools/home/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,11 +423,11 @@ func TestTheWrapperHandsChromiumTheImagesFonts(t *testing.T) {
 // memfd_create for anonymous shared memory, while the flag forces temp shared-memory files into
 // /tmp, which fails where /tmp is read-only for capability-dropped child processes.
 func TestTheChromeDevtoolsPackKeepsChromiumsRendererAndSharedMemory(t *testing.T) {
-	manifest, err := officialpacks.FS.ReadFile("chrome-devtools/pack.json")
+	manifest, err := officialpacks.FS.ReadFile("chrome-devtools/" + packdecl.ManifestTOMLName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := officialpacks.FS.ReadFile("chrome-devtools/bin/chrome-devtools-mcp-wrapper")
+	wrapper, err := officialpacks.FS.ReadFile("chrome-devtools/home/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +435,7 @@ func TestTheChromeDevtoolsPackKeepsChromiumsRendererAndSharedMemory(t *testing.T
 		t.Fatal("premise: the pack no longer passes chromium its flags through --chrome-arg")
 	}
 	for _, flag := range []string{"--disable-software-rasterizer", "--disable-dev-shm-usage"} {
-		for name, body := range map[string][]byte{"pack.json": manifest, "the wrapper": wrapper} {
+		for name, body := range map[string][]byte{packdecl.ManifestTOMLName: manifest, "the wrapper": wrapper} {
 			if strings.Contains(string(body), flag) {
 				t.Errorf("%s passes chromium %s", name, flag)
 			}

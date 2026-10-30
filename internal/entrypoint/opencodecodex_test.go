@@ -206,8 +206,7 @@ func TestShippedOpencodePackDeliversItsOpenAIAuthPlugin(t *testing.T) {
 	}
 	found := false
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind == packdecl.KindFiles && c.From == "plugins/yolo-openai-auth.js" &&
-			c.Into == ".config/opencode/plugins/yolo-openai-auth.js" {
+		if c.Kind == packdecl.KindFiles && c.Into == ".config/opencode/plugins/yolo-openai-auth.js" {
 			found = true
 		}
 	}
@@ -228,7 +227,7 @@ func TestShippedOpencodePackDeliversItsOpenAIAuthPlugin(t *testing.T) {
 // combined output and the broker calls the fake recorded.
 func opencodePluginRun(t *testing.T, home, fakeYolo, harness string, env ...string) (string, string) {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join(shippedOpencodePack(t).Root, "plugins", "yolo-openai-auth.js"))
+	source, err := os.ReadFile(movedShippedFile(t, shippedOpencodePack(t), ".config/opencode/plugins/yolo-openai-auth.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

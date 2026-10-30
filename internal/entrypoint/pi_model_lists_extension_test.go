@@ -30,8 +30,7 @@ func TestShippedPiPackDeliversTheModelListsExtension(t *testing.T) {
 	p := shippedPiPack(t)
 	var found bool
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind == packdecl.KindFiles && c.From == "extensions/yolo-model-lists.js" &&
-			c.Into == ".pi/agent/extensions/yolo-model-lists.js" {
+		if c.Kind == packdecl.KindFiles && c.Into == ".pi/agent/extensions/yolo-model-lists.js" {
 			found = true
 		}
 	}
@@ -181,7 +180,7 @@ func runPiModelListsExtension(t *testing.T, lists []byte, allJS, compatJS string
 func runPiModelListsExtensionWith(t *testing.T, home string, files map[string][]byte, env []string, allJS, compatJS string) piModelListsRun {
 	t.Helper()
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-model-lists.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-model-lists.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

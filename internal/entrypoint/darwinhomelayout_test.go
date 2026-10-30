@@ -42,18 +42,8 @@ func stagePackForBootstrap(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(p.Root, "pack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	root := t.TempDir()
-	dir := filepath.Join(root, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "pack.json"), body, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	shippedCopyManifest(t, p.Root, filepath.Join(root, name))
 	return root
 }
 

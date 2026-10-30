@@ -416,7 +416,7 @@ func TestAnAttachWithAnUnchangedConfigLeavesTheLiveJailsStagingUntouched(t *test
 	rel := func(p string) string { r, _ := filepath.Rel(root, p); return r }
 	for _, want := range []string{
 		filepath.Join(tree, "_official", "claude-auth", "loopholes", "claude-oauth-broker"),
-		filepath.Join(tree, "_official", "pi", "extensions", "yolo-footer.js"),
+		filepath.Join(tree, "_official", "pi", "home", ".pi", "agent", "extensions", "yolo-footer.js"),
 		filepath.Join(tree, "treepack", "tree", "sub", "b.txt"),
 		filepath.Join(tree, "treepack", "one.json"),
 	} {

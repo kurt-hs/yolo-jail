@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -79,17 +80,24 @@ func TestGenerateAgentLaunchersRejectsInvalidDeclaredCopilotCompatibilityData(t 
 			want: "compatibility",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
-				if err := os.WriteFile(filepath.Join(root, "_official", "copilot", "compatibility.json"), []byte(`{`), 0o644); err != nil {
+				source := movedCompatibilityHomeFile(filepath.Join(root, "_official", "copilot"), "copilot")
+				if _, err := os.Stat(source); err != nil {
+					t.Fatalf("premise: the copilot pack no longer delivers its compatibility data through home/: %v", err)
+				}
+				if err := os.WriteFile(source, []byte(`{`), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			},
 		},
 		{
+			// A home/ file that is gone is no longer declared at all, so the missing source a
+			// declaration still names is an explicit files contribution's.
 			name: "missing source",
 			want: "compatibility",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
-				if err := os.Remove(filepath.Join(root, "_official", "copilot", "compatibility.json")); err != nil {
+				packDir := movedDeclareCompatibility(t, root, "compatibility.json", 1)
+				if err := os.Remove(filepath.Join(packDir, "compatibility.json")); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -99,18 +107,7 @@ func TestGenerateAgentLaunchersRejectsInvalidDeclaredCopilotCompatibilityData(t 
 			want: `must not contain ".."`,
 			edit: func(t *testing.T, root string) {
 				t.Helper()
-				manifest := filepath.Join(root, "_official", "copilot", "pack.json")
-				data, err := os.ReadFile(manifest)
-				if err != nil {
-					t.Fatal(err)
-				}
-				updated := strings.Replace(string(data), `"from": "compatibility.json"`, `"from": "../outside.json"`, 1)
-				if updated == string(data) {
-					t.Fatal("Copilot compatibility files declaration not found")
-				}
-				if err := os.WriteFile(manifest, []byte(updated), 0o644); err != nil {
-					t.Fatal(err)
-				}
+				movedDeclareCompatibility(t, root, "../outside.json", 1)
 			},
 		},
 		{
@@ -118,19 +115,7 @@ func TestGenerateAgentLaunchersRejectsInvalidDeclaredCopilotCompatibilityData(t 
 			want: "compatibility",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
-				packDir := filepath.Join(root, "_official", "copilot")
-				manifest := filepath.Join(packDir, "pack.json")
-				data, err := os.ReadFile(manifest)
-				if err != nil {
-					t.Fatal(err)
-				}
-				updated := strings.Replace(string(data), `"from": "compatibility.json"`, `"from": "compatibility-link.json"`, 1)
-				if updated == string(data) {
-					t.Fatal("Copilot compatibility files declaration not found")
-				}
-				if err := os.WriteFile(manifest, []byte(updated), 0o644); err != nil {
-					t.Fatal(err)
-				}
+				packDir := movedDeclareCompatibility(t, root, "compatibility-link.json", 1)
 				outside := filepath.Join(root, "_official", "outside.json")
 				if err := os.WriteFile(outside, []byte(`{"refuse_at_or_above":"1.0.93","message":"outside pack root"}`), 0o644); err != nil {
 					t.Fatal(err)
@@ -145,24 +130,7 @@ func TestGenerateAgentLaunchersRejectsInvalidDeclaredCopilotCompatibilityData(t 
 			want: "compatibility",
 			edit: func(t *testing.T, root string) {
 				t.Helper()
-				manifest := filepath.Join(root, "_official", "copilot", "pack.json")
-				data, err := os.ReadFile(manifest)
-				if err != nil {
-					t.Fatal(err)
-				}
-				declaration := `    {
-      "from": "compatibility.json",
-      "into": ".config/yolo-program-compatibility/copilot.json",
-      "kind": "files"
-    },
-`
-				if !strings.Contains(string(data), declaration) {
-					t.Fatal("Copilot compatibility files declaration not found")
-				}
-				updated := strings.Replace(string(data), declaration, declaration+declaration, 1)
-				if err := os.WriteFile(manifest, []byte(updated), 0o644); err != nil {
-					t.Fatal(err)
-				}
+				movedDeclareCompatibility(t, root, "compatibility.json", 2)
 			},
 		},
 	} {
@@ -191,39 +159,16 @@ func TestGenerateAgentLaunchersIgnoresCompatibilityDataOwnedByAnotherPack(t *tes
 	root := stageShippedPacks(t)
 	copilotDir := filepath.Join(root, "_official", "copilot")
 	claudeDir := filepath.Join(root, "_official", "claude")
-	copilotManifest := filepath.Join(copilotDir, "pack.json")
-	copilot, err := os.ReadFile(copilotManifest)
-	if err != nil {
+	// Copilot stops delivering its own data, and claude delivers data to copilot's destination
+	// through its own home/ tree instead.
+	if err := os.Remove(movedCompatibilityHomeFile(copilotDir, "copilot")); err != nil {
+		t.Fatalf("Copilot compatibility data not found in its home/ tree: %v", err)
+	}
+	foreign := movedCompatibilityHomeFile(claudeDir, "copilot")
+	if err := os.MkdirAll(filepath.Dir(foreign), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	owned := `    {
-      "from": "compatibility.json",
-      "into": ".config/yolo-program-compatibility/copilot.json",
-      "kind": "files"
-    },
-`
-	if !strings.Contains(string(copilot), owned) {
-		t.Fatal("Copilot compatibility files declaration not found")
-	}
-	copilot = []byte(strings.Replace(string(copilot), owned, "", 1))
-	if err := os.WriteFile(copilotManifest, copilot, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	claudeManifest := filepath.Join(claudeDir, "pack.json")
-	claude, err := os.ReadFile(claudeManifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claude = []byte(strings.Replace(string(claude), `  "contributes": [`, `  "contributes": [
-    {
-      "from": "compatibility.json",
-      "into": ".config/yolo-program-compatibility/copilot.json",
-      "kind": "files"
-    },`, 1))
-	if err := os.WriteFile(claudeManifest, claude, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(claudeDir, "compatibility.json"), []byte(`{"refuse_at_or_above":"1.0.93","message":"foreign pack data"}`), 0o644); err != nil {
+	if err := os.WriteFile(foreign, []byte(`{"refuse_at_or_above":"1.0.93","message":"foreign pack data"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	home := t.TempDir()
@@ -451,24 +396,15 @@ func newCopilotCompatibilityProbe(t *testing.T, context string, native bool, upd
 	home := t.TempDir()
 	packRoot := stageShippedPacks(t)
 	if len(probeArgs) > 0 {
-		manifestPath := filepath.Join(packRoot, "_official", "copilot", "pack.json")
-		manifest, err := os.ReadFile(manifestPath)
-		if err != nil {
-			t.Fatal(err)
+		newProbe := `probe_args = [`
+		for i, arg := range probeArgs {
+			if i > 0 {
+				newProbe += ", "
+			}
+			newProbe += strconv.Quote(arg)
 		}
-		oldProbe := "\"probe_args\": [\n        \"--version\"\n      ]"
-		newProbe := `"probe_args": [`
-		for _, arg := range probeArgs {
-			newProbe += `"` + arg + `",`
-		}
-		newProbe = strings.TrimSuffix(newProbe, ",") + `]`
-		if !strings.Contains(string(manifest), oldProbe) {
-			t.Fatal("staged Copilot manifest did not contain its expected probe_args declaration")
-		}
-		manifest = []byte(strings.Replace(string(manifest), oldProbe, newProbe, 1))
-		if err := os.WriteFile(manifestPath, manifest, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		newProbe += `]`
+		movedReplaceManifest(t, filepath.Join(packRoot, "_official", "copilot"), `probe_args = ["--version"]`, newProbe)
 	}
 	vars := map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": packRoot, AgentUpdatesEnv: updates}
 	if native {

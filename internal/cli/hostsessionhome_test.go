@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/prune"
@@ -71,14 +70,7 @@ func copyHostSessionPack(t *testing.T) string {
 // piSessionHomeEnv is the variable the shipped pi pack's session-home declaration names.
 func piSessionHomeEnv(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(shippedPiPackDir, "pack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, problems := packdecl.Decode(data)
-	if len(problems) > 0 {
-		t.Fatalf("the shipped pi pack does not decode: %v", problems)
-	}
+	m := decodePackManifestFile(t, packManifestFile(t, shippedPiPackDir))
 	homes := m.SessionHomes()
 	if len(homes) != 1 || homes[0].Env == "" {
 		t.Fatalf("the shipped pi pack declares %d session homes, want one with a variable", len(homes))
@@ -641,7 +633,7 @@ func TestPruneRunKeepsRelocatedHostSessionHomeWholeAndRetainsOriginalBytes(t *te
 	if err := os.Chtimes(dir, old, old); err != nil {
 		t.Fatal(err)
 	}
-	manifestPath := filepath.Join(packDir, "pack.json")
+	manifestPath := packManifestFile(t, packDir)
 	manifest, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatal(err)

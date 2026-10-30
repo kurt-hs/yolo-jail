@@ -75,7 +75,7 @@ identifiers. Upstream's `packages/ai/src/models.ts` carries the same `checkProvi
 
 ### 1.1 The gate, step by step
 
-1. **The extension layer** (SOURCED). [`yolo-openai-auth.js`](../../packs/pi/extensions/yolo-openai-auth.js)
+1. **The extension layer** (SOURCED). [`yolo-openai-auth.js`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js)
    registers `openai-codex` with `pi.registerProvider("openai-codex", { ... })` (everywhere but
    `yolo host -- pi` on a pi that takes the native provider, since [PH-D2](#PH-D2) and
    [PH-D4](#PH-D4)). Its model list comes from
@@ -134,7 +134,7 @@ Running `/login` in host pi and choosing *OpenAI Codex (yolo shared login)* logg
 no browser, saved the credential to `~/.pi/agent/auth.json`, and made the `openai-codex` models
 available (MEASURED live). The path is SOURCED: `showLoginDialog` → `modelRuntime.login(id, "oauth", …)`
 (`$PI/modes/interactive/interactive-mode.js:5142-5165`) → the composer's adapter around the
-extension's `login` (`provider-composer.js:183-193`) → [`brokerLogin`](../../packs/pi/extensions/yolo-openai-auth.js),
+extension's `login` (`provider-composer.js:183-193`) → [`brokerLogin`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js),
 which asks `status`, logs in only when it must, and returns `brokerToken`. Pi writes the result
 under its own lock and marks the provider configured. A probe with a fake broker reproduced it (P3):
 configured went from false to true, `isUsingSubscription` was true, no lock was left behind, and
@@ -270,7 +270,7 @@ These facts hold for every option that stores an entry (A, A′, B, C, E, F).
   ([the OpenAI service's one-writer rule](../reference/agent-credentials.md#openai-one-writer)).
 - **Pi refreshes it itself** (SOURCED; MEASURED). At request time, with under five minutes left, pi
   runs `oauth.refresh` under its lock with a 15 s timeout (`$AI/auth/resolve.js:46-92`). That is the
-  extension's [`refreshToken`](../../packs/pi/extensions/yolo-openai-auth.js), which asks the
+  extension's [`refreshToken`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js), which asks the
   broker for the current generation. A catalog refresh does the same once the entry has expired
   (`$AI/models.js:230-245`). Pi writes the result back before it releases the lock
   (`$PI/core/auth-storage.js:378-395`). P4: an entry with 60 s left gave a new token and a stored
@@ -281,7 +281,7 @@ These facts hold for every option that stores an entry (A, A′, B, C, E, F).
 - **A seeded token goes stale only outside `yolo host`.** Plain `pi` still counts the provider as
   configured, because the check ignores expiry ([§1.1](#11-the-gate-step-by-step) step 5). Requests
   work on the stored access token until it expires. The next refresh then fails with
-  [`brokerFailure`](../../packs/pi/extensions/yolo-openai-auth.js)'s advice to launch
+  [`brokerFailure`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js)'s advice to launch
   through `yolo host`. A live bearer token sits in the user's file in the meantime, as it already
   does after a `/login`.
 - **Pi's lock** (SOURCED). `auth.json.lock` is a proper-lockfile 4.1.2 directory with `realpath: false`
@@ -319,7 +319,7 @@ extension installed in `~/.pi/agent/extensions/`:
   account switch, and the user's own login cannot be restored while the extension is loaded.
 - **Under a direct launch, or `yolo host -p zai -- pi`, that refresh fails.** In the `-p zai` case the
   message wrongly says pi *"was not started through `yolo host`"*: no OpenAI prelaunch is declared, so
-  the launch hands pi no socket, and [`brokerFailure`](../../packs/pi/extensions/yolo-openai-auth.js)
+  the launch hands pi no socket, and [`brokerFailure`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js)
   cannot tell that case from a direct launch.
 
 [OQ-HS3](host-notch-services.md#11-decision-ledger) covers the direct launch. It does not obviously cover a
@@ -646,7 +646,7 @@ handling and a test that an own entry and a symlinked file survive a `codex`-pro
 
 ### 5.1 As built: the native registration
 
-Built 2026-10-04 in [`yolo-openai-auth.js`](../../packs/pi/extensions/yolo-openai-auth.js) alone. No Go
+Built 2026-10-04 in [`yolo-openai-auth.js`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js) alone. No Go
 code changed: `yolo host -- pi` already hands pi the broker's socket and writes nothing
 ([`TestPreparePiUsesHostSocketWithoutStartingAdapter`](../../internal/openaiauthhost/host_test.go) still
 pins that).
@@ -709,7 +709,7 @@ passed in all 24. The mechanism is SOURCED: `ModelRuntime.registerNativeProvider
 pi's awaited refresh should resolve only once the newest availability pass has landed.
 
 **A failed broker call** reads *"API key auth failed for provider openai-codex: OpenAI credential
-service: …"*: pi's prefix, then [`brokerFailure`](../../packs/pi/extensions/yolo-openai-auth.js)'s words
+service: …"*: pi's prefix, then [`brokerFailure`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js)'s words
 (MEASURED 2026-10-04 by a throwaway probe on pi 1.0.1 with a failing stand-in client). The extension's
 half is pinned against the real client by `TestPiOpenAIAuthWithAHostRouteKeepsTheClientsMessage`.
 
@@ -858,7 +858,7 @@ $ mkdir -p /tmp/pi-review-probe/bin /tmp/pi-review-probe/home    # bin/yolo and 
 $ cd /tmp/pi-review-probe && env -i PATH=/tmp/pi-review-probe/bin:/usr/bin:/bin:"$(dirname "$(readlink -f "$(command -v node)")")" \
     HOME=/tmp/pi-review-probe/home PI_CODING_AGENT_DIR=/tmp/pi-review-probe/home/.pi/agent \
     PI_DIST=$HOME/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/dist \
-    YOLO_EXT=$REPO/packs/pi/extensions/yolo-openai-auth.js PROBE_ROOT=/tmp/pi-review-probe/cases \
+    YOLO_EXT=$REPO/packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js PROBE_ROOT=/tmp/pi-review-probe/cases \
     node probe.mjs
 ```
 

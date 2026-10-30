@@ -81,7 +81,7 @@ func ReadOpencodeLogin(path string) OpencodeLogin {
 
 // WriteOpencodeAuth merges a broker token view into opencode's auth.json under `openai`, keeping
 // every other provider's entry. The refresh value is the broker's generation marker, never a
-// credential: yolo's opencode plugin (packs/opencode/plugins/yolo-openai-auth.js) serves every
+// credential: yolo's opencode plugin (packs/opencode/home/.config/opencode/plugins/yolo-openai-auth.js) serves every
 // request from the broker, and only an entry carrying that marker is one it serves, so opencode
 // never refreshes the token itself (docs/reference/agent-credentials.md OQ-OA2).
 //

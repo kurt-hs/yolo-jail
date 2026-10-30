@@ -158,7 +158,7 @@ type piNativeRun struct {
 func runPiNative(t *testing.T, pkg string, socket bool, auth string) piNativeRun {
 	t.Helper()
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-openai-auth.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-openai-auth.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

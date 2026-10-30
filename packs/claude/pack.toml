@@ -1,0 +1,121 @@
+model_list_check.claude.rules = [{ platform = "aws-bedrock", via = false, makers = ["anthropic"], native_empty_ok = true }]
+# THE PROVIDER KEYS (packdecl.ProviderKey), keyed by program bin: the settings Claude Code
+# reads that claude's provider SELECTION decides, so at a jail no captured in-jail edit may set
+# one: the settings derive's value lands when it asserts one, and the key is absent otherwise.
+# CLAUDE_CODE_USE_BEDROCK, the platform switch on the program below, is one already. The
+# variables are Claude Code's (https://code.claude.com/docs/en/amazon-bedrock,
+# .../google-vertex-ai, .../microsoft-foundry, .../llm-gateway): its provider switches, the
+# gateway and auth overrides, and the AWS region and credential chain its Bedrock client
+# reads. A model id only Bedrock serves (a cross-region inference profile such as
+# global.anthropic.…, or a Bedrock ARN) is dropped only while claude is off "aws-bedrock", so a
+# subscription model picked with /model stays the user's. PACK-WIDE, not on the program, so an
+# older yolo ignores the key instead of skipping the whole program (packs/releasedecode_test.go).
+# Measured fault this closes: 2026-10-11, a captured CLAUDE_CODE_USE_BEDROCK kept Claude Code
+# on Bedrock with no credentials while yolo had selected its subscription.
+provider_keys.claude = [
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_USE_VERTEX" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_USE_FOUNDRY" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_USE_ANTHROPIC_AWS" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_USE_MANTLE" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_SKIP_BEDROCK_AUTH" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_SKIP_VERTEX_AUTH" },
+  { surface = "claude/settings", pointer = "/env/CLAUDE_CODE_SKIP_FOUNDRY_AUTH" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_BASE_URL" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_BEDROCK_BASE_URL" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_VERTEX_BASE_URL" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_FOUNDRY_BASE_URL" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_AUTH_TOKEN" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_API_KEY" },
+  { surface = "claude/settings", pointer = "/env/AWS_BEARER_TOKEN_BEDROCK" },
+  { surface = "claude/settings", pointer = "/env/AWS_REGION" },
+  { surface = "claude/settings", pointer = "/env/AWS_DEFAULT_REGION" },
+  { surface = "claude/settings", pointer = "/env/AWS_PROFILE" },
+  { surface = "claude/settings", pointer = "/env/AWS_ACCESS_KEY_ID" },
+  { surface = "claude/settings", pointer = "/env/AWS_SECRET_ACCESS_KEY" },
+  { surface = "claude/settings", pointer = "/env/AWS_SESSION_TOKEN" },
+  { surface = "claude/settings", pointer = "/env/AWS_CONTAINER_CREDENTIALS_FULL_URI" },
+  { surface = "claude/settings", pointer = "/env/AWS_CONTAINER_AUTHORIZATION_TOKEN" },
+  { surface = "claude/settings", pointer = "/model", platform = "aws-bedrock", matches = "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_MODEL", platform = "aws-bedrock", matches = "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_DEFAULT_OPUS_MODEL", platform = "aws-bedrock", matches = "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_DEFAULT_SONNET_MODEL", platform = "aws-bedrock", matches = "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_DEFAULT_HAIKU_MODEL", platform = "aws-bedrock", matches = "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)" },
+  { surface = "claude/settings", pointer = "/env/ANTHROPIC_SMALL_FAST_MODEL", platform = "aws-bedrock", matches = "^(arn:aws[a-z-]*:bedrock:|((global|us|eu|apac|jp|au|ca|us-gov)\\.)?anthropic\\.)" },
+]
+# THE PROVIDER ENVIRONMENT (packdecl.ProviderEnvSource): the members of claude/settings' `env`
+# object are Claude Code's process environment, so every provider key above directly under
+# /env is also a variable each launcher of claude makes exactly what claude's profile selection
+# says: exported with the selection's value, unset when the selection sets none, whatever the
+# launching shell held (a claude started from another claude's shell included). Ruled
+# 2026-10-11 (PP-D14, docs/design/providers-and-profiles-redesign.md).
+provider_env = { claude = { surface = "claude/settings", pointer = "/env" } }
+name = "claude"
+# CLAUDE CODE BRINGS ITS OWN PROVIDER (docs/design/provider-enablement.md OQ-PE1, OQ-PE5):
+# packs/claude-auth declares the `anthropic` provider and the `claude` profile and carries the
+# claude-oauth-broker loophole, so selecting claude makes `-p pi=claude` and an active set
+# holding the subscription nameable, binds the platform to Claude Code's own client, and keeps
+# the broker running whenever Claude Code can be.
+needs = [{ pack = "claude-auth" }, { pack = "wire-bridge" }]
+skills_tier = "namespaced"
+
+# Where the install hint's name came from, checked 2026-10-02. A cask, so "brew-cask".
+#   brew-cask: https://formulae.brew.sh/api/cask/claude-code.json (binary artifact `claude`)
+[[program]]
+bin = "claude"
+capabilities = ["web_search"]
+install = { default = false, brew-cask = "claude-code" }
+platform_switches = [{ platform = "aws-bedrock", pointer = "/env/CLAUDE_CODE_USE_BEDROCK", surface = "claude/settings" }]
+# A version probe answers at once (pi-extension-store-builds.md XB-D24, XB-D51): the
+# word the per-pack install matrix runs (integration/agents_test.go).
+probe_args = ["--version"]
+sandbox_tmpdir_env = ["CLAUDE_CODE_TMPDIR"]
+protocols = ["anthropic"]
+update = ["install"]
+url = "https://claude.ai/install.sh"
+via = "installer"
+
+[[briefing]]
+after = "host:.claude/CLAUDE.md"
+agent = "claude"
+into = ".claude/CLAUDE.md"
+
+[[briefing]]
+agents = ["claude"]
+from = "briefing/worktrees.md"
+
+[[skills]]
+agent = "claude"
+into = ".claude/skills"
+project_dirs = [".claude/skills"]
+reserved = ["synced"]
+reserved_notes = { synced = "skills Claude Code syncs from your claude.ai account" }
+
+[[config]]
+config = [{ agent = "claude", defaults = { projects = { "${workspace}" = { hasTrustDialogAccepted = true } } }, managed = { projects = { "${workspace}" = { enableAllProjectMcpServers = true } } }, mode = "rmw", name = "config", path = "~/.claude.json" }]
+
+[[config]]
+config = [{ agent = "claude", defaults = { statusLine = { command = "yolo internal footer --agent claude --login 'Claude subscription' --truthy 1,true,yes,on --switch CLAUDE_CODE_USE_BEDROCK=bedrock --switch CLAUDE_CODE_USE_FOUNDRY=foundry --switch CLAUDE_CODE_USE_ANTHROPIC_AWS=anthropic-aws --switch CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD=anthropic-google-cloud --switch CLAUDE_CODE_USE_MANTLE=mantle --switch CLAUDE_CODE_USE_VERTEX=vertex --words bedrock=Bedrock --words 'openai-codex=ChatGPT subscription' --words 'foundry=Microsoft Foundry' --words 'anthropic-aws=Claude Platform on AWS' --words 'anthropic-google-cloud=Claude Platform on Google Cloud' --words 'mantle=Bedrock Mantle' --words 'vertex=Vertex AI' --bridged openai-codex --bridged cerebras --bridged kilo --template '{stdin.model.display_name}{ · |stdin.effort.level} · yolo: {yolo.billing} · {yolo.notch}'", type = "command" } }, name = "settings", path = "~/.claude/settings.json", readsHost = true, retireOnFirstRender = ["yolo-host-synced-settings.json"] }]
+
+[[autonomy]]
+autonomous.config = [{ agent = "claude", managed = { permissions = { additionalDirectories = ["/"], allow = [], defaultMode = "acceptEdits", deny = [] }, skipDangerousModePermissionPrompt = true }, name = "settings", path = "~/.claude/settings.json" }]
+autonomous.launch = [{ bin = "claude", flags = ["--dangerously-skip-permissions"] }]
+guarded.config = [{ agent = "claude", managed = { permissions = { defaultMode = "default" }, skipDangerousModePermissionPrompt = false }, name = "settings", path = "~/.claude/settings.json" }]
+replace = true
+
+[[state]]
+at = ".claude"
+
+[[state]]
+at = ".claude-shared-credentials"
+because = "identity/credential state shared across workspaces"
+scope = "machine"
+
+[[hook]]
+at = ".claude-shared-credentials"
+from = ".claude/.credentials.json"
+hook = "shared_credentials"
+
+[[hook]]
+from = ".claude/history.jsonl"
+hook = "per_jail_history"

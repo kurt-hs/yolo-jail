@@ -113,7 +113,7 @@ var packMatrix = []packCase{
 	// refuses to start without. Its vendor installer is PUBLIC (dev.meta.ai, no Meta account;
 	// an optional `lookaside.facebook.com` authenticated fast path is used only when
 	// ~/.config/muse/auth.json exists), so the real-install cells of packs.yml and
-	// macos-user.yml are not gate-blocked — see packs/muse-code/pack.json.
+	// macos-user.yml are not gate-blocked — see packs/muse-code/pack.toml.
 	{pack: "muse-code", binary: "muse", versionArg: "--version",
 		configRel: ".config/muse/settings.json", marker: "schema_version"},
 	// NOT AN AGENT: an MCP server program. It renders no config surface of its own (its `mcp`

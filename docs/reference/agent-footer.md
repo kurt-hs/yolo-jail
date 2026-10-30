@@ -10,11 +10,11 @@ covers:
   - packs/claude/pack.json
   - packs/agy/pack.json
   - packs/copilot/pack.json
-  - packs/copilot/footer/
-  - packs/pi/extensions/yolo-footer.js
-  - packs/omp/extensions/yolo-footer.js
+  - packs/copilot/home/.copilot/yolo/
+  - packs/pi/home/.pi/agent/extensions/yolo-footer.js
+  - packs/omp/home/.oh-omp/agent/extensions/yolo-footer/index.js
   - packs/opencode/pack.json
-  - packs/opencode/footer/
+  - packs/opencode/home/.config/opencode/yolo/
 tags: [footer, statusline, packs, providers, profiles, confinement, claude, pi, omp, agy, copilot, opencode, codex]
 summary: "How yolo puts two facts into every agent's footer that has a hook: what the session is billed through, in plain words, and where the agent runs (jail, guest or host). One core renderer, `yolo internal footer`, prints them; each agent pack wires it into its agent's own hook as a lowest-layer default, beside the agent's stock status line and never over it. Codex has no hook."
 ---
@@ -39,9 +39,9 @@ names the billing only once, in its startup header.
 | The renderer, `yolo internal footer` | `internal/footer` (`ParseArgs`, `Notch`, `WithHostTables`), dispatched from `internal/cli/internal.go` |
 | The host's profile read | `hostFooterTables` in `internal/cli` (`hostfooter.go`) |
 | The host launch's wire tables | `hostComposition.wireTables`, appended by `composeHostVarsWith` (`internal/cli`) |
-| Claude, agy and copilot adapters | each pack's `settings` surface `defaults` (`packs/claude`, `packs/agy`, `packs/copilot`), plus `packs/copilot/footer/yolo-footer.sh` |
-| pi and omp adapters | `packs/pi/extensions/yolo-footer.js`, `packs/omp/extensions/yolo-footer.js` |
-| opencode adapter | `packs/opencode/footer/yolo-footer.js` and the pack's `tui` surface |
+| Claude, agy and copilot adapters | each pack's `settings` surface `defaults` (`packs/claude`, `packs/agy`, `packs/copilot`), plus `packs/copilot/home/.copilot/yolo/footer.sh` |
+| pi and omp adapters | `packs/pi/home/.pi/agent/extensions/yolo-footer.js`, `packs/omp/home/.oh-omp/agent/extensions/yolo-footer/index.js` |
+| opencode adapter | `packs/opencode/home/.config/opencode/yolo/footer.js` and the pack's `tui` surface |
 | macos-user's jail marker | `buildPlan` in `internal/macosuser` |
 
 **Reads with:** [`providers.md`](providers.md#profiles-and-options) (what a provider and a profile
@@ -557,7 +557,7 @@ place the exact values are stated.
 | Renderer cost (measured, twenty runs, median) | about 2.2 ms in a jail; about 4.8 ms at the host with a profile selected, 2.1 ms with none | measured at the design's build |
 | Claude template | `{stdin.model.display_name}{ · \|stdin.effort.level} · yolo: {yolo.billing} · {yolo.notch}` | `packs/claude/pack.json` |
 | agy, pi, omp template | `yolo: {yolo.billing} · {yolo.notch}` | each pack |
-| opencode template | `yolo: {yolo.notch}` | `packs/opencode/footer/yolo-footer.js` |
+| opencode template | `yolo: {yolo.notch}` | `packs/opencode/home/.config/opencode/yolo/footer.js` |
 | Copilot script destination | `~/.copilot/yolo/footer.sh` | `packs/copilot/pack.json` |
 | pi extension destination | `~/.pi/agent/extensions/yolo-footer.js` | `packs/pi/pack.json` |
 | omp extension destination | `~/.oh-omp/agent/extensions/yolo-footer/index.js` | `packs/omp/pack.json` |

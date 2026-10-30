@@ -1,0 +1,19 @@
+name = "llamacpp"
+
+[[provider]]
+endpoints.anthropic = { base_url = "http://localhost:8080" }
+endpoints.openai = { base_url = "http://localhost:8080/v1", wire_api = "openai-chat-completions" }
+models = { default = "llama" }
+name = "llamacpp"
+options.api_timeout_ms = false
+options.attribution_header = "false"
+options.context_window = "32768"
+options.max_tokens = "8192"
+options.max_tokens_field = "max_tokens"
+options.model = "default"
+options.pin_model = false
+options.supports_developer_role = "false"
+options.supports_reasoning_effort = "false"
+options.supports_store = "false"
+options.supports_strict_mode = "false"
+options.supports_usage_in_streaming = "true"

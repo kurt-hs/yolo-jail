@@ -1411,7 +1411,7 @@ local function piSettingsFor(ctx)
   local p = ctx.providers and ctx.providers[ctx.selected_provider] or nil
   -- openai-codex is Pi's built-in subscription provider, so the catalog above writes NO
   -- row for it (docs/design/pi-codex-provider-shadowing.md OQ-1). Its address, wire and
-  -- model definitions are the ones packs/pi/extensions/yolo-openai-auth.js registers: the
+  -- model definitions are the ones packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js registers: the
   -- broker-backed OAuth login, the openai-codex-responses client at chatgpt.com/backend-api,
   -- and the model list — the ONE declared list (codexModelList above), which that extension
   -- reads from the pi/codex-models surface below. This branch speaks only for the SELECTION
@@ -1693,7 +1693,7 @@ local function piEnforceFor(ctx, provName)
 end
 
 -- codex-models (~/.pi/agent/yolo-openai-codex-models.json): the openai-codex model list
--- packs/pi/extensions/yolo-openai-auth.js registers, as data. The extension cannot read the
+-- packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js registers, as data. The extension cannot read the
 -- declaration itself — it is JavaScript pi loads, not a derive — and this surface is the
 -- one channel that reaches it (docs/design/model-lists-and-pickers.md ML-D3): an env var
 -- composes nothing without a profile while the extension registers the provider always, a
@@ -1729,7 +1729,7 @@ end)
 
 -- model-lists (~/.pi/agent/yolo-model-lists.json): every provider list a `models` contribution
 -- narrowed with an `only` (packload's `models_only`), keyed by pi's provider id, for
--- packs/pi/extensions/yolo-model-lists.js to register (docs/design/model-lists-and-pickers.md
+-- packs/pi/home/.pi/agent/extensions/yolo-model-lists.js to register (docs/design/model-lists-and-pickers.md
 -- MM-D6). pi layers a provider's list as its own catalog, then models.json rows, which add or
 -- replace by id and NEVER remove, then an extension's `registerProvider(<id>, { models })`,
 -- which replaces the whole list (MEASURED on pi 0.87.1 and 0.99.1). So a models.json row cannot

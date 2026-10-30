@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -79,11 +80,16 @@ func TestTheNamedEditSelectsTheAgent(t *testing.T) {
 		t.Fatalf("the edit the step names selects no pack:\n%s", edited)
 	}
 
-	raw, err := fs.ReadFile(packs.FS, nextStepAgent+"/pack.json")
+	decode := packdecl.DecodeTOML
+	raw, err := fs.ReadFile(packs.FS, nextStepAgent+"/"+packdecl.ManifestTOMLName)
+	if errors.Is(err, fs.ErrNotExist) {
+		decode = packdecl.Decode
+		raw, err = fs.ReadFile(packs.FS, nextStepAgent+"/"+packdecl.ManifestLegacyJSONName)
+	}
 	if err != nil {
 		t.Fatalf("no shipped pack named %q: %v", nextStepAgent, err)
 	}
-	m, probs := packdecl.Decode(raw)
+	m, probs := decode(raw)
 	if len(probs) > 0 {
 		t.Fatalf("pack %q: %v", nextStepAgent, probs)
 	}

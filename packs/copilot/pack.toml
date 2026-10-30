@@ -1,0 +1,70 @@
+model_list_check = { copilot = {} }
+name = "copilot"
+# THE COPILOT CLI BRINGS ITS OWN PROVIDER (docs/design/provider-enablement.md OQ-PE3, PE-D5):
+# packs/copilot-auth declares the `github-copilot` provider and the `copilot` profile, and
+# needing it unconditionally is what makes selecting copilot enough for `-p copilot` and what
+# binds the platform to copilot's own client (a pack binds a platform by needing a pack that
+# ships a provider of it), so that profile runs on copilot's own GitHub login. The pack installs
+# nothing and runs nothing; a user may also select it without copilot, beside pi.
+needs = [{ pack = "copilot-auth" }]
+skills_tier = "namespaced"
+
+# Where the install hint's name came from, checked 2026-10-02. A cask, so "brew-cask".
+#   brew-cask: https://formulae.brew.sh/api/cask/copilot-cli.json (binary artifact `copilot`)
+# GitHub's own installer (OQ-NI1, ruled 2026-10-05). It installs into $PREFIX/bin and, run as
+# root as it is in a container jail, defaults PREFIX to a /usr/local the read-only rootfs cannot
+# create, so PREFIX names the directory the launcher looks in. copilot's own updater stays on:
+# it replaces this binary on its own schedule, as Claude Code's does, and
+# `agent_updates: false` does not stop it.
+[[program]]
+# copilot's providers.json, which shows a provider's whole model list beside GitHub's
+# (docs/design/model-lists-and-pickers.md MM-D31) and carries the provider's key as literal
+# text, so the env derive composes it and a jail writes it beside copilot's env file
+# (MM-D33). At `yolo host`, which writes no agent file, copilot keeps its environment's one
+# model.
+agent_files = { COPILOT_PROVIDERS_CONFIG = "providers.json" }
+bin = "copilot"
+install = { default = false, brew-cask = "copilot-cli" }
+installer_env = { PREFIX = "~/.local" }
+# A version probe answers at once (pi-extension-store-builds.md XB-D24, XB-D51): the
+# word the per-pack install matrix runs (integration/agents_test.go).
+probe_args = ["--version"]
+# copilot has no Bedrock catalog, and its BYOK refuses to start without a model, so on a
+# Bedrock provider no pack or config gives a list it starts on the list yolo fetches from
+# Bedrock, and a launch with neither stops and says why
+# (docs/design/model-lists-and-pickers.md OQ-MM6).
+needs_model_list = ["aws-bedrock"]
+protocols = ["anthropic", "openai"]
+unlisted_background_models = true
+update = ["update"]
+url = "https://gh.io/copilot-install"
+via = "installer"
+
+[[briefing]]
+after = "host:.copilot/copilot-instructions.md"
+agent = "copilot"
+into = ".copilot/copilot-instructions.md"
+
+[[skills]]
+agent = "copilot"
+into = ".copilot/skills"
+project_dirs = [".github/skills", ".agents/skills", ".claude/skills"]
+
+[[config]]
+config = [
+  { agent = "copilot", defaults = { yolo = true }, mode = "rmw", name = "config", path = "~/.copilot/config.json" },
+  { agent = "copilot", defaults = { statusLine = { command = "test ! -r ~/.copilot/yolo/footer.sh || sh ~/.copilot/yolo/footer.sh", type = "command" } }, mode = "rmw", name = "settings", path = "~/.copilot/settings.json" },
+]
+
+[[config]]
+config = [{ agent = "copilot", defaults = { lspServers = {} }, mode = "computed", name = "lsp", path = "~/.copilot/lsp-config.json" }]
+
+[[config]]
+config = [{ agent = "copilot", defaults = { mcpServers = {} }, mode = "computed", name = "mcp", path = "~/.copilot/mcp-config.json" }]
+
+[[state]]
+at = ".copilot"
+
+[[autonomy]]
+autonomous = { launch = [{ bin = "copilot", flags = ["--yolo"] }] }
+replace = true

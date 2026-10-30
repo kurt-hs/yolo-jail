@@ -48,15 +48,14 @@ func TestShippedPiPackDeliversOpenAIAuthExtension(t *testing.T) {
 	}
 	var found bool
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind == packdecl.KindFiles && c.From == "extensions/yolo-openai-auth.js" &&
-			c.Into == ".pi/agent/extensions/yolo-openai-auth.js" {
+		if c.Kind == packdecl.KindFiles && c.Into == ".pi/agent/extensions/yolo-openai-auth.js" {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatal("pi pack does not deliver the yolo OpenAI adapter to Pi's extension directory")
 	}
-	if _, err := os.Stat(filepath.Join(p.Root, "extensions", "yolo-openai-auth.js")); err != nil {
+	if _, err := os.Stat(movedShippedFile(t, p, ".pi/agent/extensions/yolo-openai-auth.js")); err != nil {
 		t.Fatalf("declared Pi OpenAI extension is absent: %v", err)
 	}
 	home := t.TempDir()
@@ -228,7 +227,7 @@ type piExtensionFixture struct {
 func newPiExtensionFixture(t *testing.T) piExtensionFixture {
 	t.Helper()
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-openai-auth.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-openai-auth.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

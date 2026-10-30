@@ -22,8 +22,7 @@ func TestShippedPiPackDeliversTheDurableWorktreesExtension(t *testing.T) {
 	p := shippedPiPack(t)
 	var found bool
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind == packdecl.KindFiles && c.From == "extensions/yolo-durable-worktrees.js" &&
-			c.Into == ".pi/agent/extensions/yolo-durable-worktrees.js" {
+		if c.Kind == packdecl.KindFiles && c.Into == ".pi/agent/extensions/yolo-durable-worktrees.js" {
 			found = true
 		}
 	}
@@ -46,7 +45,7 @@ func TestShippedPiPackDeliversTheDurableWorktreesExtension(t *testing.T) {
 // environment, so child processes do not inherit it.
 func TestPiDurableWorktreesExtensionSetsTheBaseDirOnlyWhenUnset(t *testing.T) {
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-durable-worktrees.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-durable-worktrees.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +165,7 @@ process.stdout.write(JSON.stringify({ env: envVal, file: fileVal }));
 func TestPiDurableWorktreesExtensionStartsTheReaperOnItsOwnDirectory(t *testing.T) {
 	node := requireNode(t, "the pi durable-worktrees extension")
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-durable-worktrees.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-durable-worktrees.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +274,7 @@ func TestPiDurableWorktreesExtensionStartsTheReaperOnItsOwnDirectory(t *testing.
 func TestPiDurableWorktreesExtensionReportsAReaperThatCannotStart(t *testing.T) {
 	node := requireNode(t, "the pi durable-worktrees extension")
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-durable-worktrees.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-durable-worktrees.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +318,7 @@ func TestPiDurableWorktreesExtensionReportsAReaperThatCannotStart(t *testing.T) 
 // reaper writes, and its stamp is the one the reaper documents.
 func TestPiDurableWorktreesExtensionStampsTheReapersReport(t *testing.T) {
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-durable-worktrees.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-durable-worktrees.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

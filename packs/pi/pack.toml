@@ -1,0 +1,227 @@
+# Where pi's settings name a model a child agent is looked up by: pi-subagents' block,
+# whose values are `<provider>/<id>` and whose allow lists are patterns in which `*`
+# matches any run (pi-subagents 0.35.1 globToRegExp), and pi's own picker pair, which
+# the scope must admit for a child that inherits the session's model (MM-D45, MM-D46).
+model_list_check.pi.references.models = [
+  "/subagents/defaultModel",
+  "/subagents/agentOverrides/*/model",
+]
+model_list_check.pi.references.patterns = [
+  "/subagents/modelScope/allow",
+  "/subagents/modelScope/agents/*/allow",
+]
+model_list_check.pi.references.profile_subagents = true
+# pi's own model surfaces, whose ids are pi's registry beside the table and its
+# catalog: the models.json rows, the openai-codex list with its [1m] variants, and the
+# lists an `only` narrows.
+model_list_check.pi.references.registry = [
+  { ids = "/providers/*/models/*/id", surface = "pi/models" },
+  { ids = "/models/*/id", provider = "openai-codex", surface = "pi/codex-models" },
+  { ids = "/*/models/*/id", surface = "pi/model-lists" },
+]
+model_list_check.pi.references.scope = "/subagents/modelScope/allow"
+model_list_check.pi.references.selection.model = "/defaultModel"
+model_list_check.pi.references.selection.provider = "/defaultProvider"
+model_list_check.pi.references.surface = "pi/settings"
+name = "pi"
+# EACH SESSION READS ITS OWN CONFIG DIR (docs/design/per-session-profiles.md): a session's
+# boot pass renders this pack's surfaces in ~/.pi/agent into ~/.pi/.yolo-sessions/<id>/agent,
+# links everything else back to ~/.pi/agent, and exports PI_CODING_AGENT_DIR, which stock pi
+# and stock pi-subagents read through getAgentDir(). So a later attach on another profile
+# never changes what a running session's subagents read.
+#
+# `shared` is what may be ABSENT when a session home is made and must still be one copy,
+# measured in stock pi 1.0.1 and pi-subagents' source on 2026-10-18 (the plan's
+# "Measurements behind the shared list"): each is written in place or appended inside, so a
+# link holds. No *.lock: pi locks <path>.lock by mkdir, per path (SP-D10). `agents/`:
+# pi-subagents reads <dir>/agents instead of ~/.agents once the variable is set, so the link
+# points at ~/.agents when that exists, which is stock behavior.
+session_homes = [{ dir = ".pi/agent", env = "PI_CODING_AGENT_DIR", shared = ["auth.json", "models-store.json", "mcp-auth.json", "trust.json", "run-history.jsonl", "sessions/", "bin/", "tools/", "npm/", "git/"], prefer = { "agents/" = "~/.agents" } }]
+
+# Where each install hint's name came from, one line per manager, checked 2026-10-02.
+#   brew: https://formulae.brew.sh/api/formula/pi-coding-agent.json (bin/pi in its formula source)
+#   dnf: https://packages.fedoraproject.org/pkgs/pi-coding-agent/pi-coding-agent/fedora-rawhide.html#files (/usr/bin/pi; only in Fedora 45, unreleased on 2026-10-02, and Rawhide, so dnf finds no such package on Fedora 43 or 44)
+[[program]]
+bin = "pi"
+# pi's own providers, read from pi 1.0.1's installed code on 2026-10-05, never run: the ids
+# pi-ai's builtinProviders() registers (dist/providers/all.js) and the `llama.cpp` its own
+# extension adds (dist/extensions/llama/provider.js). yolo writes no model entry over one
+# (docs/design/pi-codex-provider-shadowing.md OQ-3). pi's own zai already calls the coding
+# plan (api.z.ai/api/coding/paas/v4, reading ZAI_API_KEY), so yolo's zai needs no plan.
+built_in_providers.names = [
+  "amazon-bedrock",
+  "ant-ling",
+  "anthropic",
+  "azure-openai-responses",
+  "baseten",
+  "cerebras",
+  "cloudflare-ai-gateway",
+  "cloudflare-workers-ai",
+  "deepseek",
+  "fireworks",
+  "github-copilot",
+  "google",
+  "google-vertex",
+  "groq",
+  "huggingface",
+  "kimi-coding",
+  "llama.cpp",
+  "meta",
+  "minimax",
+  "minimax-cn",
+  "mistral",
+  "moonshotai",
+  "moonshotai-cn",
+  "nvidia",
+  "openai",
+  "openai-codex",
+  "opencode",
+  "opencode-go",
+  "openrouter",
+  "qwen-token-plan",
+  "qwen-token-plan-cn",
+  "qwen-token-plan-individual",
+  "radius",
+  "together",
+  "typesafe",
+  "vercel-ai-gateway",
+  "xai",
+  "xiaomi",
+  "xiaomi-token-plan-ams",
+  "xiaomi-token-plan-cn",
+  "xiaomi-token-plan-sgp",
+  "zai",
+  "zai-coding-cn",
+]
+# openai-codex runs on pi's own client but on yolo's list: extensions/yolo-openai-auth.js
+# registers the one list packs/codex-auth declares (model-lists-and-pickers.md ML-D1).
+built_in_providers.yolo_lists = ["openai-codex"]
+flags = ["--ignore-scripts"]
+install = { default = false, brew = "pi-coding-agent", dnf = "pi-coding-agent" }
+# the settings derive's selection as pi's own flags: --provider qualifies --model and
+# --models replaces enabledModels (measured in pi 1.0.4's installed source); the provider
+# flag is emitted only when defaultModel is present, because pi rejects an orphan provider.
+# Explicit model selections retain provider qualification, including for overlapping model
+# ids. The two model-list files pi's extensions read are handed in their declared variables
+# before the files (extensions/yolo-openai-auth.js, extensions/yolo-model-lists.js).
+# None of it goes in front of a subcommand: pi reads one only as its first word, so
+# `pi --provider zai update` would start a session whose first prompt is "update".
+launch_selection.flags = [
+  { argv = ["--provider", "{value}"], key = "defaultProvider", requires = ["defaultModel"] },
+  { argv = ["--model", "{value}"], key = "defaultModel" },
+  { argv = ["--models", "{value}"], key = "enabledModels" },
+]
+launch_selection.subcommands = [
+  "auth",
+  "config",
+  "install",
+  "list",
+  "mcp",
+  "remove",
+  "uninstall",
+  "update",
+]
+launch_selection.surface = ".pi/agent/settings.json"
+launch_selection.surfaces.".pi/agent/yolo-model-lists.json" = "YOLO_PI_MODEL_LISTS"
+launch_selection.surfaces.".pi/agent/yolo-openai-codex-models.json" = "YOLO_PI_OPENAI_CODEX_MODELS"
+model_catalog = ["node_modules/@earendil-works/pi-ai/dist/providers/data/*.json"]
+node_floor = "22.19"
+package = "@earendil-works/pi-coding-agent"
+# A version probe answers at once (pi-extension-store-builds.md XB-D24): pi prints its
+# version right after parsing its arguments. Not --help, which pi answers only after
+# resolving and installing its packages.
+probe_args = ["--version", "-v"]
+protocols = ["openai", "openai-responses"]
+provider_sets = true
+refresh.argv = ["update", "--extensions"]
+refresh.due_on_change = [".pi/agent/settings.json"]
+refresh.lock = ".pi/.yolo-update.lock"
+# Worth running only while a settings file names a package pi installs itself: the
+# prefixes pi parses as a remote source (XB-D23). Not a bare "http, which pi's own
+# keys match, and not "git@, which pi reads as a local path.
+refresh.only_if.contains = ["\"npm:", "\"git:", "\"http://", "\"https://", "\"ssh://"]
+refresh.only_if.files = [".pi/agent/settings.json"]
+refresh.only_if.project_files = [".pi/settings.json"]
+# pi's extension loader caches what it compiles in <tmpdir>/jiti, which a jail restart
+# empties (XB-D52).
+temp_caches = ["jiti"]
+via = "npm"
+
+[[briefing]]
+after = "host:.pi/agent/AGENTS.md"
+agent = "pi"
+into = ".pi/agent/AGENTS.md"
+
+[[briefing]]
+agents = ["pi"]
+from = "briefing/worktrees.md"
+
+[[skills]]
+agent = "pi"
+into = ".pi/agent/skills"
+project_dirs = [".pi/skills", ".agents/skills"]
+
+[[files]]
+# Where a pack gives pi one folder laid out as a pi package (extensions/, themes/,
+# prompts/), with {"kind": "files", "agents": ["pi"], "from": "<folder>"}. Each folder is
+# listed in settings.json's `packages`, which loads every file in it with no list
+# (docs/reference/pack-system.md, pi packages). Outside every folder pi scans by itself, so a folder
+# loads only while its pack is selected.
+agent = "pi"
+expects = ["extensions", "themes", "skills", "prompts", "package.json"]
+into = ".pi/agent/yolo-packs"
+register = { path = "/packages", surface = "pi/settings" }
+
+# The active profile set's provider policy (docs/design/simultaneous-auth-and-pack-isolation.md
+# §3): reads YOLO_PI_PROVIDER_POLICY, which the env derive sets only with a profile.
+[[config]]
+config = [
+  { agent = "pi", defaults = { theme = "light/dark" }, name = "settings", path = "~/.pi/agent/settings.json", readsHost = true, retireOnFirstRender = ["yolo-host-synced-settings.json"] },
+  { agent = "pi", defaults = { providers = {} }, mode = "computed", name = "models", path = "~/.pi/agent/models.json" },
+  { agent = "pi", mode = "computed", name = "codex-models", path = "~/.pi/agent/yolo-openai-codex-models.json" },
+  { agent = "pi", mode = "computed", name = "model-lists", path = "~/.pi/agent/yolo-model-lists.json" },
+  { agent = "pi", defaults = { mcpServers = {} }, name = "mcp", path = "~/.pi/agent/mcp.json", retireIfMatchesRender = ["mcp-adapter.json"] },
+  { agent = "pi", name = "subagents-mcp", notAtHost = "~/.config/mcp/mcp.json is a cross-tool MCP file you keep, and at the host your MCP servers go to pi's own ~/.pi/agent/mcp.json instead; it is written only in a jail", path = "~/.config/mcp/mcp.json", whenListed = { matches = "(^npm:|/)pi-subagents(@[^/]*)?(\\.git)?$", member = "source", path = "/packages", surface = "pi/settings" } },
+]
+
+[[autonomy]]
+autonomous.config = [{ agent = "pi", managed = { defaultProjectTrust = "always" }, name = "settings", path = "~/.pi/agent/settings.json" }]
+guarded.config = [{ agent = "pi", managed = { defaultProjectTrust = "ask" }, name = "settings", path = "~/.pi/agent/settings.json" }]
+
+[[env]]
+vars = { PI_TELEMETRY = "0" }
+
+[[state]]
+at = ".pi"
+
+# pi's LOGINS SHARED ACROSS WORKSPACES, the same state+hook pair claude and agy declare.
+# `~/.pi` is a WORKSPACE-scope state dir above, so `~/.pi/agent/auth.json` is
+# per-workspace and a login inside one jail does nothing for another. This links that ONE
+# file into a top-level machine-scope dir, so one Meta (Muse subscription) login serves
+# every jail on the machine. The credential file is TWO levels under the state dir
+# (`.pi/agent/auth.json` vs claude's `.claude/.credentials.json`), which the hook's
+# base-name join handles: it lands `<home>/.pi-shared-credentials/auth.json` and a
+# relative `../../` target the macos-user sidecar mirror resolves.
+#
+# THE BARGAIN: pi keeps every provider's credential in that ONE file, so this shares ALL
+# of them machine-wide, not just Meta's. claude and agy make the same one-file bargain,
+# and the maintainer approved it rather than splitting the store.
+[[state]]
+at = ".pi-shared-credentials"
+because = "identity/credential state shared across workspaces"
+scope = "machine"
+
+[[hook]]
+at = ".pi-shared-credentials"
+from = ".pi/agent/auth.json"
+hook = "shared_credentials"
+
+[[hook]]
+at = ".pi-shared-npm"
+from = ".pi/agent/npm"
+hook = "unshare_directory"
+
+[[hook]]
+at = ".pi-shared-git"
+from = ".pi/agent/git"
+hook = "unshare_directory"

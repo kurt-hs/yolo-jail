@@ -864,14 +864,49 @@ func materialize(t *testing.T, dest string) {
 		if _, err := os.Stat(filepath.Join(dest, e.Name(), "pack.toml")); err != nil {
 			continue
 		}
-		legacy, err := json.Marshal(shippedManifest(t, e.Name()))
-		if err != nil {
-			t.Fatalf("rendering %s's pack.json for the last release's reader: %v", e.Name(), err)
-		}
+		legacy := legacyManifestJSON(t, e.Name(), shippedManifest(t, e.Name()))
 		if err := os.WriteFile(filepath.Join(dest, e.Name(), "pack.json"), legacy, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
+}
+
+// legacyManifestJSON renders manifest as the pack.json the last release reads. json.Marshal
+// alone is not that rendering: an OptionDefault has a decoder but no encoder, so a provider
+// option marshals as the struct ({"Defaulted":…}) where the legacy shape is the string
+// default, or null for an option declared with no default. Each contribution's options are
+// rewritten from the typed values, so an option a pack.toml declares with no default
+// (`false`) reaches the old reader as the null it means.
+func legacyManifestJSON(t *testing.T, pack string, manifest *packdecl.Manifest) []byte {
+	t.Helper()
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("rendering %s's pack.json for the last release's reader: %v", pack, err)
+	}
+	var tree map[string]any
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatalf("re-reading %s's rendered pack.json: %v", pack, err)
+	}
+	contributes, _ := tree["contributes"].([]any)
+	for i, c := range manifest.Contributes {
+		if len(c.Options) == 0 {
+			continue
+		}
+		options := make(map[string]any, len(c.Options))
+		for name, value := range c.Options {
+			if value.Defaulted {
+				options[name] = value.Value
+			} else {
+				options[name] = nil
+			}
+		}
+		contributes[i].(map[string]any)["options"] = options
+	}
+	out, err := json.Marshal(tree)
+	if err != nil {
+		t.Fatalf("rendering %s's pack.json for the last release's reader: %v", pack, err)
+	}
+	return out
 }
 
 // TestTheLastReleaseReadsNoPackToml pins the new-name boundary materialize documents, with the

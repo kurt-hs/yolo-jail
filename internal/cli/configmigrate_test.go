@@ -239,13 +239,14 @@ func TestPackMigrateRewritesTheManifestAndMovesFiles(t *testing.T) {
 	}
 }
 
-// A JSON null option value has no grouped TOML spelling (W1-L3's refusal): the verb says so,
+// A JSON null that still has no grouped TOML spelling (W1-L3's refusal; a config-overlay's
+// managed null, unlike a provider option's or a surface row's, has none): the verb says so,
 // names keeping the legacy manifest, and changes nothing.
-func TestPackMigrateRefusesANullOptionValue(t *testing.T) {
+func TestPackMigrateRefusesAnUnrepresentableNull(t *testing.T) {
 	newMigrateEnv(t)
-	dir := writeMigratePack(t, `{"contributes":[{"kind":"provider","name":"p","endpoints":{"openai":{"base_url":"https://example.test/v1","wire_api":"openai-chat-completions"}},"models":{"default":"m"},"options":{"pin_model":null}}]}`)
+	dir := writeMigratePack(t, `{"contributes":[{"kind":"config-overlay","surface":"x/settings","config":{"managed":{"theme":null}}}]}`)
 	rc, out, errw := runPackMigrateVerb(t, dir, "--yes")
-	if rc != 1 || !strings.Contains(errw, "pin_model") || !strings.Contains(errw, "keep this pack on its legacy manifest") {
+	if rc != 1 || !strings.Contains(errw, "theme") || !strings.Contains(errw, "keep this pack on its legacy manifest") {
 		t.Fatalf("rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errw)
 	}
 	if present(filepath.Join(dir, "pack.toml")) || !present(filepath.Join(dir, "pack.json")) {

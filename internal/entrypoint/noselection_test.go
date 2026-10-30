@@ -101,16 +101,7 @@ func TestPackAliasesDerivesFromLaunchFlags(t *testing.T) {
 	}
 	// Mount the copilot pack where LoadJailPacks looks.
 	dest := filepath.Join(root, "copilot")
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(p.Root, "pack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dest, "pack.json"), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	shippedCopyManifest(t, p.Root, dest)
 
 	e := NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": root})
 	got := packAliases(e)
@@ -131,16 +122,7 @@ func TestPackAliasesIncludesAutonomousPostureFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(root, "claude")
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(p.Root, "pack.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dest, "pack.json"), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	shippedCopyManifest(t, p.Root, dest)
 
 	e := NewEnv(map[string]string{"JAIL_HOME": home, "YOLO_PACK_ROOT": root})
 	got := packAliases(e)

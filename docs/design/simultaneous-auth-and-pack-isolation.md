@@ -12,7 +12,7 @@ summary: "An active Pi profile set is enforced by a Pi extension yolo ships, whi
 
 **Status:** 2026-10-08. Owner policy is settled ([OQ-PAS1](#decision-ledger)); the enforcement point
 is ruled ([OQ-PAS2](#decision-ledger): an extension yolo ships, never a Pi fork) and built as
-[`yolo-provider-policy.js`](../../packs/pi/extensions/yolo-provider-policy.js) ([PAS-D1](#decision-ledger)).
+[`yolo-provider-policy.js`](../../packs/pi/home/.pi/agent/extensions/yolo-provider-policy.js) ([PAS-D1](#decision-ledger)).
 It was measured inside stock npm Pi 1.0.1's own runtime and yolo's Pi 1.0.4 build, offline, with no model called.
 The [startup flag repair](model-lists-and-pickers.md#1411-pis-provider-flag-travels-only-with-an-explicit-model-built-2026-10-07) remains separate and does not restrict calls.
 
@@ -67,7 +67,7 @@ The broker service and the jail-facing endpoint are distinct from the host prela
 
 ### 1.4 Pi's saved native login can work without a new broker grant
 
-The installed Pi 1.0.4 source creates persistent credential storage and loads built-in providers. Its credential resolver checks stored credentials before ambient authentication; a usable stored OAuth token can authenticate a request without first asking yolo's broker. Yolo's OpenAI extension also returns a stored access token directly and calls the broker for login or refresh, not for every request ([`packs/pi/extensions/yolo-openai-auth.js`](../../packs/pi/extensions/yolo-openai-auth.js)).
+The installed Pi 1.0.4 source creates persistent credential storage and loads built-in providers. Its credential resolver checks stored credentials before ambient authentication; a usable stored OAuth token can authenticate a request without first asking yolo's broker. Yolo's OpenAI extension also returns a stored access token directly and calls the broker for login or refresh, not for every request ([`packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js)).
 
 Accordingly, a native Pi login or a broker-seeded credential already in Pi's auth store may remain usable when a later launch does not declare a broker prelaunch. If that stored token needs refresh, its registered refresh path may still involve the broker. Neither possibility was inspected on the incident machine, and neither is evidence of the incident's actual authentication state.
 

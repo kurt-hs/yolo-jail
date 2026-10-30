@@ -300,7 +300,7 @@ func validateModelFactValues(entry *jsonx.OrderedMap, path string, errs *[]strin
 		}
 	}
 	// `openrouter_routing` is the one OBJECT-valued model fact, because it is sent VERBATIM as
-	// OpenRouter's request `provider` field (packs/pi/extensions/yolo-model-lists.js). Core
+	// OpenRouter's request `provider` field (packs/pi/home/.pi/agent/extensions/yolo-model-lists.js). Core
 	// checks the object shape only; pi's own openRouterRouting schema is the content's
 	// authority, and transcribing it here would be a second copy to keep true. A `model_facts`
 	// entry carries it too, with the same check and the same message.

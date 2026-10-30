@@ -60,7 +60,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
-// codexRefreshListen and codexRefreshPath are where packs/codex/pack.json points Codex
+// codexRefreshListen and codexRefreshPath are where packs/codex/pack.toml points Codex
 // (CODEX_REFRESH_TOKEN_URL_OVERRIDE, "http://{listen}/oauth/token") on a bridged jail: the
 // openai-auth-broker manifest's declared `jail_daemon.listen`, and the adapter's path. Spelled
 // literally, and asserted against the jail's own environment (servedURLProblem), so a pack that
@@ -118,7 +118,7 @@ func forgeCodexLogin(t *testing.T) forgedCodexLogin {
 //     request shape to it — a JSON body (openaiauthadapter.readTokenRequest) presenting the
 //     generation marker as its refresh token. This crosses the in-jail adapter.
 //   - PI'S ROUTE: `yolo internal openai-auth-client token`, the command pi's extension
-//     (packs/pi/extensions/yolo-openai-auth.js) execs. This goes straight to the published
+//     (packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js) execs. This goes straight to the published
 //     endpoint, with no adapter in between, and asks for the `access` view.
 func openaiBrokerProbeScript() string {
 	return strings.Join([]string{

@@ -31,8 +31,8 @@ covers:
   - internal/openaiauthadapter/
   - internal/openaiauthhost/
   - internal/cli/run/openaiauthmigration.go
-  - packs/pi/extensions/yolo-openai-auth.js
-  - packs/opencode/plugins/yolo-openai-auth.js
+  - packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js
+  - packs/opencode/home/.config/opencode/plugins/yolo-openai-auth.js
   - internal/macosuser/seatbelt.go
   - internal/macosuser/envfile.go
   - internal/loopholes/guestrun.go

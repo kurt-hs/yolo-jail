@@ -2004,7 +2004,7 @@ All MEASURED under `@earendil-works/pi-coding-agent` in the npm prefix.
 
 Not installed here. Its pack installs `@oh-labs/oh-omp` and ships `yolo-footer.js`, whose comment
 says omp runs extensions *"with the same extension API pi has"*
-([`packs/omp/extensions/yolo-footer.js`](../../packs/omp/extensions/yolo-footer.js)). The npm
+([`packs/omp/home/.oh-omp/agent/extensions/yolo-footer/index.js`](../../packs/omp/home/.oh-omp/agent/extensions/yolo-footer/index.js)). The npm
 package carries no docs. INFERRED only.
 
 ### A.4 codex (0.158.0)

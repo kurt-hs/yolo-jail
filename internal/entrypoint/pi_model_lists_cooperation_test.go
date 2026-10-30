@@ -84,7 +84,7 @@ type piCooperationRun struct {
 func runPiCooperation(t *testing.T, lists, prior string, loads string, allJS string) piCooperationRun {
 	t.Helper()
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-model-lists.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-model-lists.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

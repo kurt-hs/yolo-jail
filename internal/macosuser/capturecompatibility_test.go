@@ -44,9 +44,15 @@ func TestCapturePlanCompatibilityOwnsItsResolvedContext(t *testing.T) {
 				if err := os.MkdirAll(pack, 0755); err != nil {
 					t.Fatal(err)
 				}
-				for _, name := range []string{"pack.json", "compatibility.json"} {
+				// The manifest, and the compatibility record its home/ tree delivers by
+				// convention to ~/.config/yolo-program-compatibility/copilot.json.
+				for _, name := range []string{shippedPackManifestName(t, "copilot"),
+					filepath.Join("home", ".config", "yolo-program-compatibility", "copilot.json")} {
 					data, err := os.ReadFile(filepath.Join("..", "..", "packs", "copilot", name))
 					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.MkdirAll(filepath.Dir(filepath.Join(pack, name)), 0755); err != nil {
 						t.Fatal(err)
 					}
 					if err := os.WriteFile(filepath.Join(pack, name), data, 0644); err != nil {

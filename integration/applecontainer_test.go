@@ -209,7 +209,7 @@ func TestAppleContainerPackTreeIsReadable(t *testing.T) {
 	// path that merely appears in the other one's output.
 	res := runYolo(t, dir, `echo "ROOT=$YOLO_PACK_ROOT"`+"\n"+
 		`ls "$YOLO_PACK_ROOT" "$YOLO_PACK_ROOT/_official" 2>&1 | head -30`+"\n"+
-		`test -r "$YOLO_PACK_ROOT/_official/claude/pack.json" && echo MANIFEST-READABLE`+"\n"+
+		`test -r "$YOLO_PACK_ROOT/_official/claude/pack.toml" && echo MANIFEST-READABLE`+"\n"+
 		`test -x "$HOME/.yolo/bin/launch/claude" && echo LAUNCHER-RENDERED`,
 		appleContainerEnv())
 	if res.rc != 0 {
@@ -221,7 +221,7 @@ func TestAppleContainerPackTreeIsReadable(t *testing.T) {
 			"which is issue #44:\n%s", res.stdout)
 	}
 	if !strings.Contains(res.stdout, "MANIFEST-READABLE") {
-		t.Errorf("the selected pack `claude` has no readable pack.json under YOLO_PACK_ROOT.\n%s\n\n"+
+		t.Errorf("the selected pack `claude` has no readable pack.toml under YOLO_PACK_ROOT.\n%s\n\n"+
 			"This is issue #44's symptom exactly: the launch believes it delivered the "+
 			"declarations and the jail finds nothing, so it boots with no agent and no "+
 			"guardrails while looking like a working jail.", res.stdout)

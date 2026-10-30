@@ -60,6 +60,11 @@ func TestSelectedOrdinaryEmptyPackSealActualRuntimeInputs(t *testing.T) {
 	for dest, src := range sealedBindSources(argv) {
 		if dest == root {
 			files, err := filepath.Glob(filepath.Join(src, "*", "pack.json"))
+			tomlFiles, tomlErr := filepath.Glob(filepath.Join(src, "*", "pack.toml"))
+			files = append(files, tomlFiles...)
+			if err == nil {
+				err = tomlErr
+			}
 			if err != nil || len(files) != 0 {
 				t.Fatalf("owner/unrelated manifests entered producer: %v %v", files, err)
 			}

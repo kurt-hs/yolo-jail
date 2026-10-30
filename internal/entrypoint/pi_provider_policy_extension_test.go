@@ -30,8 +30,7 @@ func TestShippedPiPackDeliversTheProviderPolicyExtension(t *testing.T) {
 	p := shippedPiPack(t)
 	var found bool
 	for _, c := range p.Decl.Contributions() {
-		if c.Kind == packdecl.KindFiles && c.From == "extensions/yolo-provider-policy.js" &&
-			c.Into == ".pi/agent/extensions/yolo-provider-policy.js" {
+		if c.Kind == packdecl.KindFiles && c.Into == ".pi/agent/extensions/yolo-provider-policy.js" {
 			found = true
 		}
 	}
@@ -211,7 +210,7 @@ type piPolicyRun struct {
 func runPiPolicyExtension(t *testing.T, env []string, extra ...map[string]string) piPolicyRun {
 	t.Helper()
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-provider-policy.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-provider-policy.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +446,7 @@ func TestPiSubagentsChildrenLoadTheProviderPolicy(t *testing.T) {
 			"launch planner was not asked; set YOLO_TEST_PI_SUBAGENTS to a checkout to run this", src)
 	}
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-provider-policy.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-provider-policy.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +539,7 @@ console.log("RESULT " + JSON.stringify(out));
 func TestPiProviderPolicyUnderPisOwnRuntime(t *testing.T) {
 	pkg := installedPiPackage(t)
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-provider-policy.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-provider-policy.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1211,7 +1211,7 @@ tool must be pointed at the dir, **its own pack does it**, never core:
 
 - **pi**: pi-subagents defaults its worktrees to `os.tmpdir()`, the per-launch class, which makes it
   the one shipped workflow tool that needed a change. The pack's extension
-  (`packs/pi/extensions/yolo-durable-worktrees.js`) sets `worktreeBaseDir` in
+  (`packs/pi/home/.pi/agent/extensions/yolo-durable-worktrees.js`) sets `worktreeBaseDir` in
   `~/.pi/agent/extensions/subagent/config.json` to `$YOLO_DURABLE_DIR/worktrees/pi-subagents` when
   that is unset and the variable is set ([DS-D4](#DS-D4), [DS-D23](#DS-D23)). Not a pack `env`
   value, which is literal and cannot spell a per-backend workspace path, and not
@@ -1710,7 +1710,7 @@ only place the values themselves are stated.
 | The real launch lock | one host-side `flock` per workspace, under the state dir's `locks/` | `internal/cli/run/flock.go` |
 | Durable dir and its variable | `<workspace>/.yolo/durable` (`/workspace/.yolo/durable` in a container jail), `YOLO_DURABLE_DIR`; worktrees under `worktrees/` | `durable.DirName`, `durable.EnvVar`, `durable.ContainerJailPath`, `durable.WorktreesDir` |
 | Durable-dir report budgets | size walk 2 s; `yolo check`'s section 10 s; at most 1000 registrations a scan; admin files read 4 KiB at most; directories read in batches of 256 | `durable.WalkBudget`, `durableCheckBudget`, `internal/durable/report.go` (`maxRegistrations`, `adminFileCap`, `readDirBatch`) |
-| pi-subagents' durable base | `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, as `worktreeBaseDir` in `~/.pi/agent/extensions/subagent/config.json` | `packs/pi/extensions/yolo-durable-worktrees.js` |
+| pi-subagents' durable base | `$YOLO_DURABLE_DIR/worktrees/pi-subagents`, as `worktreeBaseDir` in `~/.pi/agent/extensions/subagent/config.json` | `packs/pi/home/.pi/agent/extensions/yolo-durable-worktrees.js` |
 | Its reaper | at most hourly, `pi-worktree-*` trees idle past 24 h; report `.yolo-reap.json` and rate limit `.yolo-reap.stamp` in that directory | `REAP_INTERVAL_MS` in the extension, `worktreereap.DefaultFloor`, `worktreereap.ReportName`, `worktreereap.StampName` |
 | Durable size record | `<workspace>/.yolo/durable-size.json`, the last complete count, jail-only | `durable.SizeRecordName`, `durable.CountMain` |
 | Storage-class section heading | `## Storage classes: what survives a restart` | `jailcontent.persistenceHeading` |

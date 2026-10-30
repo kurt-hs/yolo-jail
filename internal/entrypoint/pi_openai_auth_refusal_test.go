@@ -150,7 +150,7 @@ console.log(JSON.stringify({
 func runPiCodexRefusal(t *testing.T, route piRoute, list []byte, allJS, compatJS string, probe ...string) piCodexRun {
 	t.Helper()
 	p := shippedPiPack(t)
-	source, err := os.ReadFile(filepath.Join(p.Root, "extensions", "yolo-openai-auth.js"))
+	source, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/yolo-openai-auth.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +436,7 @@ func TestPisTwoRefusalsAreWordedAlike(t *testing.T) {
 	fn := regexp.MustCompile(`(?s)\nfunction refusal\(provider, id, listed\) \{\n.*?\n\}\n`)
 	var first string
 	for _, file := range []string{"yolo-model-lists.js", "yolo-openai-auth.js"} {
-		raw, err := os.ReadFile(filepath.Join(p.Root, "extensions", file))
+		raw, err := os.ReadFile(movedShippedFile(t, p, ".pi/agent/extensions/"+file))
 		if err != nil {
 			t.Fatal(err)
 		}

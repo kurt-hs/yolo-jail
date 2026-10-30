@@ -117,7 +117,7 @@ regex in bash 5.3 on the host:
 | `1.0.103` | match, `1.0.103` |
 
 The launch fails closed either way, because 1.0.103 is above the 1.0.93 threshold in
-[`packs/copilot/compatibility.json`](../../packs/copilot/compatibility.json). Only the message is
+[`packs/copilot/home/.config/yolo-program-compatibility/copilot.json`](../../packs/copilot/home/.config/yolo-program-compatibility/copilot.json). Only the message is
 wrong. The user sees "cannot parse … repair its declared version probe" instead of the intended
 refusal, which names [issue #5085](https://github.com/github/copilot-cli/issues/5085) and the
 container backends. The unit fixtures pass bare versions, so none of them carries the trailing

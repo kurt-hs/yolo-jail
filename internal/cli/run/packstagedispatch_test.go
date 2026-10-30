@@ -16,6 +16,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/hostfloor/floortest"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -118,7 +119,7 @@ func TestPacksAreStagedBeforeBackendDispatch(t *testing.T) {
 				"LoadJailPacks would find nothing and every pack loop would run over an empty list")
 			return 0
 		}
-		manifest := filepath.Join(packRoot, "_official", "claude", "pack.json")
+		manifest := filepath.Join(packRoot, "_official", "claude", packdecl.ManifestTOMLName)
 		if _, err := os.Stat(manifest); err != nil {
 			staged, _ := os.ReadDir(packRoot)
 			var names []string

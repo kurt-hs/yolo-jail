@@ -19,6 +19,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
 // piSubagentsOptIn is the variable the test pack gates its flag behind.
@@ -39,7 +41,10 @@ func launchComputedPackDir(t *testing.T) string {
 	if err := os.CopyFS(dir, os.DirFS(shippedPiPackDir)); err != nil {
 		t.Fatal(err)
 	}
-	manifest := filepath.Join(dir, "pack.json")
+	manifest := packManifestFile(t, dir)
+	if filepath.Base(manifest) != packdecl.ManifestTOMLName {
+		t.Fatalf("the shipped pi pack's manifest is %s, not %s; this fixture edits TOML", manifest, packdecl.ManifestTOMLName)
+	}
 	data, err := os.ReadFile(manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -47,15 +52,46 @@ func launchComputedPackDir(t *testing.T) string {
 	if strings.Contains(string(data), "launch_computed") {
 		t.Fatal("the shipped pi pack declares launch_computed again; the fixture would double it")
 	}
-	if !strings.HasPrefix(string(data), "{\n") {
-		t.Fatal("the shipped pi pack.json no longer opens with a line of its own")
-	}
-	block := "{\n  \"launch_computed\": {\"pi\": [{\"key\": \"subagents\", \"argv\": [\"" + piSubagentsFlag +
-		"\", \"{value}\"], \"opt_in\": \"" + piSubagentsOptIn + "\"}]},\n"
-	if err := os.WriteFile(manifest, []byte(block+string(data)[2:]), 0o644); err != nil {
+	// A root-table key, so it goes ahead of the manifest's first table header.
+	block := "launch_computed.pi = [{ key = \"subagents\", argv = [\"" + piSubagentsFlag +
+		"\", \"{value}\"], opt_in = \"" + piSubagentsOptIn + "\" }]\n"
+	if err := os.WriteFile(manifest, []byte(block+string(data)), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if m := decodePackManifestFile(t, manifest); len(m.LaunchComputedByBin["pi"]) != 1 {
+		t.Fatalf("the fixture's launch_computed did not decode: %+v", m.LaunchComputedByBin)
+	}
 	return dir
+}
+
+// packManifestFile is the manifest a pack directory holds: its pack.toml, or a legacy pack.json.
+func packManifestFile(t *testing.T, dir string) string {
+	t.Helper()
+	for _, name := range []string{packdecl.ManifestTOMLName, packdecl.ManifestLegacyJSONName} {
+		if p := filepath.Join(dir, name); fileExists(p) {
+			return p
+		}
+	}
+	t.Fatalf("%s holds no pack manifest", dir)
+	return ""
+}
+
+// decodePackManifestFile decodes the manifest at path in the format its name says.
+func decodePackManifestFile(t *testing.T, path string) *packdecl.Manifest {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decode := packdecl.Decode
+	if filepath.Base(path) == packdecl.ManifestTOMLName {
+		decode = packdecl.DecodeTOML
+	}
+	m, problems := decode(data)
+	if len(problems) > 0 {
+		t.Fatalf("%s does not decode: %v", path, problems)
+	}
+	return m
 }
 
 // withComputedPack rewrites cfg's bare "pi" pack, its last, into the test pack under the name pi.

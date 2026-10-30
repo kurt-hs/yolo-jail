@@ -1,0 +1,52 @@
+name = "agy"
+
+# Where the install hint's name came from, checked 2026-10-02. A cask, so "brew-cask".
+#   brew-cask: https://formulae.brew.sh/api/cask/antigravity-cli.json (binary artifact `antigravity`, linked as `agy`)
+[[program]]
+bin = "agy"
+capabilities = ["web_search"]
+install = { default = false, brew-cask = "antigravity-cli" }
+# A version probe answers at once (pi-extension-store-builds.md XB-D24, XB-D51): the
+# word the per-pack install matrix runs (integration/agents_test.go).
+probe_args = ["--version"]
+update = ["update"]
+url = "https://antigravity.google/cli/install.sh"
+via = "installer"
+
+[[briefing]]
+after = "host:.gemini/config/AGENTS.md"
+agent = "agy"
+into = ".gemini/config/AGENTS.md"
+
+[[skills]]
+agent = "agy"
+into = ".gemini/config/skills"
+project_dirs = [".agents/skills"]
+
+[[config]]
+config = [{ agent = "agy", defaults = { mcpServers = {} }, mode = "computed", name = "mcp", path = "~/.gemini/antigravity-cli/mcp_config.json" }]
+
+[[config]]
+config = [
+  { agent = "agy", defaults = { statusLine = { command = "yolo internal footer --agent agy --login 'Google AI subscription' --template 'yolo: {yolo.billing} · {yolo.notch}'", stack_with_default = true, type = "command" } }, name = "settings", path = "~/.gemini/antigravity-cli/settings.json" },
+  { agent = "agy", name = "onboarding", path = "~/.gemini/antigravity-cli/cache/onboarding.json" },
+]
+
+[[autonomy]]
+autonomous.config = [{ agent = "agy", managed = { permissionMode = "allow", trustedWorkspaces = ["/workspace"] }, name = "settings", path = "~/.gemini/antigravity-cli/settings.json" }]
+autonomous.launch = [{ bin = "agy", flags = ["--dangerously-skip-permissions"] }]
+guarded.config = [{ agent = "agy", managed = { toolPermission = "strict" }, name = "settings", path = "~/.gemini/antigravity-cli/settings.json" }]
+replace = true
+
+[[state]]
+at = ".gemini"
+
+[[state]]
+at = ".gemini-shared-credentials"
+because = "identity/credential state shared across workspaces"
+scope = "machine"
+
+[[hook]]
+at = ".gemini-shared-credentials"
+from = ".gemini/antigravity-cli/antigravity-oauth-token"
+hook = "shared_credentials"

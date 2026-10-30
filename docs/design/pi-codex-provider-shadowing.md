@@ -161,7 +161,7 @@ Pi has two completely separate OpenAI provider implementations in `@earendil-wor
 | `openai-codex` | `openaiCodexProvider()` | `openai-codex-responses` | OAuth JWT (`auth.json` via `yolo-openai-auth.js`) | `https://chatgpt.com/backend-api`, requests to `…/codex/responses` |
 | `openai` | `openaiProvider()` | `openai-responses` | API Key (`OPENAI_API_KEY`) | `https://api.openai.com/v1` |
 
-yolo's extension, [`packs/pi/extensions/yolo-openai-auth.js`](../../packs/pi/extensions/yolo-openai-auth.js),
+yolo's extension, [`packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js),
 re-registers `openai-codex` with `pi.registerProvider`. Since `e2f7bb89` it registers the whole
 provider, not only the login:
 
@@ -571,7 +571,7 @@ installed in the jail, and oh-omp 0.15.3's linux-x64 binary fetched with `npm pa
 - **Not removing the wire-bridge endpoint from `packs/codex-auth`:** Other agents (e.g. Claude
   Code via `wire-bridge`) rely on the `openai-responses` endpoint declaration to target ChatGPT's
   backend.
-- **Not redesigning Pi's OAuth extension:** `packs/pi/extensions/yolo-openai-auth.js` registers
+- **Not redesigning Pi's OAuth extension:** `packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js` registers
   `openai-codex` with Pi's own `openai-codex-responses` wire and the broker-backed OAuth
   ([§2.2](#22-pi-pi-coding-agent)), and nothing here changes it.
 

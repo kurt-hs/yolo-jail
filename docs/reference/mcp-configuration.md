@@ -8,7 +8,7 @@ covers:
   - internal/entrypoint/mcp.go
   - internal/packload/mcpcompose.go
   - packs/chrome-devtools/pack.json
-  - packs/chrome-devtools/bin/chrome-devtools-mcp-wrapper
+  - packs/chrome-devtools/home/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper
   - internal/jailcontent/lspplugin.go
   - internal/cli/applyhostlspplugin.go
   - internal/cli/run/prepare.go

@@ -31,6 +31,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 	"github.com/mschulkind-oss/yolo-jail/internal/render"
 )
@@ -940,16 +941,19 @@ func TestOwnedHostResetTruncatesToTheConfiguredPacksDeclaration(t *testing.T) {
 	if err := os.CopyFS(fork, os.DirFS(claude.Root)); err != nil {
 		t.Fatal(err)
 	}
-	manifest := filepath.Join(fork, "pack.json")
+	manifest := packManifestFile(t, fork)
 	raw := mustReadFile(t, manifest)
-	const shipped = `"defaultMode": "default"`
+	shipped, edited := `"defaultMode": "default"`, `"defaultMode": "plan"`
+	if filepath.Base(manifest) == packdecl.ManifestTOMLName {
+		shipped, edited = `defaultMode = "default"`, `defaultMode = "plan"`
+	}
 	if strings.Count(raw, shipped) != 1 {
 		t.Fatalf("fixture: the shipped guarded defaultMode is not where this test edits it")
 	}
 	if err := os.Chmod(manifest, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, manifest, strings.Replace(raw, shipped, `"defaultMode": "plan"`, 1))
+	writeFile(t, manifest, strings.Replace(raw, shipped, edited, 1))
 	// The retired key refuses the composition, so the reset stops at the truncation this pins.
 	writeFile(t, filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "config.jsonc"),
 		`{"packs":["`+fork+`"],"host_management":"own","use_profiles":{"claude":"x"}}`)

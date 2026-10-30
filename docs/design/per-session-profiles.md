@@ -110,11 +110,11 @@ detached runner that inherits the parent's environment; neither goes through yol
 | Reader | Reads | When |
 | :--- | :--- | :--- |
 | pi, at start | J1, J2; H2 and H3 through its launcher | once; J1 again only on `/reload`; J2 again on a model-runtime refresh |
-| yolo's pi extensions, at load | J3, J4 at a hard-coded `~/.pi/agent` path ([`yolo-model-lists.js:36`](../../packs/pi/extensions/yolo-model-lists.js#L36), [`yolo-openai-auth.js:110`](../../packs/pi/extensions/yolo-openai-auth.js#L110)) | at every pi start **and every child**, which loads extensions afresh |
+| yolo's pi extensions, at load | J3, J4 at a hard-coded `~/.pi/agent` path ([`yolo-model-lists.js:36`](../../packs/pi/home/.pi/agent/extensions/yolo-model-lists.js#L36), [`yolo-openai-auth.js:110`](../../packs/pi/home/.pi/agent/extensions/yolo-openai-auth.js#L110)) | at every pi start **and every child**, which loads extensions afresh |
 | pi-subagents, per spawn | J1's `subagents` block | **every subagent call**: `discoverAgents` re-reads `settings.json` whenever its size or mtime changed |
 | each child session | J1, J2, extensions from `getAgentDir()` | at its own start |
 | a new `pi` typed later in the same session | H2, H3, then J1-J5 | at its start |
-| the provider policy | `YOLO_PI_PROVIDER_POLICY` from the process environment ([`yolo-provider-policy.js:169-181`](../../packs/pi/extensions/yolo-provider-policy.js#L169-L181)) | inherited, so a child keeps its **parent's** |
+| the provider policy | `YOLO_PI_PROVIDER_POLICY` from the process environment ([`yolo-provider-policy.js:169-181`](../../packs/pi/home/.pi/agent/extensions/yolo-provider-policy.js#L169-L181)) | inherited, so a child keeps its **parent's** |
 
 ### 2.3 The deadlock, step by step
 

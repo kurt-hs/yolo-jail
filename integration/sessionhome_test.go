@@ -36,11 +36,11 @@ const sessionHomeProbeTemplate = `printf 'DIR=%s\n' "${AGENT_DIR_VAR-unset}"; ` 
 // names, read from the pack rather than spelled here.
 func sessionHomeProbe(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "packs", "pi", "pack.json"))
+	data, err := os.ReadFile(filepath.Join("..", "packs", "pi", packdecl.ManifestTOMLName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, problems := packdecl.Decode(data)
+	m, problems := packdecl.DecodeTOML(data)
 	if len(problems) > 0 || len(m.SessionHomes()) != 1 {
 		t.Fatalf("the shipped pi pack must declare one session home: %v", problems)
 	}

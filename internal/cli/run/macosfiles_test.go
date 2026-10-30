@@ -71,7 +71,7 @@ func TestPiExtensionsReachAMacosUserHome(t *testing.T) {
 			t.Errorf("~/%s is not in the macos-user home: %v", rel, err)
 			continue
 		}
-		want, err := os.ReadFile(filepath.Join(pi.Root, "extensions", filepath.Base(rel)))
+		want, err := os.ReadFile(filepath.Join(pi.Root, "home", filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatal(err)
 		}

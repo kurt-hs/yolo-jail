@@ -167,7 +167,7 @@ true`
 	//
 	// ⚠ THE CAUSING PACK IS DELIBERATELY NOT PINNED, and it used to be. This asserted the
 	// exact string "+ wire-bridge (needed by cerebras: claude selected)" and went red when
-	// `e0d62605` (the OMP / Codex-Claude bridge) gave packs/claude/pack.json its own
+	// `e0d62605` (the OMP / Codex-Claude bridge) gave packs/claude/pack.toml its own
 	// unconditional `needs: wire-bridge`. Both edges are now real — claude's unconditional
 	// one and cerebras's `when_bins: [claude, copilot]` — so which one the resolver reports
 	// is a fact about pack topology, not about this behaviour, and it moved once legitimately

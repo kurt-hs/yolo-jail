@@ -2,6 +2,6 @@
 # line relative to packs/. embed.FS cannot carry a mode, so this list is how a shipped
 # pack's script reaches the jail and `yolo host apply` executable (packload.EmbeddedExecutablesFile).
 # TestEmbeddedExecutablesMatchTheTree fails when this and the on-disk modes disagree.
-chrome-devtools/bin/chrome-devtools-mcp-wrapper
+chrome-devtools/home/.local/share/yolo-chrome-devtools/chrome-devtools-mcp-wrapper
 hello-daemon/loopholes/hello-daemon/bin/hello
 muse-planner/home/.pi/agent/bin/muse-planner-exec.sh

@@ -186,7 +186,7 @@ func TestPiOpenAIAuthInsideAJailKeepsTheClientsMessage(t *testing.T) {
 // is JavaScript, so it cannot import the constants, and a renamed variable would otherwise
 // leave it testing for a route that no launch sets any more.
 func TestPiOpenAIAuthExtensionSpellsTheClientsRouteVariables(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join(shippedPiPack(t).Root, "extensions", "yolo-openai-auth.js"))
+	source, err := os.ReadFile(movedShippedFile(t, shippedPiPack(t), ".pi/agent/extensions/yolo-openai-auth.js"))
 	if err != nil {
 		t.Fatal(err)
 	}

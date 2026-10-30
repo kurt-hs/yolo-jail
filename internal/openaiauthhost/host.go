@@ -301,7 +301,7 @@ func opencodeHostAuthPath(d deps) string {
 // opencodeHostLoginNotice is the line `yolo host` prints for opencode on the ChatGPT subscription
 // while the user's own opencode auth store does not hold yolo's view, or "". At the host yolo
 // never writes that store, so the shared login the launch just proved reaches opencode only once
-// the user picks it in /connect (packs/opencode/plugins/yolo-openai-auth.js): until then opencode
+// the user picks it in /connect (packs/opencode/home/.config/opencode/plugins/yolo-openai-auth.js): until then opencode
 // runs on its own ChatGPT login, or, with none, on the derive's non-key, and its requests fail.
 // The launch says which, rather than leave a proved shared login to read as the one in use.
 func opencodeHostLoginNotice(d deps) string {
