@@ -53,7 +53,7 @@ func hostCapabilityLaunch(cfg *jsonx.OrderedMap, agent, typed string) *config.Ca
 func refuseHostUnmetCapabilities(errw io.Writer, agent, typed string) bool {
 	cfg := config.UserScopeConfigOrEmpty()
 	if probs := config.RequiredCapabilitiesProblems(cfg); len(probs) > 0 {
-		at := "in " + paths.UserConfigPath()
+		at := "in " + paths.UserConfigDisplayPath()
 		if where := capabilityKeyLocations(probs); len(where) > 0 {
 			at = "at " + strings.Join(where, " and at ")
 		}

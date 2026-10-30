@@ -133,7 +133,7 @@ func localClonesProblems(cfg *jsonx.OrderedMap) []string {
 	if !present || v == nil {
 		return nil
 	}
-	where := paths.UserConfigPath()
+	where := paths.UserConfigDisplayPath()
 	list, ok := v.([]any)
 	if !ok {
 		return []string{"config." + localClonesKey + ": expected a list of paths (got " + pyReprValue(v) +
@@ -197,7 +197,7 @@ func validateLocalClones(config *jsonx.OrderedMap, workspace string, errs *[]str
 	if wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...); err == nil && wsCfg != nil {
 		if wsValue, atWorkspace := wsCfg.Get(localClonesKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(localClonesKey) {
 			add(errs, "config."+localClonesKey+": user-scope only — it points yolo at clones on this machine, and a "+
-				"workspace config must not point yolo at host paths. Move it to "+paths.UserConfigPath()+
+				"workspace config must not point yolo at host paths. Move it to "+paths.UserConfigDisplayPath()+
 				", or remove it from the workspace config.")
 		}
 	}

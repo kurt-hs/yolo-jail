@@ -100,7 +100,7 @@ func packPrepare(args []string, out, errw io.Writer, color bool) int {
 		}
 		current, err := currentPreparationTrees(state)
 		if err != nil {
-			fmt.Fprintf(errw, "yolo pack prepare start: %v — repair %s, then run `yolo pack prepare start` again\n", err, paths.UserConfigPath())
+			fmt.Fprintf(errw, "yolo pack prepare start: %v — repair %s, then run `yolo pack prepare start` again\n", err, paths.UserConfigDisplayPath())
 			return 1
 		}
 		state = refreshPreparationSubscriptions(state, current)

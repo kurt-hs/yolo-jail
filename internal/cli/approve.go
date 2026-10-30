@@ -140,7 +140,7 @@ func approveFailure(err error, errs io.Writer) int {
 	case errors.Is(err, brokerstore.ErrUnknownID):
 		code, next = approveExitUnknownID, "run `yolo approve` to list the current ids; an ended record is kept 7 days"
 	case errors.Is(err, brokerstore.ErrRefusedByPolicy):
-		code, next = approveExitPolicy, "Allow it once or choose a shorter --for; to widen the set, edit its entry under `brokered` in "+paths.UserConfigPath()
+		code, next = approveExitPolicy, "Allow it once or choose a shorter --for; to widen the set, edit its entry under `brokered` in "+paths.UserConfigDisplayPath()
 	case errors.Is(err, brokerstore.ErrNotConfirmed):
 		code, next = approveExitNotConfirmed, "deny it with `yolo approve <id> --deny`, or let it expire; if its jail still runs, restart it and have the agent re-run its command to file a new request"
 	}

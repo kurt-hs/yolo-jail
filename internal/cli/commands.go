@@ -1387,7 +1387,7 @@ func macosUserLaunchMode() (macosuser.Mode, string) {
 	mode, err := macosuser.ParseMode(v)
 	if err != nil {
 		return macosuser.ModeAccount, err.Error() + `; set macos_user_mode to "self" or "account" in ` +
-			paths.UserConfigPath() + `, or remove it to launch as the separate sandbox account`
+			paths.UserConfigDisplayPath() + `, or remove it to launch as the separate sandbox account`
 	}
 	return mode, ""
 }

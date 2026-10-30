@@ -1634,7 +1634,7 @@ func applySealed(out, errw io.Writer, color bool) int {
 		refusals = append(refusals,
 			"`host_management` is unset, so who owns the config files in your real home is "+
 				"undeclared (it behaves as \"none\"). Write \"none\" or \"own\" into "+
-				paths.UserConfigPath()+" to seal; `yolo config-ref` says what each one means.")
+				paths.UserConfigDisplayPath()+" to seal; `yolo config-ref` says what each one means.")
 	}
 
 	if len(refusals) > 0 {

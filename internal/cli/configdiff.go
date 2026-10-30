@@ -178,7 +178,7 @@ func refuseHostSideWrite(t configTarget, cmd string, force bool, errw io.Writer)
 			"you made it and there is nothing to fold. Set `\"host_management\": \"own\"` in "+
 			"%s to keep one; for a jail's edits, run `yolo config capture` inside the jail that "+
 			"owns the workspace.\n",
-			state, prettyHomePath(t.store.Home, paths.UserConfigPath()))
+			state, prettyHomePath(t.store.Home, paths.UserConfigDisplayPath()))
 		return true
 	}
 	if force {

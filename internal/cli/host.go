@@ -2037,7 +2037,7 @@ func (c *hostComposition) credentialRemedy(claimants []string) string {
 		}
 		return fmt.Sprintf("No declared profile selects %s: declare one under `profiles` in %s "+
 			"(for example `%q: {\"provider\": %q}`), then %s",
-			strings.Join(claimants, " or "), paths.UserConfigPath(), example, example, action)
+			strings.Join(claimants, " or "), paths.UserConfigDisplayPath(), example, example, action)
 	}
 	// The set kept, the claiming profile added (AP-D19), whenever a widened set composes.
 	for _, name := range candidates {
@@ -4101,7 +4101,7 @@ func hostWrappers(args []string, out, errw io.Writer, color bool) int {
 			"when `host_management` is \"own\", so there is usually nothing to set.\n"+
 			"To force them off, put `\"host_wrappers\": false` in %s yourself; an explicit value "+
 			"always wins over the default.\nRun `yolo host wrappers status` to see what is in "+
-			"effect.\n", verb, paths.UserConfigPath())
+			"effect.\n", verb, paths.UserConfigDisplayPath())
 		return 2
 	default:
 		fmt.Fprintf(errw, "yolo host wrappers: unknown verb %q (want status)\n", verb)
@@ -4112,7 +4112,7 @@ func hostWrappers(args []string, out, errw io.Writer, color bool) int {
 func hostWrappersStatus(pr richtext.Printer, errw io.Writer) int {
 	dir := paths.WrapDir()
 	enabled := config.HostWrappersEnabled()
-	pr.Printf("[bold]host_wrappers[/bold]  %v  [dim]%s[/dim]", enabled, paths.UserConfigPath())
+	pr.Printf("[bold]host_wrappers[/bold]  %v  [dim]%s[/dim]", enabled, paths.UserConfigDisplayPath())
 	pr.Printf("[bold]wrapper dir[/bold]    %s", dir)
 
 	entries, err := os.ReadDir(dir)

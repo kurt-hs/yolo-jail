@@ -73,7 +73,7 @@ func TestConvertLaterRefusedInAWorkspaceFile(t *testing.T) {
 	}
 	errs, _ := ValidateConfig(cfg, ws, nil)
 	if len(errs) != 1 || !strings.Contains(errs[0], "config.convert_later: user-scope only") ||
-		!strings.Contains(errs[0], "config.jsonc") {
+		!strings.Contains(errs[0], "config.toml") {
 		t.Fatalf("errors = %v, want one user-scope refusal naming the user file", errs)
 	}
 }

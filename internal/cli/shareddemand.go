@@ -470,7 +470,7 @@ func resolveDemandFork(ctx context.Context, d preparationDemand) (packload.Fork,
 		return packload.Fork{}, release, contention
 	}
 	if problems := sel.problems(); len(problems) > 0 {
-		return packload.Fork{}, release, fmt.Errorf("current user selection is incomplete — repair %s, then retry `yolo --update`", paths.UserConfigPath())
+		return packload.Fork{}, release, fmt.Errorf("current user selection is incomplete — repair %s, then retry `yolo --update`", paths.UserConfigDisplayPath())
 	}
 	forks := append(packload.Forks(sel.packs), packload.PatchedTrees(sel.packs)...)
 	for _, f := range forks {

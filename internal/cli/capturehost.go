@@ -186,7 +186,7 @@ func captureHostWith(args []string, out, errw io.Writer, color bool, act capture
 			// this run never read.
 			fmt.Fprintf(errw, "  Your config could not be read, so the programs a capture takes are "+
 				"not known: %v\n  Fix what it names in %s, then run `yolo capture <program>` for a "+
-				"program your packs install.\n", sel.loadErr, paths.UserConfigPath())
+				"program your packs install.\n", sel.loadErr, paths.UserConfigDisplayPath())
 			return 2
 		}
 		fmt.Fprintf(errw, "  %s\n", captureChoicesStep(sel.packs, ""))
@@ -538,14 +538,14 @@ func captureChoicesStep(packs []*packload.Pack, bin string) string {
 				switch in.Kind {
 				case packdeclNativeKind:
 					return fmt.Sprintf("The %s pack yolo ships installs %s: add %q to \"packs\" in %s, "+
-						"then: yolo capture %s", p.Name, bin, p.Name, paths.UserConfigPath(), bin)
+						"then: yolo capture %s", p.Name, bin, p.Name, paths.UserConfigDisplayPath(), bin)
 				case packdeclNPMKind:
 					// Not a capture's at all: the pack's launcher installs it from npm on first use,
 					// so the way to the program is selecting the pack and launching it. The list
 					// below would have named another program to capture.
 					return fmt.Sprintf("The %s pack yolo ships installs %s from npm, which a launch "+
 						"does itself, so it needs no capture: add %q to \"packs\" in %s, then: "+
-						"yolo -- %s", p.Name, bin, p.Name, paths.UserConfigPath(), bin)
+						"yolo -- %s", p.Name, bin, p.Name, paths.UserConfigDisplayPath(), bin)
 				}
 			}
 		}
@@ -616,7 +616,7 @@ func resolveCaptureTarget(bin string) (*captureTarget, error) {
 	sel := selectConfiguredHostPacks()
 	if sel.loadErr != nil {
 		return nil, fmt.Errorf("%w\n  Fix what it names in %s, then: yolo capture %s", sel.loadErr,
-			paths.UserConfigPath(), bin)
+			paths.UserConfigDisplayPath(), bin)
 	}
 	var refusals, npmBins []string
 	// A git pack the pack store does not have (never `yolo pack install`ed), a local one whose

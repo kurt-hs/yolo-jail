@@ -286,7 +286,7 @@ func userGrantsOf(user *jsonx.OrderedMap, source string) []brokerscope.Grant {
 func BrokerGrantAdvice(source string) string {
 	return "To let every workspace read its own approved remotes through it, add {\"kind\": \"read\", " +
 		"\"repo\": \"*\"} to the list at `" + brokeredGrantsPath(source) + "` in your user config, " +
-		paths.UserConfigPath() + " (written \"brokered\": {\"" + source + "\": {\"grants\": [{\"kind\": " +
+		paths.UserConfigDisplayPath() + " (written \"brokered\": {\"" + source + "\": {\"grants\": [{\"kind\": " +
 		"\"read\", \"repo\": \"*\"}]}} where it has no `brokered` key), then run `yolo config apply` on " +
 		"the host, in the workspace, and approve the grant there."
 }
@@ -1038,7 +1038,7 @@ func validateBrokeredUserScope(errs, warns *[]string, edit ...*editValidationCon
 				"repository in the workspace config of the project that needs it, " +
 				WorkspaceConfigName + ", or " + WorkspaceLocalConfigName + " beside it for what the " +
 				"project should not commit, and approve it at that project's next launch. Then " +
-				"remove this key from " + paths.UserConfigPath() + ".")
+				"remove this key from " + paths.UserConfigDisplayPath() + ".")
 		}
 		if setsV, has := src.Get(brokeredSetsKey); has && setsV != nil {
 			_, problems := brokeredSetsValue(path+"."+brokeredSetsKey, setsV)
@@ -1206,7 +1206,7 @@ func brokeredGrantProblemsWithUser(v any, resolver LoopholeResolver, user *jsonx
 			if !inList(allowed, kind) {
 				userKind = append(userKind, entryPath+"."+brokeredGrantKindKey+": your user config does not "+
 					"allow a workspace to hold a "+pyReprValue(kind)+" grant. To allow it, add "+
-					pyReprValue(kind)+" to `"+brokeredGrantKindsPath(name)+"` in "+paths.UserConfigPath()+
+					pyReprValue(kind)+" to `"+brokeredGrantKindsPath(name)+"` in "+paths.UserConfigDisplayPath()+
 					"; otherwise remove this grant.")
 			}
 		}
@@ -1276,13 +1276,13 @@ func brokeredShapeProblems(v any) []string {
 		if _, has := src.Get(brokeredSetsKey); has {
 			out = append(out, srcPath+"."+brokeredSetsKey+": user scope only — a set decides what a "+
 				"write grant hands over, and this workspace is the agent's to edit, so a workspace may "+
-				"not name one (BB-P9). Put it in the user config, "+paths.UserConfigPath()+", and remove "+
+				"not name one (BB-P9). Put it in the user config, "+paths.UserConfigDisplayPath()+", and remove "+
 				"this key.")
 		}
 		if _, has := src.Get(brokeredGrantKindsKey); has {
 			out = append(out, srcPath+"."+brokeredGrantKindsKey+": user scope only — it lists the kinds of "+
 				"grant a workspace may hold, and this workspace is the agent's to edit, so it may not "+
-				"allow itself one (BB-D96). Put it in the user config, "+paths.UserConfigPath()+", and "+
+				"allow itself one (BB-D96). Put it in the user config, "+paths.UserConfigDisplayPath()+", and "+
 				"remove this key.")
 		}
 		rv, _ := src.Get(brokeredReposKey)

@@ -214,7 +214,7 @@ func withoutBrokerSteps(labels []string, workspace string) string {
 // ships it, in the user config, which takes it out of every project.
 func WithoutBrokerStep(name string) string {
 	return "To launch without " + name + " instead, take the pack that ships it out of `packs` in " +
-		paths.UserConfigPath() + ": it runs whenever that pack is selected, in every project."
+		paths.UserConfigDisplayPath() + ": it runs whenever that pack is selected, in every project."
 }
 
 func (e *ChangedNonInteractiveError) Error() string {

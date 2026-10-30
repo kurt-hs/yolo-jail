@@ -189,7 +189,7 @@ func validateWorkspaceAllow(config *jsonx.OrderedMap, workspace string, errs *[]
 	}
 	add(errs, locatedAt(wsNode.key("allow"), fmt.Sprintf("config.allow: is in the workspace config, "+
 		"and `allow` is user-scope only: it is your ceiling on what a project may ask for, so a "+
-		"project cannot set it. Move it to %s, or remove it", paths.UserConfigPath())))
+		"project cannot set it. Move it to %s, or remove it", paths.UserConfigDisplayPath())))
 }
 
 // WritableMountMarker is the words every rendering of a writable mount at the gate carries, so

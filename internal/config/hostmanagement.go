@@ -167,7 +167,7 @@ func retiredHostManagementProblem() string {
 		`and leave those files as they are (` + "`yolo host apply --revert`" + ` takes out ` +
 		`the keys yolo wrote); "own" has yolo compose them whole from your packs (an owned ` +
 		`apply captures each key you keep by hand, and ` + "`yolo config promote`" + ` then ` +
-		`declares a captured key into your local pack). Set one in ` + paths.UserConfigPath() +
+		`declares a captured key into your local pack). Set one in ` + paths.UserConfigDisplayPath() +
 		`, or delete the key for "none".`
 }
 

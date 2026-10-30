@@ -54,7 +54,7 @@ import (
 func hostRevertRefusal(mode config.HostManagement) string {
 	switch mode {
 	case config.HostManagementOwn:
-		return "`host_management` is \"own\" in " + paths.UserConfigPath() + ", which says " +
+		return "`host_management` is \"own\" in " + paths.UserConfigDisplayPath() + ", which says " +
 			"these files are derived output, so the next apply would compose back every key a " +
 			"revert took out.\n" +
 			"  To withdraw yolo key by key, set the key to \"none\" (or delete it) and re-run " +

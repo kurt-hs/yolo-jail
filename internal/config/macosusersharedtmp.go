@@ -46,7 +46,7 @@ func validateMacosUserSharedTmp(config *jsonx.OrderedMap, workspace string, errs
 	}
 	if wsValue, atWorkspace := wsCfg.Get(macosUserSharedTmpKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(macosUserSharedTmpKey) {
 		add(errs, "config."+macosUserSharedTmpKey+": user-scope only — it opens the shared /tmp to "+
-			"every run-as-you macos-user launch, and it is read from "+paths.UserConfigPath()+
+			"every run-as-you macos-user launch, and it is read from "+paths.UserConfigDisplayPath()+
 			" alone, so a workspace value is never consulted. Move it there, or remove it.")
 	}
 }

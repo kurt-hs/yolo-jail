@@ -55,7 +55,7 @@ func TestValidateRefusesAWorkspaceHostFloorAndABadShape(t *testing.T) {
 	write(t, filepath.Join(ws, WorkspaceConfigName), `{"host_floor": false}`)
 	errs, _ := ValidateConfig(decode(t, `{"host_floor": false}`), ws, nil)
 	joined := strings.Join(errs, "\n")
-	for _, want := range []string{"config.host_floor: user-scope only", paths.UserConfigPath()} {
+	for _, want := range []string{"config.host_floor: user-scope only", paths.UserConfigDisplayPath()} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("errors lack %q:\n%s", want, joined)
 		}

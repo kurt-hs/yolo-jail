@@ -67,7 +67,7 @@ func validateMacosUserMode(config *jsonx.OrderedMap, workspace string, errs *[]s
 	}
 	if wsValue, atWorkspace := wsCfg.Get(macosUserModeKey); atWorkspace && wsValue != nil && WorkspaceUserScopeOnlyKey(macosUserModeKey) {
 		add(errs, "config."+macosUserModeKey+": user-scope only — it chooses the account every "+
-			"macos-user launch runs as, and it is read from "+paths.UserConfigPath()+" alone, so a "+
+			"macos-user launch runs as, and it is read from "+paths.UserConfigDisplayPath()+" alone, so a "+
 			"workspace value is never consulted. Move it there, or remove it.")
 	}
 }

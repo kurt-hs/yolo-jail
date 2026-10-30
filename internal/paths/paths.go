@@ -1266,6 +1266,21 @@ func UserConfigPath() string {
 	return p
 }
 
+// UserConfigDisplayPath is the user config file a MESSAGE should name: config.toml when it
+// exists or when no user config exists (the file a first write creates), config.jsonc or
+// config.json only when that is the live file. UserConfigPath above knows only the legacy
+// names and stays the legacy reader's path; a user-facing line uses this. On a TOML-beside-
+// legacy collision, which the reader refuses, it answers the TOML file.
+func UserConfigDisplayPath() string {
+	dir := filepath.Join(home(), ".config", "yolo-jail")
+	for _, n := range []string{UserConfigTOMLName, UserConfigLegacyJSONCName, UserConfigLegacyJSONName} {
+		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			return filepath.Join(dir, n)
+		}
+	}
+	return filepath.Join(dir, UserConfigTOMLName)
+}
+
 // LocalPackDir returns $HOME/.config/yolo-jail/local — the CONVENTIONAL LOCAL PACK: an
 // implicitly-included pack for the user's own skills and briefing prose, needing no `packs`
 // entry (roadmap.md §6a-2).

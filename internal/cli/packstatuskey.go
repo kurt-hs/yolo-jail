@@ -33,7 +33,7 @@ func packStatusKey(args []string, out, errw io.Writer, color bool) int {
 	sel := selectConfiguredHostPacks()
 	if sel.loadErr != nil {
 		fmt.Fprintf(errw, "yolo pack status: %v\n  fix what it names in %s, then run `yolo pack status %s` again\n",
-			sel.loadErr, paths.UserConfigPath(), key)
+			sel.loadErr, paths.UserConfigDisplayPath(), key)
 		return 1
 	}
 	forks := append(packload.Forks(sel.packs), packload.PatchedTrees(sel.packs)...)

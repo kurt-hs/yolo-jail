@@ -38,7 +38,7 @@ func TestCheckRefusesAWorkspaceProviderCredentialVariable(t *testing.T) {
 	o.sectionMergedConfig(r, merged, ws, empty, empty, nil, false)
 	got := stripANSI(buf.String())
 	for _, want := range []string{"[FAIL]", "config.providers.zai.api_key_env_name: user-scope only",
-		"move it to " + paths.UserConfigPath()} {
+		"move it to " + paths.UserConfigDisplayPath()} {
 		if !strings.Contains(got, want) {
 			t.Errorf("yolo check must refuse a workspace api_key_env_name (%q missing):\n%s", want, got)
 		}

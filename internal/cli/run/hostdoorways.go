@@ -314,7 +314,7 @@ func notOpenedWhy(set loopholes.Set, refused []launchservice.RefusedDoorway, nam
 		return fmt.Sprintf("which this launch does not open, because loophole %q is disabled: "+
 			"`yolo host --` opens its doorway for this agent once %s sets "+
 			"`\"loopholes\": {%q: {\"enabled\": true}}` (and the settings it needs, "+
-			"`yolo loopholes list` names them)", name, paths.UserConfigPath(), name)
+			"`yolo loopholes list` names them)", name, paths.UserConfigDisplayPath(), name)
 	}
 	if !lp.Active() {
 		why, _ := lp.InactiveReason()

@@ -442,5 +442,5 @@ func workspaceFenceRefusal(spec string, f mountFence) string {
 	return fmt.Sprintf("config.mounts: %q reaches %s, %s (%s). A workspace config may not "+
 		"mount it: the agent can edit that file, and the mount would carry it into the next "+
 		"launch. Remove the entry; the same entry in %s is allowed and disclosed",
-		spec, f.path, f.what, f.owner, paths.UserConfigPath())
+		spec, f.path, f.what, f.owner, paths.UserConfigDisplayPath())
 }

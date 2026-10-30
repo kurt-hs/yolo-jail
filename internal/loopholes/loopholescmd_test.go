@@ -47,7 +47,7 @@ func TestSetEnabledGlobalPrintsTheConfigKeyAndWritesNothing(t *testing.T) {
 			t.Errorf("%s --global wrote %v", tc.verb, entries)
 		}
 		got := errBuf.String()
-		for _, want := range []string{tc.verb, "loopholes", "myhole", "enabled", tc.value, "config.jsonc"} {
+		for _, want := range []string{tc.verb, "loopholes", "myhole", "enabled", tc.value, "config.toml", "yolo config set"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: message does not mention %q:\n%s", tc.verb, want, got)
 			}
@@ -57,7 +57,7 @@ func TestSetEnabledGlobalPrintsTheConfigKeyAndWritesNothing(t *testing.T) {
 		// `yolo loopholes enable|disable` paragraph). It used to direct people
 		// at the weaker, agent-editable workspace scope; the workspace may still be
 		// MENTIONED, but only as the weaker option.
-		if !strings.Contains(got, filepath.Join(".config", "yolo-jail", "config.jsonc")) {
+		if !strings.Contains(got, filepath.Join(".config", "yolo-jail", "config.toml")) {
 			t.Errorf("%s: the USER config is not named as the place to write it:\n%s", tc.verb, got)
 		}
 		if out.Len() != 0 {
@@ -441,5 +441,58 @@ func TestWorkspaceRefusalFallsBackToTheConfigFileTheLoaderReads(t *testing.T) {
 	reason := errBuf.String()
 	if want := "(from " + filepath.Join(ws, "yolo-jail.json") + ")"; !strings.Contains(reason, want) {
 		t.Errorf("refusal %q does not name the workspace's yolo-jail.json (want %q)", reason, want)
+	}
+}
+
+// TestSetEnabledGlobalNamesTheLiveUserConfigFile: the file `--global` names is the one the
+// reader reads (TOML when present or when none exists, JSONC only when that is the live file),
+// and the instruction is a verb that works on either format, never a JSONC snippet a TOML
+// config refuses.
+func TestSetEnabledGlobalNamesTheLiveUserConfigFile(t *testing.T) {
+	for _, tc := range []struct {
+		name, existing, want, notWant string
+	}{
+		{"toml only", "config.toml", "config.toml", "config.jsonc"},
+		{"jsonc only", "config.jsonc", "config.jsonc", "config.toml"},
+		{"neither", "", "config.toml", "config.jsonc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateDirs(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			dir := filepath.Join(home, ".config", "yolo-jail")
+			if tc.existing != "" {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, tc.existing), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var out, errBuf bytes.Buffer
+			deps := Deps{Out: &out, Err: &errBuf, Cwd: home, LoadUserConfig: func() *jsonx.OrderedMap {
+				m, err := json5.Decode([]byte(`{"loopholes": {"myhole": {"command": ["/bin/true"]}}}`))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return m.(*jsonx.OrderedMap)
+			}}
+			if rc := CmdSetEnabled(deps, "myhole", true, SetEnabledOptions{Workspace: home, Global: true}); rc != 1 {
+				t.Fatalf("rc = %d, want 1", rc)
+			}
+			got := errBuf.String()
+			if !strings.Contains(got, filepath.Join(dir, tc.want)) {
+				t.Errorf("does not name %s:\n%s", tc.want, got)
+			}
+			if strings.Contains(got, tc.notWant) {
+				t.Errorf("names %s, which is not the live file:\n%s", tc.notWant, got)
+			}
+			if strings.Contains(got, `"loopholes": {`) {
+				t.Errorf("prints a JSONC snippet a TOML config refuses:\n%s", got)
+			}
+			if !strings.Contains(got, "yolo config set loopholes.myhole.enabled true --user") {
+				t.Errorf("does not name the verb:\n%s", got)
+			}
+		})
 	}
 }

@@ -349,7 +349,7 @@ func TestCheckDepsUnresolvedStepNamesWhoCanAct(t *testing.T) {
 		{"not fetched", unresolvedPack{Name: "remote", NeedsInstall: true},
 			[]string{"`yolo pack install`"}},
 		{"shipped", unresolvedPack{Name: "claude", Shipped: true},
-			[]string{"is a yolo bug", "/issues", "drop claude from `packs` in " + paths.UserConfigPath()}},
+			[]string{"is a yolo bug", "/issues", "drop claude from `packs` in " + paths.UserConfigDisplayPath()}},
 		{"local pack", unresolvedPack{Name: "local", Implicit: true},
 			[]string{paths.LocalPackDir(), "`yolo pack lint " + paths.LocalPackDir() + "`"}},
 	} {

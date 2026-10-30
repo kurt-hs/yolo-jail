@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
@@ -138,7 +139,7 @@ func loopholesWithConfigAndBlock(deps Deps, includeDisabled bool) (Set, *jsonx.O
 		fromWorkspace bool
 		src           string
 	}{
-		{load(deps.LoadUserConfig), false, paths.UserConfigPath()},
+		{load(deps.LoadUserConfig), false, paths.UserConfigDisplayPath()},
 		// deps.LoadWorkspaceConfig collapses yolo-jail.jsonc and
 		// yolo-jail.local.jsonc, so the merged block cannot say which file an
 		// entry came from and the refusal used to blame the tracked file for a
@@ -294,7 +295,7 @@ func List(deps Deps) int {
 			"%s is selected implicitly when it exists", richtext.Escape(paths.LocalPackDir()))
 		p.Printf("  • [bold]config:[/bold] loopholes: block in %s "+
 			"(install-shaped keys are user-scope only; a workspace "+
-			"yolo-jail.jsonc may set enabled/jail_env)", richtext.Escape(paths.UserConfigPath()))
+			"yolo-jail.jsonc may set enabled/jail_env)", richtext.Escape(paths.UserConfigDisplayPath()))
 		return 0
 	}
 	for _, lh := range all {
@@ -589,7 +590,7 @@ func CmdSetEnabled(deps Deps, name string, enabled bool, opts SetEnabledOptions)
 		}
 		fmt.Fprintf(deps.Err, "yolo loopholes %s: no loophole named %q is installed on this "+
 			"machine. `yolo loopholes list` shows the ones that are; a pack you select in %s "+
-			"installs its own.\n", verb, name, paths.UserConfigPath())
+			"installs its own.\n", verb, name, paths.UserConfigDisplayPath())
 		return 1
 	}
 	if found.Brokered != nil {
@@ -693,20 +694,25 @@ func setBrokerSwitch(deps Deps, lp *Loophole, enabled bool, opts SetEnabledOptio
 	}
 	fmt.Fprintf(deps.Err, "yolo loopholes %s: %s has no switch: it runs whenever the pack that ships it is "+
 		"selected, and grants nothing until your config does. %s To stop it running, take its pack out of "+
-		"`packs` in %s.\n", verb, lp.Name, advice, paths.UserConfigPath())
+		"`packs` in %s.\n", verb, lp.Name, advice, paths.UserConfigDisplayPath())
 	return 1
 }
 
 // setEnabledGlobally is `--global`: the user-config block that switches name for every
 // workspace, printed to paste, never written (OQ-BB12), and exit 1, since nothing changed.
 func setEnabledGlobally(deps Deps, name string, enabled bool) int {
+	// The user config may be TOML or legacy JSONC, so the instruction is the verb that
+	// edits whichever file is live (`yolo config set`), not a snippet in one format, and the
+	// file named is the one the reader reads, not the legacy default.
 	fmt.Fprintf(deps.Err,
-		"yolo loopholes %s --global writes nothing: yolo does not edit your user config.\n"+
-			"To switch %s for every workspace, add this to %s:\n"+
-			"  \"loopholes\": { %q: { \"enabled\": %t } }\n"+
+		"yolo loopholes %s --global writes nothing: yolo does not edit your user config here.\n"+
+			"To switch %s for every workspace, run on the host:\n"+
+			"  yolo config set %s --user\n"+
+			"which sets `loopholes.%s.enabled` to %t in %s.\n"+
 			"To switch it for one workspace only, run `yolo loopholes %s %s` in it, which writes "+
 			"that workspace's own file beside the user config.\n",
-		verbFor(enabled), name, paths.UserConfigPath(), name, enabled, verbFor(enabled), name)
+		verbFor(enabled), name, shquote.JoinDisplay([]string{"loopholes." + name + ".enabled", strconv.FormatBool(enabled)}), name, enabled,
+		paths.UserConfigDisplayPath(), verbFor(enabled), name)
 	return 1
 }
 

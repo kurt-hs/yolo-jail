@@ -49,7 +49,7 @@ func TestValidateShareHostFontsRefusesWorkspaceScope(t *testing.T) {
 	var errs []string
 	validateShareHostFonts(decode(t, `{"share_host_fonts": true}`), ws, &errs)
 	joined := strings.Join(errs, "\n")
-	for _, want := range []string{"config.share_host_fonts", "user-scope only", "config.jsonc"} {
+	for _, want := range []string{"config.share_host_fonts", "user-scope only", "config.toml"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("errors = %v, want one containing %q", errs, want)
 		}

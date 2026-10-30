@@ -84,9 +84,9 @@ func hostOwnership() render.HostOwnership {
 func hostManagementRefusal(mode config.HostManagement, declared bool) string {
 	switch mode {
 	case config.HostManagementNone:
-		state := "is \"none\" in " + paths.UserConfigPath()
+		state := "is \"none\" in " + paths.UserConfigDisplayPath()
 		if !declared {
-			state = "is unset in " + paths.UserConfigPath() + ", which means \"none\""
+			state = "is unset in " + paths.UserConfigDisplayPath() + ", which means \"none\""
 		}
 		return "`host_management` " + state + ": your agents' config files are yours " +
 			"entirely, so there is nothing for yolo to render into your home and nothing was " +
@@ -126,13 +126,13 @@ func refuseHostCommandLaunch(errw io.Writer) bool {
 	if mode == config.HostManagementOwn {
 		return false
 	}
-	state := "is unset in " + paths.UserConfigPath() + ", which means \"none\""
+	state := "is unset in " + paths.UserConfigDisplayPath() + ", which means \"none\""
 	if declared {
-		state = "is \"none\" in " + paths.UserConfigPath()
+		state = "is \"none\" in " + paths.UserConfigDisplayPath()
 	}
 	fmt.Fprintf(errw, "yolo host: refusing to launch: host command launches require `host_management: \"own\"`; `host_management` %s. No command was started and yolo provided no host launch assistance.\n"+
 		"Set `\"host_management\": \"own\"` in %s to opt in. Separate host configuration and inspection commands use their own rules; `yolo host env` and `yolo host wrappers status` are not subject to this launch gate.\n",
-		state, paths.UserConfigPath())
+		state, paths.UserConfigDisplayPath())
 	return true
 }
 

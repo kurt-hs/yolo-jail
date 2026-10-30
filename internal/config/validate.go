@@ -563,7 +563,7 @@ func validateHostWrappers(config *jsonx.OrderedMap, workspace string, errs *[]st
 	}
 	if wsValue, atWorkspace := wsCfg.Get(hostWrappersKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+hostWrappersKey+": user-scope only — it puts generated "+
-			"executables on your PATH, so it is read from "+paths.UserConfigPath()+
+			"executables on your PATH, so it is read from "+paths.UserConfigDisplayPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
 	}
 }
@@ -595,7 +595,7 @@ func validateHostApplyOnLaunch(config *jsonx.OrderedMap, workspace string, errs 
 	}
 	if wsValue, atWorkspace := wsCfg.Get(hostApplyOnLaunchKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+hostApplyOnLaunchKey+": user-scope only — it lets a wrapped agent "+
-			"launch write into your real home, so it is read from "+paths.UserConfigPath()+
+			"launch write into your real home, so it is read from "+paths.UserConfigDisplayPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
 	}
 }
@@ -632,7 +632,7 @@ func validateHostManagement(config *jsonx.OrderedMap, workspace string, errs *[]
 	}
 	if wsValue, atWorkspace := wsCfg.Get(hostManagementKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+hostManagementKey+": user-scope only — it declares who owns the "+
-			"config files in your real home, so it is read from "+paths.UserConfigPath()+
+			"config files in your real home, so it is read from "+paths.UserConfigDisplayPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
 	}
 }
@@ -672,7 +672,7 @@ func validateAgentUpdates(config *jsonx.OrderedMap, workspace string, errs *[]st
 	if wsValue, atWorkspace := wsCfg.Get(agentUpdatesKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+agentUpdatesKey+": user-scope only — /workspace is writable by "+
 			"whatever runs in the jail, so a workspace value would let an agent freeze its "+
-			"own updates. It is read from "+paths.UserConfigPath()+" and a workspace value "+
+			"own updates. It is read from "+paths.UserConfigDisplayPath()+" and a workspace value "+
 			"has no effect. Move it there, or remove it.")
 	}
 }
@@ -699,7 +699,7 @@ func validateHostFloor(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	if wsValue, atWorkspace := wsCfg.Get(hostFloorKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+hostFloorKey+": user-scope only — it decides which programs yolo "+
 			"installs on your machine and `yolo host` runs, so it is read from "+
-			paths.UserConfigPath()+" and a workspace value has no effect. Move it there, or remove it.")
+			paths.UserConfigDisplayPath()+" and a workspace value has no effect. Move it there, or remove it.")
 	}
 }
 
@@ -724,7 +724,7 @@ func validateHostPath(config *jsonx.OrderedMap, workspace string, errs *[]string
 	}
 	if wsValue, atWorkspace := wsCfg.Get(hostPathKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+hostPathKey+": user-scope only — a folder on it decides which program "+
-			"`yolo host` runs, so it is read from "+paths.UserConfigPath()+" and a workspace value "+
+			"`yolo host` runs, so it is read from "+paths.UserConfigDisplayPath()+" and a workspace value "+
 			"has no effect. Move it there, or remove it.")
 	}
 }
@@ -761,7 +761,7 @@ func validateConvertLater(config *jsonx.OrderedMap, workspace string, errs *[]st
 	}
 	if _, ok := v.(bool); !ok {
 		add(errs, "config."+ConvertLaterKey+": expected true or false (got "+reprAny(v)+"). "+
-			"Write \"convert_later\": true in "+paths.UserConfigPath()+" to stop the launch offering "+
+			"Write \"convert_later\": true in "+paths.UserConfigDisplayPath()+" to stop the launch offering "+
 			"`yolo config migrate`, or remove the key.")
 	}
 	var wsCfg *jsonx.OrderedMap
@@ -777,7 +777,7 @@ func validateConvertLater(config *jsonx.OrderedMap, workspace string, errs *[]st
 	if _, atWorkspace := wsCfg.Get(ConvertLaterKey); atWorkspace {
 		add(errs, "config."+ConvertLaterKey+": user-scope only — it silences the launch's offer to "+
 			"convert every old-format file this machine reads, which is the user's choice, not a "+
-			"project's. Move it to "+paths.UserConfigPath()+", or remove it.")
+			"project's. Move it to "+paths.UserConfigDisplayPath()+", or remove it.")
 	}
 }
 
@@ -801,7 +801,7 @@ func validateUpdateCheck(config *jsonx.OrderedMap, workspace string, errs *[]str
 		add(errs, "config."+updateCheckKey+": user-scope only — it is read on every host "+
 			"command, before any workspace config is loaded, and /workspace is writable from "+
 			"inside a jail, so a workspace value is never consulted. It is read from "+
-			paths.UserConfigPath()+". Move it there, or remove it. (Per-shell instead: "+
+			paths.UserConfigDisplayPath()+". Move it there, or remove it. (Per-shell instead: "+
 			"YOLO_NO_UPDATE_CHECK=1.)")
 	}
 }
@@ -830,7 +830,7 @@ func validatePerfLogging(config *jsonx.OrderedMap, workspace string, errs *[]str
 	if wsValue, atWorkspace := wsCfg.Get(perfLoggingKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+perfLoggingKey+": user-scope only — it is read at the top of "+
 			"a launch, before any workspace config is loaded, so a workspace value is "+
-			"never consulted. It is read from "+paths.UserConfigPath()+". Move it there, "+
+			"never consulted. It is read from "+paths.UserConfigDisplayPath()+". Move it there, "+
 			"or remove it. (Per-launch instead: `yolo --timing`, or YOLO_TIMING=1.)")
 	}
 }
@@ -854,7 +854,7 @@ func validatePromotionTarget(config *jsonx.OrderedMap, workspace string, errs *[
 	}
 	if wsValue, atWorkspace := wsCfg.Get(promotionTargetKey); atWorkspace && wsValue != nil {
 		add(errs, "config."+promotionTargetKey+": user-scope only — it selects the pack "+
-			"that receives your captured personal settings, so it is read from "+paths.UserConfigPath()+
+			"that receives your captured personal settings, so it is read from "+paths.UserConfigDisplayPath()+
 			" and a workspace value has no effect. Move it there, or remove it.")
 	}
 }

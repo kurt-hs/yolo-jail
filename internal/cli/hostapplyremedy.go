@@ -179,7 +179,7 @@ func unresolvedPackGroups(list []unresolvedPack) []remedyGroup {
 			Items:    malformed,
 			Remedy: "fix each problem named above in the pack (`yolo pack lint <its dir>` " +
 				"re-checks it; every launch refuses it too), or remove it from `packs` in " +
-				paths.UserConfigPath(),
+				paths.UserConfigDisplayPath(),
 			VerdictTerm: malformed[0],
 			Warn:        true,
 		})
@@ -201,11 +201,11 @@ func unresolvedPackGroups(list []unresolvedPack) []remedyGroup {
 	if len(other) > 0 {
 		out = append(out, remedyGroup{
 			Class:    remedyClassUnresolvedPack,
-			Key:      paths.UserConfigPath(),
+			Key:      paths.UserConfigDisplayPath(),
 			Headline: "configured packs that could not be read, so nothing can be applied",
 			Items:    other,
 			Remedy: "fix what is named above for each pack, or remove it from `packs` in " +
-				paths.UserConfigPath(),
+				paths.UserConfigDisplayPath(),
 			VerdictTerm: other[0],
 			Warn:        true,
 		})

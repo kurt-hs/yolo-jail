@@ -42,8 +42,8 @@ func TestValidateMacosUserModeRefusesWorkspaceScope(t *testing.T) {
 	if !strings.Contains(joined, "user-scope only") {
 		t.Errorf("errors = %v, want one saying 'user-scope only'", errs)
 	}
-	if !strings.Contains(joined, paths.UserConfigPath()) {
-		t.Errorf("errors = %v, want one naming the user config file %s", errs, paths.UserConfigPath())
+	if !strings.Contains(joined, paths.UserConfigDisplayPath()) {
+		t.Errorf("errors = %v, want one naming the user config file %s", errs, paths.UserConfigDisplayPath())
 	}
 }
 

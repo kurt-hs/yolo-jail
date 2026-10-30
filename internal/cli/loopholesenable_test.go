@@ -134,7 +134,7 @@ func TestLoopholesEnableRefusesWhatItCannotDo(t *testing.T) {
 			[]string{"this is a jail", "yolo loopholes enable journal --workspace /home/someone/code/app",
 				"fresh jail"}},
 		{"--global for another loophole", []string{"loopholes", "enable", "journal", "--global"}, nil, "",
-			[]string{"writes nothing", `"journal": { "enabled": true }`, "config.jsonc"}},
+			[]string{"writes nothing", "yolo config set loopholes.journal.enabled true --user", "config.jsonc"}},
 		// A block naming nothing installed is one the launch then warns about, or, for a pack
 		// selected later, refuses: --global checks the name first, as the per-project form does.
 		{"--global for an unknown name", []string{"loopholes", "enable", "no-such", "--global"}, nil, "",

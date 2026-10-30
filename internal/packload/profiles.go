@@ -543,7 +543,7 @@ func UndeclaredProfileHelp(name string, declared []string, selected, universe []
 		"your user config (%s):\n"+
 		"  \"providers\": {%q: {\"platform\": %q}},\n"+
 		"  \"profiles\": {%q: {\"provider\": %q}}\n"+
-		"(declared: %s)", name, who, verb, name, paths.UserConfigPath(), name, name, name, name, have)
+		"(declared: %s)", name, who, verb, name, paths.UserConfigDisplayPath(), name, name, name, name, have)
 }
 
 // RenamedProfile is the profile a shipped pack's `formerly` record says old was renamed to, and

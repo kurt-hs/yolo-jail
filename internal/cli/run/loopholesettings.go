@@ -74,12 +74,12 @@ func (o *Options) prepareLoopholeSettings(discovered []*loopholes.Loophole, cfg 
 // LoopholeSettingsFixStep is the next step for settings that could not be resolved: where they
 // are set, and the preflight that re-checks them.
 func LoopholeSettingsFixStep(lp *loopholes.Loophole) string {
-	where := paths.UserConfigPath() + " or the workspace's yolo-jail.jsonc"
+	where := paths.UserConfigDisplayPath() + " or the workspace's yolo-jail.jsonc"
 	for _, s := range lp.Settings {
 		// A user-scope setting is refused in the workspace file, so naming that file would be a
 		// step that fails: name the user-scope path alone where scope matters.
 		if s.Scope == loopholes.SettingScopeUser {
-			where = paths.UserConfigPath()
+			where = paths.UserConfigDisplayPath()
 			break
 		}
 	}

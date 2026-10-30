@@ -48,8 +48,8 @@ func TestValidateConfigRefusesAWorkspaceOnRequest(t *testing.T) {
 	write(t, filepath.Join(ws, WorkspaceConfigName), `{"on_request": "echo approve"}`)
 	errs, _ := ValidateConfig(decode(t, `{"on_request": "echo approve"}`), ws, nil)
 	joined := strings.Join(errs, "\n")
-	if !strings.Contains(joined, "config.on_request: user-scope only") || !strings.Contains(joined, paths.UserConfigPath()) {
-		t.Errorf("errors = %v, want a user-scope refusal naming %s", errs, paths.UserConfigPath())
+	if !strings.Contains(joined, "config.on_request: user-scope only") || !strings.Contains(joined, paths.UserConfigDisplayPath()) {
+		t.Errorf("errors = %v, want a user-scope refusal naming %s", errs, paths.UserConfigDisplayPath())
 	}
 }
 

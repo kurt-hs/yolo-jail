@@ -215,7 +215,7 @@ func Check(opts Options) int {
 	if !isNativeRuntime && runtimeSel != "container" {
 		if rels, err := config.LoadCacheRelocations(r.configWarn); err == nil && len(rels) > 0 {
 			if err := storage.EnsureCacheRelocations(rels); err != nil {
-				r.fail(err.Error(), "Fix the path or drop the key from "+paths.UserConfigPath())
+				r.fail(err.Error(), "Fix the path or drop the key from "+paths.UserConfigDisplayPath())
 			}
 		}
 	}

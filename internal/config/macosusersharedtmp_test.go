@@ -44,8 +44,8 @@ func TestValidateMacosUserSharedTmpRefusesWorkspaceScope(t *testing.T) {
 	var errs []string
 	validateMacosUserSharedTmp(decode(t, `{"macos_user_shared_tmp": true}`), ws, &errs)
 	joined := strings.Join(errs, "\n")
-	if !strings.Contains(joined, "user-scope only") || !strings.Contains(joined, paths.UserConfigPath()) {
-		t.Errorf("errors = %v, want one saying 'user-scope only' and naming %s", errs, paths.UserConfigPath())
+	if !strings.Contains(joined, "user-scope only") || !strings.Contains(joined, paths.UserConfigDisplayPath()) {
+		t.Errorf("errors = %v, want one saying 'user-scope only' and naming %s", errs, paths.UserConfigDisplayPath())
 	}
 }
 

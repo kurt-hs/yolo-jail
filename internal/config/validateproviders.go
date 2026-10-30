@@ -575,7 +575,7 @@ func validateProviderShorthandRetired(path string, errs, warns *[]string) {
 // shorthand and the per-protocol form cannot word the same rule differently — the reason
 // packdecl.ProviderAddressConflictMessage is one constant and not two literals.
 func providerAddressScopeMessage(path string) string {
-	return path + ": user-scope only — move it to " + paths.UserConfigPath() +
+	return path + ": user-scope only — move it to " + paths.UserConfigDisplayPath() +
 		". A workspace config travels with the repo and is agent-editable, and this is the " +
 		"field that decides WHERE an agent's inference goes: every prompt, every file the " +
 		"agent has read, and every credential hydrated for this provider are sent to this " +
@@ -586,7 +586,7 @@ func providerAddressScopeMessage(path string) string {
 // decides where a credential goes (OQ-NC6): the field's path, the file to move it to, and why
 // this one routes a credential.
 func providerCredentialScopeMessage(path, why string) string {
-	return path + ": user-scope only — move it to " + paths.UserConfigPath() +
+	return path + ": user-scope only — move it to " + paths.UserConfigDisplayPath() +
 		". A workspace config travels with the repo and is agent-editable, and this field " +
 		"decides where a provider's credential goes: " + why + " " + providerMergesSentence
 }

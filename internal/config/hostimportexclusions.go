@@ -184,7 +184,7 @@ func validateHostImportExclusions(config *jsonx.OrderedMap, workspace string, er
 
 func workspaceHostImportExclusionsRefusal() string {
 	return "config." + hostImportExclusionsKey + ": user-scope only — exclusions filter user host config imports, so declare them in " +
-		paths.UserConfigPath() + " and remove this workspace declaration"
+		paths.UserConfigDisplayPath() + " and remove this workspace declaration"
 }
 
 func hostImportExclusionsOrderedMap(policy map[string][]string) *jsonx.OrderedMap {

@@ -126,7 +126,7 @@ func TestValidateHostPathRefusesEachBadEntryAndAWorkspaceValue(t *testing.T) {
 	write(t, filepath.Join(ws, WorkspaceConfigName), `{"host_path": ["/opt/x/bin"]}`)
 	errs, _ := ValidateConfig(decode(t, `{"host_path": ["/opt/x/bin"]}`), ws, nil)
 	joined := strings.Join(errs, "\n")
-	for _, want := range []string{"config.host_path: user-scope only", paths.UserConfigPath()} {
+	for _, want := range []string{"config.host_path: user-scope only", paths.UserConfigDisplayPath()} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("a workspace host_path: errors lack %q:\n%s", want, joined)
 		}

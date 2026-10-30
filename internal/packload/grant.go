@@ -37,7 +37,7 @@ func (e *UnknownGrantError) Error() string {
 	if len(e.Known) == 0 {
 		return fmt.Sprintf("--with-credentials names %s, and no provider is composed at this notch: no "+
 			"selected pack ships one and %s declares none under `providers`",
-			strings.Join(quoted, ", "), paths.UserConfigPath())
+			strings.Join(quoted, ", "), paths.UserConfigDisplayPath())
 	}
 	return fmt.Sprintf("--with-credentials names %s, which no composed provider is: the known providers "+
 		"are %s (or `all`, every one that claims a value in env_sources)",

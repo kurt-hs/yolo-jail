@@ -175,7 +175,7 @@ func validateAdaptersWithScopes(workspace string, userCfg, wsCfg *jsonx.OrderedM
 // shape and for its reason: what this key sets is an ADDRESS, and an address is where every
 // prompt, every file the agent has read and every credential hydrated for that provider go.
 func adapterScopeMessage() string {
-	return "config." + adaptersKey + ": user-scope only — move it to " + paths.UserConfigPath() +
+	return "config." + adaptersKey + ": user-scope only — move it to " + paths.UserConfigDisplayPath() +
 		". A workspace config travels with the repo and is agent-editable, and this key sets " +
 		"the ADDRESS an adapted provider is reached at: every prompt, every file the agent " +
 		"has read and every credential hydrated for that provider are sent there. The " +

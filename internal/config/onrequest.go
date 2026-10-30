@@ -42,7 +42,7 @@ func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]strin
 		if s, ok := v.(string); !ok || strings.TrimSpace(s) == "" {
 			add(errs, fmt.Sprintf("config.%s: expected a shell command as a non-empty string, such as "+
 				`"notify-send \"$YOLO_REQUEST_SUMMARY\"" (got %s); set it in %s or remove it`,
-				OnRequestKey, pyReprValue(v), paths.UserConfigPath()))
+				OnRequestKey, pyReprValue(v), paths.UserConfigDisplayPath()))
 		}
 	}
 	wsCfg, err := loadValidationWorkspaceConfig(workspace, edit...)
@@ -52,7 +52,7 @@ func validateOnRequest(config *jsonx.OrderedMap, workspace string, errs *[]strin
 	if _, atWorkspace := wsCfg.Get(OnRequestKey); atWorkspace && WorkspaceUserScopeOnlyKey(OnRequestKey) {
 		add(errs, "config."+OnRequestKey+": user-scope only — it names a command yolo runs on the host, "+
 			"as you, for every request a jail files, and the command it runs can call `yolo approve`, so a workspace "+
-			"config, which the agent can edit, may not name one. Put it in "+paths.UserConfigPath()+
+			"config, which the agent can edit, may not name one. Put it in "+paths.UserConfigDisplayPath()+
 			" and remove it from this workspace's config.")
 	}
 }

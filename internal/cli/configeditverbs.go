@@ -118,7 +118,7 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		fmt.Fprintf(errw, "yolo config %s: %s is written by hand, never by a command; nothing was written. "+
 			"To stop the launch offering the conversion, add \"%s\": true to %s yourself; "+
 			"to convert instead, run `yolo config migrate`\n",
-			actionName, config.ConvertLaterKey, config.ConvertLaterKey, paths.UserConfigPath())
+			actionName, config.ConvertLaterKey, config.ConvertLaterKey, paths.UserConfigDisplayPath())
 		return 1
 	}
 	mutation := configedit.Mutation{Action: action, Path: key}

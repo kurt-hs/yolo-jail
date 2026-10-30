@@ -300,7 +300,7 @@ func readWorkspaceFile(workspace string, record bool) *WorkspaceFile {
 				bad = true
 				wf.Problems = append(wf.Problems, at(append(steps, json5.Key(k))...)+": "+pytext.Repr(k)+
 					" is not a key a per-workspace file holds for a loophole; it holds \"enabled\" "+
-					"alone, and a loophole's other keys go in "+paths.UserConfigPath()+". Remove it.")
+					"alone, and a loophole's other keys go in "+paths.UserConfigDisplayPath()+". Remove it.")
 			}
 		}
 		v, has := entry.Get(workspaceFileEnabledKey)

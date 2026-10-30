@@ -150,7 +150,7 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	entries, err := config.LoadPacks(r.configWarn)
 	if err != nil {
 		r.fail("Loading packs: "+err.Error(),
-			"Fix the `packs` list in "+paths.UserConfigPath()+" (`yolo pack --help` shows an entry's forms), "+recheck)
+			"Fix the `packs` list in "+paths.UserConfigDisplayPath()+" (`yolo pack --help` shows an entry's forms), "+recheck)
 		return
 	}
 	// HasConfiguredPack, not len(entries): the conventional local pack arrives with no config
@@ -280,7 +280,7 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 				// but never silent, because it is nearly always a filter typo.
 				r.warn(e.Name+": stages 0 files",
 					"Its `only`/`exclude` filters match none of its files. Fix them in its `packs` entry in "+
-						paths.UserConfigPath()+" (`yolo pack --help` shows the filters), "+recheck)
+						paths.UserConfigDisplayPath()+" (`yolo pack --help` shows the filters), "+recheck)
 				return nil, nil
 			default:
 				r.ok(fmt.Sprintf("%s: %d file(s) stage", e.Name, len(res.Staged.Staged)))
@@ -590,7 +590,7 @@ func skewFixNote(e config.PackEntry) string {
 // verb reporting the same pack (`yolo check-deps`) gives the same fix and ends on its own re-check.
 func UserPackFix(source string) string {
 	return "Fix the pack at " + source + " (`yolo pack --help` documents every field), or its `packs` " +
-		"entry in " + paths.UserConfigPath()
+		"entry in " + paths.UserConfigDisplayPath()
 }
 
 // ShippedPackFix is packFixNote for a pack that ships with yolo, named name, without the re-check:
@@ -598,13 +598,13 @@ func UserPackFix(source string) string {
 // dropping the pack.
 func ShippedPackFix(name string) string {
 	return yoloBugNote("A problem in a pack that ships with yolo") + "\nUntil it is fixed, drop " +
-		name + " from `packs` in " + paths.UserConfigPath()
+		name + " from `packs` in " + paths.UserConfigDisplayPath()
 }
 
 // keepOneNote is the next step for two selected packs claiming one name: the launch refuses the
 // pair, so the selection keeps one of them.
 func keepOneNote() string {
-	return "Keep one of them in `packs` in " + paths.UserConfigPath() + ", " + recheck
+	return "Keep one of them in `packs` in " + paths.UserConfigDisplayPath() + ", " + recheck
 }
 
 // launchPredictionNote follows a launch refusal check predicts over the selected packs: the

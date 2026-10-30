@@ -119,7 +119,7 @@ func packBuild(args []string, out, errw io.Writer, color bool) int {
 	sel := selectHostPacks(resolveStagedPack, config.UserScopeSelection())
 	if sel.loadErr != nil {
 		fmt.Fprintf(errw, "yolo pack build: %v\n  fix what it names in %s, then run `yolo pack build` again\n",
-			sel.loadErr, paths.UserConfigPath())
+			sel.loadErr, paths.UserConfigDisplayPath())
 		return 1
 	}
 	packs, rc := packBuildScope(sel, opts.packs, errw)

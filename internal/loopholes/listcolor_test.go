@@ -221,7 +221,7 @@ func TestListEscapesTextYoloDidNotWrite(t *testing.T) {
 			t.Fatalf("List rc = %d, err=%q", rc, errBuf.String())
 		}
 		got := ansiEscape.ReplaceAllString(out.String(), "")
-		for _, p := range []string{paths.LocalPackDir(), paths.UserConfigPath()} {
+		for _, p := range []string{paths.LocalPackDir(), paths.UserConfigDisplayPath()} {
 			if !strings.Contains(strings.ReplaceAll(got, wj, ""), " "+p+" ") {
 				t.Errorf("color=%v: the empty state does not name %q:\n%q", color, p, out.String())
 			}

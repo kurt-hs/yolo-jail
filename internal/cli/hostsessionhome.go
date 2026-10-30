@@ -494,7 +494,7 @@ func captureHostSessionHomePath(dir string, errw io.Writer) (keptAt, why string,
 		}
 	}
 	if packName == "" {
-		return setAsideHostSessionHome(dir, errw, fmt.Sprintf("no selected pack in %s declares a session home whose directory name starts %q", paths.UserConfigPath(), name))
+		return setAsideHostSessionHome(dir, errw, fmt.Sprintf("no selected pack in %s declares a session home whose directory name starts %q", paths.UserConfigDisplayPath(), name))
 	}
 	var captures []hostSessionCapture
 	type straySet struct {

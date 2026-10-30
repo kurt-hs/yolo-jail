@@ -114,9 +114,9 @@ func TestValidateAgentUpdatesWorkspaceScopeErrors(t *testing.T) {
 	}
 	joined := strings.Join(errs, "\n")
 	// The path is named, so the user knows WHERE to move it — asserted through
-	// paths.UserConfigPath() rather than against a literal, because the test home is a
+	// paths.UserConfigDisplayPath() rather than against a literal, because the test home is a
 	// temp dir.
-	for _, want := range []string{"user-scope only", paths.UserConfigPath()} {
+	for _, want := range []string{"user-scope only", paths.UserConfigDisplayPath()} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("errors = %v, want one containing %q", errs, want)
 		}

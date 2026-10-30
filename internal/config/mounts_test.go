@@ -175,7 +175,7 @@ func TestAReadWriteMountInTheWorkspaceConfigIsRefused(t *testing.T) {
 			}
 			errs, _ := h.validate(t)
 			got := joined(errs)
-			if !strings.Contains(got, "user-scope only") || !strings.Contains(got, paths.UserConfigPath()) {
+			if !strings.Contains(got, "user-scope only") || !strings.Contains(got, paths.UserConfigDisplayPath()) {
 				t.Fatalf("a read-write mount in %s was not refused as workspace scope: %q", file, errs)
 			}
 		})

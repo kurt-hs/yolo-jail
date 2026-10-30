@@ -142,6 +142,7 @@ func appendString(path, s string) error {
 // InitUserConfig runs `yolo init-user-config`. Writes the user-level defaults at
 // USER_CONFIG_PATH unless it exists.
 func InitUserConfig(out io.Writer, color bool) int {
+	// The legacy path on purpose: this writer creates the legacy JSONC defaults file.
 	p := paths.UserConfigPath()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		printInitStatus(out, color, "bold red", fmt.Sprintf("Error creating config dir: %v", err))

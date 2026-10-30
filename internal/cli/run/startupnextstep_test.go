@@ -33,7 +33,7 @@ func TestLoopholeSettingsFixStepNamesTheKeyItsFileAndThePreflight(t *testing.T) 
 	user := &loopholes.Loophole{Name: "aws-auth", Settings: []loopholes.Setting{
 		{Key: "profile", Scope: loopholes.SettingScopeUser}}}
 	step := LoopholeSettingsFixStep(user)
-	for _, want := range []string{"`loopholes.aws-auth.settings`", paths.UserConfigPath(), "`yolo check --no-build`"} {
+	for _, want := range []string{"`loopholes.aws-auth.settings`", paths.UserConfigDisplayPath(), "`yolo check --no-build`"} {
 		if !strings.Contains(step, want) {
 			t.Errorf("settings fix step lacks %q: %s", want, step)
 		}

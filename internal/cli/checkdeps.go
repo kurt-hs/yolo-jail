@@ -407,7 +407,7 @@ func checkDepsUnresolvedStep(u unresolvedPack) string {
 	case u.Source != "":
 		return check.UserPackFix(u.Source)
 	}
-	return "Change what it names, in " + paths.UserConfigPath() + " (`yolo config-ref` documents " +
+	return "Change what it names, in " + paths.UserConfigDisplayPath() + " (`yolo config-ref` documents " +
 		"`packs`) or in a pack you wrote (`yolo pack --help`)"
 }
 

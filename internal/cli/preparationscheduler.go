@@ -488,7 +488,7 @@ func runPreparationScheduler(ctx context.Context, ticks <-chan time.Time, w io.W
 						_ = preparationUpdateRecord(r.Key, r.Runtime, r.Platform, func(rec *preparationRecord) {
 							rec.Active = false
 							rec.Phase = "invalid-config"
-							rec.Reason = fmt.Sprintf("%v — repair %s, then run `yolo pack prepare start`", configErr, paths.UserConfigPath())
+							rec.Reason = fmt.Sprintf("%v — repair %s, then run `yolo pack prepare start`", configErr, paths.UserConfigDisplayPath())
 						})
 					}
 				}
