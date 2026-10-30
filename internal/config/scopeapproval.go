@@ -485,6 +485,10 @@ func compareScope(check *ScopeCheck, old scopeRecord, oldSources sourcesRecord) 
 		// none leaves the record's bytes as they were before grants existed.
 		gkey := grantsRecordKey(s.Source)
 		prevGrants := old[gkey]
+		if s.FirstRead {
+			// Whatever grants the record holds were approved while the broker could do nothing.
+			prevGrants = nil
+		}
 		if len(s.Grants) > 0 {
 			out.next[gkey] = grantStrings(s.Grants)
 		} else {
