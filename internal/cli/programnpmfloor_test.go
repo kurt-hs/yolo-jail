@@ -185,6 +185,19 @@ func TestNPMCaptureNoSatisfyingReleaseDoesNotTrustPartialText(t *testing.T) {
 
 }
 
+// Node's list carries prereleases (27.0.0-alpha.0.0.0 from 2026-10); one such line must not
+// turn every unsatisfiable floor into a retry. A prerelease is judged by its release numbers.
+func TestNPMCaptureNoSatisfyingReleaseReadsPrereleaseLines(t *testing.T) {
+	if !npmCaptureNoSatisfyingRelease("26.13.0\n27.0.0-alpha.0.0.0\n27.0.0-rc.1", "99") {
+		t.Fatal("a prerelease line made an unsatisfiable floor unproven")
+	}
+	for _, list := range []string{"26.13.0\n99.0.0-alpha.1", "26.13.0\n27.0.0-", "26.13.0\n27.0.0-alpha beta", "26.13.0\n-alpha.1"} {
+		if npmCaptureNoSatisfyingRelease(list, "99") {
+			t.Fatalf("%q proved no release satisfies 99", list)
+		}
+	}
+}
+
 func TestNPMCaptureReleaseListBoundsProviderOutput(t *testing.T) {
 	var b npmCaptureReleaseList
 	if _, err := io.WriteString(&b, strings.Repeat("1", 1<<20+1)); err == nil || b.String() != "" {

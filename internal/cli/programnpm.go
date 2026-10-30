@@ -355,7 +355,8 @@ func (b *npmCaptureReleaseList) Write(p []byte) (int, error) {
 }
 func (b *npmCaptureReleaseList) String() string { return b.text.String() }
 
-// Only mise's numeric, nonempty release-list output is availability evidence.
+// Only mise's numeric, nonempty release-list output is availability evidence. A prerelease
+// (`27.0.0-alpha.0.0.0`) counts by its release numbers.
 func npmCaptureNoSatisfyingRelease(list, floor string) bool {
 	if len(list) > 1<<20 {
 		return false
@@ -363,6 +364,12 @@ func npmCaptureNoSatisfyingRelease(list, floor string) bool {
 	lines := strings.Split(strings.TrimSpace(list), "\n")
 	for _, line := range lines {
 		v := strings.TrimSpace(line)
+		if core, pre, ok := strings.Cut(v, "-"); ok {
+			if pre == "" || strings.Trim(pre, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-") != "" {
+				return false
+			}
+			v = core
+		}
 		if strings.Trim(v, "0123456789.") != "" || !packdecl.ValidNodeFloor(v) || strings.Count(v, ".") != 2 || packdecl.SatisfiesNodeFloor(v, floor) {
 			return false
 		}
