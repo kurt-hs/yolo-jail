@@ -259,8 +259,10 @@ on_request = ["write"]
 ```
 
 - **Without the ceiling, the request is refused.** `yolo check` and the launch report it at the
-  entry's line, and the message names the user config file and the two lines to add. It names no
-  `yolo config` command, because `config add` and `config set` refuse to create a missing value.
+  entry's line, and the message names the user config file, the two lines to add, and the command that writes
+  them, `yolo config add allow.mounts.on_request write --user`. `config add` and `config set`
+  create a missing table or list, so the command works on a user config with no `[allow.mounts]`.
+  It sets only the ceiling: each writable request is still approved by you at launch.
 - **With the ceiling, the request is approved like any other config change.** The entry is part
   of the workspace config the [config-change gate](config-safety.md) diffs, so approving the diff
   approves the mount, and a changed request asks again. The prompt prints each writable mount in

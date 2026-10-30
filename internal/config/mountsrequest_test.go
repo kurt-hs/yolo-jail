@@ -53,9 +53,8 @@ func writeRequest(src string) string {
 }
 
 // (a) Without the user line, a TOML project's `write = true` is refused, and the refusal's next
-// step is the exact two lines and the exact file to put them in. No `yolo config` verb is named:
-// neither `config add` nor `config set` creates a missing table ("cannot append to missing config
-// value"), so naming one would hand the user a command that fails.
+// step is the exact two lines, the exact file to put them in, and the `yolo config add` that
+// writes them (the verb creates the missing table and list, OQ-RC10).
 func TestAWritableMountRequestWithoutTheAllowLineIsRefusedNamingIt(t *testing.T) {
 	src := mountSourceDir(t, "data")
 	for _, file := range []string{paths.WorkspaceConfigTOMLName, paths.WorkspaceLocalConfigTOMLName} {
@@ -70,8 +69,8 @@ func TestAWritableMountRequestWithoutTheAllowLineIsRefusedNamingIt(t *testing.T)
 					t.Fatalf("refusal %q does not name %q", got, want)
 				}
 			}
-			if strings.Contains(got, "yolo config add") || strings.Contains(got, "yolo config set") {
-				t.Fatalf("refusal names a config verb that cannot create the table: %q", got)
+			if !strings.Contains(got, "yolo config add allow.mounts.on_request write --user") {
+				t.Fatalf("refusal does not name the verb that creates the table: %q", got)
 			}
 			if refusals := CheckWorkspaceMounts(h.ws, gateRequests(t, h.ws), nil); len(refusals) == 0 {
 				t.Fatal("the gate's check let a request through without the allow line")

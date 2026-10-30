@@ -241,19 +241,19 @@ func hostRunLineFor(argv []string) string {
 // select, creating the list (and its table) when that file does not hold it yet: the generic
 // append refuses a missing list, and a named verb's first use is exactly that case.
 func namedVerbListAdd(workspace, key, item string, choice config.EditTargetChoice, dryRun, postWriteCheck bool, out, errw io.Writer) int {
-	return namedVerbEdit(workspace, key, configedit.Append, item, []any{item}, choice, dryRun, postWriteCheck, out, errw)
+	return namedVerbEdit(workspace, key, configedit.Append, item, choice, dryRun, postWriteCheck, out, errw)
 }
 
 // namedVerbSet sets key to value, adding the key (and its table) when the selected file does
 // not hold it yet, which the generic set refuses.
 func namedVerbSet(workspace, key string, value any, choice config.EditTargetChoice, dryRun, postWriteCheck bool, out, errw io.Writer) int {
-	return namedVerbEdit(workspace, key, configedit.Set, value, value, choice, dryRun, postWriteCheck, out, errw)
+	return namedVerbEdit(workspace, key, configedit.Set, value, choice, dryRun, postWriteCheck, out, errw)
 }
 
 // namedVerbEdit runs action with value at key when the selected file holds the key, and adds
-// the key with whenMissing when it does not, through the same target rules and transaction as
-// the generic verbs.
-func namedVerbEdit(workspace, key string, action configedit.Action, value, whenMissing any, choice config.EditTargetChoice,
+// the key when it does not (addMissingKey, the path the generic verbs share), through the same
+// target rules and transaction as the generic verbs.
+func namedVerbEdit(workspace, key string, action configedit.Action, value any, choice config.EditTargetChoice,
 	dryRun, postWriteCheck bool, out, errw io.Writer) int {
 	path, err := parseConfigEditKey(key)
 	if err != nil {
@@ -263,15 +263,12 @@ func namedVerbEdit(workspace, key string, action configedit.Action, value, whenM
 	mutation := configedit.Mutation{Action: action, Path: path, Value: value}
 	target, err := configedit.ResolveTarget(workspace, mutation, choice)
 	if err != nil {
-		fmt.Fprintf(errw, "cannot edit config: %v\n", err)
+		fmt.Fprint(errw, configEditRefusal(err))
 		return 1
 	}
-	if !configEditPathPresent(target.ExpectedBytes(), target.Format, target.AuthoredPath()) {
-		mutation = configedit.Mutation{Action: configedit.Add, Path: path, Value: whenMissing}
-		if target, err = configedit.ResolveTarget(workspace, mutation, choice); err != nil {
-			fmt.Fprintf(errw, "cannot edit config: %v\n", err)
-			return 1
-		}
+	mutation, target, ok := addMissingKey(workspace, target, mutation, value, choice, errw)
+	if !ok {
+		return 1
 	}
 	return applyConfigEdit(workspace, target, mutation, dryRun, out, errw, postWriteCheck)
 }

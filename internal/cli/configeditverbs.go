@@ -130,7 +130,7 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		// Target discovery gives the actual file format before interpreting a typed value.
 		target, resolveErr := configedit.ResolveTarget(workspace, mutation, choice)
 		if resolveErr != nil {
-			fmt.Fprintf(errw, "cannot edit config: %v\n", resolveErr)
+			fmt.Fprint(errw, configEditRefusal(resolveErr))
 			return 1
 		}
 		if config.InJail() && target.Role == config.ExplicitEditUser {
@@ -147,6 +147,12 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 			return 1
 		}
 		mutation.Value = value
+		// OQ-RC10: the generic verbs work for ANY key, so a key the selected file does not hold
+		// yet is added, with its missing parent tables, as the named verbs already do.
+		mutation, target, ok := addMissingKey(workspace, target, mutation, value, choice, errw)
+		if !ok {
+			return 1
+		}
 		return applyConfigEdit(workspace, target, mutation, dryRun, out, errw, postWriteCheck)
 	}
 
@@ -156,7 +162,7 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 	}
 	target, err := configedit.ResolveTarget(workspace, mutation, choice)
 	if err != nil {
-		fmt.Fprintf(errw, "cannot edit config: %v\n", err)
+		fmt.Fprint(errw, configEditRefusal(err))
 		return 1
 	}
 	if config.InJail() && target.Role == config.ExplicitEditUser {
@@ -187,7 +193,7 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 	// while the mutation intent is checked by ApplyTargeted before any write.
 	resolved, err := configedit.ResolveTarget(workspace, mutation, choice)
 	if err != nil {
-		fmt.Fprintf(errw, "cannot edit config: %v\n", err)
+		fmt.Fprint(errw, configEditRefusal(err))
 		return 1
 	}
 	if config.InJail() && resolved.Role == config.ExplicitEditUser {
@@ -195,6 +201,28 @@ func runConfigEditWithMode(args []string, out, errw io.Writer, workspace string,
 		return 1
 	}
 	return applyConfigEdit(workspace, resolved, mutation, dryRun, out, errw, postWriteCheck)
+}
+
+// addMissingKey turns a set or an add (append) on a key the selected file does not hold into an
+// Add of that key (a list holding the one item for an append), re-resolving the target for the
+// new intent. A key present in the file, or one ending in an array index, is returned untouched.
+func addMissingKey(workspace string, target config.ResolvedEditTarget, mutation configedit.Mutation, value any,
+	choice config.EditTargetChoice, errw io.Writer) (configedit.Mutation, config.ResolvedEditTarget, bool) {
+	last := mutation.Path[len(mutation.Path)-1]
+	if last.IsIndex || configEditPathPresent(target.ExpectedBytes(), target.Format, target.AuthoredPath()) {
+		return mutation, target, true
+	}
+	whenMissing := value
+	if mutation.Action == configedit.Append {
+		whenMissing = []any{value}
+	}
+	added := configedit.Mutation{Action: configedit.Add, Path: mutation.Path, Value: whenMissing}
+	resolved, err := configedit.ResolveTarget(workspace, added, choice)
+	if err != nil {
+		fmt.Fprint(errw, configEditRefusal(err))
+		return mutation, target, false
+	}
+	return added, resolved, true
 }
 
 func applyConfigEdit(workspace string, target config.ResolvedEditTarget, mutation configedit.Mutation, dryRun bool, out, errw io.Writer, postWriteCheck bool) int {
@@ -441,6 +469,10 @@ func parseConfigEditValue(raw string, path []configdoc.Step) (any, error) {
 	}
 	value, err := parseTOMLConfigValue(raw)
 	if err != nil {
+		// A mixed element (a package name that may also be a table) accepts a bare word as a string.
+		if rule.Type == config.SchemaTypeMixed && !strings.ContainsAny(raw, "\"'[]{}=#, \t\n") {
+			return raw, nil
+		}
 		return nil, err
 	}
 	if rule.Type == config.SchemaTypeString {
@@ -594,4 +626,15 @@ func parseConfigKeyComponent(raw string, start int) (string, int, error) {
 		return "", start, fmt.Errorf("empty key component")
 	}
 	return raw[start:end], end, nil
+}
+
+// configEditRefusal words a target-resolution failure. A config the graph cannot read (a value of
+// the wrong shape, such as a scalar where a table is needed) gets its next step: the edit verbs
+// cannot repair a file they cannot read.
+func configEditRefusal(err error) string {
+	msg := fmt.Sprintf("cannot edit config: %v", err)
+	if strings.Contains(err.Error(), "read config graph for edit target") {
+		msg += "; fix the value named above in that file by hand, then run `yolo check` and repeat the command"
+	}
+	return msg + "\n"
 }

@@ -154,9 +154,8 @@ func loadMountsWorkspaceConfig(workspace string, edit ...*editValidationContext)
 }
 
 // writableMountRequestRefusal is the refusal for a TOML request the user config does not allow,
-// and its next step is the exact two lines and the exact file (happy-path-principle.md). No
-// `yolo config` verb is named: `config add` and `config set` both refuse to create a value that
-// is missing, which a user config with no [allow.mounts] table is.
+// and its next step is the exact two lines and the exact file, then the one command that writes
+// them (happy-path-principle.md). `config add` creates the missing table and list (OQ-RC10).
 func writableMountRequestRefusal(m ContextMount) string {
 	userPath, _, toml, err := resolveUserConfigPath(paths.UserConfigPath())
 	lines := "[allow.mounts]\n    on_request = [\"write\"]"
@@ -167,8 +166,8 @@ func writableMountRequestRefusal(m ContextMount) string {
 	}
 	return fmt.Sprintf("config.mounts: %s asks for a writable host mount (write = true), and your "+
 		"user config does not let a project ask for one. To let projects request writable mounts, "+
-		"each still approved by you at launch, add to %s:\n    %s\nOtherwise remove `write = true` "+
-		"from the entry and it mounts read-only",
+		"each still approved by you at launch, run `yolo config add allow.mounts.on_request write --user` "+
+		"or add to %s:\n    %s\nOtherwise remove `write = true` from the entry and it mounts read-only",
 		termsafe.Visible(m.Spec), userPath, lines)
 }
 
