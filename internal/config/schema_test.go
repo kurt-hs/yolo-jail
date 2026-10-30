@@ -293,7 +293,7 @@ func TestReadableSchemaMatchesWorkspaceProviderScopeAndSelectionReaders(t *testi
 		"providers.*.endpoints":        SchemaScopeUserOnly,
 		"providers.*.platform":         SchemaScopeUserOnly,
 		"providers.*.api_key_env_name": SchemaScopeUserOnly,
-		"mounts.*.write":               SchemaScopeUserOnly,
+		"mounts.*.write":               SchemaScopeFieldSensitive, // a project may request one (RC-D24)
 		"active_provider.default":      SchemaScopeUserOnly,
 	} {
 		if got := readable[path].Scope; got != want {

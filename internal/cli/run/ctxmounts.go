@@ -9,10 +9,11 @@ package run
 // backend-parity.md §6's defect — a jail told about a /ctx path that does not exist — so
 // both call the same function rather than agreeing by construction.
 //
-// ⚠ READ-WRITE ELEMENTS COME FROM THE USER SCOPE ALONE (config.LoadRWMounts), never from
-// the merged config this function is handed: the merge records no provenance, and the
-// trust predicate of §2.2 is a statement about where an element was written. Read-only
-// elements keep coming from the merged view, which is where they always came from.
+// ⚠ READ-WRITE ELEMENTS COME FROM THE USER SCOPE (config.LoadRWMounts) AND FROM A TOML
+// WORKSPACE REQUEST THE USER ALLOWS (config.LoadWorkspaceRWMounts, RC-D24), never from the
+// merged config this function is handed: the merge records no provenance, and the trust
+// predicate of §2.2 is a statement about where an element was written. Read-only elements
+// keep coming from the merged view, which is where they always came from.
 
 import (
 	"path/filepath"
@@ -73,6 +74,14 @@ func (o *Options) configCtxMounts(rt string, cfg *jsonx.OrderedMap, note func(st
 		note("[yellow]Warning: read-write mounts: " + err.Error() + " — none mounted[/yellow]")
 	}
 	elements = append(elements, rw...)
+	// RC-D24: the writable mounts this workspace's TOML config requests, when the user config
+	// allows a request. Validation refused any it does not allow, and the config-change gate
+	// approved these as part of the workspace config, both before this runs.
+	requested, err := config.LoadWorkspaceRWMounts(o.Workspace)
+	if err != nil {
+		note("[yellow]Warning: requested read-write mounts: " + err.Error() + " — none mounted[/yellow]")
+	}
+	elements = append(elements, requested...)
 
 	roUnsafe := o.roBindsUnsupported(rt)
 	var out []configCtxMount

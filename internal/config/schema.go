@@ -179,7 +179,8 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "machine.resources.io", Scope: both, Type: SchemaTypeMixed},
 		{Path: "machine.resources.io.priority", Scope: both, Type: SchemaTypeString},
 		{Path: "machine.resources.io.*", Scope: both, Type: SchemaTypeAny},
-		{Path: "mounts.*.write", Scope: user, Type: SchemaTypeBoolean},
+		// A project may request one; validateMountScope judges it against allow.mounts (RC-D24).
+		{Path: "mounts.*.write", Scope: mixed, Type: SchemaTypeBoolean},
 		{Path: "machine.resources", Scope: both, Type: SchemaTypeObject},
 		{Path: "machine.resources.memory", Scope: both, Type: SchemaTypeString},
 		{Path: "machine.resources.pids_limit", Scope: both, Type: SchemaTypeNumber},

@@ -468,6 +468,7 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 func (o *Options) printChangeRefusal(e *config.ChangedNonInteractiveError) {
 	out := o.pr(o.Stderr)
 	out.printf("\n[bold red]⚠  %s[/bold red]\n", e.Headline())
+	printWritableMounts(out, e.WritableMounts)
 	printScopeBlock(out, e.ScopeBlock)
 	printScopeCounts(out, e.ScopeCounts)
 	printConfigDiff(out, e.DiffLines)
@@ -475,6 +476,20 @@ func (o *Options) printChangeRefusal(e *config.ChangedNonInteractiveError) {
 	// The advice names files, one of them the git config the scope was read from, which can
 	// sit in a directory the agent named; it carries no markup of its own.
 	out.print(richtext.Escape(e.Advice()))
+}
+
+// printWritableMounts renders the writable host mounts a changed workspace config holds
+// (config.ChangeReport.WritableMounts, RC-D24) in bold red, FIRST, above the scope block and the
+// diff: approving the diff approves them, and a long diff must not carry one past the reader.
+// Each line carries config.WritableMountMarker in its words, so it stays loud with color off.
+func printWritableMounts(out printer, lines []string) {
+	block := config.WritableMountBlock(lines)
+	for _, line := range block {
+		out.printf("[bold red]%s[/bold red]", richtext.Escape(line))
+	}
+	if len(block) > 0 {
+		out.print("")
+	}
 }
 
 // printScopeBlock renders the labeled repository-scope block (BB-D31) in the launcher's
@@ -561,6 +576,9 @@ func printConfigDiff(out printer, diffLines []string) {
 		switch {
 		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
 			out.printf("[dim]%s[/dim]", line)
+		case strings.HasPrefix(line, "+") && writableDiffLine(line):
+			// RC-D24: the line that makes a mount writable is red and marked, not green.
+			out.printf("[bold red]%s  ← %s[/bold red]", line, config.WritableMountMarker)
 		case strings.HasPrefix(line, "+"):
 			out.printf("[green]%s[/green]", line)
 		case strings.HasPrefix(line, "-"):
@@ -571,6 +589,12 @@ func printConfigDiff(out printer, diffLines []string) {
 			out.print(line)
 		}
 	}
+}
+
+// writableDiffLine reports whether an added diff line is a mount's `"write": true`, the line
+// that makes it writable (RC-D24).
+func writableDiffLine(line string) bool {
+	return strings.Contains(strings.Join(strings.Fields(line), ""), `"write":true`)
 }
 
 // changePrompter renders the config diff and reads the y/N answer.
@@ -605,6 +629,7 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 			"Accept these repository scope changes? [y/N] "
 	}
 	out.print("\n[bold yellow]⚠  " + header + "[/bold yellow]\n")
+	printWritableMounts(out, r.WritableMounts)
 	printScopeBlock(out, r.ScopeBlock)
 	printConfigDiff(out, r.DiffLines)
 	out.print("")
@@ -634,11 +659,21 @@ func (p *changePrompter) PromptReport(r config.ChangeReport) bool {
 
 // ReportAccepted shows what --accept-config-changes approves on a launch with no terminal, before
 // it is recorded (WW-D20): the repository scope block and its count lines, for remotes and
-// entries alike, so a scripted launch's log says which repositories it let in.
+// entries alike, so a scripted launch's log says which repositories it let in; and the writable
+// host mounts the approved config holds (RC-D24), which the flag approves as a `y` does but
+// never unseen.
 func (p *changePrompter) ReportAccepted(r config.ChangeReport) {
 	out := p.o.pr(p.o.Stderr)
-	out.print("\n[bold yellow]⚠  Repository scope changed since last run; " + config.AcceptConfigChangesFlag +
+	what := "Repository scope changed since last run"
+	switch {
+	case r.ScopeChanged && len(r.WritableMounts) > 0:
+		what = "Repository scope and a config with writable host mounts changed since last run"
+	case !r.ScopeChanged:
+		what = "Workspace config with writable host mounts changed since last run"
+	}
+	out.print("\n[bold yellow]⚠  " + what + "; " + config.AcceptConfigChangesFlag +
 		" records it as approved:[/bold yellow]\n")
+	printWritableMounts(out, r.WritableMounts)
 	printScopeBlock(out, r.ScopeBlock)
 	printScopeCounts(out, r.ScopeCounts)
 }

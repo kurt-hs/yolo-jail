@@ -197,6 +197,14 @@ func ResolveReadableAllowance(input ReadableAllowanceInput) (ReadableAllowancePl
 	}
 	for _, name := range allow.Keys() {
 		value := readableValue(allow, name)
+		if name == allowMountsName {
+			// Core's own ceiling (RC-D24, mountsrequest.go), not a broker's or a pack's: judged
+			// by its own validator, so a broker's resolution never reports it as undeclared.
+			if problems := validateAllowMountsTable(value); len(problems) > 0 {
+				return plan, fmt.Errorf("%s", strings.Join(problems, "; "))
+			}
+			continue
+		}
 		if isReadableTableOff(value) {
 			if broker, exists := brokers[name]; exists && broker.Ambiguous {
 				return plan, fmt.Errorf("allow.%s has ambiguous unselected broker declarations", name)

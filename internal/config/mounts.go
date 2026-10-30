@@ -39,7 +39,8 @@ type ContextMount struct {
 	// At is the jail path as written, or "" for the default: /ctx/<basename of the RESOLVED
 	// host path>, which DestFor computes.
 	At string
-	// RW is true only for an object element that says "mode": "rw".
+	// RW is true only for an object element that says "mode": "rw" or "write": true (the
+	// readable config's spelling, docs/design/config-project.md §1; RC-D24).
 	RW bool
 	// Optional is true only for an object element that says "optional": true: a backend that
 	// cannot deliver it skips it with one line and the launch goes on, where a required element
@@ -147,8 +148,10 @@ func ParseMountElement(v any, where string) (m ContextMount, problems []string) 
 	}
 	m.Spec, _ = jsonx.DumpsCompact(obj)
 	for _, k := range obj.Keys() {
-		if _, known := mountObjectKeys[k]; !known {
-			problems = append(problems, fmt.Sprintf("%s: unknown key %q (known: at, host, mode, optional)", where, k))
+		// `write` is the readable config's spelling (RC-D24), kept out of mountObjectKeys,
+		// which is also the legacy JSONC schema census.
+		if _, known := mountObjectKeys[k]; !known && k != "write" {
+			problems = append(problems, fmt.Sprintf("%s: unknown key %q (known: at, host, mode, optional, write)", where, k))
 		}
 	}
 	hostV, _ := obj.Get("host")
@@ -167,7 +170,18 @@ func ParseMountElement(v any, where string) (m ContextMount, problems []string) 
 	m.Host = host
 	modeV, hasMode := obj.Get("mode")
 	mode, _ := asStr(modeV)
+	writeV, hasWrite := obj.Get("write")
 	switch {
+	case hasWrite && hasMode:
+		problems = append(problems, where+`: "write" and "mode" both say the mode — keep one `+
+			`("write = true" in a TOML config, "mode": "rw" in a JSONC one)`)
+	case hasWrite:
+		b, ok := writeV.(bool)
+		if !ok {
+			problems = append(problems, fmt.Sprintf(`%s: "write" must be true or false (got %s)`,
+				where, reprAny(writeV)))
+		}
+		m.RW = b
 	case !hasMode:
 		problems = append(problems, where+`: "mode" is required in the object form — "ro" or "rw". `+
 			"There is no default, so a writable mount is never one nobody wrote")
@@ -269,10 +283,12 @@ const (
 // rwMountTrusted is THE TRUST PREDICATE of docs/reference/context-mounts.md#where-a-read-write-mount-may-be-declared: may a
 // read-write element declared in this scope be honored?
 //
-// Its COMPUTATION is not this doc's, and it is kept one function so that it can change in
-// one place: workspace-config-trust.md owns it, and until its OQ-WT1 rules, that doc's rule
-// D is the answer — user scope only, which is cache_relocations' precedent (a workspace
-// config is agent-editable, so it cannot grant a read-write host mount). Both halves read
+// Its COMPUTATION is kept one function so that it can change in one place: user scope only,
+// which is cache_relocations' precedent (a workspace config is agent-editable, so it cannot
+// GRANT a read-write host mount). RC-D24 (docs/design/readable-config.md) supersedes OQ-WT1
+// with one exception, judged beside this predicate rather than inside it because it needs the
+// element's file and the user's ceiling: a TOML workspace file may REQUEST one when the user
+// config allows it, and the config-change gate approves it (mountsrequest.go). Both halves read
 // it: rwElements (the loader, which decides what is MOUNTED) and validateMountScope (the
 // `yolo check` error and launch refusal for an element it rejects). An element it rejects
 // is never dropped silently and never downgraded to read-only, because a downgrade is a
@@ -303,7 +319,8 @@ func rwElements(cfg *jsonx.OrderedMap, scope mountScope) []ContextMount {
 // THIS IS THE BOUNDARY, for LoadCacheRelocations' reason: the merge records no provenance,
 // so a builder reading rw elements out of it could not say whether one came from a file the
 // agent can edit. The run pipeline therefore takes read-only elements from the merged
-// config and read-write ones from HERE (context-mounts.md#where-a-read-write-mount-may-be-declared), and validateMountScope's
+// config and read-write ones from HERE and from LoadWorkspaceRWMounts, RC-D24's allowed TOML
+// requests (context-mounts.md#where-a-read-write-mount-may-be-declared), and validateMountScope's
 // refusal of a workspace-scope element is the loud half, not the boundary itself.
 //
 // Inside a jail the user scope is that jail's own (the generated config.jsonc, which never
@@ -478,26 +495,46 @@ func validateMounts(config *jsonx.OrderedMap, workspace string, errs, warns *[]s
 // which carries no provenance, so — as validateCacheRelocations does — the workspace config
 // is re-read to learn which elements came from it. Nothing is re-read when the merged map
 // declares no read-write element, which is every config today.
+//
+// THE ONE EXCEPTION IS RC-D24's REQUEST (mountsrequest.go): an element every one of whose writers
+// is a TOML workspace file is a request, honored when the user config's `allow.mounts.on_request`
+// lists "write" and otherwise refused naming that line. In a jail, for the jail's own workspace,
+// the request is not judged: the host judged it against the host user's ceiling, and the jail's
+// own user scope never carries one.
 func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
 	if rwMountTrusted(mountScopeWorkspace) || !hasRWMount(config) {
 		return
 	}
-	wsCfg, wsNode, err := loadValidationWorkspaceConfigWithNode(workspace, edit...)
+	wsCfg, wsNode, err := loadMountsWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
 		return
 	}
 	// Located in the workspace files' own record (sources.go), at the element itself: the
 	// merged record could only say where the `mounts` key is, in every file that writes one.
 	elements, indices := parseMountsIndexed(wsCfg)
+	allowRead, allowed := false, false
 	for n, m := range elements {
 		if !m.RW {
+			continue
+		}
+		node := wsNode.key(mountsKey).elem(indices[n])
+		if writtenInTOML(node) {
+			if inJail() && jailOwnWorkspace(workspace) {
+				continue
+			}
+			if !allowRead {
+				allowRead, allowed = true, userAllowsWritableMountRequests(validationUserScope(edit...))
+			}
+			if !allowed {
+				add(errs, locatedAt(node, writableMountRequestRefusal(m)))
+			}
 			continue
 		}
 		msg := fmt.Sprintf("config.mounts: %s is in the workspace config, and a read-write "+
 			"mount is user-scope only — move it to %s. A workspace config is agent-editable, "+
 			"so it cannot grant a read-write host mount (docs/reference/context-mounts.md#where-a-read-write-mount-may-be-declared; "+
 			"a read-only entry may stay where it is)", m.Spec, paths.UserConfigPath())
-		add(errs, locatedAt(wsNode.key(mountsKey).elem(indices[n]), msg))
+		add(errs, locatedAt(node, msg))
 	}
 }
 

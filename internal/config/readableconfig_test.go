@@ -369,8 +369,6 @@ func TestReadableTOMLWorkspaceScopeRefusesUserLeversButAllowsModelFacts(t *testi
 		{"provider routing", `[providers.zai]
 api_key_env_name = 'ZAI_KEY'
 `, "user-scope only"},
-		{"mount write", `mounts = [{ host = '~/data', at = '/ctx/data', write = true }]
-`, "user-scope only"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -380,6 +378,13 @@ api_key_env_name = 'ZAI_KEY'
 				t.Fatalf("scope refusal = %v, want %q", err, tc.want)
 			}
 		})
+	}
+	// A mount's `write` is a project REQUEST (RC-D24): the reader takes it, and validation
+	// judges it against the user's allow.mounts (mountsrequest_test.go).
+	request := t.TempDir()
+	write(t, filepath.Join(request, paths.WorkspaceConfigTOMLName), "mounts = [{ host = '~/data', at = '/ctx/data', write = true }]\n")
+	if _, err := LoadReadableWorkspaceConfig(request, true, nil); err != nil {
+		t.Fatalf("the reader refused a project's writable-mount request: %v", err)
 	}
 
 	dir := t.TempDir()

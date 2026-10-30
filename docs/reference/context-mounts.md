@@ -221,12 +221,45 @@ Inside a jail the user scope is that jail's own, whose generated `config.jsonc` 
 own paths, trust flowing downward. String and `"mode": "ro"` elements keep the ordinary
 workspace scoping and the [config-change diff prompt](config-safety.md).
 
-> [!NOTE]
-> Whether a workspace's own config may ever declare an rw element is not this doc's to decide.
-> It is [`OQ-WT1`](../design/workspace-config-trust.md#OQ-WT1), open in
-> [`workspace-config-trust.md`](../design/workspace-config-trust.md), whose recommendation is to
-> admit one from `yolo-jail.local.jsonc` only against a host-side trust record. When it is ruled,
-> `rwMountTrusted` is the one function that changes.
+#### A project may request one, once your config allows it
+
+[RC-D24](../design/readable-config.md#RC-D24) supersedes OQ-WT1 with one exception. A
+**request** is a `mounts` table with `write = true` in a project's TOML config,
+`yolo-jail.toml` or `yolo-jail.local.toml` or a TOML file either includes. The **ceiling** is
+two lines in your user config:
+
+```toml
+[allow.mounts]
+on_request = ["write"]
+```
+
+- **Without the ceiling, the request is refused.** `yolo check` and the launch report it at the
+  entry's line, and the message names the user config file and the two lines to add. It names no
+  `yolo config` command, because `config add` and `config set` refuse to create a missing value.
+- **With the ceiling, the request is approved like any other config change.** The entry is part
+  of the workspace config the [config-change gate](config-safety.md) diffs, so approving the diff
+  approves the mount, and a changed request asks again. The prompt prints each writable mount in
+  bold red above the diff, and marks the diff line that holds `"write": true`. Each such line
+  carries the words `WRITABLE HOST MOUNT`, so the mount stays visible with color off. The
+  no-terminal refusal shows the same block.
+- **`--accept-config-changes` approves a request as it approves a repository scope change**
+  (BB-D30): it records every part, as `y` would. It never approves one unseen. Before recording,
+  it prints the same red block, as it already does for a changed scope.
+- **`always` is refused for mounts.** A standing grant would skip the per-project approval that
+  the ruling requires. `on_request` takes only `"write"`.
+- **The JSONC reader is not backported.** A read-write element that a `yolo-jail.jsonc` or
+  `yolo-jail.local.jsonc` wrote keeps the refusal above, even when your config allows requests.
+  The check is per element: it looks at the files that wrote the element.
+- **The request still meets every other rule.** The [refusal set](#the-refusal-set) applies to
+  it, as do the broker mount fence, the `/ctx`-only rule and the destination rules. The ceiling
+  changes only where a read-write element may be written. It never changes what the element may
+  reach.
+
+`config.LoadWorkspaceRWMounts` is the run pipeline's second source of read-write elements, beside
+`config.LoadRWMounts`. It reads the workspace files with their record, so it never returns an
+element that a JSONC file wrote. It reads the ceiling from the user scope directly. Inside a jail,
+for the jail's own workspace, the request is not judged again: the host has already judged it
+against its user's ceiling.
 
 ### The refusal set
 

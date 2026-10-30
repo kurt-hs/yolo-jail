@@ -685,6 +685,20 @@
     yolo-jail.local.jsonc or anything they include it is a `yolo check` error
     and the launch refuses: a workspace config is agent-editable, so it cannot
     grant a read-write host mount.  Read-only entries may sit at either scope.
+    [bold]One exception: a project's TOML config may REQUEST one[/bold] — a table
+    with `write = true` in yolo-jail.toml or yolo-jail.local.toml, such as
+      mounts = [{ host = "~/scratch", at = "/ctx/scratch", write = true }]
+    — once YOUR user config allows requests with these two lines:
+      [allow.mounts]
+      on_request = ["write"]
+    Without them the request is a `yolo check` error naming them.  With them
+    it is approved at the config-change prompt like any change, the writable
+    mount printed in red and marked "WRITABLE HOST MOUNT" (color or not), and
+    a changed request asks again; --accept-config-changes approves it too,
+    after printing the same block.  `allow.mounts` has no `always`: every
+    writable mount is approved per project.  `write` and `mode` together are
+    an error.  The JSONC config files are not backported: a read-write entry
+    there keeps the refusal above.  A request meets every rule below.
     A read-write source is also REFUSED when it is, or contains, your home,
     ~/.config/yolo-jail or ~/.local/share/yolo-jail, sits inside either yolo
     directory, or overlaps the workspace in either direction (a second

@@ -36,7 +36,7 @@ func TestAMalformedOptionalIsRefused(t *testing.T) {
 	src := mountSourceDir(t, "logs")
 	for _, tc := range []struct{ name, element, want string }{
 		{"a string", `{"host": "` + src + `", "mode": "ro", "optional": "yes"}`, `"optional" must be true or false`},
-		{"a typo beside it", `{"host": "` + src + `", "mode": "ro", "optionl": true}`, `(known: at, host, mode, optional)`},
+		{"a typo beside it", `{"host": "` + src + `", "mode": "ro", "optionl": true}`, `(known: at, host, mode, optional, write)`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newMountsHost(t)

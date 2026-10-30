@@ -79,7 +79,7 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	warns := &[]string{}
 
 	if edit == nil {
-		reportUnknownKeys(config, knownTopLevelConfigKeys, "config", errs)
+		reportUnknownKeys(config, withAllowKey(knownTopLevelConfigKeys), "config", errs)
 	} else {
 		reportUnknownKeysWithReadableFG(config, errs)
 	}
@@ -90,6 +90,7 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	validateAgentsRetired(config, errs, warns)
 	validatePackages(config, errs)
 	validateMounts(config, workspace, errs, warns, edit)
+	validateAllowMounts(config, errs)
 	validateWorkspaceReadonly(config, errs)
 	validatePerSidePaths(config, errs)
 	validateLoopholes(config, workspace, resolver, errs, warns, edit)

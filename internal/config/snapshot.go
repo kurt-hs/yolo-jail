@@ -137,6 +137,8 @@ type ChangedNonInteractiveError struct {
 	// Workspace is the launch's workspace, which that command names, so it works from
 	// wherever it is pasted.
 	Workspace string
+	// WritableMounts are ChangeReport.WritableMounts: printed loud, before the diff.
+	WritableMounts []string
 }
 
 // Headline states what happened and why the launch stopped. It names the repository scope
@@ -217,6 +219,10 @@ func (e *ChangedNonInteractiveError) Error() string {
 	var b strings.Builder
 	b.WriteString(e.Headline())
 	b.WriteString("\n\n")
+	for _, line := range WritableMountBlock(e.WritableMounts) {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 	for _, line := range e.ScopeBlock {
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -279,6 +285,11 @@ type ChangeReport struct {
 	ScopeLabels []string
 	// Workspace is the launch's workspace, for that step.
 	Workspace string
+	// WritableMounts are the writable host mounts the changed workspace config holds, one line
+	// each (WritableMountLines), set only when the config part changed: approving the diff
+	// approves them (RC-D24), so every renderer shows them loud — red, and marked
+	// WritableMountMarker so they stay loud with color off (WritableMountBlock).
+	WritableMounts []string
 }
 
 // ReportPrompter is a ChangePrompter that can show the whole report, so the header and the
@@ -426,6 +437,10 @@ func ApproveConfigAndScope(workspace string, config *jsonx.OrderedMap, scope *Sc
 	report := ChangeReport{ConfigChanged: configChanged, DiffLines: diffLines,
 		ScopeChanged: sc.changed, ScopeBlock: sc.block, ScopeCounts: sc.counts, EntryEdits: sc.entryEdits,
 		ConfigFiles: configFiles, ScopeLabels: sc.labels, Workspace: workspaceOrCwd(workspace)}
+	if configChanged {
+		// RC-D24: approving this diff approves every writable mount in it, so it is shown loud.
+		report.WritableMounts = WritableMountLines(config)
+	}
 
 	if !isTTY {
 		if !acceptNonInteractive {
@@ -442,6 +457,7 @@ func ApproveConfigAndScope(workspace string, config *jsonx.OrderedMap, scope *Sc
 				EntryEdits:           sc.entryEdits,
 				ScopeLabels:          sc.labels,
 				Workspace:            workspaceOrCwd(workspace),
+				WritableMounts:       report.WritableMounts,
 			}
 			if sc.changed {
 				e.ScopePath = scopePath
@@ -449,8 +465,9 @@ func ApproveConfigAndScope(workspace string, config *jsonx.OrderedMap, scope *Sc
 			return false, nil, e
 		}
 		// Granted by the flag: shown, then recorded exactly as a `y` does, or the next
-		// launch prompts (or refuses) over the same change all over again.
-		if ar, ok := prompter.(AcceptedReporter); ok && sc.changed {
+		// launch prompts (or refuses) over the same change all over again. A writable mount
+		// is shown as a scope change is (WW-D20): the flag approves it, but never unseen.
+		if ar, ok := prompter.(AcceptedReporter); ok && (sc.changed || len(report.WritableMounts) > 0) {
 			ar.ReportAccepted(report)
 		}
 		if err := recordAll(); err != nil {
