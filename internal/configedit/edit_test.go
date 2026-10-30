@@ -204,7 +204,46 @@ func TestConfigEditApplyResolvesSymlinkTargetAndChecksPreimage(t *testing.T) {
 	if _, err := os.Lstat(alias); err != nil {
 		t.Fatalf("symlink was replaced: %v", err)
 	}
-	if _, err := os.Stat(target + ".yolo-edit.lock"); err != nil {
-		t.Fatalf("physical target lock not used: %v", err)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("the edit left files beside the config (RC-D34): %v", entries)
+	}
+}
+
+// An edit of an existing file follows no file planted beside it: a symlink named like the old
+// lock sidecar, which a repository can carry, is neither opened nor written, and no sidecar is
+// made (RC-D34). The parent directory's lock is the one lock.
+func TestConfigEditApplyLeavesNoSidecarAndFollowsNoPlantedOne(t *testing.T) {
+	dir, ownerDir := t.TempDir(), t.TempDir()
+	target := filepath.Join(dir, "yolo-jail.toml")
+	if err := os.WriteFile(target, []byte("packs = []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(ownerDir, "owned-file")
+	const owned = "separately owned bytes\n"
+	if err := os.WriteFile(victim, []byte(owned), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	planted := target + ".yolo-edit.lock"
+	if err := os.Symlink(victim, planted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(target, configdoc.TOML, Mutation{Action: Append, Path: []configdoc.Step{{Key: "packs"}}, Value: "claude"}, ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(victim); string(got) != owned {
+		t.Fatalf("the edit wrote through a planted sidecar symlink: %q", got)
+	}
+	if err := os.Remove(planted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(target, configdoc.TOML, Mutation{Action: Append, Path: []configdoc.Step{{Key: "packs"}}, Value: "codex"}, ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(planted); !os.IsNotExist(err) {
+		t.Fatalf("an edit of an existing file left a lock sidecar: %v", err)
 	}
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"golang.org/x/sys/unix"
 )
 
@@ -35,9 +34,11 @@ type ApplyOptions struct {
 	onProspectiveLocked        func()
 }
 
-// Apply serializes edits on the held parent directory and the existing physical-target sidecar,
-// re-reads under those locks, and atomically replaces only the named physical file. Dry runs and
-// semantic no-ops never write.
+// Apply serializes edits on the held parent directory of the symlink-resolved target, re-reads
+// under that lock, and atomically replaces only the named physical file. Dry runs and semantic
+// no-ops never write. Every writer of a config file (this, creation, `yolo config migrate`) takes
+// that directory lock first, so it is the one lock: no lock file is made beside the config, where
+// it would litter the user's work tree and a planted symlink could redirect it (RC-D34).
 func Apply(path string, format configdoc.Format, mutation Mutation, options ApplyOptions) (*Plan, error) {
 	return applyWithOps(path, format, mutation, options, systemFileOps)
 }
@@ -93,11 +94,6 @@ func applyWithOps(path string, format configdoc.Format, mutation Mutation, optio
 	if err := verifyParentDirectory(parent, parentPath); err != nil {
 		return nil, err
 	}
-	lock, err := pidlock.Acquire(physical+".yolo-edit.lock", pidlock.Wait, nil)
-	if err != nil {
-		return nil, fmt.Errorf("lock config target %s: %w", physical, err)
-	}
-	defer lock.Release()
 	before, err := ops.ReadFile(physical)
 	if err != nil {
 		return nil, fmt.Errorf("read config target %s: %w", physical, err)

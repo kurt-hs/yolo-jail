@@ -65,11 +65,36 @@ func TestMigrateKeepsAnIgnoredLocalFileIgnored(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(ws, ".gitignore")); string(data) != gitignore {
 		t.Fatalf(".gitignore changed: %q", data)
 	}
-	if len(res.Ignores) != 1 || !res.Ignores[0].Done || res.Ignores[0].Line != "/yolo-jail.local.toml" {
+	if len(res.Ignores) != 2 || !res.Ignores[0].Done || res.Ignores[0].Line != "/yolo-jail.local.toml" {
 		t.Fatalf("result ignores = %+v", res.Ignores)
 	}
 	if got := res.Ignores[0].Report(ws); !strings.Contains(got, "Added /yolo-jail.local.toml to .git/info/exclude") {
 		t.Fatalf("apply report = %q", got)
+	}
+}
+
+// The backup of a file git ignored is ignored too, since it holds the same private bytes; the
+// backup of a tracked file is left to git, whose history already has it (RC-D34).
+func TestMigrateKeepsAnIgnoredFilesBackupIgnored(t *testing.T) {
+	env(t)
+	ws := realDir(t)
+	gitInit(t, ws, "yolo-jail.local.jsonc\n")
+	write(t, filepath.Join(ws, "yolo-jail.jsonc"), "{\"packages\": [\"just\"]}\n")
+	write(t, filepath.Join(ws, "yolo-jail.local.jsonc"), "{\"mise_tools\": {\"lua\": \"5.4.9\"}}\n")
+
+	p, res := migrate(t, ws)
+	want := "yolo-jail.local.jsonc.pre-migrate is not ignored by git as yolo-jail.local.jsonc was; adding it to .git/info/exclude"
+	if tr := p.Transcript(); !strings.Contains(tr, want) {
+		t.Fatalf("transcript lacks %q:\n%s", want, tr)
+	}
+	if !checkIgnored(t, ws, "yolo-jail.local.jsonc.pre-migrate") {
+		t.Fatal("the private file's backup is not ignored after the migration")
+	}
+	if checkIgnored(t, ws, "yolo-jail.jsonc.pre-migrate") {
+		t.Fatal("the project file's backup became ignored")
+	}
+	if len(res.Ignores) != 2 || !res.Ignores[1].Done || res.Ignores[1].Line != "/yolo-jail.local.jsonc.pre-migrate" {
+		t.Fatalf("result ignores = %+v", res.Ignores)
 	}
 }
 
@@ -112,7 +137,11 @@ func TestMigrateWithoutGitNamesTheIgnoreLine(t *testing.T) {
 	if !exists(filepath.Join(ws, "yolo-jail.local.toml")) {
 		t.Fatal("the migration did not write yolo-jail.local.toml")
 	}
-	if len(res.Ignores) != 1 || res.Ignores[0].Done || res.Ignores[0].Report(ws) != want+"." {
+	backupHint := "yolo-jail.local.jsonc.pre-migrate is not ignored by git (git could not be asked here); to keep it out of commits, add the line `yolo-jail.local.jsonc.pre-migrate` to .gitignore"
+	if strings.Count(tr, backupHint) != 1 || strings.Contains(tr, "yolo-jail.jsonc.pre-migrate is not ignored") {
+		t.Fatalf("transcript lacks the one backup hint %q for the local file only:\n%s", backupHint, tr)
+	}
+	if len(res.Ignores) != 2 || res.Ignores[0].Done || res.Ignores[0].Report(ws) != want+"." {
 		t.Fatalf("result ignores = %+v", res.Ignores)
 	}
 }

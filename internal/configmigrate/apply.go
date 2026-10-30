@@ -10,7 +10,6 @@ import (
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/pidlock"
 	"golang.org/x/sys/unix"
 )
 
@@ -33,7 +32,7 @@ type ApplyResult struct {
 }
 
 // Apply writes a plan that proved equal. It locks every file it replaces the way `yolo config
-// set` does (the parent directory, then the physical file's edit lock), refuses a file that
+// set` does (the parent directory of each), refuses a file that
 // changed since the plan and any collision before the first write, keeps each original as
 // <name>.pre-migrate, reads the written files back through the launch's readers, and restores
 // every file if any step or that check fails. Records are respelled only after the files are in
@@ -196,21 +195,19 @@ func respellRecords(planned []Record, workspace string) []Record {
 	return out
 }
 
-// lockTargets takes the locks `yolo config set` takes for each file it replaces, in a fixed order:
-// every parent directory (flock on the directory itself, never on an inode a rename replaces),
-// then each physical file's edit lock.
+// lockTargets takes the lock `yolo config set` takes for each file it replaces: its parent
+// directory (flock on the directory itself, never on an inode a rename replaces), in a fixed
+// order. No lock file is made beside a config file: the directory lock is the one every writer
+// takes, and a file left there would outlive the old name it guarded (RC-D34).
 func lockTargets(targets []Target) (func(), error) {
 	dirSet := map[string]bool{}
-	fileSet := map[string]bool{}
 	for _, t := range targets {
 		dirSet[filepath.Dir(t.Old)] = true
-		fileSet[t.Old] = true
 		if t.Link != nil {
 			dirSet[filepath.Dir(t.Link.Path)] = true
 		}
 	}
 	dirs := sortedKeys(dirSet)
-	files := sortedKeys(fileSet)
 	var release []func()
 	unlock := func() {
 		for i := len(release) - 1; i >= 0; i-- {
@@ -235,14 +232,6 @@ func lockTargets(targets []Target) (func(), error) {
 			unlock()
 			return nil, fmt.Errorf("%s changed while waiting for its lock; run `yolo config migrate` again", dir)
 		}
-	}
-	for _, file := range files {
-		lock, err := pidlock.Acquire(file+".yolo-edit.lock", pidlock.Wait, nil)
-		if err != nil {
-			unlock()
-			return nil, fmt.Errorf("lock %s: %w", file, err)
-		}
-		release = append(release, lock.Release)
 	}
 	return unlock, nil
 }

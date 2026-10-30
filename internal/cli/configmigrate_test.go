@@ -135,6 +135,71 @@ func TestConfigMigrateKeepsTheLocalFileOutOfCommits(t *testing.T) {
 	}
 }
 
+// After `yolo config migrate --yes` and a `yolo config set` in a git work tree, `git status`
+// shows only what the migration is for: the tracked old file gone, the new file, and the tracked
+// file's backup. No lock file is left beside any config file, and the backup of a private file git
+// ignored is ignored too, so `git add -A` commits neither (RC-D34). The closing lines name every
+// change and say the backups can go.
+func TestConfigMigrateAndSetLeaveOnlyTheirChangesInGitStatus(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not on PATH")
+	}
+	e := newMigrateEnv(t)
+	t.Setenv("XDG_CONFIG_HOME", e.home)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(e.ws))
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.invalid")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.invalid")
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", e.ws}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	git("init", "-q")
+	writeMigrateFile(t, filepath.Join(e.ws, ".gitignore"), "yolo-jail.local.jsonc\n")
+	writeMigrateFile(t, filepath.Join(e.ws, "yolo-jail.jsonc"), "{\n  \"network\": {\"mode\": \"bridge\"}\n}\n")
+	git("add", ".gitignore", "yolo-jail.jsonc")
+	git("-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
+	writeMigrateFile(t, filepath.Join(e.ws, "yolo-jail.local.jsonc"), "{\n  \"mise_tools\": {\"lua\": \"5.4.9\"}\n}\n")
+
+	rc, out, errw := runConfigMigrateVerb(t, "--yes")
+	if rc != 0 {
+		t.Fatalf("--yes: rc=%d\nstdout:\n%s\nstderr:\n%s", rc, out, errw)
+	}
+	want := " D yolo-jail.jsonc\n?? yolo-jail.jsonc.pre-migrate\n?? yolo-jail.toml\n"
+	if got := git("status", "--porcelain", "--untracked-files=all"); got != want {
+		t.Fatalf("git status after migrate:\n%s\nwant:\n%s\nstdout:\n%s", got, want, out)
+	}
+	if strings.Contains(out, "no tracked file was touched") || strings.Contains(out, "Nothing else on this machine changed") {
+		t.Errorf("the closing line claims nothing else changed:\n%s", out)
+	}
+	for _, line := range []string{
+		"Kept the originals as yolo-jail.jsonc.pre-migrate, yolo-jail.local.jsonc.pre-migrate; delete them once the new files work for you.",
+		"Added /yolo-jail.local.jsonc.pre-migrate to .git/info/exclude",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("stdout lacks %q:\n%s", line, out)
+		}
+	}
+
+	var setOut, setErr bytes.Buffer
+	// The edit is written before the post-write check runs; that check's verdict depends on the
+	// machine, so only its agreement with rc is asserted, as every public edit test does.
+	rc = configRunW([]string{"set", "machine.resources.cpus", "4", "--project"}, &setOut, &setErr)
+	assertPublicPostWriteCheck(t, rc, setOut.String(), setErr.String())
+	if got, _ := os.ReadFile(filepath.Join(e.ws, "yolo-jail.toml")); !strings.Contains(string(got), "cpus = 4") {
+		t.Fatalf("config set did not write yolo-jail.toml: %q\nstderr:\n%s", got, setErr.String())
+	}
+	if got := git("status", "--porcelain", "--untracked-files=all"); got != want {
+		t.Fatalf("git status after config set:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestConfigMigrateInJailTouchesOnlyProjectFiles(t *testing.T) {
 	e := newMigrateEnv(t)
 	t.Setenv("YOLO_VERSION", "0.0.0-test")

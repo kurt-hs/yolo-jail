@@ -129,16 +129,39 @@ func configMigrate(args []string, in io.Reader, interactive bool, out, errw io.W
 		fmt.Fprintf(errw, "yolo config migrate: %v\n", err)
 		return 1
 	}
+	// Every change is named here, so the closing line can say nothing else changed (RC-D34).
 	fmt.Fprintf(out, "Written: %s.\n", strings.Join(result.Written, ", "))
-	excluded := false
+	if len(result.Links) > 0 {
+		fmt.Fprintf(out, "Linked: %s.\n", strings.Join(shownPaths(workspace, result.Links), ", "))
+	}
+	if len(result.Backups) > 0 {
+		fmt.Fprintf(out, "Kept the %s as %s; delete %s once the new files work for you.\n",
+			plural(len(result.Backups), "original", "originals"), strings.Join(shownPaths(workspace, result.Backups), ", "),
+			plural(len(result.Backups), "it", "them"))
+	}
+	if s := configmigrate.Respelled(result.Records); s != "" {
+		fmt.Fprintf(out, "Records only yolo reads, respelled in place: %s.\n", s)
+	}
+	for _, r := range result.Records {
+		if r.State == configmigrate.RecordLeft {
+			fmt.Fprintf(out, "The %s %s is left: %s.\n", r.Kind, r.Path, r.Why)
+		}
+	}
 	for _, ig := range result.Ignores {
 		fmt.Fprintln(out, ig.Report(workspace))
-		excluded = excluded || ig.Done
 	}
-	if excluded {
-		fmt.Fprintln(out, "Nothing else on this machine changed, and no tracked file was touched. Next: `yolo check`.")
-	} else {
-		fmt.Fprintln(out, "Nothing else on this machine changed. Next: `yolo check`.")
-	}
+	fmt.Fprintln(out, "Nothing else changed. Next: `yolo check`.")
 	return 0
+}
+
+// shownPaths names each path relative to the workspace when it lies inside it, else in full.
+func shownPaths(workspace string, list []string) []string {
+	out := make([]string, len(list))
+	for i, p := range list {
+		out[i] = p
+		if rel, err := filepath.Rel(workspace, p); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			out[i] = rel
+		}
+	}
+	return out
 }

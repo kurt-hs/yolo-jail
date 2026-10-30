@@ -61,7 +61,10 @@ Not found here (listed in config.jsonc): ~/.dotfiles/tag-personal/config/yolo-ja
 Effective config before and after: identical (checked as canonical JSON, 2,447 bytes).
 Records only yolo reads, respelled in place: 3 approval records, 2 boot baselines.
 Write 4 files, keeping each original as <name>.pre-migrate? [y/N] y
-Written. Nothing else on this machine changed. Next: `yolo check`.
+Written: ~/.config/yolo-jail/config.toml, ~/.config/yolo-jail/overrides.toml, ~/.dotfiles/tag-work/config/yolo-jail/work.toml, ~/code/yolo-jail/yolo-jail.toml.
+Kept the originals as ~/.config/yolo-jail/config.jsonc.pre-migrate, ~/.config/yolo-jail/overrides.jsonc.pre-migrate, ~/.dotfiles/tag-work/config/yolo-jail/work.jsonc.pre-migrate, yolo-jail.jsonc.pre-migrate; delete them once the new files work for you.
+Records only yolo reads, respelled in place: 3 approval records, 2 boot baselines.
+Nothing else changed. Next: `yolo check`.
 ```
 
 A yolo from before the TOML release meeting a migrated config. Nothing can be shipped to it:
@@ -162,10 +165,13 @@ Upgrade with `yolo update`, or `just install` from a checkout. Nothing was start
 2. **Rewrites each file where it is, and never merges.** `config.jsonc` → `config.toml`, each
    include → its `.toml` twin with the include entries respelled; through a symlink, so the
    dotfiles copy changes; a file it cannot reach is listed with the command to run where it can;
-   each original kept as `<name>.pre-migrate`. A renamed file whose old name git ignored and whose
-   new name it does not is added to the clone's own `.git/info/exclude`, never to the tracked
-   `.gitignore`, and the plan says so; where git cannot be asked, the plan names the line to add
-   instead ([RC-D33](readable-config.md#RC-D33)).
+   each original kept as `<name>.pre-migrate`, which the output says may be deleted once the new
+   files work. A renamed file whose old name git ignored and whose new name it does not is added
+   to the clone's own `.git/info/exclude`, never to the tracked `.gitignore`, and the plan says
+   so; where git cannot be asked, the plan names the line to add instead
+   ([RC-D33](readable-config.md#RC-D33)). The same rule covers each `<name>.pre-migrate` backup,
+   and no lock file is left beside any config file: the output names every change it made
+   ([RC-D34](readable-config.md#RC-D34)).
 3. **Keeps comments, in order.** A comment is never read as belonging to a key; each is written
    back in document order, before whatever key follows it in the new file, and nothing is dropped.
 4. **Drops written defaults and folds repeated facts**, each as its own hunk, only while the

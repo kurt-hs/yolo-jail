@@ -49,25 +49,39 @@ func (p *MigrationPlan) Transcript() string {
 		return b.String()
 	}
 	fmt.Fprintf(&b, "Effective config before and after: identical (checked as canonical JSON, %d bytes).\n", p.CanonicalBytes)
-	var respell, left []string
+	if s := Respelled(p.Records); s != "" {
+		fmt.Fprintf(&b, "Records only yolo reads, respelled in place: %s.\n", s)
+	}
 	for _, r := range p.Records {
-		switch r.State {
-		case RecordRespell:
-			respell = append(respell, r.Kind)
-		case RecordLeft:
-			left = append(left, fmt.Sprintf("  %s %s is left: %s.", r.Kind, r.Path, r.Why))
+		if r.State == RecordLeft {
+			fmt.Fprintf(&b, "  %s %s is left: %s.\n", r.Kind, r.Path, r.Why)
 		}
-	}
-	if len(respell) > 0 {
-		fmt.Fprintf(&b, "Records only yolo reads, respelled in place: %s.\n", strings.Join(respell, ", "))
-	}
-	for _, line := range left {
-		b.WriteString(line + "\n")
 	}
 	for _, ig := range p.Ignores {
 		b.WriteString(ig.Plan(p.Graph.Request.Workspace) + ".\n")
 	}
 	return b.String()
+}
+
+// Respelled counts the records respelled in place by kind, in the order each kind first
+// appears ("3 approval records, 2 boot baselines"); "" when there are none.
+func Respelled(records []Record) string {
+	var kinds []string
+	count := map[string]int{}
+	for _, r := range records {
+		if r.State != RecordRespell {
+			continue
+		}
+		if count[r.Kind] == 0 {
+			kinds = append(kinds, r.Kind)
+		}
+		count[r.Kind]++
+	}
+	parts := make([]string, len(kinds))
+	for i, k := range kinds {
+		parts[i] = fmt.Sprintf("%d %s", count[k], plural(count[k], k, k+"s"))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func plural(n int, one, many string) string {

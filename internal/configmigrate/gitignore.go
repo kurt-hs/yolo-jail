@@ -25,21 +25,29 @@ type Ignore struct {
 	Done bool
 }
 
-// planIgnores decides an Ignore for each name a conversion renames: the physical file and, for a
-// linked old name, the link beside it. The rule is git's own answer for the old and new name,
-// so it covers every file a migration renames, not a list of names.
+// planIgnores decides an Ignore for each name a migration makes from an old one: the converted
+// physical file, the link beside a linked old name, and the <name>.pre-migrate backup of every
+// file it replaces (RC-D34: a backup holds the same private bytes its original did). The rule is
+// git's own answer for the old and new name, so it covers every such file, not a list of names.
 func planIgnores(g *Graph, targets []Target) []Ignore {
 	var out []Ignore
+	type pair struct {
+		oldPath, newPath string
+		// hint says this name gets the no-git hint when its file is the workspace's local file:
+		// the name the workspace reads, and the backup.
+		hint bool
+	}
 	for _, t := range targets {
-		if t.New == t.Old {
-			continue
+		var pairs []pair
+		if t.New != t.Old {
+			pairs = append(pairs, pair{t.Old, t.New, t.Link == nil})
+			if t.Link != nil {
+				pairs = append(pairs, pair{t.Link.Old, t.Link.Path, true})
+			}
 		}
-		pairs := [][2]string{{t.Old, t.New}}
-		if t.Link != nil {
-			pairs = append(pairs, [2]string{t.Link.Old, t.Link.Path})
-		}
-		for i, pair := range pairs {
-			oldPath, newPath := pair[0], pair[1]
+		pairs = append(pairs, pair{t.Old, t.Backup, true})
+		for _, pr := range pairs {
+			oldPath, newPath := pr.oldPath, pr.newPath
 			switch gitexclude.Check(oldPath) {
 			case gitexclude.Ignored:
 				if gitexclude.Check(newPath) != gitexclude.NotIgnored {
@@ -56,8 +64,9 @@ func planIgnores(g *Graph, targets []Target) []Ignore {
 				out = append(out, ig)
 			case gitexclude.Unknown:
 				// Without git there is no rule to compare, so only a file private by definition —
-				// the workspace's local file, under the name the workspace reads — gets the hint.
-				if i == len(pairs)-1 && isLocalFile(t.File) {
+				// the workspace's local file, under the name the workspace reads, and its backup —
+				// gets the hint.
+				if pr.hint && isLocalFile(t.File) {
 					out = append(out, Ignore{Old: oldPath, New: newPath, Hint: ignoreHint(g.Request.Workspace, newPath)})
 				}
 			}
@@ -68,7 +77,8 @@ func planIgnores(g *Graph, targets []Target) []Ignore {
 
 func isLocalFile(f *File) bool {
 	return f != nil && f.Scope == ScopeProject &&
-		(f.topName == paths.WorkspaceLocalConfigLegacyJSONCName || f.topName == paths.WorkspaceLocalConfigLegacyJSONName)
+		(f.topName == paths.WorkspaceLocalConfigLegacyJSONCName || f.topName == paths.WorkspaceLocalConfigLegacyJSONName ||
+			f.topName == paths.WorkspaceLocalConfigTOMLName)
 }
 
 func ignoreHint(workspace, newPath string) string {
