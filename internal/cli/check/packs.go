@@ -218,9 +218,23 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 	// The user's profile declarations are read ONCE for the section and shared with the
 	// protocol-pairing prediction below: both need them, and each read hands its findings to
 	// r.configWarn, so a second read would grade and count every malformed entry twice.
-	userProfiles := sync.OnceValues(func() (map[string]packload.UserProfile, error) {
+	//
+	// Each reader resolves against the launch's ONE SELECTION NAMESPACE
+	// (config.SelectableProfiles, config-user.md §5): the declarations plus an implied profile per
+	// provider name, alias and `<provider>/<variant>` the pack set declares, so a provider
+	// selected by its own name is predicted as the launch resolves it rather than as undeclared.
+	// The closure reads it over the set it is handed; the readers below, over `loaded`.
+	declaredProfiles := sync.OnceValues(func() (map[string]packload.UserProfile, error) {
 		return config.LoadProfiles(r.configWarn)
 	})
+	selectableOver := func(set []*packload.Pack) (map[string]packload.UserProfile, error) {
+		declared, err := declaredProfiles()
+		if err != nil {
+			return nil, err
+		}
+		return config.SelectableProfiles(declared, merged, set)
+	}
+	var closureSet []*packload.Pack
 	sel, _ := config.SelectPacks(entries, config.PackSelectSpec{
 		Resolve: func(e config.PackEntry) (*packload.Pack, error) {
 			if treeErr != nil {
@@ -291,9 +305,12 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 		},
 		Selection: packload.Selection{
 			UseProfiles: func(set []*packload.Pack) map[string]string {
+				closureSet = set
 				return config.ConfigProfileTable(merged, set)
 			},
-			UserProfiles: userProfiles,
+			UserProfiles: func() (map[string]packload.UserProfile, error) {
+				return selectableOver(closureSet)
+			},
 		},
 	})
 
@@ -309,6 +326,10 @@ func (o *Options) sectionPacks(r *reporter, merged *jsonx.OrderedMap) {
 			r.dim(cause)
 		}
 	}
+	// The readers below resolve over the selection the closure settled on.
+	userProfiles := sync.OnceValues(func() (map[string]packload.UserProfile, error) {
+		return selectableOver(loaded)
+	})
 	// Handed forward to the host-wrappers section, which predicts what `yolo host apply
 	// --assert` would generate: the host apply wraps the programs of the packs the same selection
 	// function hands it, the closure's additions included (notch-convergence item 6).

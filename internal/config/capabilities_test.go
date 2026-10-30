@@ -9,8 +9,42 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
+
+// TestUnmetCapabilitiesCountsAProviderSelectedByItsOwnName: the census reads the launch's one
+// selection namespace (SelectableProfiles), so an agent whose selection names a provider no
+// profile declares (OQ-RC3) runs on that provider and counts its capabilities. Fails if the
+// census resolves the selection over the declared profiles alone: the name then resolves to no
+// provider and the agent is counted on its own login, which declares nothing.
+func TestUnmetCapabilitiesCountsAProviderSelectedByItsOwnName(t *testing.T) {
+	useProfileKeysHome(t)
+	decodeManifest := func(body string) *packdecl.Manifest {
+		m, problems := packdecl.Decode([]byte(body))
+		if len(problems) != 0 {
+			t.Fatalf("fixture manifest: %v", problems)
+		}
+		return m
+	}
+	packs := []*packload.Pack{
+		{Name: "acme-pack", Decl: decodeManifest(`{"contributes":[
+			{"kind":"program","bin":"acme","via":"npm","package":"acme","protocols":["openai-responses"]}]}`)},
+		{Name: "acmecloud-pack", Decl: decodeManifest(`{"contributes":[
+			{"kind":"provider","name":"acmecloud","platform":"acmecloud","capabilities":["web_search"]}]}`)},
+	}
+	cfg := decode(t, `{"required_capabilities": ["web_search"], "profile": "acmecloud"}`)
+	launch := &CapabilityLaunch{
+		Packs: func() ([]*packload.Pack, bool) { return packs, true },
+		ProfileSets: func(set []*packload.Pack) map[string][]string {
+			return packload.ProfileSets(ConfigProfileSets(cfg, set))
+		},
+	}
+	got, err := UnmetCapabilities(cfg, launch)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("acme selected onto acmecloud by its provider name = (%v, %v), want web_search met", got, err)
+	}
+}
 
 // TestUnmetCapabilitiesCensusOfTheConfig is the census of the user's own declarations, with
 // no pack selected.

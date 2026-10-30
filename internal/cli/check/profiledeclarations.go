@@ -20,14 +20,16 @@ import (
 // per name, in the launch's "packs: " form. packs is the selection to read (the user scope's,
 // config.UserScopeSelectedPacks); complete false means a selected pack could not be read, and
 // then nothing is predicted, since that pack may be the declarer and the launch reports the
-// unreadable pack itself. The same for a profiles file that does not load.
+// unreadable pack itself. The same for a profiles file that does not load. userProfiles is the
+// launch's selection namespace over the selection (config.SelectableProfiles), so a provider
+// selected by its own name is declared here as it is at the launch.
 func profileDeclarationGap(cfg *jsonx.OrderedMap, packs func() ([]*packload.Pack, bool),
-	userProfiles func() (map[string]packload.UserProfile, error)) []string {
+	userProfiles func(selected []*packload.Pack) (map[string]packload.UserProfile, error)) []string {
 	selected, complete := packs()
 	if !complete {
 		return nil
 	}
-	declared, err := userProfiles()
+	declared, err := userProfiles(selected)
 	if err != nil {
 		return nil
 	}

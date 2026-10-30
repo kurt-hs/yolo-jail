@@ -143,6 +143,40 @@ func TestTheAWSAdapterStartsForEveryBedrockSelection(t *testing.T) {
 	}
 }
 
+// THE ONE SELECTION NAMESPACE (config.SelectableProfiles, OQ-RC3) at the payload: a provider
+// selected by its own name, which no profile declares, is resolved to its platform as the
+// channel resolves it, so the adapter that platform needs starts. Fails if daemonSelection
+// resolves over the declared profiles alone: `bedrock-eu` then resolves to nothing, the gate
+// sees no Bedrock platform, and the adapter is left out though the channel hands claude its
+// pointer.
+func TestTheAWSAdapterStartsForAProviderSelectedByItsOwnName(t *testing.T) {
+	packs := []*packload.Pack{officialPack(t, "claude"), officialPack(t, "codex"),
+		officialPack(t, "codex-auth"), officialPack(t, "aws-auth"), officialPack(t, "bedrock")}
+	o := goldenOptions(t.TempDir(), packHome(t))
+	var stderr bytes.Buffer
+	o.Stderr = &stderr
+	o.UseProfiles = map[string]string{"claude": "bedrock-eu"}
+	cfg := awsAuthServedConfig(t, packs)
+	providers := jsonx.NewOrderedMap()
+	eu := jsonx.NewOrderedMap()
+	eu.Set("platform", "aws-bedrock")
+	eu.Set("region", "eu-west-1")
+	providers.Set("bedrock-eu", eu)
+	cfg.Set("providers", providers)
+	// The readable file's selection key: its `providers` table is the typed declaration the
+	// namespace reads (config.SelectableProfiles).
+	cfg.Set("active_provider", jsonx.NewOrderedMap())
+	started := false
+	for _, s := range o.jailDaemonsFor(cfg, "podman", packs) {
+		started = started || s.Name == "aws-auth"
+	}
+	o.noteUnstartedProfileDaemons()
+	if !started {
+		t.Errorf("claude on provider bedrock-eu (platform aws-bedrock), selected by its own name, "+
+			"must start the aws-auth adapter:\n%s", stderr.String())
+	}
+}
+
 // The disclosure has a call site on each arm that starts a launch's daemons — the fresh
 // container path and the macos-user arm — so deleting either fails here (runContainer starts a
 // real container, so the call graph is the witness, as in TestTheLaunchPathsDeliverThroughTheGate).

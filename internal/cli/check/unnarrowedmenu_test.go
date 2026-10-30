@@ -99,6 +99,24 @@ func TestCheckSaysNothingWhereTheSwitchDoesNotDecideTheMenu(t *testing.T) {
 	}
 }
 
+// THE ONE SELECTION NAMESPACE (config.SelectableProfiles, OQ-RC3) in the Packs section's shared
+// read: `zai/open`, a variant of the shipped provider that turns enforce_models off and that no
+// profile declares, is what the launch resolves opencode onto, so the line is said for it as for
+// a declared profile. Fails if sectionPacks hands its readers the declared profiles alone: the
+// variant then resolves to nothing and the section says nothing.
+func TestCheckSaysTheLineForAProviderVariantSelectedByName(t *testing.T) {
+	packsFixture(t, `{"packs": ["opencode", "pi", "zai", "file://`+companyPack(t, zaiOnly)+`"]}`)
+	merged := capCfg(t, `{"active_provider": {"opencode": "zai/open"},
+	  "providers": {"zai": {"variants": {"open": {"model": "glm-5.3", "enforce_models": false}}}}}`)
+	var buf bytes.Buffer
+	r := &reporter{w: &buf}
+	(&Options{}).sectionPacks(r, merged)
+	out := buf.String()
+	if want := `opencode's menu for provider "zai" to its list, because profile "zai/open" turns enforce_models off`; !strings.Contains(out, want) {
+		t.Errorf("the check should say %q:\n%s", want, out)
+	}
+}
+
 // AN ACTIVE SET: each entry's own profile governs its provider's row, so opencode on
 // [zai, codex-open] is told about the subscription alone, the zai entry's switch being on.
 func TestCheckNamesOnlyTheSetEntryWhoseSwitchIsOff(t *testing.T) {

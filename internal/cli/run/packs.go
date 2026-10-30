@@ -1080,14 +1080,13 @@ func (o *Options) launchSelectionFor(cfg *jsonx.OrderedMap) packload.Selection {
 	if cfg == nil {
 		cfg = jsonx.NewOrderedMap()
 	}
-	return packload.Selection{
-		UseProfiles: func(set []*packload.Pack) map[string]string {
+	// The declarations are the launch's ONE SELECTION NAMESPACE (config.SelectableProfiles), so a
+	// provider selected by its own name, alias or `<provider>/<variant>` whose variant names a via
+	// pulls that service in, as the channel composition will resolve it.
+	return config.SelectionWithSelectableProfiles(func() *jsonx.OrderedMap { return cfg },
+		func(set []*packload.Pack) map[string]string {
 			return packload.ProfileTable(o.effectiveUseProfiles(cfg, set))
-		},
-		UserProfiles: func() (map[string]packload.UserProfile, error) {
-			return config.LoadProfiles(func(string) {})
-		},
-	}
+		})
 }
 
 // checkViaRoutes is the NINTH bespoke pre-flight: a via profile whose service will not serve
@@ -1124,7 +1123,9 @@ func (o *Options) checkViaRoutes(packs []*packload.Pack) error {
 	if len(active) == 0 {
 		return nil
 	}
-	userProfiles, err := config.LoadProfiles(func(string) {})
+	// The launch's ONE SELECTION NAMESPACE (config.SelectableProfiles), as composePackChannel reads
+	// it: a variant selected as `<provider>/<variant>` carries its via like a profile does.
+	userProfiles, err := config.LoadSelectableProfiles(func(string) {}, cfg, packs)
 	// A PROFILE NAMING NO VIA STILL ROUTES AN AGENT THROUGH A SERVICE when the service fronts its
 	// provider's platform and the agent has no client of it (the carrier,
 	// packload.ResolvedProfile.ViaFor; wire-bridge-gateway.md WG-I44): copilot and oh-omp on

@@ -164,6 +164,43 @@ func TestCheckProfilesRefusesAnEntryWithoutAProvider(t *testing.T) {
 	}
 }
 
+// TestValidateProfilesRefusesAProfileNamedNative: "native" is the selection's reserved word
+// (OQ-RC20), so a user profile by that name is fatal at validation, naming the fix, and the
+// launch's loader skips it rather than letting it shadow the word.
+func TestValidateProfilesRefusesAProfileNamedNative(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	write(t, filepath.Join(home, ".config", "yolo-jail", "config.jsonc"),
+		`{"profiles": {"native": {"provider": "zai"}, "ok": {"provider": "zai"}}}`)
+
+	errs, _ := ValidateConfig(decode(t, `{}`), t.TempDir(), nil)
+	var found string
+	for _, e := range errs {
+		if strings.Contains(e, "config.profiles.native") {
+			found = e
+		}
+	}
+	if found == "" {
+		t.Fatalf("a profile named native validated clean: %v", errs)
+	}
+	for _, want := range []string{"reserved", "Rename the profile", "no provider"} {
+		if !strings.Contains(found, want) {
+			t.Errorf("refusal %q does not name %q", found, want)
+		}
+	}
+	got, err := LoadProfiles(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, kept := got["native"]; kept {
+		t.Error("LoadProfiles kept a profile named native")
+	}
+	if _, kept := got["ok"]; !kept {
+		t.Error("LoadProfiles dropped the well-formed entry beside it")
+	}
+}
+
 // TestCheckProfilesRefusesNonObjectEntries pins the entry shape: a bare string where an
 // entry belongs is the typo the message should name.
 func TestCheckProfilesRefusesNonObjectEntries(t *testing.T) {

@@ -2,6 +2,8 @@ package check
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,6 +45,30 @@ func TestCheckTypesTheDeclarationForABuiltInName(t *testing.T) {
 	got := runMergedConfigSection(t, `{"profile": {"pi": "groq"}}`)
 	if !strings.Contains(got, "[FAIL]") || !strings.Contains(got, "pi has groq built in") {
 		t.Errorf("check must FAIL typing out the declaration:\n%s", got)
+	}
+}
+
+// THE ONE SELECTION NAMESPACE (config.SelectableProfiles, OQ-RC3), at the merged-config
+// section: a provider the selected local pack declares, selected by its own name with no profile
+// over it, is what the launch resolves pi onto. So check neither FAILs the name as undeclared
+// (profileDeclarationGap) nor predicts an unmet capability the provider declares
+// (capabilityGap's census). Fails if either reader resolves over the declared profiles alone.
+func TestCheckResolvesAProviderSelectedByItsOwnName(t *testing.T) {
+	capabilityHome(t, `{"packs": ["pi"]}`)
+	local := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "local")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "pack.json"), []byte(`{"name":"local","contributes":[
+		{"kind":"provider","name":"acmecloud","platform":"acmecloud","capabilities":["web_search"]}]}`),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := runMergedConfigSection(t, `{"profile": {"pi": "acmecloud"}, "required_capabilities": ["web_search"]}`)
+	for _, bad := range []string{`no profile named "acmecloud"`, "web_search"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("pi selected acmecloud by its provider name, so check must not report %q:\n%s", bad, got)
+		}
 	}
 }
 

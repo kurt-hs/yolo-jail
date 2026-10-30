@@ -119,7 +119,10 @@ func composeHostInputs(cfg *jsonx.OrderedMap, packs []*packload.Pack, home strin
 		}
 	}
 
-	userProfiles, err := config.LoadProfiles(nil)
+	// The ONE SELECTION NAMESPACE the host launch resolves against (config.SelectableProfiles): a
+	// provider selected by its own name, alias or variant is an implied profile, so the apply
+	// renders what `yolo host --` runs.
+	userProfiles, err := config.LoadSelectableProfiles(nil, cfg, packs)
 	if err != nil {
 		return c, fmt.Errorf("your `profiles` cannot be read: %w", err)
 	}

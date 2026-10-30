@@ -166,7 +166,9 @@ func CapabilitySatisfiers(cfg *jsonx.OrderedMap, packs []*packload.Pack, sets ma
 		if resolved != nil || problem != nil {
 			return problem == nil
 		}
-		declared, err := LoadProfiles(func(string) {})
+		// The ONE SELECTION NAMESPACE the launch resolves against (SelectableProfiles): a provider
+		// selected by its own name, alias or variant is an implied profile, not an unresolved one.
+		declared, err := LoadSelectableProfiles(func(string) {}, cfg, packs)
 		if err != nil {
 			problem = fmt.Errorf("the profile declarations did not load: %w", err)
 			return false

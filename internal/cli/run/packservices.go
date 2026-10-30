@@ -253,7 +253,9 @@ func (o *Options) daemonSelection(cfg *jsonx.OrderedMap, packs []*packload.Pack)
 	if err != nil {
 		return packload.ProfilesOnly(profiles), nil, nil
 	}
-	userProfiles, err := config.LoadProfiles(func(string) {})
+	// The launch's ONE SELECTION NAMESPACE (config.SelectableProfiles), so a provider selected by
+	// its own name gates its platform's daemon as a profile over it does.
+	userProfiles, err := config.LoadSelectableProfiles(func(string) {}, cfg, packs)
 	if err != nil {
 		return packload.ProfilesOnly(profiles), nil, providers
 	}

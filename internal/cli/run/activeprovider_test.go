@@ -65,3 +65,39 @@ func TestALaunchSelectsAProviderByNameAndNative(t *testing.T) {
 		t.Errorf("native did not leave acme with no profile:\n%s", got)
 	}
 }
+
+// THE SELECTION CLOSURE reads the one namespace too (launchSelection): a `<provider>/<variant>`
+// whose variant names a via pulls that service pack into the launch, as a profile's via does.
+// Fails if the closure's declarations are the declared profiles alone: the variant then resolves
+// to nothing, no via is active, and the service the channel will route codex through is never
+// staged.
+func TestTheSelectionClosureAddsAVariantsVia(t *testing.T) {
+	o := goldenOptions(t.TempDir(), packHome(t))
+	o.UseProfiles = map[string]string{"codex": "bedrock-eu/bridged"}
+	cfg := jsonx.NewOrderedMap()
+	cfg.Set("active_provider", jsonx.NewOrderedMap())
+	providers := jsonx.NewOrderedMap()
+	eu := jsonx.NewOrderedMap()
+	eu.Set("platform", "aws-bedrock")
+	variants := jsonx.NewOrderedMap()
+	bridged := jsonx.NewOrderedMap()
+	bridged.Set("via", "wire-bridge")
+	variants.Set("bridged", bridged)
+	eu.Set("variants", variants)
+	providers.Set("bedrock-eu", eu)
+	cfg.Set("providers", providers)
+
+	sel := o.launchSelectionFor(cfg)
+	sel.Embedded = func(name string) (*packload.Pack, bool) { return officialPack(t, name), true }
+	added, causes, err := sel.Close([]*packload.Pack{officialPack(t, "codex"), officialPack(t, "codex-auth")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range added {
+		if p.Name == "wire-bridge" {
+			return
+		}
+	}
+	t.Errorf("codex on bedrock-eu/bridged did not pull in wire-bridge: added %d pack(s), causes %v",
+		len(added), causes)
+}

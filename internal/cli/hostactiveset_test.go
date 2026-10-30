@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/entrypoint"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -351,6 +352,28 @@ func TestHostApplyRendersPisSet(t *testing.T) {
 	}
 	if !strings.Contains(c.summary(), "profile selection (the profile key): pi → zai,openrouter") {
 		t.Errorf("the detail line must name pi's whole set: %s", c.summary())
+	}
+}
+
+// THE ONE SELECTION NAMESPACE at the host render (config.SelectableProfiles, OQ-RC3): a provider
+// a selected pack declares, selected by its own name with no profile over it, resolves to that
+// provider in the derive inputs. Fails if composeHostInputs resolves over the declared profiles
+// alone: the name then has no resolution, and the wire table hands pi no provider for it.
+func TestHostInputsResolveAProviderSelectedByItsOwnName(t *testing.T) {
+	home := hostComputedHome(t, `{"packs":["pi"],"host_management":"own","profile":{"pi":"acmecloud"}}`)
+	writeFile(t, filepath.Join(home, ".config", "yolo-jail", "local", "pack.json"),
+		`{"name":"local","contributes":[{"kind":"provider","name":"acmecloud","platform":"acmecloud"}]}`)
+	c, err := composeHostInputs(config.UserScopeConfigOrEmpty(), selectConfiguredHostPacks().packs, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table map[string]map[string]any
+	if err := json.Unmarshal([]byte(c.inputs.Vars[entrypoint.ProfilesWireEnv]), &table); err != nil {
+		t.Fatalf("%s: %v", entrypoint.ProfilesWireEnv, err)
+	}
+	if got := table["acmecloud"]["provider"]; got != "acmecloud" {
+		t.Errorf("acmecloud, selected by its provider name, resolved to %v in %s", table["acmecloud"],
+			c.inputs.Vars[entrypoint.ProfilesWireEnv])
 	}
 }
 

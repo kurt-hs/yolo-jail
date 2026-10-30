@@ -129,6 +129,13 @@ func checkProfileEntry(name string, raw any) (packload.UserProfile, string) {
 			`-p/--profile value grammar separates the profiles of one agent's list with it ` +
 			`(-p pi=zai,openrouter), and a name carrying it would be unspellable`
 	}
+	// "native" is the selection's one reserved word (OQ-RC20): selecting it leaves the agent on its
+	// own login, so a profile under that name could never be selected.
+	if name == NativeProvider {
+		return packload.UserProfile{}, path + `: "` + NativeProvider + `" is reserved — selecting it ` +
+			`means "no provider: the agent's own login" (OQ-RC20), so a profile by that name could ` +
+			`never be selected. Rename the profile, and select it by its new name`
+	}
 	m, ok := raw.(*jsonx.OrderedMap)
 	if !ok {
 		return packload.UserProfile{}, path + ": expected an object with a \"provider\" and option values"
