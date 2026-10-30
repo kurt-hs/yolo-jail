@@ -32,10 +32,17 @@ import (
 //     launchFlagClaims resets a bin's earlier rows for every legacy row). Writing it only
 //     there keeps the migration equal without stating what nothing changes.
 //
-// What TOML cannot say is refused with its exact path (UnrepresentableError), never guessed:
-// a JSON null (TOML has none; the one settled spelling is a built_in_providers plan's "off"),
-// an install hint for a manager the grouped `install` key does not take, an install hint on a
-// source fork, and an overlay body that is not exactly `{"managed": …}`.
+//   - A manager the legacy install_hints does not name gets NO hint, so it is written `false`
+//     (per manager, as `default = false`, or `install = false` for none): the grouped reader
+//     gives an unwritten manager the bin, which would invent a recipe.
+//
+// TOML has no null, so the legacy nulls with a grouped spelling are respelled: a
+// built_in_providers plan's null is "off", a provider option's null (declared, no default) is
+// `false`, and a null inside a surface row's `managed` merge patch (a deletion) moves to the
+// row's `unset` list of JSON Pointers. What TOML still cannot say is refused with its exact path
+// (UnrepresentableError), never guessed: any other JSON null, an install hint for a manager the
+// grouped `install` key does not take, an install hint on a source fork, and an overlay body
+// that is not exactly `{"managed": …}`.
 
 // TOMLLine is one line the encoder writes, with the legacy JSON path it came from. Source is
 // nil for a line no legacy key produced (a blank separator, a closing bracket). A migration
@@ -319,9 +326,22 @@ func encodeContribution(index int, original *jsonx.OrderedMap, meta contribution
 		if scope, _ := fields.Get("scope"); scope == "workspace" {
 			fields.Delete("scope")
 		}
+	case KindProvider:
+		encodeOptionsWithoutDefault(fields)
+		if variants, ok := getMap(fields, "variants"); ok {
+			copied := shallowCopy(variants)
+			for _, name := range variants.Keys() {
+				if variant, ok := getMap(variants, name); ok {
+					variant = shallowCopy(variant)
+					encodeOptionsWithoutDefault(variant)
+					copied.Set(name, variant)
+				}
+			}
+			fields.Set("variants", copied)
+		}
 	case KindConfig:
 		if value, ok := fields.Get("config"); ok {
-			fields.Set("config", omitInferredCodecs(value))
+			fields.Set("config", omitInferredCodecs(surfaceRowsWithUnset(value)))
 		}
 	case KindAutonomy:
 		for _, posture := range []string{string(PostureAutonomous), string(PostureGuarded)} {
@@ -331,7 +351,7 @@ func encodeContribution(index int, original *jsonx.OrderedMap, meta contribution
 			}
 			if value, ok := decl.Get("config"); ok {
 				copied := shallowCopy(decl)
-				copied.Set("config", omitInferredCodecs(value))
+				copied.Set("config", omitInferredCodecs(surfaceRowsWithUnset(value)))
 				fields.Set(posture, copied)
 			}
 		}
@@ -457,31 +477,47 @@ func encodeProgramFields(label string, fields *jsonx.OrderedMap, sources map[str
 }
 
 // foldInstall returns the grouped `install` value for one program's hints, or nil when every
-// manager's package is the bin (the reader's default). A manager the legacy hints omit reads as
-// the bin, the accepted grouped default (pack-manifests.md §4, "default to the bin name").
+// manager's package is the bin (the reader's default, pack-manifests.md §4, "default to the bin
+// name"). A manager the legacy hints do not name has NO hint, and the grouped reader would give
+// it the bin, so it is written `false` — per manager, or as `default = false` when that is what
+// most managers share, or as `install = false` when no manager has one.
 func foldInstall(bin string, hints map[string]string, declared []string, keep bool) any {
-	if keep {
-		if len(declared) == 0 {
-			return nil
+	// noHint marks a manager without a hint; written as false.
+	const noHint = ""
+	hintValue := func(value string) any {
+		if value == noHint {
+			return false
 		}
-		table := jsonx.NewOrderedMap()
-		for _, manager := range declared {
-			table.Set(manager, hints[manager])
-		}
-		return table
+		return value
 	}
 	effective := make(map[string]string, len(installManagers))
 	counts := map[string]int{}
 	for _, manager := range installManagers {
 		value, ok := hints[manager]
 		if !ok {
-			value = bin
+			value = noHint
 		}
 		effective[manager] = value
 		counts[value]++
 	}
-	// The shared default is the package most managers install; a tie keeps the bin, which
-	// needs no `default` line.
+	cask, hasCask := hints["brew-cask"]
+	if keep {
+		// Every named manager keeps its own line; the managers it does not name are said once,
+		// as `default = false`, or the whole key is `false` when no manager has a hint.
+		if counts[noHint] == len(installManagers) && !hasCask {
+			return false
+		}
+		table := jsonx.NewOrderedMap()
+		if counts[noHint] > 0 {
+			table.Set("default", false)
+		}
+		for _, manager := range declared {
+			table.Set(manager, hints[manager])
+		}
+		return table
+	}
+	// The shared default is the value most managers take; a tie keeps the bin, which needs no
+	// `default` line.
 	shared := bin
 	for _, manager := range installManagers {
 		value := effective[manager]
@@ -489,11 +525,10 @@ func foldInstall(bin string, hints map[string]string, declared []string, keep bo
 			shared = value
 		}
 	}
-	cask, hasCask := hints["brew-cask"]
 	exceptions := jsonx.NewOrderedMap()
 	for _, manager := range installManagers {
 		if effective[manager] != shared {
-			exceptions.Set(manager, effective[manager])
+			exceptions.Set(manager, hintValue(effective[manager]))
 		}
 	}
 	if hasCask {
@@ -503,11 +538,11 @@ func foldInstall(bin string, hints map[string]string, declared []string, keep bo
 	case exceptions.Len() == 0 && shared == bin:
 		return nil
 	case exceptions.Len() == 0:
-		return shared
+		return hintValue(shared)
 	}
 	if shared != bin {
 		table := jsonx.NewOrderedMap()
-		table.Set("default", shared)
+		table.Set("default", hintValue(shared))
 		for _, manager := range exceptions.Keys() {
 			value, _ := exceptions.Get(manager)
 			table.Set(manager, value)
@@ -597,6 +632,88 @@ func containsArray(value any) bool {
 
 // omitInferredCodecs drops a surface row's codec where DecodeTOML infers the same one from its
 // path's extension.
+// encodeOptionsWithoutDefault spells each null in a provider's options (declared, no default)
+// as the grouped `false` the reader lowers back to it (lowerOptionsWithoutDefault).
+func encodeOptionsWithoutDefault(fields *jsonx.OrderedMap) {
+	options, ok := getMap(fields, "options")
+	if !ok {
+		return
+	}
+	copied := shallowCopy(options)
+	for _, key := range options.Keys() {
+		if value, _ := options.Get(key); value == nil {
+			copied.Set(key, false)
+		}
+	}
+	fields.Set("options", copied)
+}
+
+// surfaceRowsWithUnset moves every null in a surface row's `managed` merge patch (a deletion)
+// into the row's `unset` list of JSON Pointers, the spelling lowerSurfaceUnset reads back. A
+// table left empty only because its nulls moved out is dropped too: the reader recreates it
+// on the pointer's way down, so the managed body reads back identical.
+func surfaceRowsWithUnset(value any) any {
+	switch v := value.(type) {
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = surfaceRowsWithUnset(item)
+		}
+		return out
+	case *jsonx.OrderedMap:
+		managed, ok := getMap(v, "managed")
+		if !ok {
+			return v
+		}
+		var pointers []any
+		stripped, _ := stripNulls(managed, "", &pointers)
+		if len(pointers) == 0 {
+			return v
+		}
+		out := jsonx.NewOrderedMap()
+		for _, key := range v.Keys() {
+			item, _ := v.Get(key)
+			if key == "managed" {
+				if stripped.Len() > 0 {
+					out.Set("managed", stripped)
+				}
+				out.Set("unset", pointers)
+				continue
+			}
+			out.Set(key, item)
+		}
+		return out
+	}
+	return value
+}
+
+// stripNulls copies table without its null leaves, appending each one's pointer, and reports
+// whether the copy is empty only because nulls were removed from it.
+func stripNulls(table *jsonx.OrderedMap, prefix string, pointers *[]any) (*jsonx.OrderedMap, bool) {
+	out := jsonx.NewOrderedMap()
+	removed := false
+	for _, key := range table.Keys() {
+		item, _ := table.Get(key)
+		pointer := prefix + "/" + strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
+		switch child := item.(type) {
+		case nil:
+			*pointers = append(*pointers, pointer)
+			removed = true
+			continue
+		case *jsonx.OrderedMap:
+			copied, emptied := stripNulls(child, pointer, pointers)
+			if emptied {
+				removed = true
+				continue
+			}
+			out.Set(key, copied)
+			continue
+		}
+		out.Set(key, item)
+	}
+	return out, removed && out.Len() == 0
+}
+
 func omitInferredCodecs(value any) any {
 	switch v := value.(type) {
 	case []any:

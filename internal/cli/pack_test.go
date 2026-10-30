@@ -1083,6 +1083,33 @@ func TestPackLintAcceptsAFilesFromNamingOneFile(t *testing.T) {
 	}
 }
 
+// The pack.toml half of TestPackLintNamesARenamedFieldOnce: a grouped manifest that does not
+// decode, whether its refusal is located (a renamed field) or not (a syntax error), is reported
+// once, without "declares ZERO contributions" beside it.
+func TestPackLintReportsAnUndecodedPackTOMLOnce(t *testing.T) {
+	for name, manifest := range map[string]string{
+		"renamed field": "name = \"carried\"\n\n[[files]]\ninto = \"~/.pi/x\"\nfrom = \"x\"\ncarry = \"git+https://example.com/r?ref=b\"\n",
+		"syntax error":  "name = \"carried\"\n\n[[files]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "pack.toml"), manifest)
+			writeFile(t, filepath.Join(dir, "x", "a.txt"), "a\n")
+			var out, errw bytes.Buffer
+			if rc := packMain([]string{"lint", dir}, &out, &errw, false); rc == 0 {
+				t.Fatalf("an undecodable pack.toml must not lint clean:\n%s", out.String())
+			}
+			got := out.String() + errw.String()
+			if !strings.Contains(got, "pack.toml") {
+				t.Errorf("lint did not name the manifest's refusal:\n%s", got)
+			}
+			if strings.Contains(got, "ZERO contributions") || strings.Contains(got, "nothing reads") {
+				t.Errorf("lint reported the undecodable pack.toml a second time:\n%s", got)
+			}
+		})
+	}
+}
+
 // A pack still writing a RENAMED field (`carry`, now `patch_branch`) is told the new spelling,
 // once: the decode refusal names the rename, and lint does not add "declares ZERO contributions"
 // beside it, which is the same cause reported a second time.

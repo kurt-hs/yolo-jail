@@ -764,7 +764,7 @@ func packLint(args []string, out, errw io.Writer, color bool) int {
 	// one, and printing a second, contradictory line beside it is how a fixed rule becomes new
 	// noise.
 	switch {
-	case manifestUndecoded(manifestProblems):
+	case manifestUndecoded(manifestProblems, pack.Decl):
 		// The manifest did not decode, so it declares nothing HERE and both questions below
 		// would answer about an empty manifest: the decode refusal already names the cause
 		// (a renamed field names its new spelling, packdecl's renames.go), and "declares ZERO
@@ -1391,9 +1391,19 @@ func stagedAtOrUnder(staged []string, src string) bool {
 // manifestUndecoded reports whether one of a pack's manifest problems is the manifest failing
 // to decode at all — packdecl.Decode's "<pack.json>: <decode error>", which packload prefixes with
 // "pack <name>: " — rather than a problem with a manifest that decoded.
-func manifestUndecoded(problems []string) bool {
+//
+// A pack.toml refusal is LOCATED ("pack.toml:3:1 (files[0]): …") whether the manifest failed to
+// decode or decoded with a validation problem, so its text cannot tell the two apart. The decl
+// can: a manifest that decoded carries its reader's Origin, and one that did not is the empty
+// Manifest packload substitutes. So a problem naming pack.toml beside a decl with no origin is
+// the decode failure.
+func manifestUndecoded(problems []string, decl *packdecl.Manifest) bool {
+	undecodedTOML := decl == nil || decl.Origin.Format == 0
 	for _, p := range problems {
 		if strings.Contains(p, ": "+packdecl.ManifestName+": ") {
+			return true
+		}
+		if undecodedTOML && strings.Contains(p, ": "+packdecl.ManifestTOMLName+":") {
 			return true
 		}
 	}

@@ -159,7 +159,11 @@ smallest packs become folders, and the two largest keep every fact in a fifth of
 install hint was settled in the same round (*"what does all mean here?"* … *"I like default, not
 all, and then also have it just default to the bin name if not given"*): the package name is the
 bin name unless written; `install = "ripgrep"` names it for every manager, and a table names only
-the managers that differ, with `default` for the rest.
+the managers that differ, with `default` for the rest. `false` is "no hint": `install = false` for a
+program no manager packages, `install = { default = false, brew = "…" }` for one only some do
+([RC-D25](readable-config.md#RC-D25)). The same `false` declares a provider option with no default
+(`options.pin_model = false`), and a config surface row lists the keys its `managed` patch deletes
+as `unset = ["/tui/notice"]`.
 
 ## 5. The migration
 

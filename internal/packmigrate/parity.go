@@ -16,15 +16,13 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/packdecl"
 )
 
-// installManagers are the managers a grouped `install` fills with the bin when it does not name
-// them (packdecl's normalizeProgramDefaults).
-var installManagers = []string{"brew", "apt", "dnf", "pacman", "nix"}
-
 // ManifestDifferences lists every way got's normalized meaning differs from old's, or nil when
 // the two say the same thing. Both sides are normalized by the grouped reader's accepted
-// defaults first — an omitted install hint is the bin, an omitted pack-tree run is the bin, an
-// omitted state scope is workspace, an omitted surface codec is its path's — so a fact written
-// on one side and defaulted on the other is not a difference. Format provenance (origin,
+// defaults first — an omitted pack-tree run is the bin, an omitted state scope is workspace, an
+// omitted surface codec is its path's — so a fact written on one side and defaulted on the other
+// is not a difference. Install hints are NOT normalized: a hint is a recipe check-deps prints and
+// the provisioner counts, so a manager the legacy manifest names no hint for must read back with
+// none, and the grouped reader's bin default filling one in is a difference. Format provenance (origin,
 // location) is not compared; what the format CHANGES is: an overlay row whose arrays append in
 // one and replace in the other, and a launch row that resets earlier packs' rows in one and adds
 // to them in the other.
@@ -86,18 +84,6 @@ func canonicalContribution(c packdecl.Contribution) (any, error) {
 	c.Origin, c.Location, c.Replace = packdecl.ManifestOrigin{}, packdecl.ManifestLocation{}, false
 	switch c.Kind {
 	case packdecl.KindProgram:
-		if !c.IsFork() {
-			hints := make(map[string]string, len(c.InstallHints)+len(installManagers))
-			for k, v := range c.InstallHints {
-				hints[k] = v
-			}
-			for _, manager := range installManagers {
-				if _, ok := hints[manager]; !ok {
-					hints[manager] = c.Bin
-				}
-			}
-			c.InstallHints = hints
-		}
 		if c.Via == packdecl.ViaPack && c.Run == "" {
 			c.Run = c.Bin
 		}

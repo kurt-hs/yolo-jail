@@ -160,7 +160,7 @@ func TestPlanMovesPlainFilesIntoHome(t *testing.T) {
 	text := string(m.Manifest)
 	for _, want := range []string{
 		"# The fixture pack's own name.\nname = \"fixture-pack\"",
-		"# Sources, checked 2026-10-29:\n#   apt: https://packages.debian.org/trixie/fd-find\n[[program]]\nbin = \"fd\"\ninstall = { apt = \"fd-find\" }",
+		"# Sources, checked 2026-10-29:\n#   apt: https://packages.debian.org/trixie/fd-find\n[[program]]\nbin = \"fd\"\ninstall = { default = false, brew = \"fd\", apt = \"fd-find\" }",
 		"# One script, copied to a path.",
 		"# An addressed pi package stays one tree.\n[[files]]\nagents = [\"pi\"]\nfrom = \"pi-package\"",
 		"[[overlay]]\nsurface = \"claude/settings\"\nset.fileSuggestion = ",

@@ -135,9 +135,13 @@ from = "."
 
 func TestDecodeTOMLProgramInstallRejectsInvalidFormsAndLegacySpelling(t *testing.T) {
 	for _, tc := range []struct{ name, field, want string }{
-		{"wrong scalar type", `install = 42`, "string or table"},
-		{"array", `install = ["pkg"]`, "string or table"},
-		{"invalid default type", `install = { default = 1 }`, "default must be a string"},
+		{"wrong scalar type", `install = 42`, "a package name, false (no hint for any manager), or a table"},
+		{"array", `install = ["pkg"]`, "a package name, false (no hint for any manager), or a table"},
+		{"invalid default type", `install = { default = 1 }`, "install.default must be a package name, or false"},
+		{"true", `install = true`, "a package name, false (no hint for any manager), or a table"},
+		{"empty package", `install = ""`, "install = false for no hint"},
+		{"true manager", `install = { apt = true }`, "install.apt must be a package name, or false"},
+		{"empty manager", `install = { apt = "" }`, "install.apt must be a package name, or false"},
 		{"unknown manager", `install = { aptish = "pkg" }`, "unknown manager"},
 		{"old spelling", `install_hints = { apt = "pkg" }`, `use "install"`},
 	} {
@@ -146,6 +150,31 @@ func TestDecodeTOMLProgramInstallRejectsInvalidFormsAndLegacySpelling(t *testing
 			joined := strings.Join(problems, "\n")
 			if !strings.Contains(joined, tc.want) {
 				t.Fatalf("DecodeTOML problems %v, want %q", problems, tc.want)
+			}
+		})
+	}
+}
+
+// TestDecodeTOMLInstallFalseMeansNoHint pins the grouped spelling for "no hint for this manager":
+// false leaves the manager out of install_hints, exactly as a legacy manifest that does not name
+// it, where an unwritten manager would get the bin.
+func TestDecodeTOMLInstallFalseMeansNoHint(t *testing.T) {
+	for _, tc := range []struct {
+		name, field string
+		want        map[string]string
+	}{
+		{"whole key", `install = false`, nil},
+		{"default", `install = { default = false, brew = "pi-coding-agent" }`, map[string]string{"brew": "pi-coding-agent"}},
+		{"one manager", `install = { apt = false }`, map[string]string{"brew": "tool", "dnf": "tool", "pacman": "tool", "nix": "tool"}},
+		{"cask only", `install = { default = false, brew-cask = "tool-app" }`, map[string]string{"brew-cask": "tool-app"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, problems := DecodeTOML([]byte("[[program]]\nbin = \"tool\"\n" + tc.field + "\n"))
+			if len(problems) != 0 {
+				t.Fatal(problems)
+			}
+			if got := m.Contributions()[0].InstallHints; !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("install_hints = %#v, want %#v", got, tc.want)
 			}
 		})
 	}

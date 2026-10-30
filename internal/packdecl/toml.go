@@ -315,10 +315,19 @@ func normalizeGrouped(root map[string]any, doc *configdoc.Document, mode manifes
 					if _, authored := copyFields["scope"]; !authored {
 						copyFields["scope"] = "workspace"
 					}
+				} else if kind == KindProvider {
+					if err := lowerOptionsWithoutDefault(copyFields); err != nil {
+						problems = append(problems, formatManifestLocation(loc, err.Error()))
+						continue
+					}
 				}
 				var nestedLocations map[Posture][]ManifestLocation
 				var nestedLaunches map[Posture][]AutonomyLaunch
 				if kind == KindConfig {
+					if err := lowerSurfaceUnset(copyFields["config"], fmt.Sprintf("%s[%d].config", key, i)); err != nil {
+						problems = append(problems, formatManifestLocation(loc, err.Error()))
+						continue
+					}
 					if err := defaultSurfaceCodecs(copyFields["config"], doc, []configdoc.Step{{Key: key}, {Index: i, IsIndex: true}, {Key: "config"}}, fmt.Sprintf("%s[%d].config", key, i)); err != nil {
 						problems = append(problems, err.Error())
 						continue
@@ -509,6 +518,91 @@ func lowerGroupedLaunches(groups []groupedContribution, rows []groupedLaunch, do
 	return groups
 }
 
+// lowerSurfaceUnset reads each config surface row's `unset`: a list of RFC 6901 JSON Pointers
+// (the config-list `path` spelling, since real keys hold dots) naming keys the row's `managed`
+// body DELETES. It is legacy JSON's null inside a managed merge patch, which TOML cannot write:
+// each pointer becomes a null at that path in `managed`, creating the tables on the way, so the
+// row reads exactly as the legacy row did. A pointer through a non-table, or onto a key
+// `managed` also sets, is refused: the row would say two things about one key.
+func lowerSurfaceUnset(value any, key string) error {
+	rows, isList := value.([]any)
+	if !isList {
+		if row, ok := value.(map[string]any); ok {
+			rows = []any{row}
+		}
+	}
+	for i, raw := range rows {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		unsetRaw, has := row["unset"]
+		if !has {
+			continue
+		}
+		delete(row, "unset")
+		label := fmt.Sprintf("%s[%d].unset", key, i)
+		pointers, ok := unsetRaw.([]any)
+		if !ok {
+			return fmt.Errorf("%s must be a list of JSON Pointers into managed, such as [\"/tui/notice\"]", label)
+		}
+		managed, _ := row["managed"].(map[string]any)
+		if _, present := row["managed"]; present && managed == nil {
+			return fmt.Errorf("%s: managed is not a table, so it has no key to unset", label)
+		}
+		managed = cloneMap(managed)
+		for _, item := range pointers {
+			pointer, ok := item.(string)
+			if !ok {
+				return fmt.Errorf("%s must be a list of JSON Pointers into managed, such as [\"/tui/notice\"]", label)
+			}
+			steps, err := parseUnsetPointer(pointer)
+			if err != nil {
+				return fmt.Errorf("%s: %q %v", label, pointer, err)
+			}
+			table := managed
+			for depth, step := range steps[:len(steps)-1] {
+				next, exists := table[step]
+				switch child := next.(type) {
+				case nil:
+					if exists {
+						return fmt.Errorf("%s: %q passes through a key unset at %q", label, pointer, "/"+strings.Join(steps[:depth+1], "/"))
+					}
+					table[step] = map[string]any{}
+				case map[string]any:
+					table[step] = cloneMap(child)
+				default:
+					return fmt.Errorf("%s: %q passes through managed key %q, which is not a table", label, pointer, step)
+				}
+				table = table[step].(map[string]any)
+			}
+			leaf := steps[len(steps)-1]
+			if _, set := table[leaf]; set {
+				return fmt.Errorf("%s: %q names a key managed also sets or unsets; say it once", label, pointer)
+			}
+			table[leaf] = nil
+		}
+		row["managed"] = managed
+	}
+	return nil
+}
+
+// parseUnsetPointer splits an RFC 6901 pointer into its keys, refusing the root and an empty
+// key as config-list's path does.
+func parseUnsetPointer(pointer string) ([]string, error) {
+	if !strings.HasPrefix(pointer, "/") || pointer == "/" {
+		return nil, fmt.Errorf("is not a JSON Pointer to a key (write \"/<key>/<key>\")")
+	}
+	parts := strings.Split(pointer[1:], "/")
+	for i, part := range parts {
+		if part == "" {
+			return nil, fmt.Errorf("has an empty key")
+		}
+		parts[i] = strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")
+	}
+	return parts, nil
+}
+
 func defaultSurfaceCodecs(value any, doc *configdoc.Document, basePath []configdoc.Step, key string) error {
 	rows, single := value.([]any)
 	if !single {
@@ -581,6 +675,9 @@ func normalizeAutonomySurfaceCodecs(fields map[string]any, doc *configdoc.Docume
 		}
 		base := []configdoc.Step{{Key: group}, {Index: index, IsIndex: true}, {Key: string(posture)}, {Key: "config"}}
 		key := fmt.Sprintf("%s[%d].%s.config", group, index, posture)
+		if err := lowerSurfaceUnset(config, key); err != nil {
+			return nil, fmt.Errorf("%s", formatManifestLocation(locationFor(doc, base, key), err.Error()))
+		}
 		if err := defaultSurfaceCodecs(config, doc, base, key); err != nil {
 			return nil, err
 		}
@@ -620,6 +717,14 @@ func normalizeBuiltInProviderPlanOff(fields map[string]any) error {
 
 // normalizeProgramDefaults lowers grouped TOML's concise host package hints and pack-tree
 // executable default into the legacy Contribution shape; it never supplies a delivery via.
+//
+// `install` is a package name, `false`, or a table of managers. A manager the table does not
+// name takes the table's `default`, and the default is the bin unless written. `false` — as the
+// whole value, as `default`, or for one manager — is "no hint": the manager gets no
+// install_hints entry, exactly as a legacy install_hints that does not name it. A program with
+// no hint at all is `install = false`; one with hints for some managers only is
+// `install = { default = false, brew = "…" }`. `false` and not a reserved string, because a
+// package name is a string (readable-config.md RC-D23).
 func normalizeProgramDefaults(fields map[string]any) error {
 	bin, _ := fields["bin"].(string)
 	install, hasInstall := fields["install"]
@@ -631,17 +736,26 @@ func normalizeProgramDefaults(fields map[string]any) error {
 		return nil
 	}
 
+	// A manager mapped to "" gets no hint (installHintPackage reads false as "").
 	packages := make(map[string]string, len(installManagers)+1)
 	defaultPackage := bin
 	if hasInstall {
 		switch value := install.(type) {
 		case string:
+			if value == "" {
+				return fmt.Errorf("install must name a package; write install = false for no hint on any manager")
+			}
 			defaultPackage = value
+		case bool:
+			if value {
+				return fmt.Errorf("install must be a package name, false (no hint for any manager), or a table of managers")
+			}
+			defaultPackage = ""
 		case map[string]any:
 			for _, manager := range sortedKeys(value) {
-				packageName, ok := value[manager].(string)
+				packageName, ok := installHintPackage(value[manager])
 				if !ok {
-					return fmt.Errorf("install.%s must be a string", manager)
+					return fmt.Errorf("install.%s must be a package name, or false for no hint on that manager", manager)
 				}
 				if manager == "default" {
 					defaultPackage = packageName
@@ -653,7 +767,7 @@ func normalizeProgramDefaults(fields map[string]any) error {
 				packages[manager] = packageName
 			}
 		default:
-			return fmt.Errorf("install must be a string or table")
+			return fmt.Errorf("install must be a package name, false (no hint for any manager), or a table of managers")
 		}
 	}
 	for _, manager := range installManagers {
@@ -661,13 +775,63 @@ func normalizeProgramDefaults(fields map[string]any) error {
 			packages[manager] = defaultPackage
 		}
 	}
-	fields["install_hints"] = packages
+	for manager, packageName := range packages {
+		if packageName == "" {
+			delete(packages, manager)
+		}
+	}
+	if len(packages) > 0 {
+		fields["install_hints"] = packages
+	}
 	if fields["via"] == "pack" {
 		if _, authored := fields["run"]; !authored {
 			fields["run"] = bin
 		}
 	}
 	return nil
+}
+
+// lowerOptionsWithoutDefault reads a provider's grouped `options` table: a string is the
+// option's default, and `false` declares the option with NO default — legacy JSON's null
+// (OptionDefault), which TOML cannot write. It is `false` and not a reserved string because
+// "" is a real default (readable-config.md RC-D23), and not an omitted key because dropping
+// the key un-declares the option, so a profile that sets it is refused. fields["options"] is
+// replaced with a lowered copy holding a nil for each false; the caller's table is untouched.
+func lowerOptionsWithoutDefault(fields map[string]any) error {
+	raw, ok := fields["options"]
+	if !ok {
+		return nil
+	}
+	options, ok := raw.(map[string]any)
+	if !ok {
+		return nil // the strict decode words the shape error
+	}
+	lowered := make(map[string]any, len(options))
+	for _, key := range sortedKeys(options) {
+		switch v := options[key].(type) {
+		case bool:
+			if v {
+				return fmt.Errorf("options.%s must be a string default, or false to declare the option with no default", key)
+			}
+			lowered[key] = nil
+		default:
+			lowered[key] = v
+		}
+	}
+	fields["options"] = lowered
+	return nil
+}
+
+// installHintPackage reads one grouped install value: a non-empty package name, or false for
+// "no hint" (returned as ""). An empty string and true are refused, so "" never becomes a hint.
+func installHintPackage(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, v != ""
+	case bool:
+		return "", !v
+	}
+	return "", false
 }
 
 var installManagers = []string{"brew", "apt", "dnf", "pacman", "nix"}
@@ -1073,6 +1237,9 @@ func normalizeProvider(name string, fields map[string]any, doc *configdoc.Docume
 	if via, ok := fields["via"].(string); ok && !ValidPackName(via) {
 		return nil, nil, fmt.Errorf("providers.%s.via must be a valid pack name", name)
 	}
+	if err := lowerOptionsWithoutDefault(fields); err != nil {
+		return nil, nil, err
+	}
 	if raw, ok := fields["alias"]; ok {
 		value, ok := raw.(string)
 		if !ok || value == "" || strings.ContainsAny(value, " \t\r\n") {
@@ -1133,6 +1300,13 @@ func normalizeProvider(name string, fields map[string]any, doc *configdoc.Docume
 			value := variants[name]
 			if name == "" {
 				return nil, nil, fmt.Errorf("variants contains an empty name")
+			}
+			if table, ok := value.(map[string]any); ok {
+				table = cloneMap(table)
+				if err := lowerOptionsWithoutDefault(table); err != nil {
+					return nil, nil, fmt.Errorf("variants.%s.%w", name, err)
+				}
+				value = table
 			}
 			var variant ProviderVariant
 			if err := decodeStrictValue(value, &variant); err != nil {

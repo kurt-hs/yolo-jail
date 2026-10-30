@@ -34,7 +34,8 @@ func TestEncodeTOMLWritesGroupedDefaultsUnwritten(t *testing.T) {
 	text := string(encoded)
 	for _, want := range []string{
 		"[[program]]\nbin = \"rg\"\ninstall = \"ripgrep\"\n",
-		"[[program]]\nbin = \"fd\"\ninstall = { apt = \"fd-find\", dnf = \"fd-find\" }\n",
+		"[[program]]\nbin = \"fd\"\ninstall = { default = false, apt = \"fd-find\", dnf = \"fd-find\" }\n",
+		"build = \"make\"\nfrom = \"src\"\ninstall = false\n",
 		"[[program]]\nbin = \"jq\"\n\n",
 		"install = { default = \"tool-pkg\", nix = \"tool\", brew-cask = \"tool-app\" }",
 		"plans = { none = \"off\" }",
@@ -69,8 +70,8 @@ func TestEncodeTOMLWritesGroupedDefaultsUnwritten(t *testing.T) {
 
 func TestEncodeTOMLRefusesWhatTOMLCannotSay(t *testing.T) {
 	for name, fixture := range map[string]struct{ manifest, path string }{
-		"null option": {`{"contributes":[{"kind":"provider","name":"p","endpoints":{"openai":{"base_url":"https://example.test/v1","wire_api":"openai-chat-completions"}},"models":{"default":"m"},"options":{"pin_model":null}}]}`,
-			"contributes[0].options.pin_model"},
+		"null overlay key": {`{"contributes":[{"kind":"config-overlay","surface":"x/settings","config":{"managed":{"theme":null}}}]}`,
+			"contributes[0].config.theme"},
 		"unknown manager": {`{"contributes":[{"kind":"program","bin":"x","via":"npm","package":"x","install_hints":{"custom":"x-tool"}}]}`,
 			"contributes[0].install_hints.custom"},
 	} {
