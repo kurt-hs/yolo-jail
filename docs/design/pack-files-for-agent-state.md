@@ -3,7 +3,7 @@ title: "A pack's files inside another pack's state folder — why agent-addresse
 date: 2026-10-30
 status: in-review
 stage: DESIGN
-next: "Run the agy layout check in §5.2 and rule OQ-FS1; rule OQ-FS2 to OQ-FS6"
+next: "Rule OQ-FS6 (the skip-by-default amendment to P3) first, since the pack-side change rests on it; run the agy layout check in §5.2 and rule OQ-FS1; rule OQ-FS2 to OQ-FS5"
 tags: [packs, files, slots, state, macos-user, darwin-home-layout, agy, parity, happy-path]
 summary: "The maintainer's matt-agentwork pack delivers an Antigravity subagent definition by path into ~/.gemini/config/agents, a folder the agy pack owns as state. On macos-user that creates a real ~/.gemini in the shared account home, locks every later agy launch out, and the refusal says to wipe the whole account. The fix on the pack side is agent-addressed files through a slot the agy pack declares; on the yolo side, a warning for the shape, a refusal that names only what is in the way, a boot that stops once the layout fails, and housekeeping for dangling layout links."
 vantage:
@@ -14,7 +14,9 @@ vantage:
 
 **Status:** 2026-10-30. Nothing built. Every code claim was read against the tree at `e4345e69d`
 on 2026-10-30; the Antigravity discovery layout is read from Google's own CLI documentation the same
-day ([§5.1](#51-what-agy-reads-and-what-nobody-has-measured)) and is **unmeasured**.
+day ([§5.1](#51-what-agy-reads-and-what-nobody-has-measured)) and is **unmeasured**. Every
+leaning in this document is the design author's (Fable, the model that wrote it), not the
+maintainer's; the maintainer's words are quoted where they ruled.
 
 > **In short.** A `files` contribution that names a path inside a folder another pack declares as
 > `[[state]]` is addressing an agent by a path it does not own, and every defect in the
@@ -31,14 +33,18 @@ and its research child must be discoverable wherever `agy` runs under yolo
 destroys the whole sandbox account.
 
 **The shape.** One slot in `packs/agy` (`[[files]] agent = "agy", into = ".gemini/config/agents"`),
-one addressed contribution in `matt-agentwork`, `agy` selected wherever that pack is; plus four
-yolo-side changes that are each a refusal, a warning or a stop with a next step.
+one addressed contribution in `matt-agentwork`, and one amendment to the addressing rule: content
+addressed to an agent whose pack is not selected delivers nothing instead of refusing the launch
+([§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default)); plus four yolo-side
+changes that are each a refusal, a warning or a stop with a next step.
 
-**Cost.** The pack's file lands only when the agy pack is selected, so the maintainer's user config
-has to select it; one open measurement decides whether the slot's default layout is enough.
+**Cost.** The pack's file lands only in a launch that selects the agy pack; the addressing rule
+loses the refusal that caught a well-spelled name for an unselected agent, keeping the one for a
+name no pack anywhere declares; one open measurement decides whether the slot's default layout is
+enough.
 
 **Start at [§4](#4-the-pack-side-change-address-the-agent)** and
-[§5](#5-the-agy-slot-and-the-one-thing-nobody-has-measured); [§6](#6-the-foreign-parent-shape-say-it-early-forbid-it-nowhere-new) to
+[§5](#5-the-agy-slot-and-the-one-thing-nobody-has-measured); [§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else) to
 [§8](#8-dangling-layout-links-from-dead-workspaces) are what yolo owes every pack that keeps the old shape.
 
 **Needs your ruling:** [OQ-FS1](#OQ-FS1), [OQ-FS2](#OQ-FS2), [OQ-FS3](#OQ-FS3),
@@ -69,7 +75,7 @@ Four principles carry the design; later sections cite them by number.
   ([`hostfilestree.go`](../../internal/entrypoint/hostfilestree.go)'s header names
   `~/.claude/file-suggestion.sh`), and when the owning pack is selected the nested delivery works
   on every backend. The defect is the owner's *absence*, and the place to say so is `yolo check`
-  and the launch, over the selected set alone ([§6](#6-the-foreign-parent-shape-say-it-early-forbid-it-nowhere-new)).
+  and the launch, over the selected set alone ([§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else)).
 - **P3. A refusal names what is in the way, and only that.** The whole-account reset the layout
   step prints today is the right remedy for a home that predates the layout and the wrong one for
   a single folder a pack made ([§7](#7-the-layout-refusal-name-the-path-stop-the-boot)).
@@ -99,8 +105,12 @@ Two severities already govern addressing ([`agent-briefings.md`](../reference/ag
 an `agents` name no selected pack provides is **fatal** at the launch pre-flight and at
 `yolo host apply` (`packload.AgentAudienceProblems`), and a name whose owner declares no slot of
 that kind is **reported**, never refused (`reportUnmatchedAudiences`,
-[`unmatchedaudience.go`](../../internal/cli/run/unmatchedaudience.go)). [§4.2](#42-the-cost-agy-must-be-selected-wherever-the-pack-is)
-is where the first severity bites this design.
+[`unmatchedaudience.go`](../../internal/cli/run/unmatchedaudience.go)). `yolo check` runs neither
+today. The first severity has already needed one exemption: a fork's or patched extension's build
+jail narrows its selection to the building pack, which dropped `pi` from under the `matt` pack's
+`agents: ["pi"]` briefing and refused every build jail, so the gate is skipped under a narrowed
+selection ([`seal.go`](../../internal/cli/run/seal.go)).
+[§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default) amends it.
 
 ### 2.2 How each backend materializes a path-addressed `files` destination
 
@@ -145,7 +155,7 @@ rule per destination.
   on `subagent ... not found or not allowed to be invoked`.
 - The maintainer's `matt` pack ships a pi `designer` agent into `~/.pi/agent/agents` the same
   way: path-addressed into pi's state folder. It has never collided only because `pi` is selected
-  in every one of their launches. It is the same shape, and [§6](#6-the-foreign-parent-shape-say-it-early-forbid-it-nowhere-new)'s
+  in every one of their launches. It is the same shape, and [§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else)'s
   warning stays quiet for it exactly as long as that holds.
 
 ## 3. The diagnosis
@@ -159,7 +169,7 @@ Each finding of the lab report, and the one cause under it:
 | 3 | The refused launch wrote agy's `settings.json`, `mcp_config.json`, `cache/onboarding.json` and the token link into the real folder | the boot continues after the layout step fails (P4) |
 | 4 | Nothing warns ahead of time | no reader compares a `files` destination against the selected packs' state dirs (P2) |
 | 5 | A dangling `.gemini` link from a deleted integration workspace refused a later matt-agentwork launch until `sudo rm` | a layout link this launch does not declare is left alone by design; a path-addressed delivery under it is refused as a link yolo did not lay ([§8](#8-dangling-layout-links-from-dead-workspaces)) |
-| — | On Linux podman, a root-owned `/home/agent/.gemini` exists in a jail that does not select agy | the same shape, materialized per launch in the skeleton; harmless today, and the reason the warning in [§6](#6-the-foreign-parent-shape-say-it-early-forbid-it-nowhere-new) is not macOS-only |
+| — | On Linux podman, a root-owned `/home/agent/.gemini` exists in a jail that does not select agy | the same shape, materialized per launch in the skeleton; harmless today, and the reason the warning in [§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else) is not macOS-only |
 
 Finding 1 is the design's center. Findings 2 to 5 are owed to every pack that keeps the shape, and
 to the maintainer until theirs moves.
@@ -183,7 +193,8 @@ and the manifest comment above it reads:
 
 What the tree under `files/agy` holds depends on [OQ-FS1](#OQ-FS1); the README's "Design with an
 expensive seat" section replaces its `~/.gemini/config/agents/design-research.md` sentence with the
-landing path that question settles, and says that the `agy` pack must be selected.
+landing path that question settles, and says the file lands only in a launch that selects the
+`agy` pack.
 
 **Why not the per-workspace `.agents/agents/` path.** The maintainer runs Argon through `agy` in
 every setting — on the host, inside jails, as a subprocess of another agent and directly — and in
@@ -191,17 +202,68 @@ every project ([FS-D1](#decision-ledger)). A copy in each project tree would hav
 every repository they touch, including ones that are not theirs. It stays only as the override agy
 already offers, which the comment above keeps.
 
-### 4.2 The cost: `agy` must be selected wherever the pack is
+### 4.2 Addressing an agent that is not here: deliver nothing, by default
 
-An `agents` name no selected pack provides is fatal at the launch pre-flight and at
-`yolo host apply` ([§2.1](#21-the-two-spellings-of-files)). Today the maintainer's config does not
-select `agy` (the lab report's launch says `agy/settings has no owner`), and `agy` in their jails is
-a hand-installed binary reading a real `~/.gemini`. With the change in [§4.1](#41-the-contribution),
-every launch of theirs that does not select `agy` is refused with the existing message naming the
-unknown agent. The remedy is one line in their user config, `yolo pack add agy`, and it is the
-right one: yolo manages the environment the agent runs in, and a copy of the agent run outside
-that management is not promised what the environment delivers. [OQ-FS6](#OQ-FS6) asks the maintainer to confirm that over the alternative of making an absent
-audience survivable, which the standing two-severities ruling refuses.
+Under the rule as it stands, the change in [§4.1](#41-the-contribution) makes every launch that
+selects `matt-agentwork` and not `agy` **refuse**: an `agents` name no selected pack provides is
+fatal ([§2.1](#21-the-two-spellings-of-files)), and the maintainer's config does not select `agy`
+today. The maintainer's direction, dictated 2026-10-30 and recorded here as a ruling in progress:
+
+> I'm thinking we shouldn't refuse the launch with agy not selected, because we need a way to have
+> a pack distribute configs for agents in case they're enabled, so we could add an `if` key, but I
+> feel like we should just make that the default.
+
+**My opinion: they are right, and the standing rule was aimed at a different case.** A content
+pack's reason to address an agent is "for whoever has this agent", which is what `briefing` and
+`skills` already mean when they broadcast: they reach the selected agents and say nothing about
+the rest. Addressed content is the one place where the agent's absence is a refusal, and the tree
+already shows the strain: the build-jail exemption in [§2.1](#21-the-two-spellings-of-files)
+exists because a narrowed selection dropped an agent a house-rules pack addressed. The rule's
+stated reason — "a typo and an unselected agent are the same mistake" — holds only if yolo cannot
+tell them apart, and it can.
+
+**The amendment** (proposed to [P3](../reference/agent-briefings.md#ba-p3) and
+[`OQ-BA3`](../reference/agent-briefings.md#oq-ba3); [OQ-FS6](#OQ-FS6) rules it):
+
+| An `agents` name is | Decided from | Severity | What the user sees |
+| :--- | :--- | :--- | :--- |
+| claimed by a **selected** pack | the selected set | delivered, or reported if the owner declares no slot of the kind (R1, unchanged) | today's behavior |
+| claimed by a pack the user **could select** — shipped, or configured in their `packs` — but not by a selected one | the wider vocabulary | **skipped**: the contribution delivers nothing, the launch runs | one `yolo check` `[SKIP]` line naming the pack to add; one launch line in the pack disclosure |
+| claimed by **no pack anywhere** | the wider vocabulary | **fatal**, as today, with the candidate list and did-you-mean | today's refusal |
+| in a vocabulary yolo could not finish reading (a configured pack not fetched yet, or its tree not checked out) | — | **reported, not refused**: the name may belong to that pack; `yolo check` already reports the broken pack louder and first | one line naming the pack it could not read |
+
+So `agents: ["agyy"]` still stops the launch, and `agents: ["agy"]` in a launch without agy is
+exactly what the manifest comment in [§4.1](#41-the-contribution) says it is.
+
+**Where the wider vocabulary comes from, and why it is not a reservation.**
+[`OQ-BH14`](../reference/jail-home.md#oq-bh14) rules that an unselected pack reserves nothing: its
+declarations may not make a user's config entry refused. This reads unselected packs in the
+opposite direction — their existence makes a name *acceptable* — and the only refusal left is of a
+name no pack the user could select declares, which selecting a pack could never fix. The
+`AGENTS.md` rule is against reading `packload.Embedded*` *to reserve a name*; spelling validation
+is not that, and there is a precedent: `config.UseProfileCLINames` unions `packload.Embedded()`
+deliberately not selection-gated, for a message about the universe ([`packs.go`](../../internal/config/packs.go);
+`AgentNames`'s header in [`footprint.go`](../../internal/packload/footprint.go) names it as the
+neighboring wider set). No second process-lifetime copy is made: `packload.Embedded()` returns the
+process's one leased tree, and a configured pack's declaration is read the way validation already
+reads it, `ResolvePack` in declaration mode with a read-only store (`SelectedPackDeclarations`,
+[`selectedpacks.go`](../../internal/config/selectedpacks.go)), over every `packs` entry rather than
+the selection. The vocabulary is the union of the two sets' agent identities (`AgentNames` over
+each), computed once per launch, `yolo host apply` and `yolo check`.
+
+**Default, not an opt-in key.** An `if`/`optional` key would keep today's refusal for packs that do
+not write it. Against it: the key is what every content pack would write, since addressing an
+agent *means* "if present"; it is a second behavior to document and test; and the cost the key
+would guard against, a silently skipped typo, is already caught by the wider vocabulary. The one
+case the key would catch and the default does not — a correctly spelled agent the user *meant* to
+select — is the case the maintainer wants to work. No inverse `required` key is proposed either;
+a pack that cannot work without an agent declares `needs` on its pack.
+
+**What it changes elsewhere.** The build-jail exemption in [`seal.go`](../../internal/cli/run/seal.go)
+for this gate becomes unnecessary and may stay; `yolo check` gains the gate it lacks today, with
+the skip as `[SKIP]`, which it counts apart from passes; `yolo host apply`'s refusal narrows the
+same way. Splitting the agy file into its own pack selected beside agy (a `matt-agy`) was the
+earlier way around the refusal; under the amendment it is unnecessary and is not proposed.
 
 ## 5. The agy slot, and the one thing nobody has measured
 
@@ -286,38 +348,55 @@ into = ".gemini/config/agents"
 list of agent paths that anyone has found. If one exists it becomes branch A's refinement, not a
 new branch.
 
-## 6. The foreign-parent shape: say it early, forbid it nowhere new
+## 6. The foreign-parent shape: warn where a pack is known to keep state, and nowhere else
 
-**Foreign-parent delivery** *(coined here)* is a path-addressed `files` destination whose first
-path component is a dot-directory that neither core's home skeleton (`paths.HomeSkeletonCoreDirs`,
-[`homeskeleton.go`](../../internal/paths/homeskeleton.go)) nor the contributing pack's own
-`[[state]]` declares. It is not a nested delivery into a selected pack's state, which works on
-every backend and stays legal.
+**Foreign-parent delivery** *(coined here)* is a path-addressed `files` destination inside a
+dot-directory that some pack the user could select — shipped, or configured in their `packs` —
+declares as `[[state]]`, in a launch that does not select that pack. It is not a nested delivery
+into a *selected* pack's state, which works on every backend and stays legal, and it is not a
+delivery into a dot-directory no pack anywhere claims, which is nobody's business but the pack's.
 
-### 6.1 Three readers, one rule, no new refusal
+### 6.1 What is legitimate here, and why it is not an error
+
+The maintainer asked what the valid use is, and why this is not an error. In plain words:
+
+- **A pack configuring a tool yolo has no pack for.** A pack that ships `~/.tmux/plugins`, a
+  `~/.ripgreprc`, or an agent definition for a CLI nobody has written a pack for is doing the only
+  thing it can: naming the path. No pack claims the folder, so nothing here fires, and nothing
+  should; a warning on every launch of a correct config is noise that teaches people to ignore
+  warnings.
+- **A pack configuring an agent the user runs unmanaged.** This is the maintainer's own case today:
+  `agy` hand-installed in a jail, reading a real `~/.gemini`, and `matt-agentwork` putting the file
+  where it reads. At `yolo host apply` the same delivery lands in the user's real home, which is
+  exactly where that agent reads. The config is *correct for its author*; what is wrong is only
+  that on `macos-user` the folder it makes is in the wrong tier, and that the author had a better
+  spelling. That is a warning's shape: the launch runs, the file lands, and the line names the
+  spelling that costs nothing now that [§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default)
+  makes an absent agent a skip rather than a refusal.
+- **Why not an error.** On podman the folder is a per-launch skeleton entry and on Apple Container
+  an ordinary directory in the per-workspace home; neither outlives anything or blocks anyone. An
+  error would refuse, on every backend, a config that works on two of them and is the intent at the
+  host, over a hazard one backend has — a macos-user rule dressed as a pack rule, against the
+  parity principle. And the hazard it would guard against is already met twice over: the warning
+  names the fix, and [§6.3](#63-on-macos-user-record-what-the-overlay-makes) keeps the folder from
+  locking anyone out.
+
+### 6.2 Three readers, one rule
 
 | Reader | Knows | Says |
 | :--- | :--- | :--- |
-| `yolo pack lint <dir>` (no config) | the one pack | a **note**: the destination lies inside a dot-directory this pack does not declare as state; if another pack owns it, address its agent |
-| `yolo check`, Packs section | the selected set | a **warning** when no selected pack declares that dot-directory as state ([§10](#10-the-messages) has the text); nothing when one does |
-| the launch pre-flight (`stagePacks`) and `yolo host apply` | the selected set | the same warning, on stderr, beside `reportUnmatchedAudiences`'s line |
+| `yolo pack lint <dir>` (no config) | the one pack, and the shipped set | a **note** when a shipped pack declares the destination's dot-directory as state: address that pack's agent instead ([§10](#10-the-messages)) |
+| `yolo check`, Packs section | the selected set and the wider vocabulary | a **warning** when a pack the user could select, and did not, declares the dot-directory as state; silent when a selected pack does (the nested case) or when none does |
+| the launch pre-flight (`stagePacks`) and `yolo host apply` | the same | the same warning, once, on stderr beside `reportUnmatchedAudiences`'s line |
 
-Why a warning and not a refusal ([OQ-FS2](#OQ-FS2) asks the maintainer to confirm): on podman and
-Apple Container the shape is harmless, so a refusal would be a macos-user-only rule dressed as a
-pack rule, against the parity principle; and at `yolo host apply` the shape is often the intent.
-The warning is also what the maintainer's `matt` pack gets the day `pi` leaves one of their
-launches, which is the right moment to hear it.
-
-### 6.2 Reconciled with the name-reservation ruling
-
-[`OQ-BH14`](../reference/jail-home.md#oq-bh14) rules that name reservation covers only selected
-packs and an unselected pack is treated as if it does not exist, and `AGENTS.md` forbids reading
-`packload.Embedded*` to reserve a name. This rule reads **only the selected set**, reserves
-nothing and refuses nothing: it reports that a destination's parent is nobody's in *this*
-selection, without naming any pack that is not there. It does not need to know agy exists to say
-`~/.gemini` is unowned here. A test over the shipped set
-(`TestNoShippedPackDeliversFilesIntoAnotherShippedPacksState`, [§11](#11-tests)) is the one place
-that reads every shipped pack, and a test is not a reservation.
+The rule reads the same wider vocabulary as [§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default),
+and for the same reason it is no breach of [`OQ-BH14`](../reference/jail-home.md#oq-bh14): it
+reserves nothing and refuses nothing. It names an unselected pack in *advice*, as
+`config.UseProfileCLINames` already does, and the remedy it names is the pack's spelling, not the
+user's config. Its one new cost is a warning on the unmanaged-agent case above, which is the case
+the warning exists for: that user is one `macos-user` launch away from the lab report.
+[OQ-FS2](#OQ-FS2) asks the maintainer to confirm the narrow rule over the broad one (warn on any
+undeclared dot-directory) and over an error.
 
 ### 6.3 On macos-user: record what the overlay makes
 
@@ -382,7 +461,8 @@ Dispositions are [`backend-parity.md`](backend-parity.md#3-the-dispositions--the
 | Behavior | podman | Apple Container | macos-user | `yolo host apply` / `yolo host --` |
 | :--- | :--- | :--- | :--- | :--- |
 | Agent-addressed `files` lands at `<slot>/<pack>` when agy is selected | Honored (bind) | Honored (bind) | Honored (overlay) | Honored (per-file write) |
-| Unknown `agents` name is fatal | Honored | Honored | Honored | Honored |
+| An `agents` name no pack anywhere declares is fatal | Honored | Honored | Honored | Honored |
+| An `agents` name for a known, unselected pack is skipped, with one line | Honored | Honored | Honored | Honored |
 | Foreign-parent warning | Honored | Honored | Honored | Honored |
 | Foreign parent materialized | HonoredBy: per-launch skeleton dir, gone at exit | HonoredBy: dir in the per-workspace home | **Warned**, and recorded ([§6.3](#63-on-macos-user-record-what-the-overlay-makes)) | NotApplicable: the user's home is the right tier |
 | Layout refusal names the path | NotApplicable | NotApplicable | Honored | NotApplicable |
@@ -397,20 +477,35 @@ annotation test (`backendparity_test.go`) covers any runtime-gated line the buil
 Each is the whole message, with its next step on the following line, per the
 [Happy Path Principle](../reference/happy-path-principle.md).
 
-**`yolo check`, Packs section** (the launch prints the same as `Warning:` on stderr):
+**`yolo check`, Packs section — the foreign-parent warning** (the launch prints the same as
+`Warning:` on stderr):
 
 ```text
-  [WARN] pack matt-agentwork: files into ~/.gemini/config/agents lands inside ~/.gemini, a directory no selected pack declares as its state
-       -> On macos-user this makes ~/.gemini a real directory in the account home every workspace shares, and a later launch that selects a pack keeping state there is refused. If that directory is an agent's, address the files to the agent instead and select its pack:
-            {"kind": "files", "agents": ["<agent>"], "from": "files/gemini/config/agents"}
-          If it is this pack's own, declare it:  [[state]] at = ".gemini"
+  [WARN] pack matt-agentwork: files into ~/.gemini/config/agents lands inside ~/.gemini, where the agy pack keeps its state, and agy is not selected
+       -> On macos-user this makes ~/.gemini a real directory in the account home every workspace shares, and a later launch that selects agy is refused there. Address the agent instead; the files then land in agy's own folder when agy is selected, and nowhere when it is not:
+            {"kind": "files", "agents": ["agy"], "from": "files/gemini/config/agents"}
           then: yolo check
+```
+
+**`yolo check`, Packs section — a skipped audience** ([§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default);
+the launch prints the first line in its pack disclosure):
+
+```text
+  [SKIP] pack matt-agentwork: files for agy not delivered — no selected pack provides agy
+       -> If you want it here:  yolo pack add agy
+```
+
+**`yolo check` and the launch — a name no pack declares** (unchanged from today's refusal, shown
+for the contrast):
+
+```text
+Error: packs: pack matt-agentwork: files are addressed to "agyy" (its `agents` selector), and no pack declares an agent of that name. Selected packs provide: claude, pi. Every pack you could select provides: agy, claude, codex, copilot, pi. Did you mean "agy"?
 ```
 
 **`yolo pack lint`** (a note, exit 0):
 
 ```text
-  note  files into .gemini/config/agents lands inside .gemini, which this pack does not declare as state. If another pack owns it, address its agent ({"kind": "files", "agents": ["<agent>"], "from": "files/gemini/config/agents"}); if it is this pack's, declare [[state]] at = ".gemini".
+  note  files into .gemini/config/agents lands inside .gemini, where the agy pack keeps its state. Address its agent instead, so the files land in agy's folder when agy is selected and nowhere when it is not: {"kind": "files", "agents": ["agy"], "from": "files/gemini/config/agents"}
 ```
 
 **`darwin_home_layout`, an occupied account-home path** (replacing today's group):
@@ -455,9 +550,14 @@ Each is named so that deleting the production call site fails it, and each says 
 | :--- | :--- | :--- |
 | `TestAgyDeclaresAFilesSlotForAgentDefinitions` (`internal/packload`) | `packs/agy` loaded through `packload.Embedded()` declares one `files` slot at `.gemini/config/agents` expecting `agent.md` | the slot is removed or moved |
 | `TestAnAgyAddressedTreeLandsAtBothNotches` (`internal/cli/run`, beside `filesslotparity_test.go`) | a fixture pack `{agents: ["agy"]}` lands at `.gemini/config/agents/<pack>` in `packFilesTargets` and in `RenderHostFiles` after `ResolveDestinations`; nothing lands without `agy` selected | either notch stops resolving through `SlotLanding` |
-| `TestCheckWarnsOnFilesIntoAnUnselectedPacksStateDir` (`internal/cli/check`) | a fixture `files` into `.probe/x` with no selected pack declaring `.probe` warns with the [§10](#10-the-messages) text; selecting a fixture declaring `[[state]] at = ".probe"` silences it | the check is deleted or reads the shipped set |
-| `TestLaunchWarnsOnAForeignParentDelivery` (`internal/cli/run`) | `stagePacks` prints the same warning once; the launch proceeds | the pre-flight line is deleted |
-| `TestPackLintNotesAForeignParentDelivery` (`internal/cli`) | `yolo pack lint` prints the note and exits 0 | the note is deleted or becomes a refusal |
+| `TestCheckWarnsOnFilesIntoAKnownUnselectedPacksStateDir` (`internal/cli/check`) | a fixture `files` into `.probe/x`, with a *configured but unselected* fixture declaring `[[state]] at = ".probe"`, warns with the [§10](#10-the-messages) text; selecting that pack silences it; with no pack anywhere declaring `.probe` nothing is printed | the check is deleted, warns on the nested case, or warns on an unclaimed dot-directory |
+| `TestAnAddressedTreeForAKnownUnselectedAgentIsSkippedNotRefused` (`internal/cli/run`, and the `yolo host apply` twin in `internal/cli`) | a fixture pack `{agents: ["probe"]}` with the `probe` agent's pack configured and unselected: the launch proceeds, delivers nothing for it, and prints the one skip line | the pre-flight refuses, or delivers |
+| `TestAnAgentsNameNoPackDeclaresStaysFatal` | the same fixture with `agents: ["probee"]` refuses, naming both the selected and the selectable candidates and the did-you-mean | the refusal is lost with the amendment |
+| `TestAnUnreadableConfiguredPackMakesAnUnknownAudienceAReportNotARefusal` | a configured entry the read-only store cannot resolve: an unmatched name is reported with the pack it could not read, and the launch proceeds | the gate refuses on an incomplete vocabulary |
+| `TestCheckCountsASkippedAudienceAsSkipNotPass` (`internal/cli/check`) | the skip line is `[SKIP]`, counted apart from passes, and ends with `yolo pack add <pack>` | the line becomes an `[OK]` or loses its next step |
+| `TestTheAudienceVocabularyReadsOneEmbeddedTree` (`internal/packload`) | computing the wider vocabulary twice in one process materializes no second embedded tree | a second process-lifetime copy returns |
+| `TestLaunchWarnsOnAForeignParentDelivery` (`internal/cli/run`) | `stagePacks` prints the same warning once, naming the unselected owning pack; the launch proceeds | the pre-flight line is deleted |
+| `TestPackLintNotesAForeignParentDelivery` (`internal/cli`) | `yolo pack lint` on a pack delivering into a shipped pack's state dir prints the note naming that pack's agent and exits 0; into an unclaimed dot-directory it prints nothing | the note is deleted, becomes a refusal, or fires on an unclaimed directory |
 | `TestOccupiedLayoutRefusalNamesEachPathAndNotTheAccount` (`internal/entrypoint`) | the message carries `sudo rm -rf <path>` per occupant and not `sudo rm -rf <home>`, for one and for several | the account reset returns |
 | `TestOccupiedLayoutRefusalNamesThePackThatMadeThePath` | with an overlay record attributing the directory, the line names pack, contribution and workspace | the record is not read |
 | `TestTheOverlayRecordsATopLevelHomeDirectoryItCreates` | installing a destination whose top-level parent is absent writes the attribution | the record write is deleted |
@@ -465,7 +565,7 @@ Each is named so that deleting the production call site fails it, and each says 
 | `TestADarwinLayoutRefusalStopsTheBoot` (`internal/entrypoint`) | `runSteps` over a synthetic table with a failing `darwin_home_layout`: no later step runs on the darwin target, every later step runs on the container target, the last line is the [§10](#10-the-messages) text | the stop is deleted or leaks to the container boot |
 | `TestCheckReportsADanglingLayoutLinkAndPruneRemovesIt` | the warning names link and target; `yolo prune` lists it; `--apply` removes the link and leaves a present target alone | either half is deleted |
 | `TestNoShippedPackDeliversFilesIntoAnotherShippedPacksState` (`internal/packload`) | over the embedded set, no path-addressed `files` destination lies under another shipped pack's `[[state]]` | a shipped pack adopts the shape |
-| `TestMacosUserAForeignParentDoesNotLockOutItsOwner` (`integration`, macos-user hardware) | launch A: a fixture pack `files` into `.probe/x`, no owner selected; launch B: a fixture declaring `[[state]] at = ".probe"`, exit 0 and `~/.probe` a link, or (without [OQ-FS3](#OQ-FS3)) a refusal naming only `~/.probe`; and A's launch log carries the warning | any of [§6](#6-the-foreign-parent-shape-say-it-early-forbid-it-nowhere-new) and [§7](#7-the-layout-refusal-name-the-path-stop-the-boot) regresses |
+| `TestMacosUserAForeignParentDoesNotLockOutItsOwner` (`integration`, macos-user hardware) | launch A: a fixture pack `files` into `.probe/x`, the owning fixture configured and not selected; launch B: a fixture declaring `[[state]] at = ".probe"`, exit 0 and `~/.probe` a link, or (without [OQ-FS3](#OQ-FS3)) a refusal naming only `~/.probe`; and A's launch log carries the warning | any of [§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else) and [§7](#7-the-layout-refusal-name-the-path-stop-the-boot) regresses |
 | `TestEveryHintedYoloCommandExists` (existing) | every `yolo …` in the new messages is a real command | a message names a verb that is not there |
 
 Nothing here starts `agy`. The one measurement that needs it is [§5.2](#52-the-one-check-that-settles-it-and-who-runs-it)'s, and it is the maintainer's.
@@ -474,8 +574,13 @@ Nothing here starts `agy`. The one measurement that needs it is [§5.2](#52-the-
 
 - No change to how a nested `files` destination under a **selected** pack's state works; it works
   on every backend and this design relies on it.
-- No reversal of the two-severities ruling: an unknown `agents` name stays fatal
-  ([OQ-FS6](#OQ-FS6) only asks the maintainer to accept its consequence for their config).
+- No reversal of the fatal half for a name **no pack anywhere declares**: a typo stays a refusal
+  with its candidates and did-you-mean. [§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default)
+  narrows what counts as unknown; it does not make every name acceptable.
+- No `if`/`optional` key on an addressed contribution, and no `required` inverse: skip is the
+  default, and a pack that cannot work without an agent says so with `needs`.
+- No warning on a path-addressed `files` destination in a dot-directory no pack the user could
+  select claims as state.
 - No `[[state]]` for `matt-agentwork` over `.gemini`: two packs claiming one state dir is a
   collision, not a fix.
 - No general "deliver into the owning pack's location even when it is not selected": that is
@@ -489,11 +594,13 @@ Nothing here starts `agy`. The one measurement that needs it is [§5.2](#52-the-
 | Alternative | Verdict |
 | :--- | :--- |
 | Keep path-addressed delivery and have the layout migrate a real `.gemini` into the sidecar | Rejected: [`OQ-HT2`](../reference/macos-user-home-tiers.md#oq-ht2) rules out migration of anything that might be the user's; [§6.3](#63-on-macos-user-record-what-the-overlay-makes) reclaims only what the record proves yolo alone wrote |
-| Refuse any path-addressed `files` whose parent is another shipped pack's state | Rejected: reads the shipped set to reserve a name, against [`OQ-BH14`](../reference/jail-home.md#oq-bh14), and refuses a legitimate `yolo host apply` intent |
-| Refuse the foreign-parent shape at the launch, over the selected set | Deferred to [OQ-FS2](#OQ-FS2); the design leans warn because the shape is harmless on two of three backends |
+| Refuse any path-addressed `files` whose parent is another known pack's state | Rejected: refuses, on every backend, a config that is correct at the host and harmless on two backends, over a hazard one backend has ([§6.1](#61-what-is-legitimate-here-and-why-it-is-not-an-error)) |
+| Warn on any path-addressed `files` destination in a dot-directory no selected pack declares (the broad rule) | Rejected: a pack configuring a tool yolo has no pack for would warn on every launch forever, and a permanent warning on a correct config trains people to ignore warnings; the hazard is only a folder some pack keeps state in ([§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else)) |
 | A `register` into an agy settings list of agent paths | Not available: no such list is documented or found; becomes a refinement if one appears |
 | Per-project `.agents/agents/` as the primary delivery | Rejected by the maintainer ([FS-D1](#decision-ledger)); kept as agy's own override |
-| A soft audience (`agents_optional`) so the file is skipped where agy is absent | Rejected for this design: it reverses a standing ruling for one pack whose owner runs the agent everywhere; [OQ-FS6](#OQ-FS6) records the choice |
+| An opt-in key (`if`, `optional`) making one addressed contribution survivable where its agent is absent | Rejected in favor of the default: every content pack would write it, it is a second behavior to document, and the typo it guards against is caught by the wider vocabulary ([§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default)) |
+| Keep the refusal and select `agy` in the maintainer's user config everywhere | Rejected by the maintainer's direction: a pack must be able to ship config for an agent in case it is enabled |
+| Split the agy file into its own pack (`matt-agy`) selected beside `agy` | Rejected: a workaround for the refusal the amendment removes; two packs to keep in step for one file |
 | A `flat` slot layout as the first answer to branch B | Deferred: `as` keeps the subdirectory's guarantees and solves the same case |
 
 ## 14. Risks
@@ -501,21 +608,27 @@ Nothing here starts `agy`. The one measurement that needs it is [§5.2](#52-the-
 | Risk | Mitigation |
 | :--- | :--- |
 | agy's scanner names the agent for the directory (branch B) and `as` is not built yet | the paired-design brief names the agent `matt-agentwork` until it is; the file still loads |
-| Selecting `agy` in the maintainer's user config changes every launch | selecting the pack lays its state dir, surfaces and the slot; whether and how the program installs is its own `[[program]]` declaration, which this design does not touch |
+| A well-spelled `agents` name for a pack the user forgot to select is skipped in silence | the skip is never silent: `yolo check` prints a `[SKIP]` line ending in `yolo pack add <pack>`, and the launch prints one line in its pack disclosure |
+| A typo that happens to spell another real agent (`agents: ["pi"]` for `agy`) is skipped rather than refused | it was never a refusal: today that name is accepted when pi is selected and delivered to pi; the amendment does not widen that case |
+| The wider vocabulary reads a configured pack's declaration at every launch | validation already reads every selected entry the same way, read-only and without fetching; the extra cost is the unselected entries, read once per launch |
 | The reclaim in [§6.3](#63-on-macos-user-record-what-the-overlay-makes) replaces a directory that held agent state the record did not see | the reclaim requires the directory's content to match the record exactly; one unknown entry leaves it alone |
 | Stopping the boot hides a second, independent problem until the next launch | the layout is the first step, so the second problem was never visible in the same boot before either; the refusal says why nothing else ran |
 | The warning fires on a pack whose foreign parent is deliberate at `yolo host apply` | it is a warning at exit 0, and declaring the dir as the pack's own state silences it |
 
 ## 15. Sequencing
 
-In order, each a landable slice: the agy slot and its parity test; `matt-agentwork` switches to the
-addressed form and the maintainer runs the [§5.2](#52-the-one-check-that-settles-it-and-who-runs-it)
-check (branch B adds `as`); the per-path refusal and the boot stop; the overlay record and the
+In order, each a landable slice: the addressing amendment of [§4.2](#42-addressing-an-agent-that-is-not-here-deliver-nothing-by-default)
+with its `yolo check` gate, since the pack-side change cannot land before it; the agy slot and its
+parity test; `matt-agentwork` switches to the addressed form and the maintainer runs the
+[§5.2](#52-the-one-check-that-settles-it-and-who-runs-it) check (branch B adds `as`); the per-path refusal and the boot stop; the overlay record and the
 foreign-parent warning in lint, check and launch; the reclaim and the dangling-link housekeeping,
 each behind its ruling. The implementation plan is not seeded here; the planner writes it once the
 questions below are ruled.
 
 ## Open Questions
+
+Every leaning below is the design author's (Fable). The maintainer's own words appear only in
+[OQ-FS6](#OQ-FS6) and the ledger.
 
 1. 💬 **OQ-FS1: Does the plain agy slot deliver the agent, or does the slot need to name the landing?**
 
@@ -540,23 +653,21 @@ questions below are ruled.
 
    > _(empty — fill in when decided)_
 
-2. 💬 **OQ-FS2: Should a pack's files into a folder nobody here owns warn, or refuse the launch?**
+2. 💬 **OQ-FS2: When a pack puts files inside a folder some other pack keeps state in, should yolo warn only then, warn on any undeclared dot-folder, or refuse?**
 
    A launch selects `matt-agentwork` and not `agy`. Today it runs and, on a Mac, quietly makes a
-   real `~/.gemini` in the shared account home. On podman and Apple Container the same launch
-   leaves nothing that outlives it.
+   real `~/.gemini` in the shared account home; on podman and Apple Container it leaves nothing.
+   A pack shipping `~/.tmux/plugins`, a folder no pack claims, has the same shape and no hazard.
 
-   - **A — Warn.** `yolo check` and the launch print the [§10](#10-the-messages) warning and
-     continue, on every backend alike.
-   - **B — Refuse.** The launch stops with the same text as an error, on every backend, two of
-     them over a harm they do not have.
-   - **C — Refuse on macos-user only.** Stops where it hurts; a pack then passes on one backend
-     and fails on another.
+   - **A — Warn only where a known pack keeps state there.** The agy case warns; the tmux case
+     is silent.
+   - **B — Warn on any dot-folder no selected pack declares.** The tmux pack warns forever.
+   - **C — Refuse.** Every backend stops, two of them over nothing.
 
-   <!-- vantage: question id=OQ-FS2 leaning="A — the shape is harmless on two backends and the intent at the host notch, so a refusal would be a macos-user rule in pack-rule clothing." -->
+   <!-- vantage: question id=OQ-FS2 leaning="A — the hazard is a folder some pack keeps state in, and a warning on a correct config forever trains people to ignore warnings." -->
 
-   _Leaning:_ A. The shape is harmless on two backends and the intent at the host notch, so a
-   refusal would be a macos-user rule in pack-rule clothing.
+   _Leaning:_ A. The hazard is a folder some pack keeps state in, and a warning on a correct config
+   forever trains people to ignore warnings.
 
    **Answer:**
 
@@ -622,23 +733,21 @@ questions below are ruled.
 
    > _(empty — fill in when decided)_
 
-6. 💬 **OQ-FS6: Will you select the agy pack everywhere matt-agentwork is, accepting that a launch without it is refused?**
+6. 💬 **OQ-FS6: Should files addressed to an agent whose pack is not selected be skipped by default, instead of refusing the launch?**
 
-   Addressing the file to `agy` makes every launch that selects `matt-agentwork` and not `agy`
-   stop at the pre-flight: an `agents` name no selected pack provides is fatal, by a standing
-   ruling. Your config does not select `agy` today.
+   Your words: a pack must be able to "distribute configs for agents in case they're enabled",
+   by default rather than through an `if` key. Today `agents: ["agy"]` in a launch without agy
+   refuses; yolo can tell that from a typo by the packs you could select.
 
-   - **A — Select it.** `yolo pack add agy` in the user config; the agent's state, surfaces and
-     the slot come with it on every notch.
-   - **B — Keep the path-addressed delivery**, taking only the yolo-side fixes; the warning fires
-     on every launch.
-   - **C — A soft audience** that skips the file where the agent is absent, reversing the
-     two-severities ruling for `files`.
+   - **A — Skip by default.** The launch delivers nothing for it; `yolo check` prints a `[SKIP]`
+     line ending in `yolo pack add agy`. A name no pack anywhere declares still refuses.
+   - **B — An opt-in key.** Only a contribution writing `if` is skipped; the rest refuse.
+   - **C — Keep the refusal** and select `agy` everywhere.
 
-   <!-- vantage: question id=OQ-FS6 leaning="A — you run agy everywhere, so the pack belongs everywhere, and an agent run outside yolo's management lacking the file is the 2026-09-28 ruling, not a defect." -->
+   <!-- vantage: question id=OQ-FS6 leaning="A — addressing an agent already means 'for whoever has it', the typo case stays fatal through the wider vocabulary, and the key would be boilerplate every content pack writes." -->
 
-   _Leaning:_ A. You run `agy` everywhere, so the pack belongs everywhere, and an agent run
-   outside yolo's management lacking the file is the 2026-09-28 ruling, not a defect.
+   _Leaning:_ A. Addressing an agent already means "for whoever has it", the typo case stays
+   fatal through the wider vocabulary, and the key would be boilerplate every content pack writes.
 
    **Answer:**
 
@@ -652,7 +761,7 @@ questions below are ruled.
 | FS-D2 | A path into another pack's state folder is an address, and the pack-side fix is `files` with `agents`; a nested delivery under a *selected* pack's state stays legal on every backend. Designer's decision. | 2026-10-30 | [§1](#1-the-verdict), [§4](#4-the-pack-side-change-address-the-agent) | — |
 | FS-D3 | The agy `[[files]]` slot at `.gemini/config/agents` is a change to a pack yolo ships, so it is a yolo change, with `expects = ["agent.md"]`. Designer's decision. | 2026-10-30 | [§5.3](#53-the-slot-in-each-branch) | — |
 | FS-D4 | `occupiedLayoutError` names each occupying account-home path with its own removal and its maker when known; the whole-account reset survives only when no path can be attributed and there are several. Designer's decision. | 2026-10-30 | [§7.1](#71-name-the-path) | — |
-| FS-D5 | No new refusal of the foreign-parent shape on any backend; the same warning on all of them, and the macos-user overlay records what it creates. Designer's decision, confirmed by [OQ-FS2](#OQ-FS2). | 2026-10-30 | [§6](#6-the-foreign-parent-shape-say-it-early-forbid-it-nowhere-new), [§9](#9-parity-across-backends-and-notches) | — |
+| FS-D5 | No new refusal of the foreign-parent shape on any backend; the same warning on all of them, only where a known pack keeps state in the folder, and the macos-user overlay records what it creates. Designer's decision, confirmed by [OQ-FS2](#OQ-FS2). | 2026-10-30 | [§6](#6-the-foreign-parent-shape-warn-where-a-pack-is-known-to-keep-state-and-nowhere-else), [§9](#9-parity-across-backends-and-notches) | — |
 
 ## Appendix: evidence, by symbol
 
@@ -667,7 +776,15 @@ Read 2026-10-30 at `e4345e69d`. Symbols rather than lines, so a move does not ma
   `ExpectsNotes` read it ([`registration.go`](../../internal/packload/registration.go)).
 - Fatal unknown audience: `packload.AgentAudienceProblems`
   ([`agentaudience.go`](../../internal/packload/agentaudience.go)), called from `stagePacks` and
-  `yolo host apply`; reported unmatched destination: `reportUnmatchedAudiences`.
+  `yolo host apply`, not from `yolo check`; skipped under a narrowed build-jail selection
+  ([`seal.go`](../../internal/cli/run/seal.go), which names the `matt` pack's `agents: ["pi"]`
+  briefing as the launch that forced the skip); reported unmatched destination:
+  `reportUnmatchedAudiences`. The vocabulary it reads is `AgentNames` over what the caller loaded;
+  its header names `config.UseProfileCLINames` as the neighbouring reader that unions
+  `packload.Embedded()` without selection gating.
+- The standing rule this design amends: [P3](../reference/agent-briefings.md#ba-p3), the
+  [two-severities table](../reference/agent-briefings.md#two-severities-an-unknown-name-is-fatal-an-unmatched-destination-is-reported)
+  and ledger row [`OQ-BA3`](../reference/agent-briefings.md#oq-ba3) in `agent-briefings.md`.
 - Jail mounts: `packFilesTargets` resolves through `ResolveDestinations`; `preparePackFiles` makes
   mountpoints in the skeleton or the workspace state dir; `PackDestConflicts` and
   `PackFilesShadowedSurfaces` are the existing `files` pre-flights, run at the launch and in
