@@ -242,10 +242,13 @@ func configNote(msg, workspace string) string {
 		// copy is read-only, and an edit counts once the jail is relaunched.
 		return "Edit the host file this names, then relaunch the jail (`yolo config-ref` documents every key)"
 	case strings.HasPrefix(msg, "config."):
-		// The workspace config the loader reads (config.ResolveWorkspaceConfigPath): naming
-		// `yolo-jail.jsonc` beside a `yolo-jail.json` sent the user to create a file that shadows it.
-		wsPath, _ := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
-		where = "Fix it in " + wsPath + " or " + paths.UserConfigPath()
+		// The workspace and user config files the format-aware loader reads
+		// (config.ResolveReadableWorkspaceConfigPath, config.UserConfigFile): naming
+		// `yolo-jail.jsonc` beside a `yolo-jail.json` sent the user to create a file that shadows
+		// it, and naming either legacy file beside a TOML one sends them to a file nothing reads.
+		wsPath, _ := config.ResolveReadableWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
+		userPath, _ := config.UserConfigFile()
+		where = "Fix it in " + wsPath + " or " + userPath
 	}
 	return where + " (`yolo config-ref` documents every key), " + recheck
 }

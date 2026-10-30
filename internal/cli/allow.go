@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -22,7 +21,6 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/configedit"
 	"github.com/mschulkind-oss/yolo-jail/internal/hostrun"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/tty"
 )
 
@@ -154,7 +152,7 @@ func allowRunW(args []string, out, errw io.Writer) int {
 
 	// THE STEP AFTER THE EDIT (RC-D17): a user grant acts in a workspace only once that
 	// workspace approves it, so the verb offers the approval here, through the one gate.
-	approveWorkspace, inWorkspace := allowApprovalWorkspace(workspace)
+	approveWorkspace, inWorkspace := resolveWorkspaceRoot()
 	if !inWorkspace {
 		fmt.Fprintln(out, "This takes effect in a workspace when it approves it: run `yolo config apply` in that workspace.")
 		return 0
@@ -276,19 +274,4 @@ func namedVerbEdit(workspace, key string, action configedit.Action, value, whenM
 		}
 	}
 	return applyConfigEdit(workspace, target, mutation, dryRun, out, errw, postWriteCheck)
-}
-
-// allowApprovalWorkspace is the workspace `yolo config apply` would approve from here: the
-// marked workspace root, or the edit's workspace when it holds a readable config file (the
-// marker walk, workspaceMarked, does not know the TOML names yet).
-func allowApprovalWorkspace(editWorkspace string) (string, bool) {
-	if root, ok := resolveWorkspaceRoot(); ok {
-		return root, true
-	}
-	for _, name := range []string{paths.WorkspaceConfigTOMLName, paths.WorkspaceLocalConfigTOMLName} {
-		if editWorkspace != "" && isRegularFile(filepath.Join(editWorkspace, name)) {
-			return editWorkspace, true
-		}
-	}
-	return "", false
 }

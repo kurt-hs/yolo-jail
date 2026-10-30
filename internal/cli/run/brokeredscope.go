@@ -178,7 +178,7 @@ func (o *Options) writeScopeFiles(cname string, brokered []*loopholes.Loophole) 
 				continue
 			}
 			out.printf("[dim]%s: grants nothing in this workspace: no read grant applies, so every call "+
-				"through it is refused. %s[/dim]", lp.Name, richtext.Escape(config.BrokerGrantAdvice(lp.Brokered.Source)))
+				"through it is refused. %s[/dim]", lp.Name, richtext.Escape(config.BrokerGrantAdviceFor(*lp.Brokered)))
 			continue
 		}
 		// The disclosure of what the broker starts with (§5.6): every repository, and where it

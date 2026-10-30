@@ -34,8 +34,8 @@ Global Storage
        -> Will be created on first run
 
 Config Files
-  [PASS] No user config found: $HOME/.config/yolo-jail/config.jsonc
-  [PASS] No workspace yolo-jail.jsonc found
+  [PASS] No user config found: $HOME/.config/yolo-jail/config.toml
+  [PASS] No workspace config found (yolo-jail.toml or yolo-jail.jsonc)
 
   [FAIL] Could not resolve the yolo-jail repo root
        -> The yolo CLI needs a complete matched flake/helper bundle for jail image builds.

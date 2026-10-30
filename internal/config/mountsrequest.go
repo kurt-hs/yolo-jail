@@ -98,16 +98,22 @@ func validateAllowMounts(config *jsonx.OrderedMap, errs *[]string) {
 	}
 }
 
-// withAllowKey is known plus `allow`, the user-scope ceiling table: a launch's validation of a
+// withReadableScopeKeys is known plus the two readable-config tables a TOML scope may write
+// and the legacy key list does not hold: `allow`, the user-scope ceiling table, and `requests`,
+// the workspace-scope ask (docs/design/readable-config.md RC-D12). A launch's validation of a
 // composed config holding the user's [allow.mounts] (or any [allow.<name>], which the broker
-// allowance resolver judges) must not call the table itself unknown. The readable schema
-// already refuses it in a workspace file.
-func withAllowKey(known map[string]struct{}) map[string]struct{} {
-	out := make(map[string]struct{}, len(known)+1)
+// allowance resolver judges) or a project's [requests.<name>] (which the same resolver judges
+// against that ceiling) must not call either table unknown: `yolo request` writes the second,
+// and the check it runs afterwards refused what it had just written. The readable schema
+// already refuses `allow` in a workspace TOML file and `requests` in a user one, and
+// validateWorkspaceAllow refuses `allow` in a JSONC workspace file.
+func withReadableScopeKeys(known map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{}, len(known)+2)
 	for k := range known {
 		out[k] = struct{}{}
 	}
 	out["allow"] = struct{}{}
+	out["requests"] = struct{}{}
 	return out
 }
 
@@ -164,7 +170,7 @@ func writableMountRequestRefusal(m ContextMount) string {
 
 // validateWorkspaceAllow refuses an `allow` table a workspace config wrote. `allow` is the
 // user's ceiling: a TOML workspace file is refused it by the readable schema, and a JSONC one
-// here, since the composed config a launch validates accepts the key (withAllowKey) and would
+// here, since the composed config a launch validates accepts the key (withReadableScopeKeys) and would
 // otherwise take a workspace's table without a word. Re-read only when the composed config
 // holds one.
 func validateWorkspaceAllow(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {

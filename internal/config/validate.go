@@ -81,7 +81,7 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	// convert_later is judged by validateConvertLater alone, so the unknown-key reporters read
 	// the config without it.
 	if edit == nil {
-		reportUnknownKeys(withoutConvertLater(config), withAllowKey(knownTopLevelConfigKeys), "config", errs)
+		reportUnknownKeys(withoutConvertLater(config), withReadableScopeKeys(knownTopLevelConfigKeys), "config", errs)
 	} else {
 		reportUnknownKeysWithReadableFG(withoutConvertLater(config), errs)
 	}

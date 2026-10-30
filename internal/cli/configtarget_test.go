@@ -224,6 +224,22 @@ func TestTheMarkerIsAnArtifactNotADirectory(t *testing.T) {
 			marks: true,
 		},
 		{
+			// The readable-config workspace file (docs/design/config-project.md §1): the
+			// format-aware loader reads it first, so a TOML-only workspace is one yolo launches in.
+			name: "the TOML workspace config",
+			seed: func(t *testing.T, dir string) {
+				writeFile(t, filepath.Join(dir, "yolo-jail.toml"), "")
+			},
+			marks: true,
+		},
+		{
+			name: "the TOML machine-local override alone",
+			seed: func(t *testing.T, dir string) {
+				writeFile(t, filepath.Join(dir, "yolo-jail.local.toml"), "")
+			},
+			marks: true,
+		},
+		{
 			name: "the machine-local override alone",
 			seed: func(t *testing.T, dir string) {
 				writeFile(t, filepath.Join(dir, config.WorkspaceLocalConfigName), `{}`)

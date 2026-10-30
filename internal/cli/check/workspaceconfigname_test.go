@@ -38,7 +38,7 @@ func TestCheckNamesTheJSONWorkspaceConfigsItParsed(t *testing.T) {
 	if want := "Parsed workspace config: " + ws + " + " + local; !strings.Contains(got, want) {
 		t.Errorf("check does not name the .json workspace configs it parsed (want %q):\n%s", want, got)
 	}
-	if strings.Contains(got, "No workspace yolo-jail.jsonc found") {
+	if strings.Contains(got, "No workspace config found") {
 		t.Errorf("check parsed the workspace's yolo-jail.json and reported no workspace config:\n%s", got)
 	}
 }

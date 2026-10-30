@@ -549,7 +549,10 @@ func (s *configSources) orNone() configSources {
 // so the caller early-exits with the fail-only summary.
 func (o *Options) sectionConfigFiles(r *reporter, workspace string) (*jsonx.OrderedMap, *jsonx.OrderedMap, *configSources, bool) {
 	r.sectionHeader("Config Files")
-	userPath := paths.UserConfigPath()
+	// The file the format-aware reader reads (config.toml, else the legacy names), not
+	// paths.UserConfigPath, which knows only the legacy names and so reported a TOML user's
+	// config as "not found" at a config.jsonc that was never there.
+	userPath, _ := config.UserConfigFile()
 	failed := false
 
 	// UserScopeConfig carries the includes AND any --user-layer, so `yolo check` validates
@@ -581,10 +584,11 @@ func (o *Options) sectionConfigFiles(r *reporter, workspace string) (*jsonx.Orde
 	// does not read what the launch reads is worse than no preflight, because it
 	// is believed.
 	//
-	// And it names them as the loader resolves them (config.ResolveWorkspaceConfigPath): it
-	// parsed a `yolo-jail.json` and then reported no workspace config at all.
-	wsPath, _ := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
-	localPath, _ := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceLocalConfigName)
+	// And it names them as the loader resolves them (config.ResolveReadableWorkspaceConfigPath,
+	// yolo-jail.toml first): it parsed a `yolo-jail.json`, and later a `yolo-jail.toml`, and then
+	// reported no workspace config at all.
+	wsPath, _ := config.ResolveReadableWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
+	localPath, _ := config.ResolveReadableWorkspaceConfigPath(workspace, config.WorkspaceLocalConfigName)
 	workspaceConfig, wsSrc, err := config.LoadWorkspaceConfigWithSources(workspace, true, func(string) {})
 	src.workspace = wsSrc
 	if err != nil {
@@ -604,7 +608,7 @@ func (o *Options) sectionConfigFiles(r *reporter, workspace string) (*jsonx.Orde
 		}
 		r.ok("Parsed workspace config: " + strings.Join(parsed, " + "))
 	} else {
-		r.ok("No workspace yolo-jail.jsonc found")
+		r.ok("No workspace config found (yolo-jail.toml or yolo-jail.jsonc)")
 	}
 	o.reportWorkspaceFile(r, workspace)
 	o.reportWorkspaceConfigLock(r, workspace)

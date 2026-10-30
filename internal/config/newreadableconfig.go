@@ -230,6 +230,20 @@ func guardedReadableSiblingMove(path string) string {
 	return "if [ ! -e " + quotedBackup + " ] && [ ! -L " + quotedBackup + " ]; then mv -n " + quotedPath + " " + quotedBackup + " && { [ ! -e " + quotedPath + " ] && [ ! -L " + quotedPath + " ]; }; else printf '%s\\n' " + message + " >&2; exit 1; fi"
 }
 
+// UserConfigFile is the user config file the format-aware reader reads: `config.toml`, else
+// the legacy `config.jsonc` or `config.json`, and `config.toml` when none exists (the file a
+// first write creates). toml says whether it is the TOML file. paths.UserConfigPath knows only
+// the legacy names, so a reporter naming the user config uses this. On a TOML-beside-legacy
+// collision, which the reader refuses, it answers the TOML file.
+func UserConfigFile() (path string, toml bool) {
+	legacy := paths.UserConfigPath()
+	p, _, isTOML, err := resolveUserConfigPath(legacy)
+	if err != nil {
+		return filepath.Join(filepath.Dir(legacy), paths.UserConfigTOMLName), true
+	}
+	return p, isTOML
+}
+
 func resolveUserConfigPath(legacyPath string) (path, label string, toml bool, err error) {
 	dir := filepath.Dir(legacyPath)
 	candidates := []string{paths.UserConfigTOMLName, paths.UserConfigLegacyJSONCName, paths.UserConfigLegacyJSONName}

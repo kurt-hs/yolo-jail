@@ -291,6 +291,22 @@ func BrokerGrantAdvice(source string) string {
 		"the host, in the workspace, and approve the grant there."
 }
 
+// BrokerGrantAdviceFor is BrokerGrantAdvice for a caller holding the source's declaration. A
+// user config that is TOML (or that does not exist yet, which a first write makes TOML) takes
+// the grant in the readable form, the source's read capability under `allow.<source>`, so the
+// next step is the verb that writes it, `yolo allow <source> <capability>`
+// (docs/design/config-commands.md §4), not a `brokered.<source>.grants` entry.
+func BrokerGrantAdviceFor(b loopholedecl.Brokered) string {
+	if path, toml := UserConfigFile(); toml && b.ReadCapability != "" {
+		return "To let every workspace read its own approved remotes through it, run `yolo allow " + b.Source +
+			" " + b.ReadCapability + "` on the host (it adds " + pyReprValue(b.ReadCapability) + " to `allow." +
+			b.Source + ".always` in your user config, " + path + ", or the file of it that already holds " +
+			"[allow]), then approve the workspace change it offers, or run `yolo config apply` on the host, " +
+			"in the workspace."
+	}
+	return BrokerGrantAdvice(b.Source)
+}
+
 // BrokerNoReadRefusal is a broker's refusal of a call on repo (spelled as the source spells it)
 // that no read grant covers (BB-D108): nothing ran, the grant to add, and how this jail's broker
 // takes it — at its next call where the launch's scope is live, otherwise at a fresh launch.
@@ -1433,13 +1449,17 @@ func UngrantedBrokerNotes(resolver LoopholeResolver) []string {
 			continue
 		}
 		source := info.Brokered.Source
-		if len(userGrantsOf(user, source)) > 0 || inList(grantKindsOf(user, source), readGrantKind) {
+		// The readable form of the same grant is the source's read capability under
+		// `allow.<source>` (docs/design/config-user.md §6): `always` grants it, and `on_request`
+		// leaves it to each workspace as `grant_kinds` does.
+		if len(userGrantsOf(user, source)) > 0 || inList(grantKindsOf(user, source), readGrantKind) ||
+			readableUserAllowsEither(user, source, info.Brokered.ReadCapability) {
 			continue
 		}
 		out = append(out, "loophole "+name+" is selected and grants nothing: your user config holds no read "+
 			"grant for the "+pyReprValue(source)+" source, so it refuses every call, and a workspace's "+
 			"config-change prompt asks nothing about it (beyond showing, once, the removal of a read grant "+
-			"that workspace approved earlier). "+BrokerGrantAdvice(source))
+			"that workspace approved earlier). "+BrokerGrantAdviceFor(*info.Brokered))
 	}
 	return out
 }

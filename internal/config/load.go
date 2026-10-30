@@ -374,12 +374,27 @@ func ResolveWorkspaceConfigPath(workspace, baseName string) (path, name string) 
 	return filepath.Join(workspace, baseName), baseName
 }
 
-// WorkspaceConfigFileNames is the legacy filename projection retained for current runtime
-// consumers until their format-aware activation is integrated.
+// ResolveReadableWorkspaceConfigPath is the workspace config file the format-aware loader
+// (LoadWorkspaceConfig) reads for baseName: `yolo-jail.toml` before `yolo-jail.jsonc` before
+// `yolo-jail.json` (and the same for the local file), or the TOML name when none exists. A
+// reporter naming the file it parsed uses this, not ResolveWorkspaceConfigPath, which knows
+// only the legacy names. On a TOML-beside-legacy collision, which the loader refuses, it
+// answers the TOML file.
+func ResolveReadableWorkspaceConfigPath(workspace, baseName string) (path, name string) {
+	if p, n, err := resolveWorkspaceConfigPath(workspace, baseName); err == nil {
+		return p, n
+	}
+	n := readableWorkspaceConfigCandidates(baseName)[0]
+	return filepath.Join(workspace, n), n
+}
+
+// WorkspaceConfigFileNames is every file name the format-aware loader (LoadWorkspaceConfig)
+// reads as a workspace or local config: the TOML names and the legacy JSONC/JSON ones. A
+// directory holding any of them is a workspace yolo will launch in.
 func WorkspaceConfigFileNames() []string {
 	var names []string
 	for _, base := range []string{WorkspaceConfigName, WorkspaceLocalConfigName} {
-		names = append(names, workspaceConfigCandidates(base)...)
+		names = append(names, readableWorkspaceConfigCandidates(base)...)
 	}
 	return names
 }
