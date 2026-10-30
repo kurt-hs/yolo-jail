@@ -28,7 +28,7 @@ the cause in [§2](#2-the-cause) predicts every Mac.
 
 **Owed by the Mac agent:** the native witnesses [OQ-MT6](#OQ-MT6) and [OQ-MT11](#OQ-MT11) only, with their commands in the [comparison runbook](../plans/macos-native-comparison-runbook.md#native-witnesses-one-per-open-question).
 
-**Needs your ruling:** none. **Ruled 2026-10-23:** [OQ-MT1](#OQ-MT1) (a mise yolo installs,
+**Needs your ruling:** none until the [OQ-MT12](#OQ-MT12) research reports. **Ruled 2026-10-23:** [OQ-MT1](#OQ-MT1) (a mise yolo installs,
 ideally from Nix, no maintained patches; never securityd), [OQ-MT2](#OQ-MT2) (account mode may
 miss login-keychain CAs; documented).
 
@@ -105,7 +105,7 @@ should be trusted with no bundle at all.
 | :--- | :--- | :--- | :--- |
 | **A — release mise on darwin** | A second version pin; nixpkgs patches lost | The keychain deny stays | Fallback if B compiles too slowly |
 | **B — rebuild nixpkgs mise with `rustls-native-roots`** | No binary cache: mise compiles on each Mac after every nixpkgs bump, and its TLS crate may need cmake | Same as A | Chosen bridge ([§3](#3-the-proposal), MT-D5) |
-| **C — allow `com.apple.SecurityServer`** | One line | **Weakens run-as-you's boundary:** a Mach service lookup is not blanket authorization; per-item access controls still apply. But the [Mac audit](#mac-side-follow-up--audit-the-securityserver-boundary) measured a no-prompt read/write/delete/lock of an unlocked, readable synthetic file-based keychain trusted for `/usr/bin/security` when only this service was re-allowed. File denial still stopped tested *path-based* operations on an unreadable keychain; pathless and data-protection operations remain unmeasured. The name-only filter cannot distinguish TLS requests from keychain operations | Rejected under MT-D4; no boundary change is proposed here |
+| **C — allow `com.apple.SecurityServer`** | One line | **Weakens run-as-you's boundary:** a Mach service lookup is not blanket authorization; per-item access controls still apply. But the [Mac audit](#mac-side-follow-up--audit-the-securityserver-boundary) measured a no-prompt read/write/delete/lock of an unlocked, readable synthetic file-based keychain trusted for `/usr/bin/security` when only this service was re-allowed. File denial still stopped tested *path-based* operations on an unreadable keychain; pathless and data-protection operations remain unmeasured. The name-only filter cannot distinguish TLS requests from keychain operations | Rejected under MT-D4 and [MT-D7](#decision-ledger); no boundary change is proposed here |
 | **D — no mise in the sandbox** | Repos' tools missing on macos-user | None | Rejected; it is today's failure |
 | **E — ask upstream to make rustls the macOS default** | Slow; not in our hands | — | Worth filing; not a fix |
 | **F — ask nixpkgs to build mise with `rustls-native-roots`** | One nixpkgs pull request; yolo then keeps nixpkgs mise everywhere | Same as A | Not pursued (MT-D6) |
@@ -221,7 +221,7 @@ tools installed, with no profile change.
    > CAs not work in some subset of the guest separate account mode. That's totally fine, and we'll
    > just document that."
 
-**Open witnesses.** Two witnesses of the 2026-10-29 [Mac run](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md) stay open; the other seven are in the [Decision Ledger](#decision-ledger).
+**Open questions.** [OQ-MT12](#OQ-MT12) is research. Two witnesses of the 2026-10-29 [Mac run](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md) stay open; the other seven are in the [Decision Ledger](#decision-ledger).
 
 <a id="OQ-MT6"></a>**🔒 OQ-MT6: Does trustd under P0 trust a CA that only the MDM installed?**
 
@@ -239,7 +239,13 @@ tools installed, with no profile change.
 
 **Witness:** [Copilot native TLS under the keychain deny](../plans/macos-native-comparison-runbook.md#copilot-native-tls-under-the-keychain-deny).
 
-Questions 6 and 11 are witnesses, not rulings, and a row that could not run is untested, not answered. Run any remaining one in a wholly disposable synthetic-only account, under the runbook's [scope and stop conditions](../plans/macos-native-comparison-runbook.md#scope-and-stop-conditions).
+<a id="OQ-MT12"></a>**🔒 OQ-MT12: Which programs would hand a keychain secret to a jail granted Safehouse's keychain access?**
+
+<!-- vantage: question id=OQ-MT12 -->
+
+**Research, not a ruling yet.** [MT-D7](#decision-ledger) keeps the keychain denied while this is open. The research names the programs that keep secrets in the macOS login keychain, the access list each one gives its items (the program itself, `/usr/bin/security`, or any application), and whether a process that can run that program, a downloaded copy of it, or `security` can read the secret back with no prompt. It covers the newer data-protection keychain too. The answer decides whether any mode may allow the keychain.
+
+Questions 6 and 11 are witnesses and 12 is research, not rulings; and a row that could not run is untested, not answered. Run any remaining one in a wholly disposable synthetic-only account, under the runbook's [scope and stop conditions](../plans/macos-native-comparison-runbook.md#scope-and-stop-conditions).
 
 ## Decision Ledger
 
@@ -251,6 +257,7 @@ Questions 6 and 11 are witnesses, not rulings, and a row that could not run is u
 | MT-D4 | Keychain access inside any containment is a non-starter; the mise yolo delivers is ours to choose, ideally from Nix, with no patches we maintain ([OQ-MT1](#OQ-MT1)) | 2026-10-23 | [§3](#3-the-proposal) | — |
 | MT-D5 | Bridge: on darwin, the macos-user tool profile takes nixpkgs mise with its cargo features switched from `native-tls` to `rustls-native-roots` (a build setting, not a patch). Fallback if the per-Mac compile proves too slow: option A. Witness C passed 2026-10-23 | 2026-10-23 | [§4](#4-alternatives) | ✅ 2026-10-23, `noncontainerFloorSubstitutes` in `flake.nix`, with the `rustls` feature: at mise v2026.10.3 it and `rustls-native-roots` map every crate to the same `reqwest/rustls`. |
 | MT-D6 | The nixpkgs change (option F) is not pursued; the `flake.nix` substitute stays the fix. The maintainer: "I will not pursue this upstream" | 2026-10-23 | [§3](#3-the-proposal) | — |
+| MT-D7 | Safehouse-style keychain access (allowing `com.apple.SecurityServer`, `com.apple.securityd.xpc`, `com.apple.secd` and the keychain files) stays off in every mode, account mode included, until [OQ-MT12](#OQ-MT12) is answered. The reason: a keychain item's access list names a *program* by its code signature, or by its contents if it is unsigned, and never the containment that runs it. A jail that can reach the service and read the keychain file therefore gets every item a program it can run, or download a copy of, is trusted for. The vendor that signed that program assumed the keychain was separating users, not jails. The maintainer's example: a cloud CLI that kept its credentials in the login keychain would hand them to the agent | 2026-10-29 | [§4](#4-alternatives) | — |
 | <a id="OQ-MT3"></a>[OQ-MT3](#OQ-MT3) | Safehouse's effective Copilot policy admits the synthetic keychain read that yolo's deny blocks: `safehouse-copilot` read the permissive item (status 0, `match=true`), while the no-keychain overlay returned -25300 (`errSecItemNotFound`, `match=false`). This is Safehouse's documented broadened access, not a violation | 2026-10-29 | [report §3.2](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md#32-safehouse) | — |
 | <a id="OQ-MT4"></a>[OQ-MT4](#OQ-MT4) | No ACL bypass: an item whose access list trusts no application read -25293 unsandboxed and inside `safehouse-copilot`; under the yolo P0 harness it read -25300, because the service deny stops the call before the ACL is consulted | 2026-10-29 | [report §3.3](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md#33-restrictive-acl) | — |
 | <a id="OQ-MT5"></a>[OQ-MT5](#OQ-MT5) | The current tree's P0 blocks the keychain (read permissive and restricted -25300, add -25308) and holds all four mandatory service denies. Identical unsandboxed and under P0: example.com trusted (HTTP 200), self-signed.badssl.com -67843 and wrong.host.badssl.com -67602 not trusted (URLSession -1202) | 2026-10-29 | [report §3.4](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md#34-current-p0-and-tls-controls) | — |
