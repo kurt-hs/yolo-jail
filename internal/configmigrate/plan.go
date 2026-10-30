@@ -11,6 +11,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
 // Link is a symlink a migration makes so a name the user linked keeps reaching its file: the old
@@ -40,6 +41,9 @@ type Target struct {
 	Respelled []string
 	// Dropped are the written values left out because they are the default.
 	Dropped []DroppedDefault
+	// Folded are the facts every model row of a provider repeated, written once in its
+	// `every_model` (models.go).
+	Folded []FoldedFact
 }
 
 // Difference is one key on which the old and the converted config disagree.
@@ -120,12 +124,53 @@ type canonicalSet struct {
 	// (config.EnvEntries), whichever spelling carries it. The per-scope comparison above checks
 	// the lowered keys; this checks what the launch resolves from them, without reading a file.
 	env string
+	// providers is the provider table a launch resolves from the merged read (providerTable):
+	// the config layers compare the model rows with every fold undone, and this is what proves a
+	// converted row or a fold means what the old rows meant.
+	providers string
 }
 
 // Plan converts every old file of g and proves the result says what the old files say. A plan
 // that does not prove equal is returned with an *InequalityError, and Apply refuses it.
+//
+// A fold into `every_model` is made only while the proof holds (config-migration.md §4 item 4):
+// a plan with folds whose provider table differs is planned again without them, and that plan's
+// verdict is the answer.
 func Plan(g *Graph) (*MigrationPlan, error) {
+	p, err := planWith(g, true)
+	var ineq *InequalityError
+	if errors.As(err, &ineq) && p.folded() && p.differsIn(providerTableLayer) {
+		return planWith(g, false)
+	}
+	return p, err
+}
+
+// providerTableLayer is the equality check's layer for the provider table a launch resolves.
+const providerTableLayer = "the provider table the launch resolves"
+
+func (p *MigrationPlan) folded() bool {
+	for _, t := range p.Targets {
+		if len(t.Folded) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *MigrationPlan) differsIn(layer string) bool {
+	for _, d := range p.Differences {
+		if d.Layer == layer {
+			return true
+		}
+	}
+	return false
+}
+
+func planWith(g *Graph, fold bool) (*MigrationPlan, error) {
 	p := &MigrationPlan{Graph: g, Unreachable: append([]Missing(nil), g.Unreachable...)}
+	// Every shipped pack, for the provider table both sides are proved against: a pack's own
+	// model aliases are what a fold into `every_model` could reach (models.go).
+	packs := packload.Embedded()
 	remotes := workspaceRemotes(g.Request.Workspace)
 	view := userViewOf(g)
 	newBytes := map[*File][]byte{}
@@ -141,7 +186,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	for _, f := range g.Files {
 		switch f.Role {
 		case RoleConvert:
-			t, skipped, err := convertFile(f, remotes, view, writers)
+			t, skipped, err := convertFile(f, remotes, view, writers, fold)
 			if err != nil {
 				return nil, err
 			}
@@ -166,7 +211,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	if err := p.preflight(); err != nil {
 		return nil, err
 	}
-	before, err := readCanonical(g, oldTop(g), g.Request.Workspace, remotes, view, "", true)
+	before, err := readCanonical(g, oldTop(g), g.Request.Workspace, remotes, view, "", true, packs)
 	if err != nil {
 		return nil, fmt.Errorf("read the old config: %w", err)
 	}
@@ -182,7 +227,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stage the converted files: %w", err)
 	}
-	after, err := readCanonical(g, userTop, workspace, nil, nil, mirror, false)
+	after, err := readCanonical(g, userTop, workspace, nil, nil, mirror, false, packs)
 	if err != nil {
 		return nil, fmt.Errorf("the converted files would not read: %w; nothing was written", err)
 	}
@@ -192,6 +237,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	p.Differences = append(p.Differences, diffValues("project config", before.project, after.project)...)
 	p.Differences = append(p.Differences, diffValues("user and project config merged", before.composed, after.composed)...)
 	p.Differences = append(p.Differences, diffValues("the environment the launch resolves", before.env, after.env)...)
+	p.Differences = append(p.Differences, diffValues(providerTableLayer, before.providers, after.providers)...)
 	p.Equal = before.set == after.set
 	if g.Request.Workspace != "" && len(g.project) > 0 {
 		p.Records = planRecords(g.Request.Workspace)
@@ -210,9 +256,13 @@ func oldTop(g *Graph) string {
 }
 
 // convertFile makes one old file's TOML.
-func convertFile(f *File, remotes []string, view *userView, writers writerCounts) (Target, []NotConverted, error) {
+func convertFile(f *File, remotes []string, view *userView, writers writerCounts, fold bool) (Target, []NotConverted, error) {
 	l := lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes, user: view}, f.Logical)
 	dropped := dropDefaults(l.values, writers)
+	var folded []FoldedFact
+	if fold {
+		folded = foldEveryModel(l.values)
+	}
 	var respelled []string
 	if value, ok := l.values.Get("include_if_found"); ok {
 		list, _ := value.([]any)
@@ -255,7 +305,7 @@ func convertFile(f *File, remotes []string, view *userView, writers writerCounts
 		return Target{}, nil, fmt.Errorf("%s: %w", f.Logical, err)
 	}
 	t := Target{File: f, Old: f.Physical, New: twinPath(f.Physical), Backup: f.Physical + ".pre-migrate",
-		Bytes: data, Comments: len(comments), Respelled: respelled, Dropped: dropped}
+		Bytes: data, Comments: len(comments), Respelled: respelled, Dropped: dropped, Folded: folded}
 	link, err := linkFor(f)
 	if err != nil {
 		return Target{}, nil, err
@@ -457,7 +507,9 @@ type sideRead struct {
 	// env is {"entries": config.EnvEntries(merged read)}: the launch's env, in the one form
 	// both spellings resolve through.
 	env *jsonx.OrderedMap
-	set canonicalSet
+	// providers is the provider table a launch resolves from the merged read (providerTable).
+	providers *jsonx.OrderedMap
+	set       canonicalSet
 }
 
 // launchEnv is what the launch's env resolver walks over a merged read, as a map diffValues can
@@ -475,7 +527,7 @@ var loweredRoots = []string{"env_sources", "env", "brokered", "requests", "allow
 // readCanonical reads one side through the launch's readers (config.ReadMigrationGraph). The old
 // side (remotes non-nil or mirror empty) is lowered; the new side is the readers' output with
 // the staging root taken back out of every anchored path.
-func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *userView, mirror string, lowerOld bool) (*sideRead, error) {
+func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *userView, mirror string, lowerOld bool, packs []*packload.Pack) (*sideRead, error) {
 	read, err := config.ReadMigrationGraph(userTop, workspace)
 	if err != nil {
 		return nil, err
@@ -488,11 +540,13 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *
 		// The OLD spelling as the launch reads it, not its lowering: the proof is that the
 		// converted files resolve to the env the old ones resolve to.
 		s.env = launchEnv(read.Composed)
+		s.providers = providerTable(read.Composed, packs)
 	} else {
 		s.user = unmirror(read.User, mirror).(*jsonx.OrderedMap)
 		s.project = unmirror(read.Workspace, mirror).(*jsonx.OrderedMap)
 		s.composed = unmirror(read.Composed, mirror).(*jsonx.OrderedMap)
 		s.env = launchEnv(s.composed)
+		s.providers = providerTable(s.composed, packs)
 	}
 	for _, m := range []*jsonx.OrderedMap{s.user, s.project, s.composed} {
 		m.Delete(convertLaterKey)
@@ -504,11 +558,12 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *
 	// default filled, by the table the readers answer from.
 	for _, m := range []*jsonx.OrderedMap{s.user, s.project, s.composed} {
 		config.ApplyWrittenDefaults(m)
+		unfoldEveryModel(m)
 	}
 	for _, pair := range []struct {
 		m   *jsonx.OrderedMap
 		out *string
-	}{{s.user, &s.set.user}, {s.project, &s.set.project}, {s.composed, &s.set.composed}, {s.env, &s.set.env}} {
+	}{{s.user, &s.set.user}, {s.project, &s.set.project}, {s.composed, &s.set.composed}, {s.env, &s.set.env}, {s.providers, &s.set.providers}} {
 		text, err := config.SnapshotJSON(pair.m)
 		if err != nil {
 			return nil, err

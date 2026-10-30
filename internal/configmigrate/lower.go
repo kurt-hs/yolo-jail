@@ -178,6 +178,13 @@ func lower(old *jsonx.OrderedMap, ctx loweringContext, file string) lowered {
 			skip(path, value, unconvertedReason(d))
 			continue
 		}
+		if key == "providers" {
+			var renamed map[string][]string
+			value, renamed = convertModelRows(value, path)
+			for newPath, oldPath := range renamed {
+				out.origins[newPath] = oldPath
+			}
+		}
 		kept, dropped := filterRenamedLeaves(value, path)
 		// Place what converts first: a dropped leaf kept at its old spelling is written beside
 		// it, and writing it first would leave the table's other keys out of the check.
@@ -235,6 +242,14 @@ func filterRenamedLeaves(value any, path []string) (any, []droppedLeaf) {
 	for _, k := range m.Keys() {
 		v, _ := m.Get(k)
 		child := append(append([]string(nil), path...), k)
+		// A readable model row is already in the new spelling (convertModelRows), where
+		// `max_tokens` and `reasoning` keep the legacy row's key names.
+		if len(child) == 4 && child[0] == "providers" && child[2] == "models" {
+			if _, readable := isReadableRow(v); readable {
+				out.Set(k, v)
+				continue
+			}
+		}
 		if d, ok := renameDescriptorFor(child); ok && !(d.Transform == config.RenameKey && len(d.Replacements) == 1 && d.Replacements[0] == d.OldPath) {
 			dropped = append(dropped, droppedLeaf{path: child, value: v, reason: unconvertedReason(d)})
 			continue

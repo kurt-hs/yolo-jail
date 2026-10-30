@@ -3,7 +3,7 @@ title: "Readable config: component implementation plan"
 date: 2026-10-26
 status: accepted
 stage: DECIDED
-next: "Build the remainder §1 lists (the migration's folds, the loophole manifests), convert this repository's own config once the owner has installed a TOML-reading yolo, then graduate the design to a system doc and retire this plan"
+next: "Build the remainder §1 lists (the loophole manifests), convert this repository's own config once the owner has installed a TOML-reading yolo, then graduate the design to a system doc and retire this plan"
 depends-on:
   - readable-config.md
   - config-user.md
@@ -80,8 +80,6 @@ this list is the state by component.
 - **Legacy window.** Legacy JSONC configs and `pack.json` manifests are still read, as
   [RC-D19](readable-config.md#RC-D19) rules; the old reader's removal is a later release's work.
 - **Not built:**
-  - `yolo config migrate` converts losslessly and drops written defaults but does not fold
-    repeated facts ([OQ-RC18](readable-config.md#decision-ledger), [RC-D27](readable-config.md#RC-D27));
   - this repository's own `yolo-jail.jsonc` is not converted, which waits on the owner installing
     a TOML-reading `yolo` on the host first ([RC-D22](readable-config.md#RC-D22)); the shipped
     loophole manifests are `loophole.toml` ([RC-D28](readable-config.md#RC-D28)).

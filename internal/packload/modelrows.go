@@ -312,6 +312,10 @@ func validateProviderImage(image *packdecl.ProviderImage) error {
 	return nil
 }
 
+// InferModelVendor is the maker a model id names by itself (a Bedrock `global.<maker>.` prefix or
+// a `<maker>/` route), the one a readable row leaves unwritten; "" when the id names none.
+func InferModelVendor(id string) string { return inferProviderMaker(id) }
+
 func inferProviderMaker(id string) string {
 	if strings.HasPrefix(id, "global.") {
 		parts := strings.Split(id, ".")
