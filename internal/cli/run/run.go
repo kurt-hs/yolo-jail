@@ -207,6 +207,7 @@ func Run(opts Options) (rc int) {
 	// THE MIGRATION OFFER goes first (migrateoffer.go): an old-format config file is offered
 	// for conversion before anything reads the config, so a `y` launches on the new files, and
 	// before the config-change prompt, which the migration's respelled records keep quiet.
+	// Never on an attach to a running jail (launchWillAttach): that jail booted on the old files.
 	// Pinned by TestLaunchOfferYesConvertsThenLaunches.
 	o.offerConfigMigration()
 	o.refreshPacks()

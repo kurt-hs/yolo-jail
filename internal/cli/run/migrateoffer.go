@@ -19,6 +19,17 @@ package run
 // change it did not make. Nothing here refuses a launch: a migration that cannot prove equality,
 // or fails to write, leaves every old file as it was and the launch goes on with them.
 //
+// ONLY A LAUNCH THAT WILL START A JAIL IS ASKED, never an attach to a running one: that jail's config
+// was frozen at its boot (an attach never re-stages), so a conversion under it is a change it does
+// not see, and every extra terminal would be asked again. The attach decision itself is made far
+// below, after the config load, under the launch lock and against the runtime the config names; so
+// this asks the one thing knowable before the config is read: whether this workspace's jail has a
+// keeper (probeKeeper, a local lock, no runtime call). A keeper is alive for as long as its jail
+// runs, so a held lock is an attach, or a jail being ended; either way this launch says nothing
+// and the next fresh launch asks. An attach that RESTARTS an older jail (the contract gate) is not
+// asked either: it decides that only after the config is read. "Could not ask" is not an attach:
+// the offer is made as before, and nothing here refuses a launch. --never-attach is always asked.
+//
 // What it covers is what `yolo config migrate` covers from here: on the host the user config and
 // this workspace's files; in a jail only the workspace's, since the user config is the host's.
 
@@ -34,11 +45,15 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/configmigrate"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 // offerConfigMigration offers to convert this launch's old-format config files, and converts
 // them when the person says yes. It never stops the launch.
 func (o *Options) offerConfigMigration() {
+	if o.launchWillAttach() {
+		return
+	}
 	req := configmigrate.Request{Workspace: o.Workspace}
 	if !config.InJail() {
 		req.UserConfigDir = filepath.Dir(paths.UserConfigPath())
@@ -111,6 +126,16 @@ func (o *Options) offerConfigMigration() {
 		return
 	}
 	o.pr(o.Stderr).print("Written, keeping each original as <name>.pre-migrate. Launching on the converted files.")
+}
+
+// launchWillAttach is whether this launch will most likely attach to this workspace's running jail,
+// read before the config is: a keeper holds the jail's liveness lock. keeperUnknown is not an
+// attach, so a probe that could not answer leaves the offer as it was.
+func (o *Options) launchWillAttach() bool {
+	if o.NeverAttach {
+		return false
+	}
+	return probeKeeper(yoloruntime.FromWorkspace(o.Workspace)) == keeperAlive
 }
 
 // convertLaterState reads the user's old-format config file: where a person would write

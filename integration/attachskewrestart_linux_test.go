@@ -78,6 +78,15 @@ func TestAttachRestartsAnOlderJailAtATerminal(t *testing.T) {
 	requireJail(t)
 	dir, cname := startStandInOlderJail(t)
 	privateYoloState(t)
+	// THE CONVERSION OFFER IS SILENCED, not met: the launch asks to convert an old-format config
+	// before it reads one, and skips the question only for an attach it can see coming, a running
+	// jail with a keeper (launchWillAttach in internal/cli/run/migrateoffer.go). The stand-in older
+	// jail has no keeper, so to that question this launch looks like a fresh one, and at a terminal
+	// it would wait on "[y/N]" ahead of the restart question this test is about.
+	if err := os.WriteFile(os.ExpandEnv("$HOME/.config/yolo-jail/config.jsonc"),
+		[]byte(`{"packs": ["claude", "zai"], "convert_later": true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	master, slave := openTestPty(t)
 
 	// $YOLO_CONTRACT_TAGS expands in the JAIL's shell: the boot echoes the command with the

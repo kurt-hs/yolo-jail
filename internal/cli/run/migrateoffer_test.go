@@ -15,6 +15,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/macosuser"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	yoloruntime "github.com/mschulkind-oss/yolo-jail/internal/runtime"
 )
 
 type offerLaunch struct {
@@ -27,6 +28,12 @@ type offerLaunch struct {
 // runOfferLaunch writes userConfig as the old user file and runs a macos-user launch whose
 // backend call only records that the launch got there.
 func runOfferLaunch(t *testing.T, userConfig string, terminal bool, answer string) *offerLaunch {
+	t.Helper()
+	return runOfferLaunchWith(t, userConfig, terminal, answer, nil)
+}
+
+// runOfferLaunchWith is runOfferLaunch with setup run on the options just before Run.
+func runOfferLaunchWith(t *testing.T, userConfig string, terminal bool, answer string, setup func(*Options)) *offerLaunch {
 	t.Helper()
 	l := &offerLaunch{home: hostRefreshEnv(t)}
 	t.Setenv("YOLO_USER_LAYER", "")
@@ -46,6 +53,9 @@ func runOfferLaunch(t *testing.T, userConfig string, terminal bool, answer strin
 	o.MacosUserRun = func(_ *jsonx.OrderedMap, _ string, _, _ []string, _, _ string, _ macosuser.HomeOverlay, _ macosuser.HostContext, _ bool, _ *jsonx.OrderedMap, _ []packload.BlockedTool, _ macosuser.JailDaemons) int {
 		l.launched = true
 		return 0
+	}
+	if setup != nil {
+		setup(o)
 	}
 	l.rc = Run(*o)
 	return l
@@ -136,5 +146,45 @@ func TestConvertLaterSilencesTheOffer(t *testing.T) {
 		if s := l.stderr.String(); strings.Contains(s, "old format") {
 			t.Fatalf("terminal=%v: convert_later did not silence the offer:\n%s", terminal, s)
 		}
+	}
+}
+
+// An attach to a running jail is never asked: the running jail's config was frozen at its boot, so
+// a conversion under it is a change it does not see, and every extra terminal would be asked again.
+// A held liveness lock is what a running jail's keeper leaves, and it is what the launch reads
+// before it reads the config. Fails if the guard in offerConfigMigration is deleted.
+func TestAnAttachIsNotOfferedTheConversion(t *testing.T) {
+	var held *os.File
+	l := runOfferLaunchWith(t, oldUserConfig, true, "y\n", func(o *Options) {
+		live, err := holdLivenessLock(yoloruntime.FromWorkspace(o.Workspace))
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = live
+	})
+	releaseLock(held)
+	if s := l.stderr.String(); strings.Contains(s, "[y/N]") || strings.Contains(s, "old format") {
+		t.Fatalf("an attach to a running jail was offered the conversion:\n%s", s)
+	}
+	if l.exists("config.toml") || !l.exists("config.jsonc") {
+		t.Fatalf("an attach converted the user file\nstderr:\n%s", l.stderr.String())
+	}
+}
+
+// The control for the attach test above, through the same seam: with --never-attach the held
+// lock is not an attach, so the offer is made.
+func TestANeverAttachLaunchIsOfferedBesideARunningJail(t *testing.T) {
+	var held *os.File
+	l := runOfferLaunchWith(t, oldUserConfig, true, "n\n", func(o *Options) {
+		o.NeverAttach = true
+		live, err := holdLivenessLock(yoloruntime.FromWorkspace(o.Workspace))
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = live
+	})
+	releaseLock(held)
+	if s := l.stderr.String(); !strings.Contains(s, "[y/N]") {
+		t.Fatalf("a launch that never attaches was not offered the conversion:\n%s", s)
 	}
 }
