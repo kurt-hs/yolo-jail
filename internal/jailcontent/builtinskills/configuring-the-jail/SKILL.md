@@ -12,8 +12,14 @@ a host-capability loophole.
 
 **Do NOT use this for one-off installs.** The jail has internet and you can
 `npm i -g`, `pip install`, `uv pip install`, or `mise use` a tool right now with
-no config change and no restart. Only reach for `yolo-jail.jsonc` when the tool
+no config change and no restart. Only change the config when the tool
 must persist across restarts or be present for every future session.
+
+Change it with a verb where one covers the key: `yolo config set <key> <value>`
+(or `yolo config add <key> <value>` for a list), `yolo request <source> <capability>`
+for a broker capability, `yolo pack add <name>` for a pack. They write the TOML
+file (`yolo-jail.toml`) and validate the edit; hand-edit the file only for a key
+no verb reaches, or in a workspace still on the legacy `yolo-jail.jsonc`.
 
 ## You already know the loop — here's what it leaves out
 
@@ -33,7 +39,7 @@ sandbox. Your briefing says so, and `yolo check --no-build` prints a line naming
 the file. Then write out the exact edit and ask the human to apply it on the host,
 run `yolo check` there, and run `yolo config apply`; that command reports whether
 the change takes effect live or remains pending for a restart. Do not route the
-change through `yolo-jail.local.jsonc`, an included file, or a new config file
+change through the local config file, an included file, or a new config file
 beside the locked one: those are not locked, and using them to get round the
 lock undoes the protection the human chose, and the config diff at the next
 launch shows it to them.
@@ -57,7 +63,7 @@ a host `just load`.
 
 One loophole kind is not yours to switch: one whose manifest declares
 `brokered` (the github pack's `github-broker`) is turned on per project, by the
-human, on the host. Its `enabled` in `yolo-jail.jsonc` is only a `[WARN]` in
+human, on the host. Its `enabled` in the workspace config is only a `[WARN]` in
 here but refuses the next host launch, so don't write it: the human enables it
 on the host. Give them
 `yolo host-run -C <value of $YOLO_HOST_DIR> -- yolo loopholes enable <name>` to
@@ -69,8 +75,11 @@ Its repository list is the other way round: `brokered.<source>.repos`
 (`brokered.github.repos` for the github pack) is a workspace key you may write,
 listing a repository the project has no remote for — or, with a whole-segment
 wildcard, more than one: `*/*` is every repository the host login can reach,
-`OWNER/*` is one owner's, and `*/REPO` is that name under any owner. After
-adding it, run `yolo check --no-build` and ask the human to run
+`OWNER/*` is one owner's, and `*/REPO` is that name under any owner. Write it
+with `yolo request github repos OWNER/REPO` (`yolo request git push <branch>` and
+`yolo request git new_branches` are the same verb for git), which edits the
+project's config; if it refuses because the file is read-only here, ask the human
+to run the same command on the host. After it, run `yolo check --no-build` and ask the human to run
 `yolo config apply` on the host in this workspace. Its existing approval prompt
 records the trust; a running broker that supports live scope takes the change
 at its next request. When live scope is not available, the change remains pending for the next restart. The
@@ -80,16 +89,19 @@ command never restarts the jail or offers to do so.
 
 Three layers merge, later wins:
 
-- `~/.config/yolo-jail/config.jsonc` — user/machine defaults.
-- `<workspace>/yolo-jail.jsonc` — the committed per-project config. **Edit this
-  one** unless the human asks you not to, or unless it is read-only in here (see above:
+- `~/.config/yolo-jail/config.toml` — user/machine defaults.
+- `<workspace>/yolo-jail.toml` — the committed per-project config. **Change this
+  one** (with a verb where one covers the key) unless the human asks you not to, or unless it is read-only in here (see above:
   then propose the edit to the human instead).
-- `<workspace>/yolo-jail.local.jsonc` — per-machine tweaks, auto-merged when
+- `<workspace>/yolo-jail.local.toml` — per-machine tweaks, auto-merged when
   present. Conventionally untracked, but yolo does not git-ignore it: run
-  `git check-ignore yolo-jail.local.jsonc` before trusting it to stay out of a
+  `git check-ignore yolo-jail.local.toml` before trusting it to stay out of a
   commit.
 
-Either workspace file may be spelled `.json` instead (`yolo-jail.json`,
+A workspace or user config not yet converted keeps its legacy name
+(`yolo-jail.jsonc`, `yolo-jail.local.jsonc`, `~/.config/yolo-jail/config.jsonc`);
+one format per scope, and `yolo config migrate` converts it. Either legacy
+workspace file may be spelled `.json` instead (`yolo-jail.json`,
 `yolo-jail.local.json`), which yolo reads only when the `.jsonc` name is absent.
 Your briefing names the file this workspace uses. Edit that one: a new
 `yolo-jail.jsonc` beside a `yolo-jail.json` is read in its place, and every key
@@ -100,8 +112,9 @@ Merge edge cases that surprise people:
 - Objects deep-merge; lists **union and de-dupe**.
 - **`packs` is not in the merge at all — it is USER-SCOPE ONLY.** Which coding
   agent a jail gets is decided by `packs`, and that key is read from
-  `~/.config/yolo-jail/config.jsonc` **directly**, never from the merged config. A
-  `packs` entry in `yolo-jail.jsonc` does nothing, and no amount of layering makes
+  `~/.config/yolo-jail/config.toml` **directly**, never from the merged config
+  (`yolo pack add <name>` writes it, on the host). A
+  `packs` entry in the workspace config does nothing, and no amount of layering makes
   it work: workspace scope is inexpressible by construction rather than
   validated-against. The reason is the credential boundary — a pack can carry
   skills and briefing prose an agent then follows, and a workspace config travels
@@ -188,10 +201,10 @@ outside the workspace.**
 Two consequences that follow from "it is literally the cwd":
 
 - There is no `--workspace` flag and no walk up the tree looking for
-  `yolo-jail.jsonc`. Launch from a subdirectory and *that subdirectory* is the
+  the workspace config. Launch from a subdirectory and *that subdirectory* is the
   whole workspace, with its own config and its own jail.
-- `yolo-jail.jsonc` sits at the workspace root, so from inside a jail it is
-  always `/workspace/yolo-jail.jsonc` — whatever it is called on the host.
+- The workspace config sits at the workspace root, so from inside a jail it is
+  always `/workspace/yolo-jail.toml` (or `yolo-jail.jsonc` while legacy) — whatever it is called on the host.
 
 ### 2. A `mounts` entry lands at `/ctx/<basename>` — of the RESOLVED path
 
@@ -205,10 +218,10 @@ explicit `"~/code/sysadmin:/ctx/sysadmin"` form whenever you care about the name
 
 Every string entry gets `:ro` appended for you. The one writable form is an
 object with a required mode — `{"host": "~/scratch", "at": "/ctx/scratch",
-"mode": "rw"}` — and it is **user-scope only**: in `yolo-jail.jsonc` (or the
+"mode": "rw"}` — and it is **user-scope only**: in the workspace config (or the
 local file) it is a `yolo check` error and the launch refuses, so an agent
 cannot grant itself one. Ask the human to put it in
-`~/.config/yolo-jail/config.jsonc`. A docker-style third field **silently breaks
+`~/.config/yolo-jail/config.toml`. A docker-style third field **silently breaks
 the mount**: `"~/x:/ctx/x:ro"` parses as one host path literally named
 `~/x:/ctx/x:ro`, which does not exist, so the entry is skipped with a warning.
 `yolo check` only *warns* about it too — so the config looks accepted and mounts

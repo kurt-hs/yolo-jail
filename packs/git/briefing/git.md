@@ -46,9 +46,10 @@ With the broker running:
   again. `(needs approval: r-<id>, denied on the host)` means the user said no: do not push it
   again without asking them. A new branch the user allowed once joins the working set like one a
   `create-branch` grant created. To push a branch or tag without asking each time, the user can
-  grant `create-branch`, a `branch` grant for that branch, or a `tag` grant for that tag, in the
-  workspace config and approve it with `yolo config apply`; the refused ref's line names the
-  grant. A ref outside `refs/heads/` and `refs/tags/` is never pushed through
+  grant `create-branch`, a `branch` grant for that branch, or a `tag` grant for that tag. For a
+  branch, request it here with `yolo request git push <branch>` (or `yolo request git
+  new_branches`), which writes the workspace config; either way the user approves it with
+  `yolo config apply` on the host. The refused ref's line names the grant. A ref outside `refs/heads/` and `refs/tags/` is never pushed through
   the broker, and a push that holds one asks nothing: push that from the host.
 - A remote outside the approved scope is refused for SSH and push. A public HTTPS fetch may be
   tried anonymously outside that scope; if it asks for credentials, it is refused naming the

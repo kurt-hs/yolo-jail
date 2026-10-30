@@ -23,9 +23,9 @@ GitHub repositories. The jail holds no GitHub token; `gh auth status` names the 
   every call across the account. Raw `gh api graphql` is always refused; `gh`'s own commands
   (`gh pr view`, `gh issue list`, …) use GraphQL inside and work.
 - A repository this workspace has no remote for stays out of scope until the user approves it.
-  Add it to the `repos` list under `brokered.github` in the workspace config file your
-  environment briefing names (create the key only if the file has none), or in the local file
-  beside it for what the project should not commit, or when the config file is read-only here.
+  Run `yolo request github repos OWNER/REPO`, which writes this project's config (if it refuses
+  because the config file is read-only here or cannot take the key, ask the user to run the same
+  command on the host, in this workspace).
   Then run `yolo check --no-build`, and ask the user to run `yolo config apply` on the host, in
   this workspace, and answer y to the repository-scope prompt. In a jail started by this yolo,
   the running broker takes the repository at its next call; an older one needs a restart.

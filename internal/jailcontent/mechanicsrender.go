@@ -359,9 +359,9 @@ func renderRecipe(file string, facts FactSheet) string {
 			if facts.LocalConfigPresent && facts.LocalConfigPath != "" {
 				local = " A local config file is also applied: `" + facts.LocalConfigPath + "`."
 			}
-			fmt.Fprintf(&b, "The workspace config `%s` (`%s`) is read-only to the agent. Do not edit it from the jail. Give the human the exact requested change, then run `yolo check --no-build` and resolve every failure. The human runs `yolo config apply` from `%s`.%s The command's report wins.\n\n", configPath, configName(facts), facts.HostWorkspace, local)
+			fmt.Fprintf(&b, "The workspace config `%s` (`%s`) is read-only to the agent. Do not edit it from the jail. Give the human the exact requested change, as the `yolo config set`, `yolo config add` or `yolo request` command to run on the host, then run `yolo check --no-build` and resolve every failure. The human runs `yolo config apply` from `%s`.%s The command's report wins.\n\n", configPath, configName(facts), facts.HostWorkspace, local)
 		} else {
-			fmt.Fprintf(&b, "1. Edit `%s`.\n2. Run `yolo check --no-build` and resolve every failure.\n3. %s\n4. The command's report wins over the expected outcomes below.\n\n", configPath, changetiming.HostCommand("yolo config apply", facts.HostWorkspace, false))
+			fmt.Fprintf(&b, "1. Edit `%s`, with a verb where one covers the key: `yolo config set <key> <value>` (`yolo config add` for a list, `yolo request <source> <capability>` for a broker capability).\n2. Run `yolo check --no-build` and resolve every failure.\n3. %s\n4. The command's report wins over the expected outcomes below.\n\n", configPath, changetiming.HostCommand("yolo config apply", facts.HostWorkspace, false))
 		}
 		type timingGroup struct {
 			outcome changetiming.Outcome

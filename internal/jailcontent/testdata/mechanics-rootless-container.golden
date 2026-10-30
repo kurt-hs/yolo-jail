@@ -13,8 +13,14 @@ a host-capability loophole.
 
 **Do NOT use this for one-off installs.** The jail has internet and you can
 `npm i -g`, `pip install`, `uv pip install`, or `mise use` a tool right now with
-no config change and no restart. Only reach for `yolo-jail.jsonc` when the tool
+no config change and no restart. Only change the config when the tool
 must persist across restarts or be present for every future session.
+
+Change it with a verb where one covers the key: `yolo config set <key> <value>`
+(or `yolo config add <key> <value>` for a list), `yolo request <source> <capability>`
+for a broker capability, `yolo pack add <name>` for a pack. They write the TOML
+file (`yolo-jail.toml`) and validate the edit; hand-edit the file only for a key
+no verb reaches, or in a workspace still on the legacy `yolo-jail.jsonc`.
 
 ## Change timing
 
@@ -97,10 +103,10 @@ outside the workspace.**
 Two consequences that follow from "it is literally the cwd":
 
 - There is no `--workspace` flag and no walk up the tree looking for
-  `yolo-jail.jsonc`. Launch from a subdirectory and *that subdirectory* is the
+  the workspace config. Launch from a subdirectory and *that subdirectory* is the
   whole workspace, with its own config and its own jail.
-- `yolo-jail.jsonc` sits at the workspace root, so from inside a jail it is
-  always `/workspace/yolo-jail.jsonc` — whatever it is called on the host.
+- The workspace config sits at the workspace root, so from inside a jail it is
+  always `/workspace/yolo-jail.toml` (or `yolo-jail.jsonc` while legacy) — whatever it is called on the host.
 
 ### 2. A `mounts` entry lands at `/ctx/<basename>` — of the RESOLVED path
 
@@ -114,10 +120,10 @@ explicit `"~/code/sysadmin:/ctx/sysadmin"` form whenever you care about the name
 
 Every string entry gets `:ro` appended for you. The one writable form is an
 object with a required mode — `{"host": "~/scratch", "at": "/ctx/scratch",
-"mode": "rw"}` — and it is **user-scope only**: in `yolo-jail.jsonc` (or the
+"mode": "rw"}` — and it is **user-scope only**: in the workspace config (or the
 local file) it is a `yolo check` error and the launch refuses, so an agent
 cannot grant itself one. Ask the human to put it in
-`~/.config/yolo-jail/config.jsonc`. A docker-style third field **silently breaks
+`~/.config/yolo-jail/config.toml`. A docker-style third field **silently breaks
 the mount**: `"~/x:/ctx/x:ro"` parses as one host path literally named
 `~/x:/ctx/x:ro`, which does not exist, so the entry is skipped with a warning.
 `yolo check` only *warns* about it too — so the config looks accepted and mounts
@@ -401,7 +407,7 @@ For a permanent image package, edit `packages`, validate with `yolo check --no-b
 ===== jail-mechanics/recipes/workspace-config.md =====
 # workspace config
 
-1. Edit `/workspace/yolo-jail.jsonc`.
+1. Edit `/workspace/yolo-jail.jsonc`, with a verb where one covers the key: `yolo config set <key> <value>` (`yolo config add` for a list, `yolo request <source> <capability>` for a broker capability).
 2. Run `yolo check --no-build` and resolve every failure.
 3. Please run `yolo config apply` in `/home/test/project` on the host.
 4. The command's report wins over the expected outcomes below.

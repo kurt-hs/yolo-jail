@@ -13,8 +13,14 @@ a host-capability loophole.
 
 **Do NOT use this for one-off installs.** The jail has internet and you can
 `npm i -g`, `pip install`, `uv pip install`, or `mise use` a tool right now with
-no config change and no restart. Only reach for `yolo-jail.jsonc` when the tool
+no config change and no restart. Only change the config when the tool
 must persist across restarts or be present for every future session.
+
+Change it with a verb where one covers the key: `yolo config set <key> <value>`
+(or `yolo config add <key> <value>` for a list), `yolo request <source> <capability>`
+for a broker capability, `yolo pack add <name>` for a pack. They write the TOML
+file (`yolo-jail.toml`) and validate the edit; hand-edit the file only for a key
+no verb reaches, or in a workspace still on the legacy `yolo-jail.jsonc`.
 
 ## Change timing
 
@@ -220,7 +226,7 @@ For a permanent tool, update its environment config, validate with `yolo check`,
 ===== jail-mechanics/recipes/workspace-config.md =====
 # workspace config
 
-1. Edit `/Users/test/project/yolo-jail.jsonc`.
+1. Edit `/Users/test/project/yolo-jail.jsonc`, with a verb where one covers the key: `yolo config set <key> <value>` (`yolo config add` for a list, `yolo request <source> <capability>` for a broker capability).
 2. Run `yolo check --no-build` and resolve every failure.
 3. Please run `yolo config apply` in `/Users/test/project` on the host.
 4. The command's report wins over the expected outcomes below.
