@@ -147,7 +147,7 @@ func (o *Options) sectionHostWrappers(r *reporter) {
 			"by its full path."
 		if st.managementNone {
 			fix = "`yolo host apply --assert` rewrites them to name the yolo you run now, once " +
-				"host_management in " + paths.UserConfigPath() + " is \"own\" (under \"none\", " +
+				"host_management in " + userConfigFile() + " is \"own\" (under \"none\", " +
 				"the default, it refuses); or turn host_wrappers off."
 		}
 		r.warn(fmt.Sprintf("%d wrapper(s) cannot start yolo from every launcher: %s",
@@ -319,7 +319,7 @@ func (o *Options) launcherHostPathLines(st wrapperState) []string {
 		}
 		lines = append(lines, fmt.Sprintf("yolo keeps no copy of %s on this machine, so that "+
 			"launcher also needs host_path in %s to name %s, the folder this PATH finds it in",
-			bin, paths.UserConfigPath(), tildeUnder(paths.Home(), folder)))
+			bin, userConfigFile(), tildeUnder(paths.Home(), folder)))
 	}
 	return lines
 }
@@ -563,7 +563,7 @@ func hostManagementRow(r *reporter, st wrapperState) (absorbedGeneration bool) {
 		why := "\"none\" says your agents' config files are entirely yours, and yolo honors it " +
 			"by writing nothing at all — the wrapper directory included, which the same " +
 			"command generates."
-		fix := "Set host_management to \"own\" in " + paths.UserConfigPath() + " and run " +
+		fix := "Set host_management to \"own\" in " + userConfigFile() + " and run " +
 			"`yolo host apply --assert`, or turn host_wrappers off."
 		readable := st.dirErr == nil || os.IsNotExist(st.dirErr)
 		if readable && (len(st.names) == 0 || len(st.missing) > 0) {
@@ -583,7 +583,7 @@ func hostManagementRow(r *reporter, st wrapperState) (absorbedGeneration bool) {
 			return true
 		}
 		r.warn(state+" — `yolo host apply` refuses, so these wrappers are never regenerated",
-			joinLines("Set host_management to \"own\" in "+paths.UserConfigPath()+" to have "+
+			joinLines("Set host_management to \"own\" in "+userConfigFile()+" to have "+
 				"yolo compose your agents' config files from your packs, or turn host_wrappers off.",
 				why, st.gateClause(gateNone)))
 	case config.HostManagementOwn:
@@ -632,7 +632,7 @@ func hostApplyOnLaunchRow(r *reporter, st wrapperState) {
 	}
 	r.ok("host_apply_on_launch is off — a wrapped launch execs whatever the last " +
 		"`yolo host apply --assert` left, however stale.\n" +
-		"  Turn it on in " + paths.UserConfigPath() + " to have a launch notice; see " +
+		"  Turn it on in " + userConfigFile() + " to have a launch notice; see " +
 		"`yolo config-ref` for what it does and does not grant.")
 }
 

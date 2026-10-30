@@ -60,7 +60,7 @@ func workspaceROBinds(argv []string) []string {
 // under — `yolo-jail.json` where that is the file — so the agent cannot rewrite the config the
 // next launch reads. Driven through assembleRunCmd, the lock's call site.
 func TestWorkspaceReadonlyLocksTheConfigFileTheLoaderReads(t *testing.T) {
-	for _, name := range []string{"yolo-jail.jsonc", "yolo-jail.json"} {
+	for _, name := range []string{"yolo-jail.toml", "yolo-jail.jsonc", "yolo-jail.json"} {
 		t.Run(name, func(t *testing.T) {
 			ws, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {

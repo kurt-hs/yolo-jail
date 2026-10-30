@@ -297,20 +297,31 @@ func BrokerGrantAdvice(source string) string {
 // next step is the verb that writes it, `yolo allow <source> <capability>`
 // (docs/design/config-commands.md §4), not a `brokered.<source>.grants` entry.
 func BrokerGrantAdviceFor(b loopholedecl.Brokered) string {
-	if path, toml := UserConfigFile(); toml && b.ReadCapability != "" {
-		return "To let every workspace read its own approved remotes through it, run `yolo allow " + b.Source +
-			" " + b.ReadCapability + "` on the host (it adds " + pyReprValue(b.ReadCapability) + " to `allow." +
-			b.Source + ".always` in your user config, " + path + ", or the file of it that already holds " +
+	return brokerReadGrantAdvice(b.Source, b.ReadCapability)
+}
+
+// brokerReadGrantAdvice is BrokerGrantAdviceFor from the two fields it reads, for a caller
+// holding them apart from a declaration (a broker daemon knows its own source and read
+// capability). With no read capability there is no readable verb to name, so it is the legacy
+// advice whatever the user config's format.
+func brokerReadGrantAdvice(source, readCapability string) string {
+	if path, toml := UserConfigFile(); toml && readCapability != "" {
+		return "To let every workspace read its own approved remotes through it, run `yolo allow " + source +
+			" " + readCapability + "` on the host (it adds " + pyReprValue(readCapability) + " to `allow." +
+			source + ".always` in your user config, " + path + ", or the file of it that already holds " +
 			"[allow]), then approve the workspace change it offers, or run `yolo config apply` on the host, " +
 			"in the workspace."
 	}
-	return BrokerGrantAdvice(b.Source)
+	return BrokerGrantAdvice(source)
 }
 
 // BrokerNoReadRefusal is a broker's refusal of a call on repo (spelled as the source spells it)
 // that no read grant covers (BB-D108): nothing ran, the grant to add, and how this jail's broker
 // takes it — at its next call where the launch's scope is live, otherwise at a fresh launch.
-func BrokerNoReadRefusal(source, repo string, live bool) string {
+// readCapability is the source's declared read capability (its manifest's
+// `brokered.read_capability`), which the grant advice names to a TOML user as
+// `yolo allow <source> <readCapability>` (brokerReadGrantAdvice).
+func BrokerNoReadRefusal(source, readCapability, repo string, live bool) string {
 	next := " This jail's running broker takes the grant at its next call."
 	if !live {
 		next = " This jail's broker cannot take a new grant while it runs, so restart the jail afterwards " +
@@ -318,7 +329,7 @@ func BrokerNoReadRefusal(source, repo string, live bool) string {
 	}
 	return "this workspace holds no read grant on " + repo + ", so nothing ran: the " + source + " broker runs " +
 		"whenever its pack is selected, but grants nothing until a grant in config does. " +
-		BrokerGrantAdvice(source) + next
+		brokerReadGrantAdvice(source, readCapability) + next
 }
 
 // The keys one entry of `brokered.<source>.sets` may hold (boundary-broker.md §5.7): the set's

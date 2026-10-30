@@ -63,7 +63,7 @@ func (a *Authority) Classify(argv []string, repo string) (Decision, brokerstore.
 	// revalidates through this (Revalidate), so a read grant withdrawn by a `yolo config apply`
 	// during the approval wait refuses the write rather than letting it run.
 	if r, missing := scopeOfFile(f).unread(d.Repos); missing {
-		return d, brokerstore.Policy{}, errors.New(config.BrokerNoReadRefusal(Source, r, f.LiveScope))
+		return d, brokerstore.Policy{}, errors.New(config.BrokerNoReadRefusal(Source, ReadCapability, r, f.LiveScope))
 	}
 	d = Classify(d.Argv, repo, NewScope(append(append([]string(nil), f.Repos...), f.Widened...)))
 	for _, r := range d.Repos {

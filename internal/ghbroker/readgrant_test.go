@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // The broker of a selected pack grants nothing (docs/design/boundary-broker.md BB-D104, BB-D108):
@@ -15,6 +16,7 @@ import (
 func TestNoReadGrantRefusesEveryCall(t *testing.T) {
 	f := newBrokerFixture(t, "2.101.0")
 	f.b.scope = NewScope([]string{"o/r"})
+	writeGHUserConfig(t, paths.UserConfigPath(), `{"packs": ["github"]}`)
 	for _, argv := range [][]string{{"pr", "view", "32", "-R", "o/r"}, {"pr", "comment", "32", "-R", "o/r", "-b", "x"},
 		{"auth", "status"}} {
 		code, out, errOut := f.serve(t, Request{Argv: argv})
@@ -33,6 +35,30 @@ func TestNoReadGrantRefusesEveryCall(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Join(f.fakeDir, "calls")); len(entries) != 0 {
 		t.Fatal("gh ran with no read grant")
+	}
+}
+
+// A TOML user (and one with no user config yet, which a first write makes TOML) is sent to the
+// readable grant, `yolo allow github read` (the manifest's read_capability), never to a
+// `brokered.github.grants` entry their config.toml cannot hold.
+func TestNoReadGrantNamesYoloAllowToATOMLUser(t *testing.T) {
+	f := newBrokerFixture(t, "2.101.0")
+	f.b.scope = NewScope([]string{"o/r"})
+	writeGHUserConfig(t, filepath.Join(filepath.Dir(paths.UserConfigPath()), paths.UserConfigTOMLName), `packs = ["github"]`)
+	code, _, errOut := f.serve(t, Request{Argv: []string{"pr", "view", "32", "-R", "o/r"}})
+	if code != ExitUsage || !strings.Contains(errOut, "no read grant") ||
+		!strings.Contains(errOut, "`yolo allow github read`") || strings.Contains(errOut, "brokered.github.grants") {
+		t.Fatalf("a TOML user's refusal does not name `yolo allow github read`: code %d\n%s", code, errOut)
+	}
+}
+
+func writeGHUserConfig(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body+"\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

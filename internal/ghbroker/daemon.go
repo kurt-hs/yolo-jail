@@ -38,6 +38,12 @@ import (
 // as `brokered.source`, which is the spelling core reads.
 const Source = "github"
 
+// ReadCapability is what packs/github's manifest declares as `brokered.read_capability`: the
+// capability `yolo allow github read` writes, which a refusal for want of a read grant names to
+// a TOML user (config.BrokerNoReadRefusal). TestReadCapabilityIsTheManifests pins the two
+// spellings together.
+const ReadCapability = "read"
+
 // SourceHost is the forge's hostname: what packs/github's manifest declares as
 // `brokered.remote_host`, and what a wildcard scope note names (`*/*` on this host is "every
 // repository on github.com"). The broker talks to no other host.
@@ -406,7 +412,7 @@ func (b *Broker) ServeContext(ctx context.Context, req Request, jail string, std
 		if repo, missing := scope.unread(d.Repos); missing {
 			ev.Repo = strings.Join(d.Repos, ",")
 			ev.Set, ev.Outcome, ev.Reason = "refused", "refused", "no read grant"
-			say("refused: " + config.BrokerNoReadRefusal(Source, repo, scope.live))
+			say("refused: " + config.BrokerNoReadRefusal(Source, ReadCapability, repo, scope.live))
 			return finish(ExitUsage)
 		}
 	}

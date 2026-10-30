@@ -553,7 +553,7 @@ func CmdSetEnabled(deps Deps, name string, enabled bool, opts SetEnabledOptions)
 			if lp.Name == name && lp.Brokered != nil {
 				fmt.Fprintf(deps.Err, "yolo loopholes %s: %s has no switch: it runs whenever the pack that "+
 					"ships it is selected, and grants nothing until the user's config does. %s\n", verb, name,
-					config.BrokerGrantAdvice(lp.Brokered.Source))
+					config.BrokerGrantAdviceFor(*lp.Brokered))
 				return 1
 			}
 		}
@@ -671,7 +671,7 @@ func clearUninstalledSwitch(deps Deps, name, ws string) (rc int, handled bool) {
 // workspace's per-workspace file, which is ignored now, and says so.
 func setBrokerSwitch(deps Deps, lp *Loophole, enabled bool, opts SetEnabledOptions) int {
 	verb := verbFor(enabled)
-	advice := config.BrokerGrantAdvice(lp.Brokered.Source)
+	advice := config.BrokerGrantAdviceFor(*lp.Brokered)
 	if !enabled && !opts.Global && paths.WorkspaceScopeBreach(opts.Workspace) == nil {
 		if fi, err := os.Stat(opts.Workspace); err == nil && fi.IsDir() {
 			remove := deps.RemoveSwitch

@@ -133,7 +133,7 @@ func revalidatePush(path string, bound brokerscope.File, start string, q brokers
 		return brokerstore.Policy{}, fmt.Errorf("%s is no longer in this workspace's approved scope", q.Repo)
 	}
 	if !brokerscope.HoldsRead(f.Grants) || !brokerscope.ReadCovers(f.Grants, q.Repo, func(g, r string) bool { return g == r }) {
-		return brokerstore.Policy{}, errors.New(config.BrokerNoReadRefusal(Source, q.Repo, f.LiveScope))
+		return brokerstore.Policy{}, errors.New(config.BrokerNoReadRefusal(Source, ReadCapability, q.Repo, f.LiveScope))
 	}
 	return pushPolicy, nil
 }

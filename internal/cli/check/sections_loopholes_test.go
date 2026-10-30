@@ -1458,3 +1458,29 @@ func TestCheckLoopholesShowsAnUngradedFailingSelfCheck(t *testing.T) {
 		t.Errorf("failed=%d, want 2:\n%s", r.failed, out)
 	}
 }
+
+// The workspace-scope disclosure sends a TOML user to move the override to the user config file
+// the loader reads, config.toml, never a config.jsonc nothing reads.
+func TestCheckLoopholesWorkspaceSwitchNamesATOMLUsersConfigToml(t *testing.T) {
+	bundled := isolatedModuleDir(t)
+	writeLoopholeManifest(t, bundled, "wson",
+		`"name":"wson","description":"wson","transport":"none","default_enabled":false`)
+	userTOML := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(userTOML), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userTOML, []byte("packs = []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ws, "yolo-jail.jsonc"), []byte(`{"loopholes": {"wson": {"enabled": true}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, out := runCheckLoopholes(t, ws)
+	if !strings.Contains(out, "move the override to "+userTOML) {
+		t.Errorf("the disclosure does not send a TOML user to %s:\n%s", userTOML, out)
+	}
+	if strings.Contains(out, "config.jsonc") {
+		t.Errorf("the disclosure names config.jsonc to a TOML user:\n%s", out)
+	}
+}

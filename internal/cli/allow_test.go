@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholes"
 	"github.com/mschulkind-oss/yolo-jail/internal/testconfig"
 )
 
@@ -35,6 +36,12 @@ func newNamedVerbFixture(t *testing.T, project, fragment string) namedVerbFixtur
 	t.Setenv("YOLO_VERSION", "")
 	t.Setenv("YOLO_WORKSPACE", "")
 	t.Setenv("YOLO_HOST_DIR", "")
+	// The broker set a post-write `yolo check` reports comes from loopholes.PackModules, whose
+	// lazy resolver memoizes its first answer for the process: whichever earlier test first
+	// asked, under its own HOME, would otherwise fix the pack set this fixture's git and github
+	// packs are read from. Cleared on the way in and the way out, as enableHome does.
+	loopholes.ResetPackModules()
+	t.Cleanup(loopholes.ResetPackModules)
 	withConfigEditCWD(t, ws.Root)
 	return namedVerbFixture{workspace: ws.Root, userConfig: user.Path, fragment: fragmentPath, project: ws.Path}
 }

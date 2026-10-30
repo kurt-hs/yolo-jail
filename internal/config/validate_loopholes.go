@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
+	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/pytext"
 	"github.com/mschulkind-oss/yolo-jail/internal/shquote"
@@ -172,10 +173,10 @@ func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver Loop
 				}
 				userBlockRead = true
 			}
-			if msg := brokeredUserSwitchRefusalWithSources(name, infoPtr.Brokered.Source, userBlock, validationUserSources(edit...)); msg != "" {
+			if msg := brokeredUserSwitchRefusalWithSources(name, *infoPtr.Brokered, userBlock, validationUserSources(edit...)); msg != "" {
 				add(errs, msg)
 			}
-			if note := staleBrokerSwitchNote(name, infoPtr.Brokered.Source, wsFile); note != "" {
+			if note := staleBrokerSwitchNote(name, *infoPtr.Brokered, wsFile); note != "" {
 				add(warns, note)
 			}
 		}
@@ -213,7 +214,7 @@ func validateLoopholes(config *jsonx.OrderedMap, workspace string, resolver Loop
 					scoped(e.locate(viol))
 				}
 				if brokered {
-					if viol := brokeredWorkspaceSwitchRefusal(name, infoPtr.Brokered.Source, e.file, e.spec); viol != "" {
+					if viol := brokeredWorkspaceSwitchRefusal(name, *infoPtr.Brokered, e.file, e.spec); viol != "" {
 						scoped(e.locate(viol))
 					}
 				}
@@ -452,11 +453,11 @@ func userScopeLoopholes() *jsonx.OrderedMap {
 // has no switch (docs/design/boundary-broker.md BB-D104, BB-D106): it runs whenever its pack is
 // selected and grants nothing until a grant does, so a switch here would decide nothing, and
 // leaving it would teach that this is where access is given. It names the grant that is.
-func brokeredUserSwitchRefusal(name, source string, userBlock *jsonx.OrderedMap) string {
-	return brokeredUserSwitchRefusalWithSources(name, source, userBlock, UserScopeSources())
+func brokeredUserSwitchRefusal(name string, broker loopholedecl.Brokered, userBlock *jsonx.OrderedMap) string {
+	return brokeredUserSwitchRefusalWithSources(name, broker, userBlock, UserScopeSources())
 }
 
-func brokeredUserSwitchRefusalWithSources(name, source string, userBlock *jsonx.OrderedMap, sources *Sources) string {
+func brokeredUserSwitchRefusalWithSources(name string, broker loopholedecl.Brokered, userBlock *jsonx.OrderedMap, sources *Sources) string {
 	if userBlock == nil {
 		return ""
 	}
@@ -469,7 +470,7 @@ func brokeredUserSwitchRefusalWithSources(name, source string, userBlock *jsonx.
 	}
 	msg := "config.loopholes." + name + ".enabled: " + pytext.Repr(name) + " has no switch: it runs " +
 		"whenever the pack that ships it is selected, and grants nothing until a grant in config does. " +
-		"Remove this key. " + BrokerGrantAdvice(source) + " To stop it running, take its pack out of `packs`."
+		"Remove this key. " + BrokerGrantAdviceFor(broker) + " To stop it running, take its pack out of `packs`."
 	if sources != nil {
 		msg = sources.AnnotateOne(msg)
 	}
@@ -479,13 +480,13 @@ func brokeredUserSwitchRefusalWithSources(name, source string, userBlock *jsonx.
 // brokeredWorkspaceSwitchRefusal is the refusal of a brokered loophole's switch in a workspace
 // config file, "" when the file's entry has no `enabled`. A broker has no switch (BB-D106), and
 // the file is agent-editable besides, so it names the grant a human gives instead.
-func brokeredWorkspaceSwitchRefusal(name, source, srcFile string, spec *jsonx.OrderedMap) string {
+func brokeredWorkspaceSwitchRefusal(name string, broker loopholedecl.Brokered, srcFile string, spec *jsonx.OrderedMap) string {
 	if _, has := spec.Get("enabled"); !has {
 		return ""
 	}
 	return "config.loopholes." + name + ".enabled: " + pytext.Repr(name) + " has no switch: it runs whenever " +
 		"the pack that ships it is selected, and grants nothing until the user's config does, never " + srcFile +
-		", a file an agent can edit. Remove this key. " + BrokerGrantAdvice(source)
+		", a file an agent can edit. Remove this key. " + BrokerGrantAdviceFor(broker)
 }
 
 // staleBrokerSwitchNote is the note for a brokered loophole's switch a previous yolo wrote into
@@ -493,7 +494,7 @@ func brokeredWorkspaceSwitchRefusal(name, source, srcFile string, spec *jsonx.Or
 // is ignored (BB-D109): the broker runs because its pack is selected, and the read access that
 // switch used to give now takes a grant, which the note names along with the command that takes
 // the old switch out.
-func staleBrokerSwitchNote(name, source string, wsFile *WorkspaceFile) string {
+func staleBrokerSwitchNote(name string, broker loopholedecl.Brokered, wsFile *WorkspaceFile) string {
 	v, set := wsFile.LoopholeSwitch(name)
 	if !set {
 		return ""
@@ -505,7 +506,7 @@ func staleBrokerSwitchNote(name, source string, wsFile *WorkspaceFile) string {
 	return wsFile.Path + ": loopholes." + name + ".enabled (" + was + ") is ignored: " + pytext.Repr(name) +
 		" no longer has a per-workspace switch. It runs whenever its pack is selected, and grants nothing " +
 		"until your config does, so the fetches the switch used to allow are refused. " +
-		BrokerGrantAdvice(source) + " Take the old switch out with `yolo loopholes disable " + name +
+		BrokerGrantAdviceFor(broker) + " Take the old switch out with `yolo loopholes disable " + name +
 		" --workspace " + shquote.QuoteDisplay(wsFile.Workspace) + "`."
 }
 
@@ -713,14 +714,14 @@ func LoopholeEntryErrors(name string, specV any, info *LoopholeInfo, userInstall
 	// rule is, and so is not returned here.
 	if named && info != nil && info.Brokered != nil {
 		if fromWorkspace && !inJail {
-			if msg := brokeredWorkspaceSwitchRefusal(name, info.Brokered.Source, srcFile, spec); msg != "" {
+			if msg := brokeredWorkspaceSwitchRefusal(name, *info.Brokered, srcFile, spec); msg != "" {
 				*errs = append(*errs, msg)
 				scopeRefused = true
 			}
 		} else if !fromWorkspace {
 			block := jsonx.NewOrderedMap()
 			block.Set(name, spec)
-			if msg := brokeredUserSwitchRefusal(name, info.Brokered.Source, block); msg != "" {
+			if msg := brokeredUserSwitchRefusal(name, *info.Brokered, block); msg != "" {
 				*errs = append(*errs, msg)
 				scopeRefused = true
 			}

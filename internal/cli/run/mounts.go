@@ -58,15 +58,17 @@ func (o *Options) workspaceReadonlyMountArgs(cfg *jsonx.OrderedMap, rt string) [
 }
 
 // workspaceConfigLockTarget is the workspace config file a `workspace_readonly` launch locks: the
-// config the loader READ, under the name it read it under — `yolo-jail.json` where that is the file
-// (config.ResolveWorkspaceConfigPath). Joining the `.jsonc` name here left a workspace configured in
-// `yolo-jail.json` with no lock at all. ok is false when no entry is declared or there is no file.
+// config the loader READ, under the name it read it under — `yolo-jail.toml` first, then
+// `yolo-jail.jsonc`, or `yolo-jail.json` where that is the file
+// (config.ResolveReadableWorkspaceConfigPath). Joining the `.jsonc` name here left a workspace
+// configured in `yolo-jail.json` with no lock at all, and the legacy-only resolver left one
+// configured in `yolo-jail.toml` with none either. ok is false when no entry is declared or there is no file.
 // macosuser.workspaceReadonlyRels applies the same trigger on that backend.
 func (o *Options) workspaceConfigLockTarget(cfg *jsonx.OrderedMap) (file, name string, ok bool) {
 	if len(cfgStrList(cfg, "workspace_readonly")) == 0 {
 		return "", "", false
 	}
-	file, name = config.ResolveWorkspaceConfigPath(o.Workspace, config.WorkspaceConfigName)
+	file, name = config.ResolveReadableWorkspaceConfigPath(o.Workspace, config.WorkspaceConfigName)
 	return file, name, fileExists(file)
 }
 

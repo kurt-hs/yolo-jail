@@ -24,7 +24,7 @@ func (o *Options) reportWorkspaceConfigLock(r *reporter, workspace string) {
 	if !o.inJail() {
 		return
 	}
-	path, name := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
+	path, name := config.ResolveReadableWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
 	if !o.PathExists(path) || o.Writable(path) {
 		return
 	}

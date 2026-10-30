@@ -12,8 +12,8 @@ import (
 
 // workspaceReadonlyRels is config.workspace_readonly as this backend's profile renders it:
 // the declared entries and, whenever ANY entry is declared, the workspace config file the
-// loader reads (config.ResolveWorkspaceConfigPath: yolo-jail.jsonc, or yolo-jail.json where
-// that is the file). The second half is the lock the container backends perform beside the
+// loader reads (config.ResolveReadableWorkspaceConfigPath: yolo-jail.toml, else
+// yolo-jail.jsonc, or yolo-jail.json where that is the file). The second half is the lock the container backends perform beside the
 // declared entries (internal/cli/run's workspaceReadonlyMountArgs), so a session cannot edit its
 // own protection out of that file; this backend rendered only the declared entries until
 // 2026-10-04.
@@ -25,7 +25,7 @@ import (
 // either backend. yolo-jail.local.jsonc is merged over it and is not locked (a
 // `"workspace_readonly": null` there turns the key off); nor is a file include_if_found pulls in,
 // which wins over the file naming it; and a new yolo-jail.jsonc beside a locked yolo-jail.json
-// is read instead of it, since ResolveWorkspaceConfigPath tries the `.jsonc` name first. What
+// is read instead of it, since the loader tries the `.jsonc` name before the `.json` one. What
 // catches each is the config-change approval at the next fresh launch
 // (docs/reference/config-safety.md), which diffs the MERGED workspace config.
 //
@@ -52,7 +52,7 @@ func workspaceReadonlyRels(workspace string, cfg *jsonx.OrderedMap) (rels, targe
 	if len(declared) == 0 {
 		return declared, nil
 	}
-	p, name := config.ResolveWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
+	p, name := config.ResolveReadableWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
 	if _, err := os.Stat(p); err != nil {
 		return declared, nil
 	}

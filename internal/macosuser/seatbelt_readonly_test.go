@@ -189,7 +189,7 @@ func readonlyPlan(ws string, entries ...any) RunPlan {
 // its own protection out of that file (the files it does not lock are workspaceReadonlyRels').
 // Through BuildRunPlan, so it fails with the call site reverted to the bare entry list.
 func TestBuildRunPlanLocksTheWorkspaceConfigWithWorkspaceReadonly(t *testing.T) {
-	for _, name := range []string{"yolo-jail.jsonc", "yolo-jail.json"} {
+	for _, name := range []string{"yolo-jail.toml", "yolo-jail.jsonc", "yolo-jail.json"} {
 		t.Run(name, func(t *testing.T) {
 			ws := readonlyWorkspace(t)
 			if err := os.WriteFile(filepath.Join(ws, name), []byte("{}"), 0o644); err != nil {

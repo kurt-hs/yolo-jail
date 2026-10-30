@@ -341,6 +341,28 @@ func TestLoopholesEnableRefusesABroker(t *testing.T) {
 	}
 }
 
+// A TOML user's refusal names the readable grant, `yolo allow github read` (the github-broker
+// manifest's read_capability), never a `brokered.github.grants` entry config.toml cannot hold.
+func TestLoopholesEnableRefusesABrokerNamingYoloAllowToATOMLUser(t *testing.T) {
+	_, userCfg, _, _ := enableHome(t)
+	if err := os.Remove(userCfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(userCfg), "config.toml"), []byte("packs = [\"github\", \"journal\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"loopholes", "enable", "github-broker"}, {"loopholes", "disable", "github-broker"}} {
+		rc, stdout, stderr := captureDispatchRC(t, args)
+		if rc == 0 {
+			t.Fatalf("%v rc 0, want a refusal\nstdout:\n%s\nstderr:\n%s", args, stdout, stderr)
+		}
+		if !strings.Contains(stderr, "github-broker has no switch") || !strings.Contains(stderr, "`yolo allow github read`") ||
+			strings.Contains(stderr, "brokered.github.grants") {
+			t.Errorf("%v does not name `yolo allow github read` to a TOML user:\n%s", args, stderr)
+		}
+	}
+}
+
 // TestLoopholesDisableRemovesABrokersOldSwitch: a switch a previous yolo wrote for a broker into
 // the per-workspace file is ignored now (BB-D109); `disable` is the command the launch's note
 // names to take it out, and it does, exit 0, naming the grant that gives access instead.

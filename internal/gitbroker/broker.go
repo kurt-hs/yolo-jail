@@ -50,6 +50,12 @@ import (
 // audit log's `service`.
 const Source = "git"
 
+// ReadCapability is what packs/git's manifest declares as `brokered.read_capability`: the
+// capability `yolo allow git fetch` writes, which a refusal for want of a read grant names to a
+// TOML user (config.BrokerNoReadRefusal). TestReadCapabilityIsTheManifests pins the two
+// spellings together.
+const ReadCapability = "fetch"
+
 // Name is the daemon's name, and every log line's prefix.
 const Name = "git-broker"
 
@@ -294,7 +300,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 	httpsFetch := req.Service == serviceUploadPack && strings.HasPrefix(strings.ToLower(req.URL), "https://")
 	if !httpsFetch && !brokerscope.HoldsRead(f.Grants) {
 		ev.Repo, _ = gitproto.Identity(req.URL)
-		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
+		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, ReadCapability, req.URL, f.LiveScope),
 			brokercore.ExitUsage)
 	}
 	if !httpsFetch && !scopeContains(f, req.URL) {
@@ -307,7 +313,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 	}
 	ev.Repo, _ = gitproto.Identity(req.URL)
 	if !httpsFetch && !brokerscope.ReadCovers(f.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
-		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, req.URL, f.LiveScope),
+		return refuse("refused", "no read grant", config.BrokerNoReadRefusal(Source, ReadCapability, req.URL, f.LiveScope),
 			brokercore.ExitUsage)
 	}
 	transport, err := transportOf(req.URL)
@@ -322,7 +328,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 			return false, "", err
 		}
 		if !brokerscope.HoldsRead(live.Grants) {
-			return false, config.BrokerNoReadRefusal(Source, req.URL, live.LiveScope), nil
+			return false, config.BrokerNoReadRefusal(Source, ReadCapability, req.URL, live.LiveScope), nil
 		}
 		if !scopeContains(live, req.URL) {
 			return false, outOfScope(req.URL, live), nil
@@ -331,7 +337,7 @@ func (b *Broker) serveRequest(ctx context.Context, req request, jail string, in 
 			return false, "", err
 		}
 		if !brokerscope.ReadCovers(live.Grants, ev.Repo, func(g, r string) bool { return g == r }) {
-			return false, config.BrokerNoReadRefusal(Source, req.URL, live.LiveScope), nil
+			return false, config.BrokerNoReadRefusal(Source, ReadCapability, req.URL, live.LiveScope), nil
 		}
 		return true, "", nil
 	}

@@ -8,8 +8,8 @@ package cli
 // refused `config.requests: unknown key` (the launch's validation did the same), and told a user
 // whose `[allow.git] always = ["fetch"]` grants the read that it grants nothing, naming
 // `brokered.git.grants`. That last note is pinned in config (TestUngrantedBrokerNotesReadThe
-// ReadableGrant) with a fixed resolver: here the broker set is the process's memoized pack
-// modules (loopholes.PackModules), which an earlier test in the package can leave empty.
+// ReadableGrant) with a fixed resolver, and end to end through `yolo check` in
+// checkbrokernote_test.go.
 
 import (
 	"strings"

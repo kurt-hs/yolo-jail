@@ -2,10 +2,13 @@ package gitbroker
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // The broker of a selected pack grants nothing (docs/design/boundary-broker.md BB-D104, BB-D108):
@@ -30,6 +33,27 @@ func TestSSHNoReadGrantRefusesEveryCall(t *testing.T) {
 	}
 	if !strings.Contains(auditRaw(t), `"reason":"no read grant"`) {
 		t.Fatalf("no refusal audit event:\n%s", auditRaw(t))
+	}
+}
+
+// A TOML user is sent to the readable grant, `yolo allow git fetch` (the manifest's
+// read_capability), never to a `brokered.git.grants` entry their config.toml cannot hold.
+func TestSSHNoReadGrantNamesYoloAllowToATOMLUser(t *testing.T) {
+	f := newFixtureOpts(t, fixtureOpts{noRead: true})
+	legacy := paths.UserConfigPath()
+	if err := os.Remove(legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(legacy), paths.UserConfigTOMLName), []byte("packs = [\"git\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.git("fetch", "origin")
+	if err == nil {
+		t.Fatalf("fetch succeeded with no read grant:\n%s", out)
+	}
+	if !strings.Contains(out, "no read grant") || !strings.Contains(out, "`yolo allow git fetch`") ||
+		strings.Contains(out, "brokered.git.grants") {
+		t.Fatalf("a TOML user's refusal does not name `yolo allow git fetch`:\n%s", out)
 	}
 }
 

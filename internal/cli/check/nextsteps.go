@@ -247,10 +247,18 @@ func configNote(msg, workspace string) string {
 		// `yolo-jail.jsonc` beside a `yolo-jail.json` sent the user to create a file that shadows
 		// it, and naming either legacy file beside a TOML one sends them to a file nothing reads.
 		wsPath, _ := config.ResolveReadableWorkspaceConfigPath(workspace, config.WorkspaceConfigName)
-		userPath, _ := config.UserConfigFile()
-		where = "Fix it in " + wsPath + " or " + userPath
+		where = "Fix it in " + wsPath + " or " + userConfigFile()
 	}
 	return where + " (`yolo config-ref` documents every key), " + recheck
+}
+
+// userConfigFile is the user config file a check message sends the user to edit: the one the
+// format-aware loader reads (config.UserConfigFile — config.toml, else the legacy names), not
+// paths.UserConfigPath, which knows only the legacy names and so sent a TOML user to a
+// config.jsonc nothing reads.
+func userConfigFile() string {
+	p, _ := config.UserConfigFile()
+	return p
 }
 
 // lockfileNote is the next step for a lockfile LoadLock refused: a newer yolo's file wants a

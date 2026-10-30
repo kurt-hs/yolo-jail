@@ -167,7 +167,7 @@ func (o *Options) checkLoopholes(r *reporter) {
 			r.warn("loophole "+lp.Name+": disabled by "+sw.File+" (workspace scope)",
 				"An agent-editable file turned an installed loophole off; jails "+
 					"launched from this workspace run without it. Re-enable it there, "+
-					"or move the override to "+paths.UserConfigPath()+".")
+					"or move the override to "+userConfigFile()+".")
 			continue
 		}
 		// The ON row DISCLOSES and then falls through, where the OFF row above stops.
@@ -182,7 +182,7 @@ func (o *Options) checkLoopholes(r *reporter) {
 				"An agent-editable file turned an installed loophole ON; jails "+
 					"launched from this workspace run WITH it. This row says where the "+
 					"switch lives — it is not a record that anyone reviewed it. Turn it "+
-					"off there, or move the override to "+paths.UserConfigPath()+".")
+					"off there, or move the override to "+userConfigFile()+".")
 			enabled = true
 		}
 		if !enabled {

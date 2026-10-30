@@ -58,3 +58,25 @@ func TestCheckIsSilentAboutAWritableWorkspaceConfig(t *testing.T) {
 		t.Errorf("a host check reported the in-jail lock:\n%s", got)
 	}
 }
+
+// A TOML workspace's config is yolo-jail.toml, the file the launch reads and locks
+// (config.ResolveReadableWorkspaceConfigPath): the lock probe measures it and the line names it.
+func TestInJailCheckSaysATOMLWorkspaceConfigIsReadOnly(t *testing.T) {
+	var out bytes.Buffer
+	o := inJailOptions(t, &out)
+	o.PathExists = func(p string) bool { _, err := os.Stat(p); return err == nil }
+	cfg := filepath.Join(o.Workspace, "yolo-jail.toml")
+	if err := os.WriteFile(cfg, []byte("workspace_readonly = [\".git/hooks\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o.Writable = func(p string) bool {
+		if p != cfg {
+			t.Errorf("the lock probe asked about %q, not the workspace config %q", p, cfg)
+		}
+		return false
+	}
+	Check(o)
+	if got := stripANSI(out.String()); !strings.Contains(got, "yolo-jail.toml is read-only in this jail") {
+		t.Fatalf("an in-jail check over a read-only yolo-jail.toml does not say so:\n%s", got)
+	}
+}

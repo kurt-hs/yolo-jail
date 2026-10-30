@@ -1507,3 +1507,24 @@ func noteLinesAfter(t *testing.T, out, headline string) []string {
 	t.Fatalf("no row %q in:\n%s", headline, out)
 	return nil
 }
+
+// A TOML user's remedy names the file the loader reads, config.toml, never a config.jsonc
+// nothing reads (config.UserConfigFile, through userConfigFile).
+func TestHostManagementNoneRemedyNamesATOMLUsersConfigToml(t *testing.T) {
+	o, r, buf := hostManagementFixture(t, `{}`, nil, "/bin")
+	dir := filepath.Join(os.Getenv("HOME"), ".config", "yolo-jail")
+	if err := os.Remove(filepath.Join(dir, "config.jsonc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("host_wrappers = true\nhost_management = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o.sectionHostWrappers(r)
+	out := buf.String()
+	if want := `Set host_management to "own" in ` + filepath.Join(dir, "config.toml"); !strings.Contains(out, want) {
+		t.Errorf("a TOML user's remedy does not name config.toml (want %q):\n%s", want, out)
+	}
+	if strings.Contains(out, "config.jsonc") {
+		t.Errorf("a TOML user's remedy names config.jsonc:\n%s", out)
+	}
+}
