@@ -70,6 +70,8 @@ var registry = map[string]func(args []string) int{
 	// docs/design/config-commands.md §4).
 	"allow":   runAllow,
 	"request": runRequest,
+	// The named verb for the readable config's active_provider table (activeprovider.go).
+	"active-provider": runActiveProvider,
 }
 
 // valueTakingFlags are the flags whose value is the NEXT argv token rather than being

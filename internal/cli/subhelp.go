@@ -132,8 +132,9 @@ var subcommandUsage = map[string]subUsage{
 	"macos-unshare":         {text: macosUnshareUsage},
 	"macos-fix-permissions": {text: macosFixPermissionsUsage},
 	// Answered inside their own testable bodies (allow.go, request.go).
-	"allow":   {text: allowUsage},
-	"request": {text: requestUsage},
+	"allow":           {text: allowUsage},
+	"request":         {text: requestUsage},
+	"active-provider": {text: activeProviderUsage},
 }
 
 // helpRequested reports whether args (the rewritten argv[1:], so args[0] is

@@ -69,6 +69,7 @@ var commandHelp = []struct{ name, blurb string }{
 	{"config", "Edit and inspect yolo's own configuration: 'config apply', 'config drift', 'config dump'"},
 	{"allow", "Allow a broker capability in your user config, then offer this workspace's approval"},
 	{"request", "Request a broker capability in this project's config, then check it"},
+	{"active-provider", "Choose which provider an agent uses, in your user config"},
 	{"surface", "Inspect and manage composed agent-config surfaces: 'surface ls', 'render', 'diff', 'reset'"},
 	{"describe", "Print the resolved environment description (--json, --hash)"},
 	// At the jail notch the verb IS the launch `yolo -- true` performs (JR-D1, apply.go), which
