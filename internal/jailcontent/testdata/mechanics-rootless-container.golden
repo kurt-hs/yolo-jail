@@ -120,10 +120,11 @@ explicit `"~/code/sysadmin:/ctx/sysadmin"` form whenever you care about the name
 
 Every string entry gets `:ro` appended for you. The one writable form is an
 object with a required mode — `{"host": "~/scratch", "at": "/ctx/scratch",
-"mode": "rw"}` — and it is **user-scope only**: in the workspace config (or the
-local file) it is a `yolo check` error and the launch refuses, so an agent
-cannot grant itself one. Ask the human to put it in
-`~/.config/yolo-jail/config.toml`. A docker-style third field **silently breaks
+"mode": "rw"}`, or `write = true` in TOML — and an agent cannot grant itself
+one. In `yolo-jail.toml` (or `yolo-jail.local.toml`) the entry is a request: it
+is refused until the human's user config allows it (`[allow.mounts]`
+`on_request = ["write"]`), and then the launch's config-change prompt asks them. In a legacy `yolo-jail.jsonc` it is refused
+outright; there it belongs in `~/.config/yolo-jail/config.toml`. A docker-style third field **silently breaks
 the mount**: `"~/x:/ctx/x:ro"` parses as one host path literally named
 `~/x:/ctx/x:ro`, which does not exist, so the entry is skipped with a warning.
 `yolo check` only *warns* about it too — so the config looks accepted and mounts
