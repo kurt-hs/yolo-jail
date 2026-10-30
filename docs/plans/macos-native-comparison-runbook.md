@@ -15,6 +15,7 @@ summary: "Copy-pastable commands and decisive outputs for every outstanding nati
 
 The [design's settled scope](../design/macos-native-tls.md#mac-side-follow-up--audit-the-securityserver-boundary) owns behavior. This document prepares the remaining Safehouse comparison, restrictive synthetic ACL, and native SSL-policy/hostname controls, and holds the commands for every other outstanding native witness. Each witness answers one open question in the design, listed under [Native witnesses, one per open question](#native-witnesses-one-per-open-question). Do not reopen the yolo baseline or claim current Copilot works.
 
+- **The 2026-10-29 run used the disposable account `yolo-witness`** ([lab report §2](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md#2-the-disposable-account)); it still exists, and the maintainer removes it with `sudo bash /Users/Shared/yolo/witness-account.sh remove`. Answered rows are in the [Decision Ledger](../design/macos-native-tls.md#decision-ledger); only [OQ-MT6](../design/macos-native-tls.md#OQ-MT6) and [OQ-MT11](../design/macos-native-tls.md#OQ-MT11) remain.
 - **Every yolo macos-user launch is a Security.framework call too.** At each launch the host-side yolo exports certificates from the System keychain and from the launching user's login keychain with `/usr/bin/security find-certificate` ([`cabundle.go`](../../internal/macosuser/cabundle.go), the `ReadLoginKeychain` seam in [`orchestrator.go`](../../internal/macosuser/orchestrator.go)). So every launch, capture and integration run below happens only in the disposable account's own session, never the owner's.
 - Use a wholly disposable, synthetic-only macOS UID/session for **every** Security.framework call in this runbook, including fixture creation, setup, preflight, comparison rows, and cleanup. That session must not use or contain the owner's login keychains or credentials. A disposable workspace or separate `HOME` under the owner's UID/session is not sufficient.
 - The retained [`SecKeychainCreate` header](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_keychain/lib/SecKeychain.h) documents creation at a supplied file path but says nothing about whether creation changes the current user's default keychain or search list; no implementation source is retained here to settle that side effect. Treat it as **unknown**. Do not call `SecKeychainCreate` in an owner UID/session, even transiently. If a wholly disposable synthetic-only UID/session is unavailable, stop before setup; never snapshot/restore owner state as a workaround.
@@ -32,7 +33,7 @@ The host that prepared this document was Linux without `sandbox-exec`. That is a
 
 | Input | Use | Boundary |
 | :--- | :--- | :--- |
-| [Safehouse at `f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af`](https://github.com/eugene1g/agent-safehouse/tree/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af) | Parse `policy --stdout`, `--workdir`, `--append-profile`; render and inspect selected Copilot policy | Pin and hash the executable/source. The Copilot profile requires the keychain module; do not infer inactivity from an optional-module label. |
+| [Safehouse at `f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af`](https://github.com/eugene1g/agent-safehouse/tree/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af) | Parse `--stdout`, `--workdir`, `--append-profile`; render and inspect selected Copilot policy | Pin and hash the executable/source. The Copilot profile requires the keychain module; do not infer inactivity from an optional-module label. |
 | [Safehouse Copilot profile](https://github.com/eugene1g/agent-safehouse/blob/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af/profiles/60-agents/copilot-cli.sb) and [keychain profile](https://github.com/eugene1g/agent-safehouse/blob/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af/profiles/55-integrations-optional/keychain.sb) | Verify the selected agent's requirement and exact file/service grants | Profile selection is policy evidence only, not item access or actual Copilot behavior. |
 | [Safehouse policy architecture](https://github.com/eugene1g/agent-safehouse/blob/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af/docs/docs/policy-architecture.md), [launch implementation](https://github.com/eugene1g/agent-safehouse/blob/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af/bin/lib/runtime/launch.sh), and [debugging guide](https://github.com/eugene1g/agent-safehouse/blob/f1c6a6a355b1d82cc3f4b267c53f1f9ce456f9af/docs/docs/debugging.md) | Confirm appended rules render after selected profiles and child processes inherit the outer sandbox | A policy probe is not the Copilot CLI's optional inner shell sandbox. |
 | [`yolo internal macos-user-profile`](../../internal/cli/macosuserprofile.go) | Render a yolo P0 harness profile for an explicit workspace and temp directory | This helper omits production launch inputs; label it harness P0, never full launch equivalence. |
@@ -57,10 +58,10 @@ The headers checked while preparing this document are public Apple headers downl
 
 ## Render and compare Safehouse policies
 
-Use the pinned Safehouse executable built/checked from the revision above. Run its policy-render path only; it writes the policy to stdout and does not execute the caller. The pinned parser accepts `--stdout`, `--workdir` and `--append-profile`. The Copilot profile declares the keychain integration as a requirement, so do not rely on an invented module-disable switch or add an explicit `--enable` to make the selected policy appear active.
+Use the pinned Safehouse executable built/checked from the revision above. Run its policy-render path only (`safehouse.sh --stdout --workdir W [--append-profile …] copilot`; the pinned source has no `policy` subcommand, and `policy` would be taken as the command to run); it writes the policy to stdout and does not execute the caller. The pinned parser accepts `--stdout`, `--workdir` and `--append-profile`. The Copilot profile declares the keychain integration as a requirement, so do not rely on an invented module-disable switch or add an explicit `--enable` to make the selected policy appear active.
 
 ```bash
-safehouse policy --stdout --workdir "$W" copilot >"$W/safehouse-copilot.sb"
+safehouse.sh --stdout --workdir "$W" copilot >"$W/safehouse-copilot.sb"
 ```
 
 Read the complete generated profile. Confirm the Copilot profile and keychain module appear, identify grants for the home Keychains path and named Mach services, and confirm the actual workdir and appended-profile ordering. If the source-pinned executable rejects this documented invocation or does not select the Copilot profile, stop rather than trying guessed flags.
@@ -87,7 +88,7 @@ Prepare a separate overlay file at `$W/no-keychain.sb` containing these final de
 Keep the normal workspace read/write grant so the synthetic file remains readable. Then render the comparison variant through the supported append mechanism:
 
 ```bash
-safehouse policy --stdout --workdir "$W" \
+safehouse.sh --stdout --workdir "$W" \
   --append-profile "$W/no-keychain.sb" copilot >"$W/safehouse-no-keychain.sb"
 ```
 
@@ -200,7 +201,7 @@ done
 | :--- | :--- | :--- |
 | `rg` over the Copilot policy | Lines granting the three service names and the home `Library/Keychains` path | No such line: the pinned renderer did not select the keychain module; stop, the row is untested |
 | `safehouse-copilot` child read | `match=true`, parent and child hashes equal | `match=true` is Safehouse's documented broadened access, as yolo's `p2` was; it is not a vulnerability by itself |
-| `safehouse-no-keychain` child read | Non-zero status, sandbox-deny category, `match=false` | `match=true`: the overlay did not take effect; record the policy hash and its rule order |
+| `safehouse-no-keychain` child read | Non-zero status (`errSecItemNotFound` -25300 or `errSecInteractionNotAllowed` -25308, not a sandbox error), `match=false` | `match=true`: the overlay did not take effect; record the policy hash and its rule order |
 
 ### Restrictive keychain ACL
 
@@ -219,7 +220,7 @@ done
 | :--- | :--- | :--- |
 | Unsandboxed read | Non-zero status in the interaction or ACL category, `match=false` | `match=true`: the access list was not empty; the fixture is wrong, stop |
 | `safehouse-copilot` child read | Non-zero status in the interaction or ACL category, `match=false` | `match=true` is an item-ACL bypass inside a sandbox: a demonstrated violation; report it privately |
-| `yolo-p0-harness` child read | Non-zero status in the sandbox-deny category | An ACL-category status: the service deny did not stop the call first |
+| `yolo-p0-harness` child read | Non-zero status, `errSecItemNotFound` (-25300) or `errSecInteractionNotAllowed` (-25308), not a sandbox error | An ACL-category status: the service deny did not stop the call first |
 
 ### Current P0, hostname and URLSession negative controls
 
@@ -263,7 +264,8 @@ Answers [OQ-MT6](../design/macos-native-tls.md#OQ-MT6). Needs a managed Mac on a
 
 ```zsh
 echo | openssl s_client -connect nodejs.org:443 -servername nodejs.org 2>/dev/null | openssl x509 -noout -issuer
-printf '{"runtime": "macos-user", "macos_user_mode": "self"}\n' >"$W/yolo-jail.jsonc"
+printf '{"runtime": "macos-user"}\n' >"$W/yolo-jail.jsonc"
+mkdir -p "$HOME/.config/yolo-jail" && printf '{"macos_user_mode": "self"}\n' >"$HOME/.config/yolo-jail/overrides.jsonc"   # user scope only; remove after the row
 yolo check --no-build
 yolo -- mise ls-remote node 2>&1 | tail -1
 /usr/bin/sandbox-exec -f "$W/yolo-p0-harness.sb" -- "$W/tls-probe" --mode urlsession --url https://nodejs.org/
@@ -285,7 +287,7 @@ git -C "$YOLO_SRC" rev-parse HEAD
 mkdir -p "$HOME/.config/yolo-jail" && printf '{"packs": ["guardrails"]}\n' >"$HOME/.config/yolo-jail/config.jsonc"
 printf '{"runtime": "macos-user"}\n' >"$W/yolo-jail.jsonc"
 for N in 1 2; do
-  yolo -- sh -c 'test -f "$HOME/.config/yolo-jail/config.jsonc" && echo DELIVERED' 2>&1 \
+  yolo -- sh -c 'test -f "$HOME/.config/yolo-jail/config.toml" && echo DELIVERED' 2>&1 \
     | rg 'DELIVERED|refusing .*inherited|could overwrite existing user file'
   echo "launch $N rc=${pipestatus[1]}"
 done
@@ -297,14 +299,15 @@ done
 | Launch 1 | `DELIVERED`, `rc=0` | No `DELIVERED`: the inherited scope did not arrive; the row is untested |
 | Launch 2 | `DELIVERED`, `rc=0`, no `refusing` line | `could overwrite existing user file` at the config JSONC: the relaunch repair does not hold natively |
 
-The `config.jsonc` written above is the disposable account's; remove it after the row.
+The `config.jsonc` written above is the disposable account's; remove it after the row. A scope TOML can represent (this one) arrives as `config.toml`, so the delivery probe tests that file; `config.jsonc` is only the legacy fallback for a scope TOML cannot represent. The integration test `TestMacosUserInheritedUserScopeArrivesReadOnly` still probes `config.jsonc` and fails natively for that reason ([lab report §4.1](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md#41-inherited-account-relaunch)); a `--- FAIL` there is that known stale test, not a relaunch defect.
 
 ### Capture compatibility context
 
 Answers [OQ-MT8](../design/macos-native-tls.md#OQ-MT8), the native half of the [capture context plan](../design/native-capture-compatibility-context-plan.md). The capture runs Copilot's vendor installer once against an empty home; no login, prompt or API request follows.
 
 ```zsh
-printf '{"runtime": "macos-user", "macos_user_mode": "self", "packs": ["copilot"]}\n' >"$W/yolo-jail.jsonc"
+printf '{"runtime": "macos-user", "packs": ["copilot"]}\n' >"$W/yolo-jail.jsonc"
+mkdir -p "$HOME/.config/yolo-jail" && printf '{"macos_user_mode": "self"}\n' >"$HOME/.config/yolo-jail/overrides.jsonc"   # user scope only; remove after the row
 yolo capture copilot >"$W/capture.log" 2>&1; echo "capture rc=$?"
 rg 'invalid macos-user launch context|cannot parse .*version probe' "$W/capture.log"
 yolo -- copilot --version >"$W/version.log" 2>&1; tail -3 "$W/version.log"
@@ -356,10 +359,11 @@ container image list --format json | jq -c '.[] | .configuration.name'
 
 ### Copilot native TLS under the keychain deny
 
-Answers [OQ-MT11](../design/macos-native-tls.md#OQ-MT11), tracked as [yolo-jail #65](https://github.com/mschulkind-oss/yolo-jail/issues/65). Run it in a disposable account with **no** Copilot login: the request it makes is the credential-free release check the issue names. The SecurityServer deny stays.
+Answers [OQ-MT11](../design/macos-native-tls.md#OQ-MT11), tracked as [yolo-jail #65](https://github.com/mschulkind-oss/yolo-jail/issues/65). Run it in a disposable account with **no** Copilot login. The compatibility guard refuses Copilot 1.0.93 and newer before any request, so this witness needs a way past it; without one the row is untested ([lab report §4.2](../lab-reports/2026-10-29-mac-native-witnesses-runbook.md#42-capture-context-and-copilot)): the request it makes is the credential-free release check the issue names. The SecurityServer deny stays.
 
 ```zsh
-printf '{"runtime": "macos-user", "macos_user_mode": "self", "packs": ["copilot"]}\n' >"$W/yolo-jail.jsonc"
+printf '{"runtime": "macos-user", "packs": ["copilot"]}\n' >"$W/yolo-jail.jsonc"
+mkdir -p "$HOME/.config/yolo-jail" && printf '{"macos_user_mode": "self"}\n' >"$HOME/.config/yolo-jail/overrides.jsonc"   # user scope only; remove after the row
 yolo internal macos-user-profile --mode self --workspace "$W" --tmp "$W/tmp" | rg -c 'com\.apple\.SecurityServer'
 yolo -- copilot --version >"$W/copilot.log" 2>&1
 rg 'bad certificate format|Failed to fetch latest release|^[0-9]+\.[0-9]+\.[0-9]+' "$W/copilot.log"
