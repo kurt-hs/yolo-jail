@@ -71,29 +71,44 @@ func (o *Options) offerConfigMigration() {
 	if silenced {
 		return
 	}
-	subject := old[0].Logical + " is in the old format"
-	if len(old) > 1 {
-		subject = fmt.Sprintf("%s and %d other config %s are in the old format", old[0].Logical, len(old)-1,
-			plural(len(old)-1, "file", "files"))
+	names := make([]string, len(old))
+	for i, f := range old {
+		names[i] = f.Logical
+	}
+	them := "them"
+	if len(old) == 1 {
+		them = "it"
 	}
 	stop := ""
 	if hasLegacyUser {
 		stop = fmt.Sprintf("add \"%s\": true to %s", config.ConvertLaterKey, userFile)
 	}
 	if o.DryRun || !o.IsTTYStdin() || !o.IsTTYStderr() {
-		line := subject + "; launching with it, as this yolo will for a few more releases. " +
-			"`yolo config migrate` converts it once every machine that shares it runs a yolo that reads TOML."
+		line := fmt.Sprintf("Config in the old format (JSONC), which still works for a few more releases: %s. "+
+			"Preview converting %s to TOML with `yolo config migrate --dry-run`.", strings.Join(names, ", "), them)
 		if stop != "" {
 			line += " To stop this line, " + stop + "."
 		}
 		o.pr(o.Stderr).printf("[dim]%s[/dim]", richtext.Escape(line))
 		return
 	}
-	verb := "Convert it now?"
-	if len(old) > 1 {
-		verb = "Convert them now?"
+	// Everything a person needs to decide comes BEFORE the question: what changed, that no is
+	// safe, what yes does, and how to look first or never be asked again.
+	var intro strings.Builder
+	fmt.Fprintf(&intro, "yolo's config files are TOML now. %s still in the old format (JSONC):\n",
+		plural(len(old), "This one is", "These are"))
+	for _, n := range names {
+		fmt.Fprintf(&intro, "  %s\n", n)
 	}
-	if _, err := fmt.Fprintf(o.Stderr, "%s. %s [y/N] ", subject, verb); err != nil {
+	fmt.Fprintf(&intro, "%s keep%s working: this yolo reads the old format for a few more releases, so you can "+
+		"answer no\nand nothing changes. Converting writes each as TOML only when the new file means exactly "+
+		"the same,\nand keeps the original as <name>.pre-migrate. Wait if another machine shares %s and runs "+
+		"an older yolo,\nwhich cannot read TOML.\n", strings.ToUpper(them[:1])+them[1:], plural(len(old), "s", ""), them)
+	fmt.Fprintf(&intro, "  See the conversion first:  yolo config migrate --dry-run\n")
+	if stop != "" {
+		fmt.Fprintf(&intro, "  Stop this question:        %s\n", stop)
+	}
+	if _, err := fmt.Fprintf(o.Stderr, "%sConvert %s now? [y/N] ", intro.String(), them); err != nil {
 		return
 	}
 	reply := ""
@@ -101,12 +116,7 @@ func (o *Options) offerConfigMigration() {
 		reply = strings.ToLower(strings.TrimSpace(scanner.Text()))
 	}
 	if reply != "y" && reply != "yes" {
-		msg := "Launching with the old file; this yolo reads it for a few more releases. `yolo config migrate` " +
-			"converts it\n  once every machine that shares it runs a yolo that reads TOML."
-		if stop != "" {
-			msg += " To stop this prompt until then,\n  " + stop + "."
-		}
-		o.pr(o.Stderr).print(richtext.Escape(msg))
+		o.pr(o.Stderr).print(richtext.Escape("Launching with the old format. Convert later with `yolo config migrate`."))
 		return
 	}
 	plan, err := configmigrate.Plan(graph)

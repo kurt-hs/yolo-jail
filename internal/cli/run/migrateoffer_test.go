@@ -83,7 +83,7 @@ func TestLaunchOfferYesConvertsThenLaunches(t *testing.T) {
 			l.exists("config.toml"), l.exists("config.jsonc.pre-migrate"), l.exists("config.jsonc"), l.stderr.String())
 	}
 	s := l.stderr.String()
-	for _, want := range []string{"is in the old format. Convert it now? [y/N]", "identical (checked as canonical JSON",
+	for _, want := range []string{"still in the old format (JSONC)", "Convert it now? [y/N]", "identical (checked as canonical JSON",
 		"Launching on the converted files"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, s)
@@ -98,10 +98,18 @@ func TestLaunchOfferNoLaunchesOnOldFile(t *testing.T) {
 		t.Fatalf("n changed the user file\nstderr:\n%s", l.stderr.String())
 	}
 	s := l.stderr.String()
-	for _, want := range []string{"[y/N]", "Launching with the old file", "a few more releases",
-		"`yolo config migrate`", `"convert_later": true to ` + filepath.Join(l.userDir, "config.jsonc")} {
+	for _, want := range []string{"[y/N]", "Launching with the old format", "`yolo config migrate`"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, s)
+		}
+	}
+	// Everything needed to decide is said BEFORE the question, not after the answer: which file,
+	// that no is safe, what yes does, how to look first, and how to stop being asked.
+	ask := strings.Index(s, "[y/N]")
+	for _, want := range []string{filepath.Join(l.userDir, "config.jsonc"), "a few more releases", "answer no",
+		".pre-migrate", "yolo config migrate --dry-run", `"convert_later": true to ` + filepath.Join(l.userDir, "config.jsonc")} {
+		if i := strings.Index(s, want); i < 0 || i > ask {
+			t.Errorf("%q is not said before the question (at %d, question at %d):\n%s", want, i, ask, s)
 		}
 	}
 }
@@ -125,7 +133,7 @@ func TestLaunchOfferNoTTYPrintsOneLineAndContinues(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("want one offer line, got %d:\n%s", len(lines), s)
 	}
-	for _, want := range []string{"launching with it", "`yolo config migrate`", `"convert_later": true`} {
+	for _, want := range []string{"still works", "`yolo config migrate --dry-run`", `"convert_later": true`} {
 		if !strings.Contains(lines[0], want) {
 			t.Errorf("the offer line lacks %q: %s", want, lines[0])
 		}
