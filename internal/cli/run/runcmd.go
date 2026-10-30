@@ -348,6 +348,12 @@ type Options struct {
 	// (config.ScopeCheck.ApprovedGrants; docs/design/git-broker-plan.md ID-10), set beside
 	// approvedScopes and written to the same scope files.
 	approvedGrants map[string][]brokerscope.Grant
+	// writableRequests are the writable mounts a project's TOML config requests that this
+	// launch binds (RC-D24): set by the config-change gate from its own read, with each host path
+	// as the gate resolved it (config.ApproveWorkspaceRead), and, where no gate runs (an attach),
+	// only the requests the approval record already holds (config.ApprovedWritableRequests).
+	// configCtxMounts binds these and never re-reads the workspace files for them (WW-P2).
+	writableRequests []config.WritableRequest
 	// scopeFiles are the scope files this launch wrote, per brokered loophole name, which
 	// {repository_scope} resolves to at the spawn and the loophole's stop removes (BB-D32).
 	scopeFiles map[string]string

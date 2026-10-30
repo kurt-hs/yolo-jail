@@ -23,7 +23,6 @@ package config
 import (
 	"fmt"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 	"github.com/mschulkind-oss/yolo-jail/internal/termsafe"
@@ -144,22 +143,6 @@ func loadMountsWorkspaceConfig(workspace string, edit ...*editValidationContext)
 	return loadReadableWorkspaceConfig(workspaceOrCwd(workspace), false, func(string) {}, true)
 }
 
-// writtenInTOML reports whether every file that wrote the element n is a TOML file: a request
-// is honored only from the readable format (RC-D24, "don't need to backport that to old
-// configs"). An element with no recorded writer is not one.
-func writtenInTOML(n *srcNode) bool {
-	writers := n.writerList()
-	if len(writers) == 0 {
-		return false
-	}
-	for _, w := range writers {
-		if w.file == nil || w.file.format != configdoc.TOML {
-			return false
-		}
-	}
-	return true
-}
-
 // writableMountRequestRefusal is the refusal for a TOML request the user config does not allow,
 // and its next step is the exact two lines and the exact file (happy-path-principle.md). No
 // `yolo config` verb is named: `config add` and `config set` both refuse to create a value that
@@ -179,56 +162,32 @@ func writableMountRequestRefusal(m ContextMount) string {
 		termsafe.Visible(m.Spec), userPath, lines)
 }
 
-// LoadWorkspaceRWMounts returns the writable `mounts` elements this workspace's TOML config
-// requests, when the user config allows a request; none otherwise. It is the run pipeline's
-// second source of read-write elements beside LoadRWMounts, and the same boundary: it reads
-// the workspace files with their record, so an element a JSONC file wrote is never returned,
-// and it reads the ceiling from the user scope directly, never from the merge.
-//
-// Validation is the loud half (validateMountScope refuses a request the ceiling does not
-// allow, and the refusal set, the fence and the /ctx rule run on it like any rw element); the
-// launch runs it before this, so this reader only decides what is mounted.
-func LoadWorkspaceRWMounts(workspace string) ([]ContextMount, error) {
-	user, _, err := UserScopeConfigWithSources(false, func(string) {})
-	if err != nil {
-		return nil, err
+// validateWorkspaceAllow refuses an `allow` table a workspace config wrote. `allow` is the
+// user's ceiling: a TOML workspace file is refused it by the readable schema, and a JSONC one
+// here, since the composed config a launch validates accepts the key (withAllowKey) and would
+// otherwise take a workspace's table without a word. Re-read only when the composed config
+// holds one.
+func validateWorkspaceAllow(config *jsonx.OrderedMap, workspace string, errs *[]string, edit ...*editValidationContext) {
+	if _, has := config.Get("allow"); !has {
+		return
 	}
-	if !userAllowsWritableMountRequests(user) {
-		return nil, nil
-	}
-	wsCfg, wsNode, err := loadMountsWorkspaceConfig(workspace)
+	wsCfg, wsNode, err := loadMountsWorkspaceConfig(workspace, edit...)
 	if err != nil || wsCfg == nil {
-		return nil, err
+		return
 	}
-	elements, indices := parseMountsIndexed(wsCfg)
-	var out []ContextMount
-	for n, m := range elements {
-		if m.RW && writtenInTOML(wsNode.key(mountsKey).elem(indices[n])) {
-			out = append(out, m)
-		}
+	if _, has := wsCfg.Get("allow"); !has {
+		return
 	}
-	return out, nil
-}
-
-// WritableMountLines are the writable `mounts` elements of the workspace config cfg, one
-// plain line each, "<host as written> → <jail path>": what the config-change gate shows loud
-// (ChangeReport.WritableMounts). The host is agent-written, so it is made terminal-safe.
-func WritableMountLines(cfg *jsonx.OrderedMap) []string {
-	var out []string
-	for _, m := range ParseMounts(cfg) {
-		if !m.RW {
-			continue
-		}
-		out = append(out, termsafe.Visible(m.Host)+" → "+termsafe.Visible(m.DestFor(expandAndResolve(m.Host))))
-	}
-	return out
+	add(errs, locatedAt(wsNode.key("allow"), fmt.Sprintf("config.allow: is in the workspace config, "+
+		"and `allow` is user-scope only: it is your ceiling on what a project may ask for, so a "+
+		"project cannot set it. Move it to %s, or remove it", paths.UserConfigPath())))
 }
 
 // WritableMountMarker is the words every rendering of a writable mount at the gate carries, so
 // it stays loud with color off (docs/reference/cli-color.md).
 const WritableMountMarker = "WRITABLE HOST MOUNT"
 
-// WritableMountBlock is the plain-text block the gate shows for lines (WritableMountLines):
+// WritableMountBlock is the plain-text block the gate shows for lines (WritableRequest.Line):
 // one marked line per mount, then what approving means. nil for none.
 func WritableMountBlock(lines []string) []string {
 	if len(lines) == 0 {
@@ -239,7 +198,8 @@ func WritableMountBlock(lines []string) []string {
 		out = append(out, "⚠  "+WritableMountMarker+": "+l)
 	}
 	out = append(out, "   The jail can create, change and delete files there on your machine. "+
-		"Approving this config approves "+itOrThem(len(lines))+"; a changed request asks again.")
+		"Approving this config approves "+itOrThem(len(lines))+"; a changed request, or a path that "+
+		"now resolves elsewhere, asks again.")
 	return out
 }
 

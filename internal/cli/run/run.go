@@ -519,6 +519,14 @@ func Run(opts Options) (rc int) {
 		// approval prompt, a host service or any staging — a refusal says what to do before the
 		// launch asks anything else (DP-D15). A --dry-run refuses too: its plan would describe a
 		// launch that cannot happen. No `mounts` key and no pack `mount` decides nothing.
+		// A WRITABLE MOUNT REQUEST (RC-D24) is planned here, before the gate approves it, as the
+		// gate's own read would give it, so its siting refuses before anything is asked; the gate
+		// below must then approve exactly this set, or the launch refuses (sameWritableRequests).
+		var plannedWritable []config.WritableRequest
+		if !o.DryRun {
+			o.writableRequests = o.pendingWritableRequests()
+			plannedWritable = o.writableRequests
+		}
 		ctxLinks, ctxCopies, ok := o.planMacosUserCtxMounts(cfg, staged.packs)
 		if !ok {
 			return 1
@@ -566,6 +574,13 @@ func Run(opts Options) (rc int) {
 		// change to approve, and refusing a plan render would only hide the diff a user
 		// is asking to inspect.
 		if !o.DryRun && !o.checkConfigChanges(cfg, rt) {
+			return 1
+		}
+		if !o.DryRun && !sameWritableRequests(plannedWritable, o.writableRequests) {
+			o.pr(o.Stderr).print("[bold red]The workspace config's writable host mounts changed while yolo " +
+				"was reading it, so the mounts planned for this launch are not the ones just approved. " +
+				"Nothing was launched.[/bold red]\n[dim]Launch again: the config-change prompt shows the " +
+				"mounts as they are now.[/dim]")
 			return 1
 		}
 		// THE OFFERED TIER (disk-footprint.md "Triggers and defaults"'s trigger), on this arm too: beside
@@ -3141,6 +3156,9 @@ func (o *Options) attachExisting(cname, rt, targetCmd string, cfg *jsonx.Ordered
 		facts, factsOK := readMechanicsApplied(cname, envLines)
 		if factsOK && applyLiveMountsToMechanics(facts, cname, envLines) {
 			facts.Packs = mechanicsPackNames(view.staged.packs)
+			// An attach runs no gate, so the briefing lists the writable requests the approval
+			// record holds (RC-D24), the ones this jail's launch bound.
+			o.writableRequests = config.ApprovedWritableRequests(o.Workspace)
 			_, refreshErr = o.refreshJailBriefings(cname, cfg, rt, view.staged, o.launchedIOPriority(rt, envLines), facts)
 		} else {
 			if factsOK {

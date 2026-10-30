@@ -416,6 +416,10 @@ type gateHooks struct {
 	attach bool
 }
 
+// writableRequestResolver is the loophole resolver the gate's writable-request check fences with
+// (config.CheckWritableRequests), the one validation uses.
+var writableRequestResolver = loopholeResolver
+
 // readWorkspaceForGateSeam is the gate's one read (config.ReadWorkspaceForGate), a variable so a
 // test can change the file between a caller's own load and this read.
 var readWorkspaceForGateSeam = config.ReadWorkspaceForGate
@@ -433,6 +437,22 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 			"in the config. Nothing was recorded.[/dim]")
 		return false
 	}
+	// RC-D24: the writable mounts this read requests, each resolved once, judged here on exactly
+	// what will be approved and bound (the launch validated an earlier read), before anything is
+	// asked. The apply plan below reads them as what a y would bind.
+	o.writableRequests = nil
+	requests := read.WritableRequests()
+	if refusals := config.CheckWritableRequests(o.Workspace, requests, writableRequestResolver()); len(refusals) > 0 {
+		out := o.pr(o.Stderr)
+		out.print("[bold red]The workspace config asks for a writable host mount the config-change gate refuses:[/bold red]")
+		for _, r := range refusals {
+			out.printf("  [red]%s[/red]", richtext.Escape(termsafe.VisibleLines(r)))
+		}
+		out.print("[dim]Fix the entry as each line says, then launch again; `yolo check` lists the same " +
+			"problems. Nothing was recorded.[/dim]")
+		return false
+	}
+	o.writableRequests = requests
 	pr := &changePrompter{o: o}
 	scope := o.brokeredScopeCheck(rt, merged, read)
 	if h != nil {
@@ -441,10 +461,12 @@ func (o *Options) runConfigGate(merged *jsonx.OrderedMap, rt string, h *gateHook
 			pr.preQuestion = h.plan(read, scope)
 		}
 	}
-	ok, approved, err := config.ApproveConfigAndScope(o.Workspace, read.Config, scope,
+	ok, approved, approvedMounts, err := config.ApproveWorkspaceRead(o.Workspace, read, scope,
 		o.IsTTYStdin() && o.IsTTYStderr(), o.AcceptConfigChanges, pr)
+	o.writableRequests = nil
 	if ok && err == nil {
 		o.recordApprovedScopes(approved, scope.ApprovedGrants())
+		o.writableRequests = approvedMounts
 	}
 	if err != nil {
 		// The OQ-D2 refusal gets rendered rather than dumped: same diff, same
@@ -572,11 +594,12 @@ func (o *Options) writeLaunchConfigArtifacts(cfg *jsonx.OrderedMap) (baselineDig
 // by the interactive prompt and the non-interactive refusal so a reader who cannot
 // be prompted sees the change in exactly the form the human at a terminal would.
 func printConfigDiff(out printer, diffLines []string) {
-	for _, line := range diffLines {
+	marked := writableDiffMarks(diffLines)
+	for i, line := range diffLines {
 		switch {
 		case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
 			out.printf("[dim]%s[/dim]", line)
-		case strings.HasPrefix(line, "+") && writableDiffLine(line):
+		case marked[i]:
 			// RC-D24: the line that makes a mount writable is red and marked, not green.
 			out.printf("[bold red]%s  ← %s[/bold red]", line, config.WritableMountMarker)
 		case strings.HasPrefix(line, "+"):
@@ -595,6 +618,48 @@ func printConfigDiff(out printer, diffLines []string) {
 // that makes it writable (RC-D24).
 func writableDiffLine(line string) bool {
 	return strings.Contains(strings.Join(strings.Fields(line), ""), `"write":true`)
+}
+
+// writableDiffMarks says, per diff line, whether it is an ADDED line that makes or moves a
+// writable mount: a `"write": true`, an entry of the approval record's resolved writable paths
+// (which carry config.WritableMountMarker), or the `"host"` of an element whose current side
+// holds `"write": true` further down, so a host changed alone is marked too. The snapshot sorts
+// keys, so `write` always follows `host` within one element.
+func writableDiffMarks(diffLines []string) []bool {
+	marks := make([]bool, len(diffLines))
+	for i, line := range diffLines {
+		if !strings.HasPrefix(line, "+") || strings.HasPrefix(line, "+++") {
+			continue
+		}
+		body := strings.TrimSpace(line[1:])
+		switch {
+		case writableDiffLine(line), strings.Contains(line, config.WritableMountMarker):
+			marks[i] = true
+		case strings.HasPrefix(body, `"host":`):
+			marks[i] = elementIsWritable(diffLines[i+1:])
+		}
+	}
+	return marks
+}
+
+// elementIsWritable scans the current side of the rest of one element (context and added lines,
+// up to its closing brace or the hunk's end) for `"write": true`.
+func elementIsWritable(rest []string) bool {
+	for _, l := range rest {
+		if strings.HasPrefix(l, "@@") || strings.HasPrefix(l, "-") || l == "" {
+			if strings.HasPrefix(l, "-") {
+				continue
+			}
+			return false
+		}
+		if writableDiffLine(l) {
+			return true
+		}
+		if strings.HasPrefix(strings.TrimSpace(l[1:]), "}") {
+			return false
+		}
+	}
+	return false
 }
 
 // changePrompter renders the config diff and reads the y/N answer.

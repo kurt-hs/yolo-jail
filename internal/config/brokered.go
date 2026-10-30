@@ -648,22 +648,32 @@ func brokeredWindow(s string, ceiling bool) bool {
 // It is applied BEFORE SnapshotJSON, at every comparison and every writer of the config part,
 // and whether or not a broker starts, so turning the broker on or off never moves those bytes. It
 // never goes inside SnapshotJSON, which drift, the delivery copy and the inherited files share.
+//
+// It also carries every writable `mounts` element's host path AS RESOLVED (writableRecordKey,
+// RC-D24): a request approved as "<link>" must ask again once the link points elsewhere, so the
+// record holds what the human approved, not only what the agent wrote.
 func approvalConfigPart(wsCfg *jsonx.OrderedMap) *jsonx.OrderedMap {
+	return approvalConfigPartWith(wsCfg, nil)
+}
+
+// approvalConfigPartWith is approvalConfigPart with the host paths the gate already resolved
+// (WorkspaceRead.WritableRequests), so the record holds exactly the paths the launch binds.
+func approvalConfigPartWith(wsCfg *jsonx.OrderedMap, resolved map[string]string) *jsonx.OrderedMap {
 	if wsCfg == nil {
 		return jsonx.NewOrderedMap()
 	}
-	if _, has := wsCfg.Get(brokeredKey); !has {
-		return wsCfg
-	}
-	out := jsonx.NewOrderedMap()
-	for _, k := range wsCfg.Keys() {
-		if k == brokeredKey {
-			continue
+	part := wsCfg
+	if _, has := wsCfg.Get(brokeredKey); has {
+		part = jsonx.NewOrderedMap()
+		for _, k := range wsCfg.Keys() {
+			if k == brokeredKey {
+				continue
+			}
+			v, _ := wsCfg.Get(k)
+			part.Set(k, v)
 		}
-		v, _ := wsCfg.Get(k)
-		out.Set(k, v)
 	}
-	return out
+	return withWritableRecord(part, wsCfg, resolved)
 }
 
 // validateBrokered checks the `brokered` key, each scope read on its own: the merged value

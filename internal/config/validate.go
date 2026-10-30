@@ -91,6 +91,7 @@ func validateConfigWithEditContext(config *jsonx.OrderedMap, workspace string, r
 	validatePackages(config, errs)
 	validateMounts(config, workspace, errs, warns, edit)
 	validateAllowMounts(config, errs)
+	validateWorkspaceAllow(config, workspace, errs, edit)
 	validateWorkspaceReadonly(config, errs)
 	validatePerSidePaths(config, errs)
 	validateLoopholes(config, workspace, resolver, errs, warns, edit)

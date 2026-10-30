@@ -4,8 +4,9 @@ package config
 // may REQUEST a writable mount with `write = true` once the user config's
 // `[allow.mounts] on_request = ["write"]` allows it, and the config-change gate then approves it
 // with the mount shown loud. Every rule is asserted at its call site: ValidateConfig (what
-// `yolo check` and the launch preflight run), LoadWorkspaceRWMounts (what the run pipeline
-// mounts), and ApproveConfigAndScope (the gate).
+// `yolo check` and the launch preflight run), WorkspaceRead.WritableRequests and
+// CheckWritableRequests (what the gate reads and judges, and so what the run pipeline mounts),
+// and ApproveConfigAndScope (the gate).
 
 import (
 	"os"
@@ -18,6 +19,16 @@ import (
 )
 
 const allowMountsLines = "[allow.mounts]\non_request = [\"write\"]\n"
+
+// gateRequests are the writable requests the config-change gate's own read of ws finds.
+func gateRequests(t *testing.T, ws string) []WritableRequest {
+	t.Helper()
+	read, err := ReadWorkspaceForGate(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return read.WritableRequests()
+}
 
 // userTOML writes the user config as config.toml.
 func (h mountsHost) userTOML(t *testing.T, body string) string {
@@ -62,8 +73,8 @@ func TestAWritableMountRequestWithoutTheAllowLineIsRefusedNamingIt(t *testing.T)
 			if strings.Contains(got, "yolo config add") || strings.Contains(got, "yolo config set") {
 				t.Fatalf("refusal names a config verb that cannot create the table: %q", got)
 			}
-			if rw, err := LoadWorkspaceRWMounts(h.ws); err != nil || len(rw) != 0 {
-				t.Fatalf("LoadWorkspaceRWMounts without the allow line = %+v, %v; want none", rw, err)
+			if refusals := CheckWritableRequests(h.ws, gateRequests(t, h.ws), nil); len(refusals) == 0 {
+				t.Fatal("the gate's check let a request through without the allow line")
 			}
 		})
 	}
@@ -89,12 +100,12 @@ func TestAWritableMountRequestIsAcceptedOnceTheUserAllowsIt(t *testing.T) {
 	if errs, _ := h.validate(t); len(errs) != 0 {
 		t.Fatalf("an allowed writable mount request was refused: %q", errs)
 	}
-	got, err := LoadWorkspaceRWMounts(h.ws)
-	if err != nil {
-		t.Fatal(err)
+	got := gateRequests(t, h.ws)
+	if len(got) != 1 || got[0].Mount.Host != src || got[0].Mount.At != "/ctx/data" || !got[0].Mount.RW || got[0].Resolved != src {
+		t.Fatalf("WritableRequests = %+v, want the one requested writable mount", got)
 	}
-	if len(got) != 1 || got[0].Host != src || got[0].At != "/ctx/data" || !got[0].RW {
-		t.Fatalf("LoadWorkspaceRWMounts = %+v, want the one requested writable mount", got)
+	if refusals := CheckWritableRequests(h.ws, got, nil); len(refusals) != 0 {
+		t.Fatalf("the gate's check refused an allowed request: %q", refusals)
 	}
 	// The user scope's own reader is unchanged: it never returns a workspace element.
 	if user, err := LoadRWMounts(nil); err != nil || len(user) != 0 {
@@ -173,8 +184,8 @@ func TestAJSONCWorkspaceReadWriteMountIsStillRefusedWithTheAllowLine(t *testing.
 		if got := joined(errs); !strings.Contains(got, "user-scope only") {
 			t.Fatalf("JSONC workspace %s was not refused: %q", el, errs)
 		}
-		if rw, err := LoadWorkspaceRWMounts(h.ws); err != nil || len(rw) != 0 {
-			t.Fatalf("LoadWorkspaceRWMounts read a JSONC element: %+v, %v", rw, err)
+		if rw := gateRequests(t, h.ws); len(rw) != 0 {
+			t.Fatalf("the gate read a JSONC element as a request: %+v", rw)
 		}
 	}
 }

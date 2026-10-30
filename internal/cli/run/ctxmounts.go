@@ -9,13 +9,15 @@ package run
 // backend-parity.md §6's defect — a jail told about a /ctx path that does not exist — so
 // both call the same function rather than agreeing by construction.
 //
-// ⚠ READ-WRITE ELEMENTS COME FROM THE USER SCOPE (config.LoadRWMounts) AND FROM A TOML
-// WORKSPACE REQUEST THE USER ALLOWS (config.LoadWorkspaceRWMounts, RC-D24), never from the
-// merged config this function is handed: the merge records no provenance, and the trust
-// predicate of §2.2 is a statement about where an element was written. Read-only elements
-// keep coming from the merged view, which is where they always came from.
+// ⚠ READ-WRITE ELEMENTS COME FROM THE USER SCOPE (config.LoadRWMounts) AND FROM THE TOML
+// WORKSPACE REQUESTS THE CONFIG-CHANGE GATE APPROVED (Options.writableRequests, RC-D24), never
+// from the merged config this function is handed: the merge records no provenance, and the trust
+// predicate of §2.2 is a statement about where an element was written. Nothing here re-reads the
+// workspace files for a request: what is bound is what the gate read, judged and approved.
+// Read-only elements keep coming from the merged view, which is where they always came from.
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 
@@ -23,7 +25,44 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/jailcontent"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
+	"github.com/mschulkind-oss/yolo-jail/internal/richtext"
 )
+
+// pendingWritableRequests are the writable mounts the gate's own read would ask about, before the
+// gate runs: what the macos-user arm plans its links with, since it sites them first. The gate
+// still judges and approves them, and the arm refuses unless it approved exactly this set. None
+// when the read fails; the gate then refuses with the reason.
+func (o *Options) pendingWritableRequests() []config.WritableRequest {
+	read, err := readWorkspaceForGateSeam(o.Workspace)
+	if err != nil {
+		return nil
+	}
+	return read.WritableRequests()
+}
+
+// sameWritableRequests reports whether a and b are the same requests resolved to the same paths.
+func sameWritableRequests(a, b []config.WritableRequest) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Mount.Spec != b[i].Mount.Spec || a[i].Resolved != b[i].Resolved {
+			return false
+		}
+	}
+	return true
+}
+
+// writableRequestDrift is the refusal for a launch whose approved request no longer resolves to
+// the path the gate approved (config.WritableRequest.Drift), nil when none moved.
+func (o *Options) writableRequestDrift() error {
+	for _, req := range o.writableRequests {
+		if why := req.Drift(); why != "" {
+			return errors.New(why)
+		}
+	}
+	return nil
+}
 
 // configCtxMount is one config `mounts` element this launch delivers.
 type configCtxMount struct {
@@ -74,14 +113,18 @@ func (o *Options) configCtxMounts(rt string, cfg *jsonx.OrderedMap, note func(st
 		note("[yellow]Warning: read-write mounts: " + err.Error() + " — none mounted[/yellow]")
 	}
 	elements = append(elements, rw...)
-	// RC-D24: the writable mounts this workspace's TOML config requests, when the user config
-	// allows a request. Validation refused any it does not allow, and the config-change gate
-	// approved these as part of the workspace config, both before this runs.
-	requested, err := config.LoadWorkspaceRWMounts(o.Workspace)
-	if err != nil {
-		note("[yellow]Warning: requested read-write mounts: " + err.Error() + " — none mounted[/yellow]")
+	// RC-D24: the writable mounts the config-change gate approved, from its own read, bound at the
+	// host path it resolved and showed. One whose written path no longer resolves there is not
+	// bound; the assembler refuses that launch (writableRequestDrift).
+	for _, req := range o.writableRequests {
+		if why := req.Drift(); why != "" {
+			note("[bold red]" + richtext.Escape(why) + "[/bold red]")
+			continue
+		}
+		m := req.Mount
+		m.Host = req.Resolved
+		elements = append(elements, m)
 	}
-	elements = append(elements, requested...)
 
 	roUnsafe := o.roBindsUnsupported(rt)
 	var out []configCtxMount

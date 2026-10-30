@@ -286,7 +286,8 @@ type ChangeReport struct {
 	// Workspace is the launch's workspace, for that step.
 	Workspace string
 	// WritableMounts are the writable host mounts the changed workspace config holds, one line
-	// each (WritableMountLines), set only when the config part changed: approving the diff
+	// each (WritableRequest.Line: the resolved host path, the jail path, and the path as written
+	// when it differs), set only when the config part changed: approving the diff
 	// approves them (RC-D24), so every renderer shows them loud — red, and marked
 	// WritableMountMarker so they stay loud with color off (WritableMountBlock).
 	WritableMounts []string
@@ -337,11 +338,19 @@ func CheckConfigAndScopeChanges(workspace string, config *jsonx.OrderedMap, scop
 // its projection (approvalConfigPart), and the entry is already in scope.
 func ApproveConfigAndScope(workspace string, config *jsonx.OrderedMap, scope *ScopeCheck,
 	isTTY, acceptNonInteractive bool, prompter ChangePrompter) (bool, map[string][]ScopeRepo, error) {
+	return approveConfigAndScope(workspace, config, nil, scope, isTTY, acceptNonInteractive, prompter)
+}
+
+// approveConfigAndScope is ApproveConfigAndScope with resolved, the writable mounts' host paths
+// the caller's read already resolved (ApproveWorkspaceRead), which the record and the report use
+// in place of resolving them again.
+func approveConfigAndScope(workspace string, config *jsonx.OrderedMap, resolved map[string]string, scope *ScopeCheck,
+	isTTY, acceptNonInteractive bool, prompter ChangePrompter) (bool, map[string][]ScopeRepo, error) {
 	if scope != nil && scope.Fatal != nil {
 		return false, nil, scope.Fatal
 	}
 	snapshotPath := ApprovalSnapshotPath(workspace)
-	currentJSON, err := SnapshotJSON(approvalConfigPart(config))
+	currentJSON, err := SnapshotJSON(approvalConfigPartWith(config, resolved))
 	if err != nil {
 		return false, nil, err
 	}
@@ -439,7 +448,7 @@ func ApproveConfigAndScope(workspace string, config *jsonx.OrderedMap, scope *Sc
 		ConfigFiles: configFiles, ScopeLabels: sc.labels, Workspace: workspaceOrCwd(workspace)}
 	if configChanged {
 		// RC-D24: approving this diff approves every writable mount in it, so it is shown loud.
-		report.WritableMounts = WritableMountLines(config)
+		report.WritableMounts = requestLines(writableElements(config, resolved))
 	}
 
 	if !isTTY {

@@ -385,6 +385,11 @@ func (o *Options) assembleRunCmd(in *assembleInput) []string {
 	var mountArgs []string
 	if !in.sealed { // a fork build gets no `mounts` element (seal.go)
 		rootful := o.rootfulPodmanHost(rt)
+		// A writable mount the gate approved whose path now resolves elsewhere refuses the
+		// launch (RC-D24); configCtxMounts leaves it unbound either way.
+		if err := o.writableRequestDrift(); err != nil && in.assemblyErr == nil {
+			in.assemblyErr = err
+		}
 		in.ctxMountsBound = o.configCtxMounts(rt, cfg, out.print)
 		for _, m := range in.ctxMountsBound {
 			mountArgs = append(mountArgs, "-v", m.bindArg())

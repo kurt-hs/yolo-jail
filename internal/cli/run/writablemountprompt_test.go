@@ -71,6 +71,25 @@ func TestThePromptMarksAWritableMountWithColorOff(t *testing.T) {
 	}
 }
 
+// MINOR e: when only a writable element's host changes, the `+` line carrying the new host is
+// marked, though its `"write": true` is an unchanged context line below it; a read-only element's
+// changed host is not.
+func TestAChangedHostOfAWritableMountIsMarked(t *testing.T) {
+	var out strings.Builder
+	r := config.ChangeReport{ConfigChanged: true, DiffLines: []string{"--- previous", "+++ current", "@@ -1,9 +1,9 @@",
+		`   "mounts": [`, `     {`, `       "at": "/ctx/data",`, `-      "host": "/srv/a",`, `+      "host": "/srv/b",`,
+		`       "write": true`, `     },`, `     {`, `       "at": "/ctx/ro",`, `-      "host": "/srv/c",`, `+      "host": "/srv/d",`,
+		`       "mode": "ro"`, `     }`}}
+	(&changePrompter{o: promptOptions(&out, false)}).PromptReport(r)
+	s := out.String()
+	if !strings.Contains(s, `"host": "/srv/b",  ← WRITABLE HOST MOUNT`) {
+		t.Fatalf("the writable element's changed host is not marked:\n%s", s)
+	}
+	if strings.Contains(s, `"host": "/srv/d",  ←`) {
+		t.Fatalf("a read-only element's host was marked writable:\n%s", s)
+	}
+}
+
 func TestTheRefusalAndTheFlagReportShowAWritableMount(t *testing.T) {
 	var out strings.Builder
 	o := promptOptions(&out, false)

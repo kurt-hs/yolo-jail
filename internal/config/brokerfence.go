@@ -2,13 +2,9 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"sort"
-	"strings"
 
-	"github.com/mschulkind-oss/yolo-jail/internal/brokerscope"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
-	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // brokerfence.go is the mount fence (docs/design/boundary-broker.md BB-D26). `mounts` is a
@@ -24,6 +20,9 @@ import (
 // The approvals directory is not fenced (BB-D34): no mount can write an approval — a read-only
 // one cannot write anything, and a read-write one is refused for any source inside yolo's
 // state directory (context-mounts.md#the-refusal-set clause 1, config.rwMountRefusal).
+//
+// The fenced paths are brokerMountFences' (mountsrequestbind.go), which the config-change gate
+// also runs on a writable mount request it read itself (CheckWritableRequests).
 
 func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolver LoopholeResolver,
 	errs, warns *[]string, edit ...*editValidationContext) {
@@ -41,32 +40,9 @@ func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolv
 	if len(mounts) == 0 {
 		return
 	}
-	known, _ := resolver.Known()
-	var names []string
-	for name, info := range known {
-		if info.Brokered != nil {
-			names = append(names, name)
-		}
-	}
-	if len(names) == 0 {
+	fences := brokerMountFences(resolver)
+	if len(fences) == 0 {
 		return
-	}
-	sort.Strings(names)
-	home := os.Getenv("HOME")
-	type fence struct{ path, owner, what string }
-	var fences []fence
-	fences = append(fences, fence{paths.BrokerDir(), strings.Join(names, ", "),
-		"yolo's broker directory: the brokers' store, each launch's repository scope and the " +
-			"audit log of every workspace's brokered calls"})
-	for _, name := range names {
-		for _, p := range brokerscope.FencedPaths(known[name].Brokered.CredentialPaths, home, os.Getenv)[1:] {
-			fences = append(fences, fence{p, name, "the host credential the " + name +
-				" loophole keeps out of the jail"})
-		}
-	}
-	fencedPaths := make([]string, len(fences))
-	for i, f := range fences {
-		fencedPaths[i] = f.path
 	}
 
 	wsMounts := map[string]bool{}
@@ -81,22 +57,12 @@ func validateBrokerMountFence(config *jsonx.OrderedMap, workspace string, resolv
 	}
 	sort.Strings(specs)
 	for _, spec := range specs {
-		reached := brokerscope.Reaches(mounts[spec].source, fencedPaths)
-		if reached == "" {
+		f, reached := fences.reach(mounts[spec].source)
+		if !reached {
 			continue
 		}
-		var f fence
-		for _, cand := range fences {
-			if cand.path == reached {
-				f = cand
-				break
-			}
-		}
 		if wsMounts[spec] {
-			add(errs, fmt.Sprintf("config.mounts: %q reaches %s, %s (%s). A workspace config may not "+
-				"mount it: the agent can edit that file, and the mount would carry it into the next "+
-				"launch. Remove the entry; the same entry in %s is allowed and disclosed",
-				spec, f.path, f.what, f.owner, paths.UserConfigPath()))
+			add(errs, workspaceFenceRefusal(spec, f))
 			continue
 		}
 		access := "read it"
@@ -125,3 +91,5 @@ type fencedMount struct {
 	source string
 	rw     bool
 }
+
+func sortStrings(s []string) { sort.Strings(s) }

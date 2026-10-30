@@ -182,6 +182,13 @@ func ParseMountElement(v any, where string) (m ContextMount, problems []string) 
 				where, reprAny(writeV)))
 		}
 		m.RW = b
+		// A REQUEST'S HOST IS ABSOLUTE OR "~" (RC-D24): a relative one would resolve against
+		// wherever yolo happened to be started, so the path approved would not be a path.
+		if b && isStr && host != "" && !strings.HasPrefix(host, "/") && host != "~" && !strings.HasPrefix(host, "~/") {
+			problems = append(problems, fmt.Sprintf(`%s: a writable mount's host %q must be absolute `+
+				`or start with "~" — a relative path would resolve against wherever yolo was started`,
+				where, host))
+		}
 	case !hasMode:
 		problems = append(problems, where+`: "mode" is required in the object form — "ro" or "rw". `+
 			"There is no default, so a writable mount is never one nobody wrote")
@@ -319,8 +326,8 @@ func rwElements(cfg *jsonx.OrderedMap, scope mountScope) []ContextMount {
 // THIS IS THE BOUNDARY, for LoadCacheRelocations' reason: the merge records no provenance,
 // so a builder reading rw elements out of it could not say whether one came from a file the
 // agent can edit. The run pipeline therefore takes read-only elements from the merged
-// config and read-write ones from HERE and from LoadWorkspaceRWMounts, RC-D24's allowed TOML
-// requests (context-mounts.md#where-a-read-write-mount-may-be-declared), and validateMountScope's
+// config and read-write ones from HERE and from the config-change gate's own read of RC-D24's
+// allowed TOML requests (ApproveWorkspaceRead) (context-mounts.md#where-a-read-write-mount-may-be-declared), and validateMountScope's
 // refusal of a workspace-scope element is the loud half, not the boundary itself.
 //
 // Inside a jail the user scope is that jail's own (the generated config.jsonc, which never
@@ -406,8 +413,12 @@ var rwBoundaryConsequence = map[paths.ScopeRootKind]string{
 // one backend's layout, judged by that backend's siting at launch (macosuser.SiteContextLinks,
 // through run's planMacosUserCtxMounts), which refuses either mode there.
 //
-// ~/.ssh, ~/.aws and the like are deliberately NOT named (CX-D2): whoever gets an element
-// past the trust predicate already holds the host user's authority.
+// ~/.ssh, ~/.aws and the like are deliberately NOT named (CX-D2): whoever gets a USER-SCOPE
+// element past the trust predicate already holds the host user's authority. That premise does
+// not hold for a project's request (RC-D24), which the agent wrote: there the human's approval
+// at the gate is the predicate, so the gate shows the path the request truly resolves to and the
+// host never follows a link the jail can write to get there (requestPathRefusal,
+// mountsrequestbind.go); the exemption is not relied on for it.
 func rwMountRefusal(source, workspace string) string {
 	if b := paths.WritableSourceScopeBreach(source); b != nil {
 		msg := b.WhatFor("the read-write source")
@@ -518,7 +529,7 @@ func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]stri
 			continue
 		}
 		node := wsNode.key(mountsKey).elem(indices[n])
-		if writtenInTOML(node) {
+		if isWorkspaceRequest(node) {
 			if inJail() && jailOwnWorkspace(workspace) {
 				continue
 			}
@@ -527,6 +538,11 @@ func validateMountScope(config *jsonx.OrderedMap, workspace string, errs *[]stri
 			}
 			if !allowed {
 				add(errs, locatedAt(node, writableMountRequestRefusal(m)))
+				continue
+			}
+			req := WritableRequest{Mount: m, Resolved: resolveRequestHost(m.Host)}
+			if why := requestPathRefusal(req, workspace, nil); why != "" {
+				add(errs, locatedAt(node, why))
 			}
 			continue
 		}
