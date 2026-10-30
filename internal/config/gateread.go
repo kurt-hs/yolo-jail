@@ -333,15 +333,34 @@ func NewScopeCheck(workspace string, brokers []ScopeBroker, read *WorkspaceRead)
 				s.Grants = append(s.Grants, g)
 			}
 		}
-		if !brokerscope.HoldsRead(s.Grants) {
+		// A SOURCE WITH NOTHING CONCRETE TO SERVE HOLDS NOTHING EITHER: no remote and no entry is a
+		// read grant over no repository, which the gate must neither ask about nor record (the
+		// owner's "no vacuous scope approvals"; the readable form reaches the same answer by
+		// issuing grants per concrete target, scopeCheckFromReadable). The source's last approved
+		// scope, if it had one, still shows as removed, once.
+		if !brokerscope.HoldsRead(s.Grants) || !s.concrete() {
 			s.Read.Remotes, s.Entry, s.Grants, s.GrantFiles, s.UserGrants = nil, nil, nil, nil, nil
-			s.Dormant = !recordHeldRead(rec, b.Source)
+			s.Dormant = !recordHeldLiveScope(rec, b.Source)
 		} else {
-			s.FirstRead = !recordHeldRead(rec, b.Source)
+			s.FirstRead = !recordHeldLiveScope(rec, b.Source)
 		}
 		check.Sources = append(check.Sources, s)
 	}
 	return check
+}
+
+// concrete reports whether a source names any repository its broker could serve: a remote, or an
+// entry. Grants alone are not scope.
+func (s ScopeSource) concrete() bool {
+	return len(s.Read.Remotes) > 0 || len(s.Entry) > 0
+}
+
+// recordHeldLiveScope reports whether the last approval let source's broker reach anything: a
+// read grant beside at least one repository. A record holding a read grant over no repository —
+// what the gate wrote before it refused vacuous approvals — approved nothing, so it neither shows
+// a removal nor stands in for a first read.
+func recordHeldLiveScope(rec scopeRecord, source string) bool {
+	return recordHeldRead(rec, source) && len(rec[source]) > 0
 }
 
 // recordHeldRead reports whether an approval record holds a read grant for source: whether the

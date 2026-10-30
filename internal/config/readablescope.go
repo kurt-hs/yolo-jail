@@ -591,9 +591,11 @@ func scopeCheckFromReadable(workspace string, brokers []ScopeBroker, input Reada
 			source.Grants = nil
 			source.GrantFiles = nil
 			source.UserGrants = nil
-			source.Dormant = !recordHeldRead(rec, broker.Source)
+			// A record of a read grant over no repository approved nothing (recordHeldLiveScope):
+			// it shows no removal, as the legacy producer's does not (NewScopeCheck).
+			source.Dormant = !recordHeldLiveScope(rec, broker.Source)
 		} else {
-			source.FirstRead = !recordHeldRead(rec, broker.Source)
+			source.FirstRead = !recordHeldLiveScope(rec, broker.Source)
 		}
 		check.Sources = append(check.Sources, source)
 	}
