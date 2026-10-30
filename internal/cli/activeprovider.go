@@ -17,8 +17,6 @@ import (
 	"strings"
 
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
-	"github.com/mschulkind-oss/yolo-jail/internal/configdoc"
-	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/packload"
 )
 
@@ -159,13 +157,6 @@ func activeProviderRunW(args []string, out, errw io.Writer) int {
 				"  Run `yolo config migrate` to convert the file, or remove `profile` from it and rerun this command.\n", userFile)
 			return 1
 		}
-		// JSONC cannot add a nested key under a table it does not hold, so add the whole table.
-		if !configEditPathPresentInFile(userFile, config.ActiveProviderKey) {
-			key = config.ActiveProviderKey
-			table := jsonx.NewOrderedMap()
-			table.Set(agent, name)
-			value = table
-		}
 	}
 
 	rc := namedVerbSet(configEditWorkspace(), key, value, choice, dryRun, false, out, errw)
@@ -178,13 +169,4 @@ func activeProviderRunW(args []string, out, errw io.Writer) int {
 func pathExistsOnDisk(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
-}
-
-// configEditPathPresentInFile reports whether the file at path holds a top-level key.
-func configEditPathPresentInFile(path, key string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	return configEditPathPresent(data, configdoc.JSONC, []configdoc.Step{{Key: key}})
 }

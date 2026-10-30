@@ -131,7 +131,27 @@ func PlanEdit(data []byte, format configdoc.Format, m Mutation) (*Plan, error) {
 			break
 		}
 		if !parentOK {
-			return nil, fmt.Errorf("add parent does not exist")
+			// JSONC has no implicit tables: create each missing parent object, as TOML does.
+			k, anc, ok := missingJSONCParents(root, path)
+			if !ok {
+				return nil, fmt.Errorf("add parent does not exist and cannot be created: an ancestor of the key is not an object (or a missing step is an array index); fix that value in the file by hand, then rerun the command")
+			}
+			wrapped := m.Value
+			for i := len(path) - 1; i > k; i-- {
+				w := jsonx.NewOrderedMap()
+				w.Set(path[i].Key, wrapped)
+				wrapped = w
+			}
+			start, end, replacement, err = insertMember(doc, path[:k], path[k].Key, wrapped)
+			if err != nil {
+				return nil, err
+			}
+			normalized, err := semanticValue(wrapped, format)
+			if err != nil {
+				return nil, err
+			}
+			anc.Set(path[k].Key, normalized)
+			break
 		}
 		obj, ok := parent.(*jsonx.OrderedMap)
 		if !ok {
@@ -501,9 +521,10 @@ func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []co
 	multiline := bytes.Contains(data[open:close], []byte("\n")) || bytes.Contains(data[open:close], []byte("\r"))
 	if obj.Len() == 0 {
 		if multiline {
-			return open + 1, open + 1, []byte(newlineOf(data) + inferIndent(data, open) + "  " + name + ": " + string(value)), nil
+			indent := inferIndent(data, open) + "  "
+			return open + 1, open + 1, []byte(newlineOf(data) + indent + name + ": " + reindentValue(value, indent, newlineOf(data))), nil
 		}
-		return open + 1, open + 1, []byte("\n  " + name + ": " + string(value) + "\n"), nil
+		return open + 1, open + 1, []byte("\n  " + name + ": " + reindentValue(value, "  ", "\n") + "\n"), nil
 	}
 	keys := obj.Keys()
 	lastPath := append(append([]configdoc.Step(nil), parent...), configdoc.Step{Key: keys[len(keys)-1]})
@@ -561,14 +582,43 @@ func insertJSONMember(doc *configdoc.Document, table configdoc.Span, parent []co
 			out = append(out, ',')
 		}
 		out = append(out, data[last.End:end]...)
-		out = append(out, []byte(indent+name+": "+string(value)+newlineOf(data))...)
+		out = append(out, []byte(indent+name+": "+reindentValue(value, indent, newlineOf(data))+newlineOf(data))...)
 		return last.End, end, out, nil
 	}
 	if multiline {
-		return last.End, last.End, []byte("," + newlineOf(data) + inferIndent(data, last.Start) + name + ": " + string(value)), nil
+		indent := inferIndent(data, last.Start)
+		return last.End, last.End, []byte("," + newlineOf(data) + indent + name + ": " + reindentValue(value, indent, newlineOf(data))), nil
 	}
 	return last.End, last.End, []byte(", " + name + ": " + string(value)), nil
 }
+// reindentValue re-bases a multi-line encoded value so its continuation lines sit under the
+// member's own indent; the encoder always starts at column zero.
+func reindentValue(value []byte, indent, nl string) string {
+	return strings.ReplaceAll(string(value), "\n", nl+indent)
+}
+
+// missingJSONCParents finds the deepest existing ancestor object of path: k is its depth, so
+// path[k] is the first key a JSONC add must create. ok is false when that ancestor is not an
+// object or a step to create is an array index.
+func missingJSONCParents(root any, path []configdoc.Step) (k int, anc *jsonx.OrderedMap, ok bool) {
+	for k = len(path) - 1; k > 0; k-- {
+		if _, found := lookup(root, path[:k]); found {
+			break
+		}
+	}
+	v, _ := lookup(root, path[:k])
+	anc, isObj := v.(*jsonx.OrderedMap)
+	if !isObj {
+		return 0, nil, false
+	}
+	for _, s := range path[k:] {
+		if s.IsIndex {
+			return 0, nil, false
+		}
+	}
+	return k, anc, true
+}
+
 func addTOMLTable(doc *configdoc.Document, root *jsonx.OrderedMap, path []configdoc.Step, value any) (int, int, []byte, error) {
 	if len(path) < 2 {
 		return 0, 0, nil, fmt.Errorf("new TOML parent table is incomplete")
