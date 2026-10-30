@@ -561,6 +561,22 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 		}
 		return ""
 	}
+	// A remote approved now joins the reach of every ref grant on "*" the workspace holds, so its
+	// added row names them: the widening is seen where the remote is approved (GB-D25).
+	var anyRepoGrants []string
+	for _, g := range s.Grants {
+		if brokerscope.GrantTakesRef(g.Kind) && g.Repo == brokerscope.AnyRepo {
+			anyRepoGrants = append(anyRepoGrants, termsafe.Visible(g.String()))
+		}
+	}
+	covered := ""
+	switch len(anyRepoGrants) {
+	case 0:
+	case 1:
+		covered = " (now covered by the standing grant " + anyRepoGrants[0] + ")"
+	default:
+		covered = " (now covered by the standing grants " + strings.Join(anyRepoGrants, ", ") + ")"
+	}
 	inPrev := map[string]bool{}
 	for _, r := range prev {
 		inPrev[s.key(r)] = true
@@ -581,7 +597,7 @@ func scopeBlock(s ScopeSource, cur []scopeRepo, prev []string, had bool,
 		k := s.key(r.repo)
 		label := strings.Join(r.labels(), ", ")
 		if !inPrev[k] {
-			rows = append(rows, row{"+", r.repo, label, "added" + note(r.repo)})
+			rows = append(rows, row{"+", r.repo, label, "added" + note(r.repo) + covered})
 			added++
 			addFiles(r.files)
 			continue
@@ -655,10 +671,18 @@ func grantBlock(s ScopeSource, prev []string) (lines []string, count string, cha
 	for _, g := range grantStrings(s.UserGrants) {
 		fromUser[g] = true
 	}
+	// A wildcard ref grant's line says in plain words what it admits (GB-D25), as a wildcard
+	// repository row does, and so is colored with the line as other widenings are.
+	notes := map[string]string{}
+	for _, g := range s.Grants {
+		if n := brokerscope.GrantNote(g); n != "" {
+			notes[g.String()] = " (" + n + ")"
+		}
+	}
 	for _, g := range grantStrings(s.Grants) {
-		suffix := ""
+		suffix := notes[g]
 		if fromUser[g] {
-			suffix = " (from your user config, for every workspace)"
+			suffix += " (from your user config, for every workspace)"
 		}
 		if inPrev[g] {
 			delete(inPrev, g)

@@ -200,21 +200,8 @@ func (r *WorkspaceRead) Grants(source string, defined []string) (grants []broker
 		if !ok {
 			continue
 		}
-		kv, _ := m.Get(brokeredGrantKindKey)
-		rv, _ := m.Get(brokeredGrantRepoKey)
-		bv, hasBranch := m.Get(brokeredGrantBranchKey)
-		kind, _ := kv.(string)
-		repo, _ := rv.(string)
-		branch, branchOK := bv.(string)
-		keys := 2
-		if hasBranch {
-			keys = 3
-		}
-		// A branch is part of the grant only for a kind that names one (ValidGrant refuses it on
-		// any other, and refuses a branch grant without one).
-		g := brokerscope.Grant{Kind: kind, Repo: repo, Branch: branch}
-		if len(m.Keys()) != keys || (hasBranch && !branchOK) || !brokerscope.ValidGrant(g) ||
-			!inList(defined, kind) || !inList(allowed, kind) {
+		g, ok := grantEntry(m)
+		if !ok || !inList(defined, g.Kind) || !inList(allowed, g.Kind) {
 			continue
 		}
 		dup := false

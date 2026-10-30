@@ -211,6 +211,8 @@ func ReadableSchemaKeys() []SchemaKey {
 		{Path: "requests.git.push", Scope: workspace, Type: SchemaTypeList},
 		{Path: "requests.git.push.*", Scope: workspace, Type: SchemaTypeString},
 		{Path: "requests.git.new_branches", Scope: workspace, Type: SchemaTypeBoolean},
+		{Path: "requests.git.push_tags", Scope: workspace, Type: SchemaTypeList},
+		{Path: "requests.git.push_tags.*", Scope: workspace, Type: SchemaTypeString},
 		{Path: "requests.*.repos", Scope: workspace, Type: SchemaTypeList},
 		{Path: "requests.*.repos.*", Scope: workspace, Type: SchemaTypeString},
 		{Path: "requests.github.repos", Scope: workspace, Type: SchemaTypeList},
@@ -405,7 +407,7 @@ func legacySchemaType(path string) SchemaType {
 		"devices.*.usb", "devices.*.description", "devices.*.cgroup_rule",
 		"gpu.devices", "gpu.capabilities", "gpu.vendor", "gpu.mode", "gpu.hsa_override_gfx_version",
 		"network.mode", "resources.memory",
-		"brokered.*.grants.*.kind", "brokered.*.grants.*.repo", "brokered.*.grants.*.branch",
+		"brokered.*.grants.*.kind", "brokered.*.grants.*.repo", "brokered.*.grants.*.branch", "brokered.*.grants.*.tag",
 		"brokered.*.sets.*.name", "brokered.*.sets.*.mode", "brokered.*.sets.*.window",
 		"brokered.*.sets.*.max_window":
 		return SchemaTypeString

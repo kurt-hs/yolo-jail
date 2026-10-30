@@ -101,19 +101,27 @@ func TestRefusedUpdateHintOmitsAKindAlreadyAllowed(t *testing.T) {
 	}
 }
 
-// A tag is never covered, so its hint says it asks for approval, names the host push and
-// suggests no grant.
-func TestRefusedTagNamesTheHostPush(t *testing.T) {
+// A tag no grant covers asks for approval, and its hint names the tag grant that would cover it
+// (GB-D25) and the host push; following the hint makes the same push land.
+func TestRefusedTagNamesTheTagGrant(t *testing.T) {
 	f := grantedFixture(t)
 	f.commit("one")
 	out, err := f.git("push", "origin", "HEAD:refs/tags/v1")
 	if err == nil {
 		t.Fatalf("a tag landed:\n%s", out)
 	}
-	if !strings.Contains(out, "refs/tags/v1: a tag is never in the working set") || !strings.Contains(out, "asks for approval") || !strings.Contains(out, "from the host") {
-		t.Fatalf("no tag hint:\n%s", out)
+	g := suggestedGrant(t, out, "refs/tags/v1")
+	if g != (brokerscope.Grant{Kind: "tag", Repo: fixtureRepo, Tag: "v1"}) {
+		t.Fatalf("suggested %+v", g)
 	}
-	if strings.Contains(out, `{"kind":`) {
-		t.Fatalf("a grant was suggested for a tag:\n%s", out)
+	for _, want := range []string{"no tag grant covers it", "asks for approval", "from the host", "grant_kinds", "yolo config apply"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("the tag hint lacks %q:\n%s", want, out)
+		}
+	}
+	f.approve(t, g)
+	f.mustPush("origin", "HEAD:refs/tags/v1")
+	if got, want := f.upstreamRef("refs/tags/v1"), mustGit(t, f.ws, "rev-parse", "HEAD"); got != want {
+		t.Fatalf("after following the hint, upstream v1 %q, local HEAD %q", got, want)
 	}
 }

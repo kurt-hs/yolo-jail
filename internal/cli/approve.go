@@ -411,16 +411,16 @@ func approveRevoke(ctx context.Context, stores []*brokerstore.Store, revoke, wor
 		// Only branches declared in config match: the listing would show the same path again,
 		// so name what holds them instead.
 		fmt.Fprintf(errs, "yolo approve: nothing in the store to revoke for %s: no live grant or recorded working-set entry. "+
-			"Its working set holds only branches declared in config:\n", shown)
+			"It holds only branches and tags declared in config:\n", shown)
 		files := []string{}
 		for _, b := range declared {
-			fmt.Fprintf(errs, "  refs/heads/%s of %s, declared in config in %s\n", termsafe.Visible(b.Branch), termsafe.Visible(b.Repo), termsafe.Visible(b.File))
+			fmt.Fprintf(errs, "  %s of %s, declared in config in %s\n", termsafe.Visible(b.ref()), termsafe.Visible(b.Repo), termsafe.Visible(b.File))
 			if !slices.Contains(files, b.File) {
 				files = append(files, b.File)
 			}
 		}
-		fmt.Fprintf(errs, "Next: remove each {\"kind\": \"branch\", …} entry under `brokered.git.grants` in %s (or its local "+
-			"file), then run `yolo config apply` in %s; or remove `branch` from `brokered.git.grant_kinds` in your user "+
+		fmt.Fprintf(errs, "Next: remove each {\"kind\": \"branch\", …} or {\"kind\": \"tag\", …} entry under `brokered.git.grants` in %s (or its local "+
+			"file), then run `yolo config apply` in %s; or remove `branch` and `tag` from `brokered.git.grant_kinds` in your user "+
 			"config. The broker reads both at the next push.\n", termsafe.Visible(strings.Join(files, ", ")), shown)
 		return approveExitUnknownID
 	}
@@ -435,19 +435,24 @@ func approveRevoke(ctx context.Context, stores []*brokerstore.Store, revoke, wor
 
 // configGrantNote says what `--revoke all --workspace` cannot end: a grant written in config,
 // which the launch puts in the scope file and the broker re-reads at every push (ID-9, ID-10).
-const configGrantNote = "A create-branch or branch grant in the project's config stays, so the agent can still create " +
-	"a new branch, and every branch a branch grant declares stays in the working set: " +
+const configGrantNote = "A create-branch, branch or tag grant in the project's config stays, so the agent can still create " +
+	"a new branch, every branch a branch grant declares stays in the working set, and every tag a tag grant names stays pushable: " +
 	"remove it from the workspace's yolo-jail.jsonc (`brokered.git.grants`), or remove the kind from " +
 	"`brokered.git.grant_kinds` in your user config, which takes effect at the next push."
 
-// configBranch is a working-set branch a `branch` grant declares in a workspace's config, as the
-// scope file of a running broker holds it (docs/design/git-broker.md GB-D13). It is never in the
-// store: the config holds it, so `yolo approve` lists it and cannot revoke it.
+// configBranch is a working-set branch a `branch` grant declares in a workspace's config, or the
+// tags a `tag` grant covers, as the scope file of a running broker holds it
+// (docs/design/git-broker.md GB-D13, GB-D25). Branch is the grant's name, a pattern included, and
+// Kind is `branch` or `tag`. It is never in the store: the config holds it, so `yolo approve`
+// lists it and cannot revoke it.
 type configBranch struct {
-	ID, Source, Workspace, Repo, Branch string
+	ID, Source, Workspace, Repo, Branch, Kind string
 	// File is the workspace's config file, where the grant is declared (or its local file).
 	File, LocalFile string
 }
+
+// ref is the declared ref, or its pattern, under its namespace: refs/heads/main, refs/tags/v*.
+func (b configBranch) ref() string { return brokerscope.RefNamespace(b.Kind) + b.Branch }
 
 // storeConfigBranches is configBranches for the git source's store, the one source whose grants
 // declare branches, and none for any other. The scope files sit beside the store, so a store
@@ -474,10 +479,15 @@ func configBranches(ctx context.Context, source string) []configBranch {
 	seen := map[string]bool{}
 	for _, lf := range files {
 		for _, g := range lf.File.Grants {
-			if g.Kind != brokerscope.KindBranch {
+			if !brokerscope.GrantTakesRef(g.Kind) {
 				continue
 			}
-			sum := sha256.Sum256([]byte(lf.File.Workspace + "\x00" + g.Repo + "\x00" + g.Branch))
+			key := lf.File.Workspace + "\x00" + g.Repo + "\x00" + g.Name()
+			if g.Kind != brokerscope.KindBranch {
+				// A branch grant's id is unchanged since it was the only kind listed.
+				key = g.Kind + "\x00" + key
+			}
+			sum := sha256.Sum256([]byte(key))
 			id := configBranchIDPrefix + hex.EncodeToString(sum[:16])
 			if seen[id] {
 				continue
@@ -487,7 +497,7 @@ func configBranches(ctx context.Context, source string) []configBranch {
 			if file == "" {
 				file = config.WorkspaceConfigName
 			}
-			b := configBranch{ID: id, Source: source, Workspace: lf.File.Workspace, Repo: g.Repo, Branch: g.Branch,
+			b := configBranch{ID: id, Source: source, Workspace: lf.File.Workspace, Repo: g.Repo, Branch: g.Name(), Kind: g.Kind,
 				File: filepath.Join(lf.File.Workspace, file)}
 			if lf.File.LocalFile != "" {
 				b.LocalFile = filepath.Join(lf.File.Workspace, lf.File.LocalFile)
@@ -499,13 +509,18 @@ func configBranches(ctx context.Context, source string) []configBranch {
 	return out
 }
 
-// printConfigBranches lists the config-declared working-set branches, one line each, marked as
-// from config and naming the file that declares them.
+// printConfigBranches lists the config-declared working-set branches and tag grants, one line
+// each, marked as from config and naming the file that declares them. A pattern is shown as
+// written, under its namespace, and a repository "*" as written.
 func printConfigBranches(out io.Writer, bs []configBranch) {
 	for _, b := range bs {
-		fmt.Fprintf(out, "%s  working set  %s  [%s]  repo %s  branch refs/heads/%s  from config %s\n", b.ID,
-			termsafe.Visible(b.Source), termsafe.Visible(b.Workspace), termsafe.Visible(b.Repo), termsafe.Visible(b.Branch),
-			termsafe.Visible(b.File))
+		set := "working set"
+		if b.Kind == brokerscope.KindTag {
+			set = "tag grant"
+		}
+		fmt.Fprintf(out, "%s  %s  %s  [%s]  repo %s  %s %s  from config %s\n", b.ID, set,
+			termsafe.Visible(b.Source), termsafe.Visible(b.Workspace), termsafe.Visible(b.Repo), b.Kind,
+			termsafe.Visible(b.ref()), termsafe.Visible(b.File))
 	}
 }
 
@@ -516,10 +531,14 @@ func refuseConfigBranchRevoke(b configBranch, errs io.Writer) int {
 	if b.LocalFile != "" {
 		where += " (or its local file " + termsafe.Visible(b.LocalFile) + ", if it is declared there)"
 	}
-	fmt.Fprintf(errs, "yolo approve: %s is a working-set branch declared in config (refs/heads/%s of %s), not one the broker "+
-		"recorded, so there is nothing to revoke here.\nNext: remove its {\"kind\": \"branch\", …} entry under "+
+	what := "a working-set branch"
+	if b.Kind == brokerscope.KindTag {
+		what = "a tag grant"
+	}
+	fmt.Fprintf(errs, "yolo approve: %s is %s declared in config (%s of %s), not one the broker "+
+		"recorded, so there is nothing to revoke here.\nNext: remove its {\"kind\": \"%s\", …} entry under "+
 		"`brokered.%s.grants` in %s, then run `yolo config apply` in %s; the broker reads it at the next push.\n",
-		b.ID, termsafe.Visible(b.Branch), termsafe.Visible(b.Repo), termsafe.Visible(b.Source), where, termsafe.Visible(b.Workspace))
+		b.ID, what, termsafe.Visible(b.ref()), termsafe.Visible(b.Repo), b.Kind, termsafe.Visible(b.Source), where, termsafe.Visible(b.Workspace))
 	return approveExitPolicy
 }
 
@@ -629,7 +648,7 @@ func withConfigBranches(ctx context.Context, stores []*brokerstore.Store, v brok
 	for _, s := range stores {
 		for _, b := range storeConfigBranches(ctx, s) {
 			v.Working = append(v.Working, brokerstore.WorkingView{Schema: brokerstore.Schema, ID: b.ID, Source: b.Source,
-				Workspace: b.Workspace, Repo: b.Repo, Kind: brokerstore.WorkingBranch, Resource: "refs/heads/" + b.Branch,
+				Workspace: b.Workspace, Repo: b.Repo, Kind: b.Kind, Resource: b.ref(),
 				By: configBranchBy, File: b.File})
 		}
 	}

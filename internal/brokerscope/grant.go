@@ -12,24 +12,35 @@ import (
 // config allows, as the config-change gate approved them. The file carries them for the broker
 // to read at each write; the scope file is still written only from a gate's approved result.
 
-// Grant is one user grant: its kind (`create-branch`, `branch`) and the repository it covers,
-// a repository identity (`github.com/o/r`, gitproto.Identity) or AnyRepo. A kind that names a
-// branch (GrantTakesBranch) carries it in Branch, and no other kind has one.
+// Grant is one user grant: its kind (`create-branch`, `branch`, `tag`) and the repository it
+// covers, a repository identity (`github.com/o/r`, gitproto.Identity) or AnyRepo. A kind that
+// names a ref (GrantTakesRef) carries its name in Branch (`branch`) or Tag (`tag`), and no other
+// kind has either.
 type Grant struct {
 	Kind string `json:"kind"`
 	Repo string `json:"repo"`
-	// Branch is a `branch` grant's branch, one branch's short name (`main`, meaning
-	// refs/heads/main): a working-set branch declared in config (docs/design/git-broker.md
-	// GB-D12, GB-D13).
+	// Branch is a `branch` grant's branch, a short name or a refspec pattern (`main`, meaning
+	// refs/heads/main; `patch/*`, every branch under refs/heads/patch/): working-set branches
+	// declared in config (docs/design/git-broker.md GB-D12, GB-D13, GB-D25).
 	Branch string `json:"branch,omitempty"`
+	// Tag is a `tag` grant's tag, a short name or a refspec pattern (`v*`, every tag under
+	// refs/tags/ starting with v): tags the broker may create, update, force-update and delete
+	// unasked (docs/design/git-broker.md GB-D25).
+	Tag string `json:"tag,omitempty"`
 }
 
 // AnyRepo is a grant's written-out wildcard: every repository the scope holds.
 const AnyRepo = "*"
 
-// KindBranch is the grant kind that names a branch: that branch is in the workspace's working
-// set, declared in config rather than recorded in the store (docs/design/git-broker.md GB-D12).
+// KindBranch is the grant kind that names a branch, or a pattern of them: such a branch is in
+// the workspace's working set, declared in config rather than recorded in the store
+// (docs/design/git-broker.md GB-D12, GB-D25).
 const KindBranch = "branch"
+
+// KindTag is the grant kind that names a tag, or a pattern of them, under refs/tags/: the broker
+// may create, update, force-update and delete such a tag unasked (docs/design/git-broker.md
+// GB-D25). A tag never joins the working set; the config holds the grant.
+const KindTag = "tag"
 
 // KindRead is the grant kind every brokered source defines without declaring it: reading the
 // repositories of the approved scope (docs/design/boundary-broker.md BB-D105, BB-D107). A broker
@@ -61,12 +72,94 @@ func HoldsRead(grants []Grant) bool {
 // GrantTakesBranch reports whether a grant of kind names a branch.
 func GrantTakesBranch(kind string) bool { return kind == KindBranch }
 
+// GrantTakesRef reports whether a grant of kind names a ref, a branch or a tag, by short name or
+// pattern.
+func GrantTakesRef(kind string) bool { return kind == KindBranch || kind == KindTag }
+
+// RefNamespace is where a ref-naming kind's names live: refs/heads/ for `branch`, refs/tags/
+// for `tag`, "" for any other kind.
+func RefNamespace(kind string) string {
+	switch kind {
+	case KindBranch:
+		return "refs/heads/"
+	case KindTag:
+		return "refs/tags/"
+	}
+	return ""
+}
+
+// RefGrant is the grant of kind on repo naming name, in the field the kind uses. For a kind that
+// names no ref, name is dropped.
+func RefGrant(kind, repo, name string) Grant {
+	g := Grant{Kind: kind, Repo: repo}
+	switch kind {
+	case KindBranch:
+		g.Branch = name
+	case KindTag:
+		g.Tag = name
+	}
+	return g
+}
+
+// Name is the ref name or pattern a ref-naming grant holds, its Branch or its Tag.
+func (g Grant) Name() string {
+	if g.Branch != "" {
+		return g.Branch
+	}
+	return g.Tag
+}
+
+// Wildcard reports whether a ref-naming grant reaches further than one ref on one repository:
+// its repository is AnyRepo, or its name is a pattern.
+func (g Grant) Wildcard() bool {
+	return GrantTakesRef(g.Kind) && (g.Repo == AnyRepo || strings.Contains(g.Name(), "*"))
+}
+
+// Covers reports whether a ref-naming grant covers the full ref on repo: the kind's namespace
+// holds ref, the grant's name matches its short name (RefPatternMatches), and the grant's
+// repository is repo or AnyRepo. same compares a grant's repository with repo, as ReadCovers's
+// does.
+func (g Grant) Covers(repo, ref string, same func(grantRepo, repo string) bool) bool {
+	ns := RefNamespace(g.Kind)
+	short, ok := strings.CutPrefix(ref, ns)
+	if ns == "" || !ok || g.Name() == "" {
+		return false
+	}
+	return (g.Repo == AnyRepo || same(g.Repo, repo)) && RefPatternMatches(g.Name(), short)
+}
+
+// AnyRemoteNote ends a wildcard grant's note when its repository is AnyRepo.
+const AnyRemoteNote = "every remote in scope now and any approved later"
+
+// GrantNote is plain words for what a wildcard ref grant admits, for the gate's grant line
+// (docs/design/git-broker.md GB-D25): "may create, update, force-push and delete branches
+// matching `patch/*` on github.com/o/r". It is "" for a grant naming one ref on one repository,
+// which reads plainly as it is, and for a kind that names no ref.
+func GrantNote(g Grant) string {
+	if !g.Wildcard() {
+		return ""
+	}
+	what := "`" + g.Name() + "`"
+	if strings.Contains(g.Name(), "*") {
+		plural := "branches"
+		if g.Kind == KindTag {
+			plural = "tags"
+		}
+		what = plural + " matching " + what
+	}
+	on := g.Repo
+	if g.Repo == AnyRepo {
+		on = AnyRemoteNote
+	}
+	return "may create, update, force-push and delete " + what + " on " + on
+}
+
 // String is the grant as the gate's block and the approval record spell it: `<kind> <repo>`,
-// then ` <branch>` for a kind that names one. No part can hold a space (ValidGrant), so the
+// then ` <name>` for a kind that names a ref. No part can hold a space (ValidGrant), so the
 // spelling parses back (ParseGrant).
 func (g Grant) String() string {
-	if g.Branch != "" {
-		return g.Kind + " " + g.Repo + " " + g.Branch
+	if name := g.Name(); name != "" {
+		return g.Kind + " " + g.Repo + " " + name
 	}
 	return g.Kind + " " + g.Repo
 }
@@ -74,31 +167,35 @@ func (g Grant) String() string {
 // ParseGrant reads a String spelling back, ok false for anything ValidGrant refuses.
 func ParseGrant(s string) (Grant, bool) {
 	kind, rest, found := strings.Cut(s, " ")
-	repo, branch, _ := strings.Cut(rest, " ")
-	g := Grant{Kind: kind, Repo: repo, Branch: branch}
+	repo, name, _ := strings.Cut(rest, " ")
+	g := Grant{Kind: kind, Repo: repo, Branch: name}
+	if kind == KindTag {
+		g = Grant{Kind: kind, Repo: repo, Tag: name}
+	}
 	return g, found && ValidGrant(g)
 }
 
 // ValidGrant reports whether g is well formed: a grant-kind name, a repository the grant can
-// name, and a branch exactly when the kind names one. It says nothing of whether a source
-// defines the kind or the user allows it.
+// name, and a ref name or pattern exactly when the kind names one, in that kind's own field. It
+// says nothing of whether a source defines the kind or the user allows it.
 func ValidGrant(g Grant) bool {
 	if !validGrantKind(g.Kind) || !ValidGrantRepo(g.Repo) {
 		return false
 	}
-	if GrantTakesBranch(g.Kind) {
-		// A branch grant names one repository (git-broker.md GB-D13): "*" would put the branch
-		// on every approved remote in the working set.
-		return g.Repo != AnyRepo && ValidGrantBranch(g.Branch)
+	switch g.Kind {
+	case KindBranch:
+		return g.Tag == "" && ValidGrantRefPattern(g.Branch)
+	case KindTag:
+		return g.Branch == "" && ValidGrantRefPattern(g.Tag)
 	}
-	return g.Branch == ""
+	return g.Branch == "" && g.Tag == ""
 }
 
-// ValidGrantBranch reports whether s is a branch a `branch` grant can name: one branch's short
-// name that git accepts as refs/heads/<s> (git check-ref-format's rules), that does not start
+// ValidGrantBranch reports whether s is one ref's short name a grant can name: one name git
+// accepts as refs/heads/<s> or refs/tags/<s> (git check-ref-format's rules), that does not start
 // with `-` and is not `HEAD` (which `git branch` refuses too), and that is not itself written as
-// `refs/…` (the short name is what the grant means). There is no wildcard, and tags and other
-// refs are never nameable: the grant is under refs/heads/ by construction.
+// `refs/…` (the short name is what the grant means). It takes no wildcard: a pattern is
+// ValidGrantRefPattern's.
 func ValidGrantBranch(s string) bool {
 	if s == "" || s == "HEAD" || s == "@" || s[0] == '-' || strings.HasPrefix(s, "refs/") {
 		return false
@@ -117,6 +214,29 @@ func ValidGrantBranch(s string) bool {
 		}
 	}
 	return true
+}
+
+// ValidGrantRefPattern reports whether s is a name a `branch` or `tag` grant can take: a short
+// name ValidGrantBranch accepts, or git's own refspec pattern, the same with one `*` anywhere in
+// it (git check-ref-format --refspec-pattern; docs/design/git-broker.md GB-D25). The `*` is
+// checked as an ordinary name character standing in its place, which is what git's own check
+// does; a second `*` is refused.
+func ValidGrantRefPattern(s string) bool {
+	if strings.Count(s, "*") > 1 {
+		return false
+	}
+	return ValidGrantBranch(strings.Replace(s, "*", "x", 1))
+}
+
+// RefPatternMatches reports whether a grant's name, a short name or a one-`*` pattern, matches
+// the short name name. The `*` matches any run of characters, `/` and the empty run included,
+// as git's own refspec glob does: `patch/*` matches `patch/a/b`, and `v*` matches `v1.2`.
+func RefPatternMatches(pattern, name string) bool {
+	prefix, suffix, star := strings.Cut(pattern, "*")
+	if !star {
+		return pattern == name
+	}
+	return len(name) >= len(prefix)+len(suffix) && strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix)
 }
 
 // validGrantKind is loopholedecl.ValidGrantKind, restated so this package does not import the
@@ -154,7 +274,7 @@ func ValidGrantRepo(s string) bool {
 func checkGrants(grants []Grant) error {
 	for _, g := range grants {
 		if !ValidGrant(g) {
-			return fmt.Errorf("scope file: grant %q is not a grant kind, a repository identity and, for a branch grant, a branch", g.String())
+			return fmt.Errorf("scope file: grant %q is not a grant kind, a repository identity and, for a branch or tag grant, one name or pattern with at most one `*`", g.String())
 		}
 	}
 	return nil

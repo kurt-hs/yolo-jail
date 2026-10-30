@@ -31,8 +31,10 @@ With the broker running:
   `create-branch` grant on the repository, you may push a branch that does not exist on the
   remote yet; once the remote accepts it, it joins this workspace's working set, and later pushes
   to it (updates, force-pushes, deletes) go through too, in this jail and in later ones. A
-  `branch` grant in the workspace config declares a branch (such as `main`) in the working set
-  too: you may create, push, force-push and delete it like one you created. Unless the working set
+  `branch` grant in the workspace config declares a branch (such as `main`), or every branch a
+  pattern matches (such as `patch/*`), in the working set too: you may create, push, force-push
+  and delete it like one you created. A `tag` grant covers the tags it names (such as `v*`) the
+  same way. Either may name one repository or `"*"`, every approved remote. Unless the working set
   holds it, push your work to a new branch of your own, not to `main` or a branch someone else
   created.
 - **Any other push of branches or tags asks the user.** It files one request for the whole push
@@ -43,9 +45,10 @@ With the broker running:
   Allow once covers exactly that push, once: a different push (another commit, another ref) asks
   again. `(needs approval: r-<id>, denied on the host)` means the user said no: do not push it
   again without asking them. A new branch the user allowed once joins the working set like one a
-  `create-branch` grant created. To push a branch without asking each time, the user can grant
-  `create-branch`, or a `branch` grant for that branch, in the workspace config and approve it
-  with `yolo config apply`. A ref outside `refs/heads/` and `refs/tags/` is never pushed through
+  `create-branch` grant created. To push a branch or tag without asking each time, the user can
+  grant `create-branch`, a `branch` grant for that branch, or a `tag` grant for that tag, in the
+  workspace config and approve it with `yolo config apply`; the refused ref's line names the
+  grant. A ref outside `refs/heads/` and `refs/tags/` is never pushed through
   the broker, and a push that holds one asks nothing: push that from the host.
 - A remote outside the approved scope is refused for SSH and push. A public HTTPS fetch may be
   tried anonymously outside that scope; if it asks for credentials, it is refused naming the

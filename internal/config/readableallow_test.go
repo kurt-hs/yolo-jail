@@ -30,8 +30,8 @@ func readableMap(t *testing.T, text string) *jsonx.OrderedMap {
 
 func readableBrokerDeclarations() []config.ReadableBrokerDeclaration {
 	return []config.ReadableBrokerDeclaration{
-		{Pack: "git", Label: "git-broker", Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "*", Grants: []string{"create-branch", "branch"}},
-			ReadCapability: "fetch", KindCapabilities: map[string]string{"create-branch": "new_branches", "branch": "push"}},
+		{Pack: "git", Label: "git-broker", Brokered: loopholedecl.Brokered{Source: "git", RemoteHost: "*", Grants: []string{"create-branch", "branch", "tag"}},
+			ReadCapability: "fetch", KindCapabilities: map[string]string{"create-branch": "new_branches", "branch": "push", "tag": "push_tags"}},
 		{Pack: "github", Label: "github-broker", Brokered: loopholedecl.Brokered{Source: "github", RemoteHost: "github.com"},
 			ReadCapability: "read", KindCapabilities: map[string]string{}},
 	}
@@ -49,13 +49,32 @@ func TestReadableAllowanceNormalizesCeilingsAndSkipsOutsideRequest(t *testing.T)
 	}
 }
 
+// The readable spellings take patterns and tags as the JSONC grants do (git-broker.md GB-D25):
+// `requests.git.push` names branch patterns, `requests.git.push_tags` tag patterns.
+func TestReadableAllowanceTakesPatternsAndTags(t *testing.T) {
+	input := config.ReadableAllowanceInput{User: readableMap(t, `{"allow":{"git":{"always":["fetch"],"on_request":["push","push_tags"]}}}`),
+		Workspace: readableMap(t, `{"requests":{"git":{"push":["patch/*"],"push_tags":["v*"]}}}`), SelectedPacks: []string{"git"}, Declarations: readableBrokerDeclarations()}
+	plan, err := config.ResolveReadableAllowance(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	granted := map[string]bool{}
+	for _, r := range plan.Requests {
+		granted[r.Path] = r.Status == config.ReadableRequestGranted
+	}
+	if !granted["requests.git.push"] || !granted["requests.git.push_tags"] {
+		t.Fatalf("request decisions = %#v", plan.Requests)
+	}
+}
+
 func TestReadableAllowanceRejectsMalformedValuesAndUndeclaredKinds(t *testing.T) {
 	for _, tc := range []struct{ name, user, project, want string }{
 		{"bad list type", `{"allow":{"git":{"always":["fetch"]}}}`, `{"requests":{"git":{"push":true}}}`, "requests.git.push"},
 		{"unknown allowance", `{"allow":{"git":{"always":["mystery"]}}}`, `{}`, "declared capabilities"},
 		{"unknown declared request regardless of ceiling", `{}`, `{"requests":{"github":{"create_pr":true}}}`, "not a canonical request"},
 		{"wildcard source rejects repo list", `{"allow":{"git":{"always":["fetch"]}}}`, `{"requests":{"git":{"repos":["acme/tools"]}}}`, "remote_host"},
-		{"invalid branch is fatal", `{}`, `{"requests":{"git":{"push":["bad..name"]}}}`, "valid concrete branch"},
+		{"invalid branch is fatal", `{}`, `{"requests":{"git":{"push":["bad..name"]}}}`, "is not a ref name a grant can take"},
+		{"two stars are fatal", `{}`, `{"requests":{"git":{"push_tags":["v*.*"]}}}`, "is not a ref name a grant can take"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			input := config.ReadableAllowanceInput{User: readableMap(t, tc.user), Workspace: readableMap(t, tc.project), SelectedPacks: []string{"git", "github"}, Declarations: readableBrokerDeclarations()}

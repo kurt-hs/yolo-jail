@@ -232,11 +232,11 @@ func TestShippedGitBrokerDefinesCreateBranch(t *testing.T) {
 	}
 }
 
-// TestShippedGitBrokerDefinesBranch pins the branch grant kind in the shipped git-broker
-// manifest (docs/design/git-broker.md GB-D12): without it every workspace grant of `branch`
-// is refused by `yolo check` ("it defines: create-branch"), which is how a missing create-branch
+// TestShippedGitBrokerDefinesBranchAndTag pins the branch and tag grant kinds in the shipped
+// git-broker manifest (docs/design/git-broker.md GB-D12, GB-D25): without one, every workspace
+// grant of that kind is refused by `yolo check` ("it defines: create-branch"), which is how a missing create-branch
 // broke task 9's first live run while every package test stayed green.
-func TestShippedGitBrokerDefinesBranch(t *testing.T) {
+func TestShippedGitBrokerDefinesBranchAndTag(t *testing.T) {
 	lp, err := LoadPackLoophole(shippedLoopholeModule(t, "git-broker", "git"))
 	if err != nil {
 		t.Fatalf("load git-broker: %v", err)
@@ -244,7 +244,10 @@ func TestShippedGitBrokerDefinesBranch(t *testing.T) {
 	if lp.Brokered == nil {
 		t.Fatal("git-broker: no brokered block")
 	}
-	if got := strings.Join(lp.Brokered.Grants, ","); got != "create-branch,branch" {
-		t.Errorf("git-broker: brokered.grants = %q, want \"create-branch,branch\"", got)
+	if got := strings.Join(lp.Brokered.Grants, ","); got != "create-branch,branch,tag" {
+		t.Errorf("git-broker: brokered.grants = %q, want \"create-branch,branch,tag\"", got)
+	}
+	if got := lp.Brokered.KindCapabilities["tag"]; got != "push_tags" {
+		t.Errorf("git-broker: kind_capabilities.tag = %q, want \"push_tags\"", got)
 	}
 }

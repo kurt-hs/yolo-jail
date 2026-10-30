@@ -429,6 +429,64 @@ func TestApproveListsAndRefusesToRevokeAConfigBranch(t *testing.T) {
 	}
 }
 
+// A pattern branch grant and a tag grant (docs/design/git-broker.md GB-D25) are listed as the
+// config declares them: the pattern under its namespace, the repository "*" as written, and a
+// tag grant as a tag; --json carries each with its kind.
+func TestApproveListsPatternAndTagGrants(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("YOLO_VERSION", "")
+	t.Setenv("YOLO_USER_LAYER", "")
+	ws := "/home/u/code/app"
+	f := brokerscope.File{Source: "git", LaunchID: "cfgpattern", Workspace: ws, Container: "c", PID: os.Getpid(),
+		Form: brokerscope.FormRemoteURL, Repos: []string{"git@github.com:o/r.git"}, ConfigFile: "yolo-jail.jsonc",
+		Grants: []brokerscope.Grant{{Kind: "branch", Repo: "*", Branch: "patch/*"}, {Kind: "tag", Repo: "github.com/o/r", Tag: "v*"}}}
+	path, err := brokerscope.Write(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := brokerscope.BindBroker(path, f, "start", func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	listing := captureStdout(t, func() {
+		if rc := registry["approve"]([]string{"approve"}); rc != 0 {
+			t.Fatalf("list: %d", rc)
+		}
+	})
+	for _, want := range []string{"repo *  branch refs/heads/patch/*  from config", "repo github.com/o/r  tag refs/tags/v*  from config"} {
+		if !strings.Contains(listing, want) {
+			t.Fatalf("the listing lacks %q:\n%s", want, listing)
+		}
+	}
+	var tagID string
+	for _, l := range strings.Split(listing, "\n") {
+		if strings.Contains(l, "refs/tags/v*") {
+			tagID = strings.Fields(l)[0]
+		}
+	}
+	var rc int
+	refusal := captureStderr(t, func() { rc = registry["approve"]([]string{"approve", "--revoke", tagID}) })
+	if rc != approveExitPolicy || !strings.Contains(refusal, `{"kind": "tag", …}`) || !strings.Contains(refusal, "refs/tags/v*") {
+		t.Fatalf("revoke %s: %d\n%s", tagID, rc, refusal)
+	}
+	js := captureStdout(t, func() {
+		if rc := registry["approve"]([]string{"approve", "--json"}); rc != 0 {
+			t.Fatalf("--json: %d", rc)
+		}
+	})
+	var state brokerstore.StateView
+	if err := json.Unmarshal([]byte(js), &state); err != nil {
+		t.Fatalf("--json: %v\n%s", err, js)
+	}
+	got := map[string]string{}
+	for _, w := range state.Working {
+		got[w.Resource] = w.Kind + " " + w.Repo
+	}
+	if got["refs/heads/patch/*"] != "branch *" || got["refs/tags/v*"] != "tag github.com/o/r" {
+		t.Fatalf("--json working %+v", state.Working)
+	}
+}
+
 func TestApproveRevokeAllWorkspace(t *testing.T) {
 	gh := &brokerstore.Store{Dir: t.TempDir(), Source: "github", Revalidate: func(q brokerstore.Request) (brokerstore.Policy, error) { return q.Policy, nil }}
 	grantIn := func(ws string) brokerstore.Grant {

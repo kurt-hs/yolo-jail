@@ -205,12 +205,13 @@ func TestAllowOnceCreationJoinsTheWorkingSet(t *testing.T) {
 	}
 }
 
-// A tag asks too (GB-D18); allowed, it is pushed and never joins the working set.
+// A tag no grant covers asks too (GB-D18, GB-D25); allowed, it is pushed and never joins the
+// working set.
 func TestTagPushAsksForApproval(t *testing.T) {
 	f := newFixture(t, "")
 	mustGit(t, f.ws, "tag", "v1")
 	out, err := f.git("push", "origin", "refs/tags/v1")
-	if !strings.Contains(out, "every tag push asks for approval") {
+	if !strings.Contains(out, "no tag grant covers it, so this push asks for approval") {
 		t.Fatalf("the tag's line does not say it asks:\n%s", out)
 	}
 	allow(t, refusedRequest(t, out, err))

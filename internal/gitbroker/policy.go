@@ -15,15 +15,19 @@ import (
 )
 
 // policy.go is what covers a pushed ref (docs/design/git-broker.md §5 and §5.1, GB-D12, GB-D13,
-// docs/design/git-broker-plan.md ID-9 and ID-11):
+// GB-D25, docs/design/git-broker-plan.md ID-9 and ID-11):
 //
 //   - a creation (old id all zeros) under refs/heads/ is covered by an approved `create-branch`
 //     grant on the repository, or on `*`, while the user's own config still lists the kind;
 //   - a creation, update or delete under refs/heads/ is covered by the workspace's working set:
 //     a live entry in the store for that workspace, repository and ref, or a branch an approved
-//     `branch` grant declares in config while the user's own config still lists the kind;
-//   - nothing else is covered: tags, and any branch outside the working set, need approval,
-//     which the push asks for (approval.go).
+//     `branch` grant declares in config (by name, or by a pattern matching it, on the
+//     repository or on `*`) while the user's own config still lists the kind;
+//   - a creation, update or delete under refs/tags/ is covered by an approved `tag` grant whose
+//     name or pattern matches the tag, on the repository or on `*`, while the user's own config
+//     still lists the kind; a tag never joins the working set;
+//   - nothing else is covered: any other tag or branch needs approval, which the push asks for
+//     (approval.go).
 //
 // The live scope file's grants and the user config's `grant_kinds` are read at every push, so
 // a `yolo config apply` or an edit of the user config on the host reaches the next one. A
@@ -35,16 +39,19 @@ const (
 	// The grant kinds the git source defines.
 	grantCreateBranch = "create-branch"
 	grantBranch       = brokerscope.KindBranch
+	grantTag          = brokerscope.KindTag
 	// The audit sets a covered push falls in (ID-13).
 	setCreateBranch = "create-branch"
 	setWorkingSet   = "working-set"
+	setTag          = "tag"
 	// byCreateBranch is a working-set entry's By when a creation under the grant added it.
 	byCreateBranch = "create-branch"
 )
 
 // coverer decides whether one ref command is covered, and returns the set it falls in and what
-// covered it: the grant (`create-branch`, or `branch:<name>` for a branch declared in config),
-// or the store's working-set entry id.
+// covered it: the grant (`create-branch`; `branch:<name>` for a branch declared in config, or
+// `tag:<name>` for a tag a tag grant covers, <name> being the grant's own, pattern or not), or
+// the store's working-set entry id.
 type coverer func(gitproto.Command) (set, coveredBy string, ok bool)
 
 // grantCovers reports whether grants hold a create-branch grant on repo or on every repository.
@@ -57,15 +64,25 @@ func grantCovers(grants []brokerscope.Grant, repo string) bool {
 	return false
 }
 
-// declaredBranch reports whether grants hold a `branch` grant declaring branch on repo. A branch
-// grant always names its repository; one naming "*" is never valid (GB-D13) and covers nothing.
-func declaredBranch(grants []brokerscope.Grant, repo, branch string) bool {
+// declaredBy is the approved grant of kind (`branch` or `tag`) covering ref on repo: one naming
+// the repository or "*", whose name or pattern matches the ref's short name (GB-D25). A grant
+// naming the ref outright is preferred to a pattern, so the audit names the narrowest one.
+func declaredBy(grants []brokerscope.Grant, kind, repo, ref string) (brokerscope.Grant, bool) {
+	same := func(grantRepo, repo string) bool { return grantRepo == repo }
+	var found brokerscope.Grant
+	ok := false
 	for _, g := range grants {
-		if g.Kind == grantBranch && g.Branch == branch && g.Repo == repo {
-			return true
+		if g.Kind != kind || !g.Covers(repo, ref, same) {
+			continue
+		}
+		if !strings.Contains(g.Name(), "*") {
+			return g, true
+		}
+		if !ok {
+			found, ok = g, true
 		}
 	}
-	return false
+	return found, ok
 }
 
 // coverFor is the push policy for one push to repo under the live scope file f. A store it
@@ -78,6 +95,7 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 	granted := grantCovers(f.Grants, repo)
 	canCreate := authorityErr == nil && granted && slices.Contains(kinds, grantCreateBranch)
 	branchAllowed := authorityErr == nil && slices.Contains(kinds, grantBranch)
+	tagAllowed := authorityErr == nil && slices.Contains(kinds, grantTag)
 	kindWarned := map[string]bool{}
 	kindMissing := func(kind, what string) {
 		if !kindWarned[kind] {
@@ -112,7 +130,7 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 	// config takes it (docs/reference/happy-path-principle.md).
 	hint := func(ref, why string, g brokerscope.Grant) {
 		spelled, _ := json.Marshal(g)
-		say(ref + ": " + why + ". To let the broker push it, add " + string(spelled) +
+		say(ref + ": " + why + ". To let the broker push it unasked, add " + string(spelled) +
 			" to `brokered.git.grants` in this workspace's yolo-jail.jsonc" + unlisted(g.Kind) +
 			", then run `yolo config apply` on the host, in this workspace, and approve the grant; " +
 			"or push it from the host (`git push` in this workspace there).")
@@ -127,23 +145,36 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 		}
 	}
 	return func(c gitproto.Command) (string, string, bool) {
-		branch, isBranch := strings.CutPrefix(c.Ref, "refs/heads/")
-		if !isBranch {
-			if strings.HasPrefix(c.Ref, "refs/tags/") {
-				say(c.Ref + ": a tag is never in the working set and no grant covers one, so every tag push " +
-					"asks for approval (Allow once, with `yolo approve` on the host); or push it from the host " +
-					"(`git push origin " + c.Ref + "` in this workspace there).")
+		if tag, isTag := strings.CutPrefix(c.Ref, "refs/tags/"); isTag {
+			// A tag a tag grant covers, its kind allowed, is pushed unasked: creation, update,
+			// force and delete alike (GB-D25). It never joins the working set.
+			g, declared := declaredBy(f.Grants, grantTag, repo, c.Ref)
+			const asks = "so this push asks for approval (Allow once, with `yolo approve` on the host)"
+			switch {
+			case declared && tagAllowed:
+				return setTag, grantTag + ":" + g.Name(), true
+			case declared:
+				kindMissing(grantTag, "push the tags it names")
+			case brokerscope.ValidGrantBranch(tag):
+				hint(c.Ref, "no tag grant covers it, "+asks, brokerscope.Grant{Kind: grantTag, Repo: repo, Tag: tag})
+			default:
+				say(c.Ref + ": no tag grant covers it and none can name it, " + asks + "; or push it from the " +
+					"host (`git push` in this workspace there).")
 			}
 			return "", "", false
 		}
-		declared := declaredBranch(f.Grants, repo, branch)
+		branch, isBranch := strings.CutPrefix(c.Ref, "refs/heads/")
+		if !isBranch {
+			return "", "", false
+		}
+		dg, declared := declaredBy(f.Grants, grantBranch, repo, c.Ref)
 		// A branch declared in config, its kind allowed, is in the working set: creation,
-		// update, force and delete alike (GB-D13).
+		// update, force and delete alike (GB-D13), by name or by pattern (GB-D25).
 		inConfig := func() (string, string, bool) {
 			if !declared || !branchAllowed {
 				return "", "", false
 			}
-			return setWorkingSet, grantBranch + ":" + branch, true
+			return setWorkingSet, grantBranch + ":" + dg.Name(), true
 		}
 		// refused is the end of every path that covers nothing: a declared branch whose kind
 		// the user config no longer lists says so only here, once the push is refused, so a

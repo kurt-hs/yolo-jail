@@ -522,6 +522,7 @@ func TestReadableSchemaRemovalPoliciesCoverAcceptedEmptyListsAndNativeSelection(
 		"allow.*.always":          RemovalEmptyList,
 		"allow.*.on_request":      RemovalEmptyList,
 		"requests.git.push":       RemovalEmptyList,
+		"requests.git.push_tags":  RemovalEmptyList,
 		"requests.github.repos":   RemovalEmptyList,
 		"active_provider.default": RemovalNativeString,
 		"active_provider.*":       RemovalNativeString,

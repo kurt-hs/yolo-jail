@@ -450,7 +450,8 @@
       error.
     • [bold]grant_kinds[/bold] (USER SCOPE ONLY): the kinds of user grant a workspace may hold
       for this source, as in "grant_kinds": ["create-branch"].  A kind is one the loophole's
-      manifest defines (`brokered.grants`; the git pack's git-broker defines "create-branch").
+      manifest defines (`brokered.grants`; the git pack's git-broker defines "create-branch",
+      "branch" and "tag").
       Listing a kind grants nothing by itself.  A workspace file may NOT name grant_kinds.
     • [bold]grants[/bold]: in your USER config, only {"kind": "read", "repo": "*"}, read
       access for every workspace to its own approved repositories (above); any other grant
@@ -464,6 +465,13 @@
         its repository, a push as well as a fetch.
       • repo: the host and path a remote reduces to (host in lower case with a dot or a
         port, path with no scheme, user or ".git"), or "*" for every repository of the scope.
+      • branch, for a "branch" grant only: the branch it puts in the working set, which the
+        broker may create, update, force-push and delete, as in "branch": "main".  tag, for a
+        "tag" grant only: the tag it covers the same way, as in "tag": "v*".  Either is a
+        short name git accepts, or git's refspec pattern with one "*", which matches any run
+        of characters, "/" included ("patch/*", "v*"); two "*" are an error.  With "repo":
+        "*", the grant covers every remote in scope now and any you approve later, and the
+        prompt says so.
       A grant joins only when you approve it: each is a line of the repository-scope block at
       the next fresh launch, or at `yolo config apply`, which replaces a running jail's grants
       as it replaces its repositories, and each launch names the grants in force.

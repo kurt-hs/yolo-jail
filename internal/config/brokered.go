@@ -61,9 +61,12 @@ import (
 //	"brokered": { "git": { "grants": [{"kind": "create-branch", "repo": "github.com/o/r"}] } }
 //
 // A `branch` grant names its branch too, `"branch": "main"`: a working-set branch declared in
-// config (docs/design/git-broker.md GB-D12, GB-D13); no other kind takes one. A grant joins
-// only at the config-change gate, as a line of its source's scope block recorded under `<source>.grants` (scopeapproval.go), and only within the user's kinds: one outside them
-// is refused here, naming the user-config key that would allow it.
+// config (docs/design/git-broker.md GB-D12, GB-D13), and a `tag` grant its tag, `"tag": "v*"`;
+// either may be git's refspec pattern with one `*`, and either may name "*" for its repository
+// (GB-D25). No other kind takes either key. A grant joins only at the config-change gate, as a
+// line of its source's scope block recorded under `<source>.grants` (scopeapproval.go), and only
+// within the user's kinds: one outside them is refused here, naming the user-config key that
+// would allow it.
 const (
 	brokeredKey           = "brokered"
 	brokeredWorkspacesKey = "workspaces"
@@ -83,42 +86,81 @@ const (
 	brokeredGrantKindKey   = "kind"
 	brokeredGrantRepoKey   = "repo"
 	brokeredGrantBranchKey = "branch"
+	brokeredGrantTagKey    = "tag"
 )
 
-var knownBrokeredGrantKeys = set(brokeredGrantKindKey, brokeredGrantRepoKey, brokeredGrantBranchKey)
+var knownBrokeredGrantKeys = set(brokeredGrantKindKey, brokeredGrantRepoKey, brokeredGrantBranchKey, brokeredGrantTagKey)
 
-// grantBranchProblem is the error for a grant entry's `branch`, "" when it is right: a kind that
-// names a branch (brokerscope.GrantTakesBranch) has a valid one on one named repository (never
-// "*", GB-D13), and any other kind has none.
-// The second result is the branch as written, valid or not.
-func grantBranchProblem(entryPath, kind, repo string, m *jsonx.OrderedMap) (string, string) {
-	bv, has := m.Get(brokeredGrantBranchKey)
-	path := entryPath + "." + brokeredGrantBranchKey
-	if !brokerscope.GrantTakesBranch(kind) {
-		if has {
-			return path + ": only a branch grant names a branch; a " + pyReprValue(kind) +
-				" grant covers its repository's branches as its kind says. Remove this key, or make the " +
-				"grant {\"kind\": \"branch\", …} to declare that branch in the working set.", ""
+// grantRefKeys are the grant-entry keys that name a ref, each the key of the kind of the same
+// name (brokerscope.KindBranch, brokerscope.KindTag).
+var grantRefKeys = []string{brokeredGrantBranchKey, brokeredGrantTagKey}
+
+// grantRefExample is each ref key's example name and the ref it means, for a refusal's next step.
+var grantRefExample = map[string][2]string{
+	brokeredGrantBranchKey: {"main", "refs/heads/main"},
+	brokeredGrantTagKey:    {"v*", "refs/tags/v1, refs/tags/v2.0 and every other tag starting with v"},
+}
+
+// grantEntry is one `grants` entry as a grant, ok false unless it holds exactly a kind, a
+// repository and, for a kind that names a ref, its `branch` or `tag`, all strings, making a grant
+// brokerscope.ValidGrant accepts. A ref key is part of the grant only for the kind of its name
+// (ValidGrant refuses it on any other, and a ref grant without one).
+func grantEntry(m *jsonx.OrderedMap) (brokerscope.Grant, bool) {
+	str := func(key string) (string, bool, bool) {
+		v, has := m.Get(key)
+		s, ok := v.(string)
+		return s, has, ok || !has
+	}
+	kind, _, kindOK := str(brokeredGrantKindKey)
+	repo, _, repoOK := str(brokeredGrantRepoKey)
+	branch, hasBranch, branchOK := str(brokeredGrantBranchKey)
+	tag, hasTag, tagOK := str(brokeredGrantTagKey)
+	keys := 2
+	if hasBranch {
+		keys++
+	}
+	if hasTag {
+		keys++
+	}
+	g := brokerscope.Grant{Kind: kind, Repo: repo, Branch: branch, Tag: tag}
+	return g, kindOK && repoOK && branchOK && tagOK && len(m.Keys()) == keys && brokerscope.ValidGrant(g)
+}
+
+// grantRefProblem is the error for a grant entry's `branch` and `tag`, "" when they are right: a
+// kind that names a ref (brokerscope.GrantTakesRef) has a valid name or one-`*` pattern under the
+// key of its own name, on a repository or "*" (GB-D25), and no other ref key; any other kind has
+// neither. The second result is the name as written, valid or not.
+func grantRefProblem(entryPath, kind string, m *jsonx.OrderedMap) (string, string) {
+	for _, key := range grantRefKeys {
+		if _, has := m.Get(key); has && key != kind {
+			return entryPath + "." + key + ": only a " + key + " grant names a " + key + "; a " + pyReprValue(kind) +
+				" grant does not take one. Remove this key, or make the grant {\"kind\": \"" + key + "\", …} " +
+				"to name that " + key + ".", ""
 		}
+	}
+	if !brokerscope.GrantTakesRef(kind) {
 		return "", ""
 	}
-	if repo == brokerscope.AnyRepo {
-		// GB-D13: "*" would declare the branch on every approved remote, an upstream's and any
-		// approved later included, where the agent could force-push or delete it.
-		return entryPath + "." + brokeredGrantRepoKey + `: a branch grant cannot name "*": it would put the ` +
-			"branch on every approved remote, an upstream's and any approved later included, in the working " +
-			"set. Name the repository, such as \"github.com/me/app\"; list one grant per repository.", ""
-	}
+	key := kind
+	v, has := m.Get(key)
+	path := entryPath + "." + key
+	example := grantRefExample[key]
 	if !has {
-		return path + `: a branch grant names its branch, such as "branch": "main" (refs/heads/main). Add it.`, ""
+		return path + ": a " + key + " grant names its " + key + ", such as \"" + key + "\": \"" + example[0] +
+			"\" (" + example[1] + "). Add it.", ""
 	}
-	branch, ok := bv.(string)
-	if !ok || !brokerscope.ValidGrantBranch(branch) {
-		return path + ": " + pyReprValue(bv) + " is not a branch name a branch grant can name: write one " +
-			"branch's short name as git accepts it (\"main\", \"release/1.2\"; not \"refs/heads/main\", and " +
-			"no pattern or wildcard). List each branch as its own grant. Tags and other refs are never covered.", branch
+	name, ok := v.(string)
+	if ok && strings.Count(name, "*") > 1 {
+		return path + ": " + pyReprValue(v) + " has more than one `*`: a pattern takes one, which matches any run " +
+			"of characters, `/` included (\"patch/*\", \"v*\"). Keep one `*`, or list each pattern as its own grant.", name
 	}
-	return "", branch
+	if !ok || !brokerscope.ValidGrantRefPattern(name) {
+		return path + ": " + pyReprValue(v) + " is not a " + key + " name a " + key + " grant can name: write its " +
+			"short name as git accepts it (\"" + example[0] + "\", \"release/1.2\"; not \"" +
+			brokerscope.RefNamespace(kind) + "…\"), optionally with one `*` matching any run of characters " +
+			"(\"patch/*\"). List each name as its own grant.", name
+	}
+	return "", name
 }
 
 // readGrantKind is the grant kind every brokered source defines without declaring it: reading
@@ -164,6 +206,7 @@ func userGrantsValue(source, path string, v any) ([]brokerscope.Grant, []string)
 		kv, _ := m.Get(brokeredGrantKindKey)
 		rv, _ := m.Get(brokeredGrantRepoKey)
 		_, hasBranch := m.Get(brokeredGrantBranchKey)
+		_, hasTag := m.Get(brokeredGrantTagKey)
 		switch {
 		case kv != readGrantKind:
 			problems = append(problems, entryPath+"."+brokeredGrantKindKey+": "+pyReprValue(kv)+" is not a grant "+
@@ -180,6 +223,8 @@ func userGrantsValue(source, path string, v any) ([]brokerscope.Grant, []string)
 		case hasBranch:
 			problems = append(problems, entryPath+"."+brokeredGrantBranchKey+": a read grant names no branch. "+
 				"Remove this key.")
+		case hasTag:
+			problems = append(problems, entryPath+"."+brokeredGrantTagKey+": a read grant names no tag. Remove this key.")
 		}
 		if len(problems) > before {
 			continue
@@ -1120,12 +1165,12 @@ func brokeredGrantProblemsWithUser(v any, resolver LoopholeResolver, user *jsonx
 					"remove this grant.")
 				continue
 			}
-			why, branch := grantBranchProblem(entryPath, kind, repo, m)
+			why, refName := grantRefProblem(entryPath, kind, m)
 			if why != "" {
 				errs = append(errs, why)
 				continue
 			}
-			if g := (brokerscope.Grant{Kind: kind, Repo: repo, Branch: branch}).String(); inList(seen, g) {
+			if g := brokerscope.RefGrant(kind, repo, refName).String(); inList(seen, g) {
 				errs = append(errs, entryPath+": the grant "+pyReprValue(g)+" is listed twice; list each once")
 				continue
 			} else {

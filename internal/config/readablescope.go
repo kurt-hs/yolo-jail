@@ -251,8 +251,8 @@ func applyLegacyReadableWorkspace(read *WorkspaceRead, user *jsonx.OrderedMap, b
 				continue
 			}
 			if grant.Repo == brokerscope.AnyRepo {
-				if brokerscope.GrantTakesBranch(grant.Kind) {
-					gate.Differences = appendReadableDifference(gate.Differences, "legacy "+broker.Source+" branch grant cannot be projected across repository scope without widening; preserve the original brokered grant and write no readable request")
+				if brokerscope.GrantTakesRef(grant.Kind) {
+					gate.Differences = appendReadableDifference(gate.Differences, "legacy "+broker.Source+" "+grant.Kind+" grant cannot be projected across repository scope without widening; preserve the original brokered grant and write no readable request")
 					continue
 				}
 				gate.Differences = appendReadableDifference(gate.Differences, "legacy "+broker.Source+" wildcard repository grant cannot be projected to finite remotes without changing future scope; preserve it as a migration difference and write nothing")
@@ -311,18 +311,8 @@ func rawWorkspaceReadableGrants(read *WorkspaceRead, source string, defined []st
 		if !ok {
 			continue
 		}
-		kindValue, _ := m.Get(brokeredGrantKindKey)
-		repoValue, _ := m.Get(brokeredGrantRepoKey)
-		branchValue, hasBranch := m.Get(brokeredGrantBranchKey)
-		kind, _ := kindValue.(string)
-		repo, _ := repoValue.(string)
-		branch, branchOK := branchValue.(string)
-		wantKeys := 2
-		if hasBranch {
-			wantKeys = 3
-		}
-		grant := brokerscope.Grant{Kind: kind, Repo: repo, Branch: branch}
-		if len(m.Keys()) != wantKeys || (hasBranch && !branchOK) || !brokerscope.ValidGrant(grant) || !inList(defined, kind) {
+		grant, ok := grantEntry(m)
+		if !ok || !inList(defined, grant.Kind) {
 			continue
 		}
 		grants = appendReadableConcreteGrant(grants, grant)

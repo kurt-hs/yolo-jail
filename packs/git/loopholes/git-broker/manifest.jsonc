@@ -12,12 +12,13 @@
 // string with the host's ssh, streams a fetch back, and reads a push's ref commands before
 // forwarding anything. A push lands only where a grant or the working set covers every ref
 // (ID-9: creating a branch under a create-branch grant, then updating or deleting a branch the
-// broker created or a branch grant in the workspace config declares, GB-D12); every
+// broker created or a branch grant in the workspace config declares, GB-D12, and a tag a tag grant
+// names, GB-D25); every
 // other push asks the host user for an Allow once (GB-D16) and is refused per ref until
 // allowed, and every call is audited.
 {
   "name": "git-broker",
-  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only using those credentials against this workspace's approved git remotes and read grant (brokered.git.grants). A public HTTPS fetch is tried anonymously even without a grant or approved remote. A push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares; yolo approve lists them); every other push of branches or tags files a request the host user answers with yolo approve <id> (Allow once, for that exact push run again within 15 minutes) and is refused per ref until then, and every call is audited on the host (yolo audit --service git).",
+  "description": "Run the jail's git fetch and push through the host's own credentials (its SSH keys or agent for SSH remotes, its git credential helper for HTTPS ones), only using those credentials against this workspace's approved git remotes and read grant (brokered.git.grants). A public HTTPS fetch is tried anonymously even without a grant or approved remote. A push lands only on a branch a create-branch grant lets it create or one in its working set (a branch it created that way, or one a branch grant in the workspace config declares, by name or pattern; yolo approve lists them), or on a tag a tag grant in the workspace config names; every other push of branches or tags files a request the host user answers with yolo approve <id> (Allow once, for that exact push run again within 15 minutes) and is refused per ref until then, and every call is audited on the host (yolo audit --service git).",
   "version": 1,
 
   // NO SWITCH, AND NO ACCESS BY DEFAULT (boundary-broker.md BB-D104 to BB-D106, git-broker.md
@@ -45,11 +46,12 @@
     // The grant kinds this source defines beside `read`, which every source defines (ID-10,
     // BB-D107): a workspace grant of one, allowed by the user config's `brokered.git.grant_kinds`,
     // lets the broker create branches under refs/heads/ in the granted repository
-    // (`create-branch`, ID-9), or puts the one branch it names in the workspace's working set,
-    // declared in config (`branch`, git-broker.md GB-D12, GB-D13).
-    "grants": ["create-branch", "branch"],
+    // (`create-branch`, ID-9), puts the branch it names, or every branch its pattern matches, in
+    // the workspace's working set, declared in config (`branch`, git-broker.md GB-D12, GB-D13,
+    // GB-D25), or lets the broker push the tags it names or matches (`tag`, GB-D25).
+    "grants": ["create-branch", "branch", "tag"],
     "read_capability": "fetch",
-    "kind_capabilities": {"create-branch": "new_branches", "branch": "push"},
+    "kind_capabilities": {"create-branch": "new_branches", "branch": "push", "tag": "push_tags"},
     "pending_capabilities": [],
     "credential_paths": ["~/.ssh", "$SSH_AUTH_SOCK", "~/.git-credentials", "~/.config/git/credentials"]
   },

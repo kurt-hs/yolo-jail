@@ -126,12 +126,13 @@ but is optional and its output alone is never consent. Without a hook, the broke
 
 `yolo approve`, on the host, lists the broker's requests and grants and each project's git
 working set (the branches the agent created under a create-branch grant, and, marked
-`from config`, those a branch grant in a running project's config declares; see
+`from config`, those a branch grant in a running project's config declares, a pattern shown as
+written, and each tag grant there; see
 [Git](../guides/git.md#letting-the-agent-push-its-own-branches)). `yolo approve --revoke <id>`
 ends one grant or working-set entry (`w-…`); a branch declared in config (`c-…`) is refused,
 naming the file to remove it from. `--revoke all` ends every grant, and
 `--revoke all --workspace <path>` every grant and recorded working-set entry of that project; a
-path that matches nothing exits with an error. Neither ends a create-branch or branch grant written in
+path that matches nothing exits with an error. Neither ends a create-branch, branch or tag grant written in
 the project's config: remove it from `yolo-jail.jsonc` (`brokered.git.grants`), or remove the kind from
 `brokered.git.grant_kinds` in your user config. `--json` prints the same as one JSON document; a
 branch declared in config is a working-set entry there with `"by": "config"` and a `"file"`
