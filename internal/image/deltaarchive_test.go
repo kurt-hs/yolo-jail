@@ -340,6 +340,49 @@ func TestAppleContainersPresentSetIsItsOwnDeliveryRecord(t *testing.T) {
 	}
 }
 
+// TestAPrunedImageWithAStaleDeliveryRecordIsLoadedInFullOnRelaunch pins the field shape
+// of the 2026-10-29 Apple Container prune (lab report, runbook §4.4): `yolo prune` removed
+// a tag that image-delivery/<key>.delivered.json still named. The record must not stand in
+// for the image: the relaunch of that SAME image loads it (the load decision is the
+// runtime's inspect, ConfirmLoaded), its archive leaves nothing out on the record's word,
+// and the record is rewritten for the image now loaded.
+func TestAPrunedImageWithAStaleDeliveryRecordIsLoadedInFullOnRelaunch(t *testing.T) {
+	withBuildDir(t)
+	f := newFakeRuntime()
+	var out bytes.Buffer
+	path := hexManifest(t, "ac-pruned", "base", "top")
+	o := acOpts(path, f, &out)
+	o.PresentDigests = nil // the real default for Runtime "container"
+	first := AutoLoadImage(o)
+	if !first.OK || f.loads != 1 {
+		t.Fatalf("first delivery: ok=%v loads=%d\n%s", first.OK, f.loads, out.String())
+	}
+
+	delete(f.present, first.Ref) // `yolo prune` removed the tag; the record stays behind
+	if _, err := os.Stat(recordPathFor(path)); err != nil {
+		t.Fatalf("precondition: the record should survive the prune: %v", err)
+	}
+
+	o = acOpts(path, f, &out)
+	o.PresentDigests = nil
+	again := AutoLoadImage(o)
+	if !again.OK || again.Ref != first.Ref {
+		t.Fatalf("relaunch: ok=%v ref=%q, want %q\n%s", again.OK, again.Ref, first.Ref, out.String())
+	}
+	if f.loads != 2 {
+		t.Fatalf("loads = %d, want 2: the stale record must not skip the relaunch's load\n%s", f.loads, out.String())
+	}
+	if got, want := sorted(f.archiveBlobs[1]), digests("base", "top"); !reflect.DeepEqual(got, want) {
+		t.Errorf("relaunch archive carried %v, want every layer %v: the stale record was trusted", got, want)
+	}
+	if _, ok := f.present[first.Ref]; !ok {
+		t.Error("the relaunch did not leave the image in the runtime")
+	}
+	if _, err := os.Stat(recordPathFor(path)); err != nil {
+		t.Errorf("the relaunch did not record its delivery again: %v", err)
+	}
+}
+
 // TestADeliveryRecordIsKeptButNotTrustedWhenTheRuntimeCannotBeAsked is the
 // tri-state half: "the image is gone" licenses deleting the record, "I could not
 // ask" licenses nothing — the record is neither counted nor removed.
