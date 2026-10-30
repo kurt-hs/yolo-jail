@@ -188,7 +188,11 @@ func fontSourceDigest(files []fontSourceFile) string {
 // THE ROOT APPEARS WITH ITS ENTRY ALREADY ON IT: it is made beside its final name, granted, then
 // renamed into place, so a launch racing this one never builds a copy in a root whose entry is
 // not there yet (what is created there would not inherit it). The loser of the rename uses the
-// winner's root.
+// winner's root. The rename never replaces, atomically: rename(2) replaces an EMPTY folder, which
+// is what the winner's root is until its first build folder appears, and os.Rename's own
+// refusal of an existing folder is a separate check before the call, so a racing launch can pass
+// it. A launch that had just looked the root up would then make that folder inside an unlinked
+// directory (ENOENT); TestStageFontCopyConcurrentLaunchesAgree caught it.
 func ensureFontCopyRoot(root string, run func([]string) int) error {
 	usable := func() (bool, error) {
 		fi, err := os.Lstat(root)
@@ -211,7 +215,7 @@ func ensureFontCopyRoot(root string, run func([]string) int) error {
 		_ = os.RemoveAll(tmp)
 		return errors.New("could not grant " + SandboxUser + " read on " + root)
 	}
-	if err := os.Rename(tmp, root); err != nil {
+	if err := renameNoReplace(tmp, root); err != nil {
 		_ = os.RemoveAll(tmp)
 		if ok, uerr := usable(); !ok {
 			if uerr != nil {

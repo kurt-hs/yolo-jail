@@ -236,3 +236,35 @@ func TestRealDepsWireTheFontCopy(t *testing.T) {
 		t.Errorf("RealDeps().RemoveFontCopy left %s: %v", root, err)
 	}
 }
+
+// A ROOT ANOTHER LAUNCH PUT IN PLACE IS NEVER REPLACED, even while it is still empty: a launch
+// that had just looked that root up would otherwise make its build folder inside an unlinked
+// directory and get no copy (ENOENT). The other launch's root appears while this one grants its
+// own, and must still be the root afterwards. This pins the property from one goroutine, where
+// os.Rename's separate check would also hold it; the race through that check's gap is
+// TestStageFontCopyConcurrentLaunchesAgree's.
+func TestEnsureFontCopyRootNeverReplacesAnotherLaunchsEmptyRoot(t *testing.T) {
+	_, root, _, _ := fontCopyFixture(t)
+	var theirs os.FileInfo
+	grant := func([]string) int {
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		theirs = fi
+		return 0
+	}
+	if err := ensureFontCopyRoot(root, grant); err != nil {
+		t.Fatalf("losing the race to an existing root is not an error: %v", err)
+	}
+	now, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(theirs, now) {
+		t.Fatal("the other launch's empty root was replaced")
+	}
+}
