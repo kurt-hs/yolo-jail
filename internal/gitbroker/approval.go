@@ -162,15 +162,18 @@ func (b *Broker) askForPush(ctx context.Context, repo string, cmds []gitproto.Co
 		}
 		return g, ok, nil
 	}
-	if g, ok, why := spend(); ok || why != nil {
-		if why != nil {
-			return g, *why, false
-		}
+	// Spending and filing are one transaction: an answer landing between them would allow a
+	// request no longer joined, leaving its grant unspent and this push waiting on a new one.
+	g, ok, filed, err := b.store.SpendExactOrFileContext(ctx, q, gate, nil)
+	var filing *brokerstore.FilingError
+	switch {
+	case errors.As(err, &filing):
+		return brokerstore.Grant{}, filingRefusal(filing.Err), false
+	case err != nil:
+		return g, storeRefusal(err), false
+	case ok:
+		ev.Request, ev.Grant = g.Request, g.ID
 		return g, refusal{}, true
-	}
-	filed, err := b.store.FileContext(ctx, q)
-	if err != nil {
-		return brokerstore.Grant{}, filingRefusal(err), false
 	}
 	ev.Request = filed.ID
 	// No notifier: the background log only (GB-D10, BB-D98). It names the request and nothing

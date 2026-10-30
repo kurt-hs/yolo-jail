@@ -498,3 +498,41 @@ func TestWindowAuditRecordsFailedExecutorAsRan(t *testing.T) {
 		t.Fatal(ev)
 	}
 }
+
+// The host answers the command's pending request right after the window's first store
+// transaction. Spending and filing were two transactions, so that answer landed between them:
+// the filing found no pending request to join, filed a new one nobody answered, and the
+// command waited out its whole wait while the grant it was answered with went unspent. They
+// are one transaction now, so the command joins the request the host then allows, spends its
+// grant and runs once.
+func TestWindowSpendsAnAnswerLandingAfterItsFirstTransaction(t *testing.T) {
+	b, n := windowFixture(t)
+	if got := callWindow(b, context.Background()); got != ExitTempFail {
+		t.Fatal(got)
+	}
+	rs, _, err := b.store.List()
+	if err != nil || len(rs) != 1 || rs[0].State != "pending" {
+		t.Fatalf("the first call left %+v, %v", rs, err)
+	}
+	pending := rs[0].ID
+	b.waitLimit = 2 * time.Second
+	host := &brokerstore.Store{Dir: b.store.Dir, Revalidate: b.store.Revalidate, Audit: b.store.Audit}
+	fired := false
+	b.store.AfterTransaction = func(error) {
+		if fired {
+			return
+		}
+		fired = true
+		if _, err := host.Decide(pending, "pending", brokerstore.Decision{}); err != nil {
+			t.Error(err)
+		}
+	}
+	if got := callWindow(b, context.Background()); !fired || got != 0 || n.Load() != 1 {
+		t.Fatalf("answered %v: exit %d, ran %d times", fired, got, n.Load())
+	}
+	b.store.AfterTransaction = nil
+	rs, gs, err := b.store.List()
+	if err != nil || len(rs) != 1 || len(gs) != 1 || gs[0].Request != pending || gs[0].Uses != 0 {
+		t.Fatalf("after the command: requests %+v, grants %+v, %v", rs, gs, err)
+	}
+}

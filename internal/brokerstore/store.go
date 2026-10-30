@@ -145,6 +145,12 @@ type Store struct {
 	Revalidate Revalidate
 	// Audit, when supplied by a host adapter, runs under the shared transaction.
 	Audit func(context.Context, string, Request, Grant) error
+	// AfterTransaction, when set, runs after each transaction on this Store value releases
+	// the store's lock, with that transaction's error. It is a test seam: a test lands
+	// another process's write (a host decision) exactly between two transactions of a caller,
+	// which is how an interleaving across transactions is reproduced without timing. Nil in
+	// production.
+	AfterTransaction func(error)
 }
 
 // Revalidate must re-read approved scope, current host policy, and live jail/start
@@ -236,7 +242,10 @@ func privateDir(path string) error {
 func (s *Store) transaction(fn func(*records, time.Time) error) error {
 	return s.transactionContext(context.Background(), fn)
 }
-func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.Time) error) error {
+func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.Time) error) (err error) {
+	if s.AfterTransaction != nil {
+		defer func() { s.AfterTransaction(err) }()
+	}
 	if err := privateDir(s.Dir); err != nil {
 		return err
 	}
@@ -483,43 +492,103 @@ func (s *Store) File(input Request) (Request, error) {
 }
 func (s *Store) FileContext(ctx context.Context, input Request) (Request, error) {
 	var out Request
-	if input.Jail == "" || input.Start == "" || input.Workspace == "" || input.Set == "" || input.Repo == "" || len(input.Argv) == 0 || input.StdinDigest == "" {
-		return out, errors.New("request needs host holder, workspace, set, command, repository and stdin digest")
-	}
-	if err := validatePolicy(input.Policy); err != nil {
+	if err := checkFiling(input); err != nil {
 		return out, err
 	}
 	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
-		if s.Revalidate != nil {
-			if _, err := currentPolicy(input, s.Revalidate); err != nil {
-				return err
-			}
-		}
-		input.Digest = digest(input)
-		for _, q := range r.requests {
-			if q.Jail == input.Jail && q.Start == input.Start && q.Set == input.Set && q.Digest == input.Digest && q.State == "pending" {
-				out = q
-				return nil
-			}
-		}
-		if err := filingLimit(r, input, now); err != nil {
-			return err
-		}
-		id, err := newID("r-")
-		if err != nil {
-			return err
-		}
-		input.ID = id
-		input.Filed = now
-		input.Decided = time.Time{}
-		input.State = "pending"
-		out = input
-		if err := s.audit(ctx, "request", input, Grant{}); err != nil {
-			return err
-		}
-		return s.write("requests", id, input)
+		var err error
+		out, err = s.fileIn(ctx, r, now, input)
+		return err
 	})
 	return out, err
+}
+
+// checkFiling refuses a request that lacks what filing it needs.
+func checkFiling(input Request) error {
+	if input.Jail == "" || input.Start == "" || input.Workspace == "" || input.Set == "" || input.Repo == "" || len(input.Argv) == 0 || input.StdinDigest == "" {
+		return errors.New("request needs host holder, workspace, set, command, repository and stdin digest")
+	}
+	return validatePolicy(input.Policy)
+}
+
+// fileIn joins input to an identical pending request of the same jail, lifetime and set, or
+// files it new, inside the caller's transaction.
+func (s *Store) fileIn(ctx context.Context, r *records, now time.Time, input Request) (Request, error) {
+	if s.Revalidate != nil {
+		if _, err := currentPolicy(input, s.Revalidate); err != nil {
+			return Request{}, err
+		}
+	}
+	input.Digest = digest(input)
+	for _, q := range r.requests {
+		if q.Jail == input.Jail && q.Start == input.Start && q.Set == input.Set && q.Digest == input.Digest && q.State == "pending" {
+			return q, nil
+		}
+	}
+	if err := filingLimit(r, input, now); err != nil {
+		return Request{}, err
+	}
+	id, err := newID("r-")
+	if err != nil {
+		return Request{}, err
+	}
+	input.ID = id
+	input.Filed = now
+	input.Decided = time.Time{}
+	input.State = "pending"
+	if err := s.audit(ctx, "request", input, Grant{}); err != nil {
+		return Request{}, err
+	}
+	if err := s.write("requests", id, input); err != nil {
+		return Request{}, err
+	}
+	return input, nil
+}
+
+// FilingError is a failure of SpendExactOrFileContext while it joined or filed a request,
+// after it found no grant to spend. Unwrap gives the cause: a *PendingLimitError, a
+// *DenialCooldownError, or another failure.
+type FilingError struct{ Err error }
+
+func (e *FilingError) Error() string { return e.Err.Error() }
+func (e *FilingError) Unwrap() error { return e.Err }
+
+// SpendExactOrFileContext is ConsumeExactDispatchContext followed, when no grant covers the
+// invocation, by FileContext, in ONE transaction. It spends a live exact grant for input (its
+// workspace, jail, set and canonical digest) through revalidate, then runs dispatch under the
+// same lock, as ConsumeExactDispatchContext does, and returns the grant with spent true.
+// Otherwise it joins input to an identical pending request of the same jail, lifetime and set,
+// or files it new, as FileContext does, and returns that request.
+//
+// Run as two transactions, an answer landing between them was lost: the request it allowed was
+// no longer pending, so the filing made a new request, and nobody spent the grant the answer
+// issued. In one transaction no decision can land between finding no grant and joining the
+// request. A failure while joining or filing is a *FilingError; any other error is the spend's.
+func (s *Store) SpendExactOrFileContext(ctx context.Context, input Request, revalidate Revalidate, dispatch func() error) (Grant, bool, Request, error) {
+	var (
+		g     Grant
+		spent bool
+		filed Request
+	)
+	if input.Workspace == "" || input.Jail == "" {
+		return g, false, filed, errors.New("spending a grant needs the host workspace and the jail spending it")
+	}
+	input.Digest = digest(input)
+	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
+		var err error
+		g, spent, err = s.spendIn(ctx, r, now, input.Workspace, input.Jail, input.Set, input.Digest, revalidate, true)
+		if err != nil || spent {
+			return afterSpend(ctx, spent, err, dispatch)
+		}
+		if err = checkFiling(input); err == nil {
+			filed, err = s.fileIn(ctx, r, now, input)
+		}
+		if err != nil {
+			return &FilingError{err}
+		}
+		return nil
+	})
+	return g, spent, filed, err
 }
 func (s *Store) List() ([]Request, []Grant, error) {
 	var out records
@@ -654,57 +723,72 @@ func (s *Store) consumeDispatchContext(ctx context.Context, workspace, jail, set
 		return out, false, errors.New("spending a grant needs the host workspace and the jail spending it")
 	}
 	err := s.transactionContext(ctx, func(r *records, now time.Time) error {
-		for i := range r.grants {
-			g := &r.grants[i]
-			if !SameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) || (exactOnly && g.Digest == "") {
-				continue
-			}
-			allowed := false
-			var parent Request
-			for _, q := range r.requests {
-				if q.ID == g.Request && q.State == "allowed" && SameWorkspace(q.Workspace, workspace) && q.Set == set && (!exactOnly || q.Digest == commandDigest && q.Digest == g.Digest) {
-					current, err := currentPolicy(q, revalidate)
-					if err != nil {
-						return err
-					}
-					// Narrowing invalidates a grant rather than silently rewriting
-					// its coverage. Refile under the new policy before approving.
-					if current.MaxWindow < q.Policy.MaxWindow || current.Window < q.Policy.Window || current.Uses < q.Policy.Uses || (q.Policy.Session && !current.Session) {
-						return errors.New("current policy narrowed; refile the command under the host's current policy")
-					}
-					allowed = true
-					parent = q
-					break
-				}
-			}
-			if !allowed {
-				continue
-			}
-			g.Uses--
-			g.UsedBy = jail
-			if g.Uses == 0 {
-				g.Ended = now
-				g.EndReason = EndUsed
-			}
-			if err := s.write("grants", g.ID, g); err != nil {
-				return err
-			}
-			if err := s.audit(ctx, "grant-used", parent, *g); err != nil {
-				return err
-			}
-			out = *g
-			found = true
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if dispatch != nil {
-				return dispatch()
-			}
-			return nil
-		}
-		return nil
+		var err error
+		out, found, err = s.spendIn(ctx, r, now, workspace, jail, set, commandDigest, revalidate, exactOnly)
+		return afterSpend(ctx, found, err, dispatch)
 	})
 	return out, found, err
+}
+
+// afterSpend runs dispatch, still under the store's lock, once a use was durably spent and
+// audited; err is the spend's.
+func afterSpend(ctx context.Context, found bool, err error, dispatch func() error) error {
+	if err != nil || !found {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if dispatch != nil {
+		return dispatch()
+	}
+	return nil
+}
+
+// spendIn spends and audits one use of the first live grant covering the invocation, inside
+// the caller's transaction, and reports whether it found one.
+func (s *Store) spendIn(ctx context.Context, r *records, now time.Time, workspace, jail, set, commandDigest string, revalidate Revalidate, exactOnly bool) (Grant, bool, error) {
+	for i := range r.grants {
+		g := &r.grants[i]
+		if !SameWorkspace(g.Workspace, workspace) || g.Set != set || (!g.Ended.IsZero()) || g.Uses <= 0 || !now.Before(g.Expires) || (g.Digest != "" && g.Digest != commandDigest) || (exactOnly && g.Digest == "") {
+			continue
+		}
+		allowed := false
+		var parent Request
+		for _, q := range r.requests {
+			if q.ID == g.Request && q.State == "allowed" && SameWorkspace(q.Workspace, workspace) && q.Set == set && (!exactOnly || q.Digest == commandDigest && q.Digest == g.Digest) {
+				current, err := currentPolicy(q, revalidate)
+				if err != nil {
+					return Grant{}, false, err
+				}
+				// Narrowing invalidates a grant rather than silently rewriting
+				// its coverage. Refile under the new policy before approving.
+				if current.MaxWindow < q.Policy.MaxWindow || current.Window < q.Policy.Window || current.Uses < q.Policy.Uses || (q.Policy.Session && !current.Session) {
+					return Grant{}, false, errors.New("current policy narrowed; refile the command under the host's current policy")
+				}
+				allowed = true
+				parent = q
+				break
+			}
+		}
+		if !allowed {
+			continue
+		}
+		g.Uses--
+		g.UsedBy = jail
+		if g.Uses == 0 {
+			g.Ended = now
+			g.EndReason = EndUsed
+		}
+		if err := s.write("grants", g.ID, g); err != nil {
+			return Grant{}, false, err
+		}
+		if err := s.audit(ctx, "grant-used", parent, *g); err != nil {
+			return Grant{}, false, err
+		}
+		return *g, true, nil
+	}
+	return Grant{}, false, nil
 }
 
 // Revoke ends one grant or working-set entry by its id, or with "all" every live grant

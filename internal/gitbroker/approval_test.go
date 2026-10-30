@@ -161,6 +161,44 @@ func TestAskForPushWaitsForTheAnswer(t *testing.T) {
 	}
 }
 
+// The host answers the push's pending request right after askForPush's first store
+// transaction. Spending and filing were two transactions, so that answer landed between them:
+// the filing found no pending request to join, filed a new one nobody answered, and the push
+// waited out its whole wait and was refused while the grant it was answered with went
+// unspent. They are one transaction now, so the push joins the request the host then allows
+// and spends its grant.
+func TestAskForPushSpendsAnAnswerLandingAfterItsFirstTransaction(t *testing.T) {
+	f := newFixture(t, "")
+	// The refused git push leaves its request, for the same push as cmds, pending.
+	cmds := refusedPushCommands(t, f)
+	f.broker.waitLimit = 2 * time.Second
+	repo, _ := gitproto.Identity(origin)
+	reqs, _, err := ApprovalStore().List()
+	if err != nil || len(reqs) != 1 || reqs[0].State != "pending" {
+		t.Fatalf("the refused push left %+v, %v", reqs, err)
+	}
+	pending := reqs[0].ID
+	fired := false
+	f.broker.store.AfterTransaction = func(error) {
+		if fired {
+			return
+		}
+		fired = true
+		if _, err := ApprovalStore().Decide(pending, "pending", brokerstore.Decision{}); err != nil {
+			t.Error(err)
+		}
+	}
+	ev := &brokeraudit.Event{}
+	g, reason, ok := f.broker.askForPush(context.Background(), repo, cmds, nil, []string{"refs/heads/main"}, ev)
+	if !fired || !ok || g.Request != pending || ev.Request != pending || ev.Grant != g.ID {
+		t.Fatalf("answered %v: ok %v, %q, grant %+v, event %+v", fired, ok, reason, g, ev)
+	}
+	reqs, grants, err := ApprovalStore().List()
+	if err != nil || len(reqs) != 1 || len(grants) != 1 || grants[0].Uses != 0 {
+		t.Fatalf("after the push: requests %+v, grants %+v, %v", reqs, grants, err)
+	}
+}
+
 // An Allow once is spent only on the exact push it approved: the same push with only the old
 // id, only the repository, or only the workspace changed spends nothing, and the exact push
 // then still spends it.

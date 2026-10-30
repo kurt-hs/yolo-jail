@@ -113,12 +113,14 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		}
 		return b.authority.Revalidate(q) // actual argv/repo, not only a set grant's parent
 	}
-	run := func() (bool, int, string) {
+	// run spends a grant through consume and, when one covers the command, dispatches it under
+	// the store's lock and reports its exit.
+	run := func(consume func(dispatch func() error) (brokerstore.Grant, bool, error)) (bool, int, string) {
 		if ctx.Err() != nil {
 			return true, ExitTempFail, "caller disconnected or broker stopped; nothing ran; run the same command again: a grant approved for it is kept across a broker or jail restart and covers the retry"
 		}
 		code := ExitTempFail
-		used, ok, err := b.store.ConsumeExactDispatchContext(ctx, b.workspace, jail, d.Set, q.Digest, gate, func() error {
+		used, ok, err := consume(func() error {
 			code = b.dispatch(ctx, req, d, stdout, stderr, ev)
 			return nil
 		})
@@ -136,11 +138,23 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 		}
 		return true, code, ""
 	}
-	if ok, code, msg := run(); ok {
+	// Spending and filing are one transaction: an answer landing between them would allow a
+	// request no longer joined, leaving its grant unspent and this command waiting on a new one.
+	var filed brokerstore.Request
+	var filing *brokerstore.FilingError
+	if ok, code, msg := run(func(dispatch func() error) (brokerstore.Grant, bool, error) {
+		used, ok, f, err := b.store.SpendExactOrFileContext(ctx, q, gate, dispatch)
+		filed = f
+		if errors.As(err, &filing) {
+			return used, false, nil
+		}
+		return used, ok, err
+	}); ok {
 		return code, msg
 	}
-	q, err = b.store.FileContext(ctx, q)
-	if err != nil {
+	q = filed
+	if filing != nil {
+		err := filing.Err
 		var limit *brokerstore.PendingLimitError
 		if errors.As(err, &limit) {
 			return ExitTempFail, limit.Error() + "; inspect those requests with `yolo gh status <id>` before retrying; nothing ran"
@@ -162,7 +176,9 @@ func (b *Broker) window(ctx context.Context, req Request, jail string, d Decisio
 	if status.State != "allowed" {
 		return ExitNoPerm, fmt.Sprintf("%s is %s; nothing ran; ask the host user before retrying", q.ID, status.State)
 	}
-	if ok, code, msg := run(); ok {
+	if ok, code, msg := run(func(dispatch func() error) (brokerstore.Grant, bool, error) {
+		return b.store.ConsumeExactDispatchContext(ctx, b.workspace, jail, d.Set, q.Digest, gate, dispatch)
+	}); ok {
 		return code, msg
 	}
 	return ExitNoPerm, "no live grant covers this command; refile and approve it on the host"
