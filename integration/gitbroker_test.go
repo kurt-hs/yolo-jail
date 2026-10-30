@@ -475,3 +475,79 @@ func TestGitBrokerAllowOncePush(t *testing.T) {
 		t.Errorf("the pushes' audit is %v, want %s:\n%s", pushes, want, au.combined())
 	}
 }
+
+// TestGitBrokerAllowPushForATime is TestGitBrokerAllowOncePush's pattern with the host's
+// `yolo approve <id> --for 15m` (GB-D26): the refused push is allowed for a time, and both the
+// same push and a new commit pushed after it land, where Allow once would have asked again.
+func TestGitBrokerAllowPushForATime(t *testing.T) {
+	fx := newGitBrokerFixture(t, true)
+	fx.recordScope(t, "git@fixture.test:o/r.git")
+	refusal, marker := filepath.Join(fx.dir, ".push-refusal"), filepath.Join(fx.dir, ".approved")
+
+	type approval struct {
+		id, out string
+		err     error
+	}
+	approved := make(chan approval, 1)
+	go func() {
+		var a approval
+		defer func() { approved <- a }()
+		deadline := time.Now().Add(4 * time.Minute)
+		for ; time.Now().Before(deadline); time.Sleep(time.Second) {
+			b, _ := os.ReadFile(refusal)
+			if i := strings.Index(string(b), "(needs approval: r-"); i >= 0 {
+				a.id = strings.SplitN(string(b[i+len("(needs approval: "):]), ")", 2)[0]
+				break
+			}
+		}
+		if a.id == "" {
+			a.err = errors.New("the jail never wrote a refusal naming a request")
+			return
+		}
+		cfg := runConfig{}
+		for _, o := range append(fx.opts, withHostSemantics()) {
+			o(&cfg)
+		}
+		name, argv := launchCommand(cfg, yoloBin, []string{"approve", a.id, "--for", "15m"})
+		cmd := exec.Command(name, argv...)
+		cmd.Dir, cmd.Env = fx.dir, launchEnvironment(cfg)
+		out, err := cmd.CombinedOutput()
+		a.out, a.err = string(out), err
+		if werr := os.WriteFile(marker, []byte("ok\n"), 0o644); a.err == nil {
+			a.err = werr
+		}
+	}()
+
+	r := runCommand(t, fx.dir, []string{"run", "--", "bash", "-lc", gitInJail + ghScript(
+		"g fetch -q origin && g checkout -q -b work origin/main && g commit -q --allow-empty -m agent", // A
+		"(g push origin HEAD:main > .push-out 2>&1; rc=$?; mv .push-out .push-refusal; exit $rc)",      // B: asks, refused
+		"for i in $(seq 240); do [ -f .approved ] && break; sleep 1; done; [ -f .approved ]",           // C: the host answers
+		"g push origin HEAD:main", // D: the same push lands
+		"g commit -q --allow-empty -m again && g push origin HEAD:main", // E: a new push to the same ref lands too
+		"g rev-parse HEAD | sed 's/^/HEAD=/'",                           // F
+	)}, fx.opts...)
+	a := <-approved
+	refused, _ := os.ReadFile(refusal)
+	t.Logf("launch: rc %d\n%s\nfirst push:\n%s\nyolo approve %s --for 15m: %v\n%s", r.rc, r.combined(), refused, a.id, a.err, a.out)
+	if r.rc != 0 || a.err != nil {
+		t.Fatalf("the launch or the host's approval failed%s", gitBrokerDaemonLog(t))
+	}
+	if !strings.Contains(string(refused), "--for 15m") || !strings.Contains(string(refused), "--add") {
+		t.Errorf("the first push's refusal does not name the --for and --add answers:\n%s", refused)
+	}
+	for k, want := range map[string]string{"RCA": "0", "RCB": "1", "RCC": "0", "RCD": "0", "RCE": "0"} {
+		if got := kvLine(r.stdout, k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if !strings.Contains(a.out, "pushes to refs/heads/main") || !strings.Contains(a.out, "until ") {
+		t.Errorf("yolo approve %s --for 15m did not allow a time:\n%s", a.id, a.out)
+	}
+	head := kvLine(r.stdout, "HEAD")
+	if got := hostGit(t, fx.bare, "rev-parse", "refs/heads/main"); got != head || head == "" || got == fx.upstream {
+		t.Errorf("the upstream's main is %s, want the jail's last pushed HEAD %q", got, head)
+	}
+	if t.Failed() {
+		t.Fatalf("output above%s", gitBrokerDaemonLog(t))
+	}
+}

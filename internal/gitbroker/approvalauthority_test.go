@@ -37,7 +37,7 @@ func TestApprovalAuthorityAcceptsTheLiveLaunchsPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p != pushPolicy || p.Uses != 1 || p.Window != p.MaxWindow || p.Session {
+	if p != pushPolicy || p.Uses != 1 || p.Session {
 		t.Fatalf("policy %+v", p)
 	}
 }

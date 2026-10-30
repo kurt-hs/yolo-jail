@@ -35,7 +35,7 @@ func captureStd(t *testing.T, fn func() int) (int, string, string) {
 
 // TestApproveGitRequestAllowOnceAndRefusesFor drives `yolo approve` as the CLI runs it, over
 // the git store the git-broker files into: a git push request is listed with each ref, old to
-// new, marked where it needs approval; --for and --add are refused; Allow once grants that exact
+// new, marked where it needs approval; --for session is refused; Allow once grants that exact
 // push once, through the store's live host authority and required audit.
 func TestApproveGitRequestAllowOnceAndRefusesFor(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
@@ -80,7 +80,7 @@ func TestApproveGitRequestAllowOnceAndRefusesFor(t *testing.T) {
 		t.Fatalf("JSON listing: rc %d\n%s%s", rc, out, errs)
 	}
 
-	for _, args := range [][]string{{"approve", q.ID, "--for", "10m"}, {"approve", q.ID, "--add"}, {"approve", q.ID, "--for", "session"}} {
+	for _, args := range [][]string{{"approve", q.ID, "--for", "session"}} {
 		rc, _, errs := captureStd(t, func() int { return registry["approve"](args) })
 		if rc != approveExitPolicy || !strings.Contains(errs, "not available for git pushes") || !strings.Contains(errs, "yolo approve "+q.ID) {
 			t.Fatalf("%v: rc %d, %q", args, rc, errs)

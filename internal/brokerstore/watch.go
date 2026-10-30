@@ -248,6 +248,7 @@ type WorkingView struct {
 	Resource  string    `json:"resource"` // the ref
 	By        string    `json:"by"`       // "create-branch", a grant id, "human", or "config"
 	Added     time.Time `json:"added,omitzero"`
+	Expires   time.Time `json:"expires,omitzero"` // a timed entry (Allow push for a time): when it stops covering
 	// File is, for a branch a `branch` grant declares in config (By "config"), the workspace
 	// config that declares it; such an entry is not in the store and has no Added.
 	File string `json:"file,omitempty"`
@@ -255,7 +256,7 @@ type WorkingView struct {
 
 func (s *Store) WorkingView(e WorkingEntry) WorkingView {
 	return WorkingView{Schema: Schema, ID: e.ID, Source: s.SourceName(), Workspace: e.Workspace, Repo: e.Repo,
-		Kind: e.Kind, Resource: e.Resource, By: e.By, Added: e.Added}
+		Kind: e.Kind, Resource: e.Resource, By: e.By, Added: e.Added, Expires: e.Expires}
 }
 
 // EventView is one watch event.
@@ -303,7 +304,7 @@ func (s *Store) GrantView(g Grant) GrantView {
 func (s *Store) StateView(snap Snapshot) StateView {
 	v := StateView{Schema: Schema, Requests: []RequestView{}, Grants: []GrantView{}, Working: []WorkingView{}}
 	for _, e := range snap.Working {
-		if e.Live() {
+		if e.LiveAt(time.Now()) {
 			v.Working = append(v.Working, s.WorkingView(e))
 		}
 	}

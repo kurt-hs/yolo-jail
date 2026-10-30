@@ -134,6 +134,8 @@ type Decision struct {
 	For     time.Duration
 	Session bool
 	Uses    int
+	// Add (DecideWorking only) puts the request's resources into the working set for good.
+	Add bool
 }
 type Store struct {
 	Dir string
@@ -145,6 +147,11 @@ type Store struct {
 	Revalidate Revalidate
 	// Audit, when supplied by a host adapter, runs under the shared transaction.
 	Audit func(context.Context, string, Request, Grant) error
+	// Entries, when set, is the source's answer to "what working-set entries would this
+	// request's refs become", for DecideWorking: it fills each entry's Workspace, Repo, Kind,
+	// Resource and By, and returns an error naming the next step when add cannot apply to the
+	// request. Nil for a source whose requests take Allow once and Deny alone.
+	Entries func(q Request, add bool) ([]WorkingEntry, error)
 	// AfterTransaction, when set, runs after each transaction on this Store value releases
 	// the store's lock, with that transaction's error. It is a test seam: a test lands
 	// another process's write (a host decision) exactly between two transactions of a caller,
@@ -299,7 +306,7 @@ func (s *Store) transactionContext(ctx context.Context, fn func(*records, time.T
 		}
 		for i := len(r.working) - 1; i >= 0; i-- {
 			w := r.working[i]
-			if !w.Live() && !now.Before(w.Ended.Add(7*24*time.Hour)) {
+			if (!w.Live() && !now.Before(w.Ended.Add(7*24*time.Hour))) || (w.Timed() && w.Live() && !now.Before(w.Expires.Add(7*24*time.Hour))) {
 				if err = os.Remove(filepath.Join(s.Dir, "working", w.ID+".json")); err != nil {
 					return err
 				}
@@ -670,6 +677,80 @@ func (s *Store) Decide(id, expected string, d Decision) (Grant, error) {
 				return err
 			}
 			if err = s.write("grants", gid, out); err != nil {
+				return err
+			}
+			q.State = "allowed"
+			q.Decided = now
+			return s.write("requests", q.ID, q)
+		}
+		return refusal(ErrUnknownID, "request %q not found", id)
+	})
+	return out, err
+}
+
+// TimedGrantDefault is how long an Allow push to <ref> for a time lasts when the host gives no
+// duration (boundary-broker.md §6.4).
+const TimedGrantDefault = 15 * time.Minute
+
+// DecideWorking answers a pending request with a per-resource grant instead of a command
+// grant: d.Add puts the resources the request asks for into the workspace's working set, and
+// otherwise d.For (TimedGrantDefault when zero) lets the workspace write to them for that long
+// (boundary-broker.md BB-D76, git-broker.md GB-D26). The resources are the store's Entries
+// hook's, so the source says what a request's resources are and refuses a request whose
+// resources cannot be added (a tag). The request becomes allowed and no command grant is
+// recorded; every jail of the workspace is covered through the entries. It returns the entries
+// now holding those resources.
+func (s *Store) DecideWorking(id string, d Decision) ([]WorkingEntry, error) {
+	if s.Entries == nil {
+		return nil, refusal(ErrRefusedByPolicy, "this source's requests take Allow once and Deny only")
+	}
+	var out []WorkingEntry
+	err := s.transaction(func(r *records, now time.Time) error {
+		for i := range r.requests {
+			q := &r.requests[i]
+			if q.ID != id {
+				continue
+			}
+			if q.State != "pending" {
+				return refusal(ErrAlreadyDecided, "request %s is already %s", id, q.State)
+			}
+			if err := validatePolicy(q.Policy); err != nil {
+				return refusal(ErrNotConfirmed, "%v", err)
+			}
+			if d.Deny || d.Session || d.Uses != 0 || d.For < 0 || (d.Add && d.For != 0) {
+				return errors.New("choose Add, or a positive duration, for a per-resource grant")
+			}
+			current, err := currentPolicy(*q, s.Revalidate)
+			if err != nil {
+				return refusal(ErrNotConfirmed, "%v", err)
+			}
+			duration := d.For
+			if duration == 0 {
+				duration = TimedGrantDefault
+			}
+			if !d.Add && duration > min(q.Policy.MaxWindow, current.MaxWindow) {
+				return refusal(ErrRefusedByPolicy, "duration exceeds this set's policy ceiling of %s", min(q.Policy.MaxWindow, current.MaxWindow))
+			}
+			entries, err := s.Entries(*q, d.Add)
+			if err != nil {
+				return refusal(ErrRefusedByPolicy, "%v", err)
+			}
+			if len(entries) == 0 {
+				return refusal(ErrRefusedByPolicy, "request %s names no resource a per-resource grant can cover", id)
+			}
+			var expires time.Time
+			if !d.Add {
+				expires = now.Add(duration)
+			}
+			for _, e := range entries {
+				e.Expires = expires
+				held, _, err := s.upsertWorkingIn(r, now, e)
+				if err != nil {
+					return err
+				}
+				out = append(out, held)
+			}
+			if err := s.audit(context.Background(), "decision", *q, Grant{ID: out[0].ID, Request: q.ID, Jail: q.Jail, Start: q.Start, Workspace: ResolveWorkspace(q.Workspace), Set: q.Set, Expires: expires}); err != nil {
 				return err
 			}
 			q.State = "allowed"

@@ -153,11 +153,17 @@ func (b *Broker) readPush(ctx context.Context, in io.Reader, ev *brokeraudit.Eve
 		p.refused = p.refused || r != ""
 	}
 	if needs := approvable(cmds, reasons); p.refused && needs != nil {
-		g, why, allowed := b.askForPush(ctx, ev.Repo, cmds, opts, needs, ev)
+		g, why, allowed := b.askForPush(ctx, ev.Repo, cmds, opts, needs, cover, ev)
 		for i := range reasons {
 			switch {
 			case allowed && reasons[i] == reasonNeedsApproval:
 				refs[i].CoveredBy = g.ID
+				if strings.HasPrefix(g.ID, "w-") {
+					// An answer that left entries (GB-D26), not a grant: each ref names its own.
+					if _, by, ok := cover(cmds[i]); ok {
+						refs[i].CoveredBy = by
+					}
+				}
 				reasons[i] = ""
 			case allowed:
 				reasons[i] = ""

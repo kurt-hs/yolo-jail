@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,8 +39,10 @@ const hostPush = "push it from the host (`git push` in this workspace there)"
 // pendingRefusal is a push whose request id is still waiting for the host's answer.
 func pendingRefusal(id string) refusal {
 	return refusal{reasonNeedsApprovalPrefix + id, " It needs approval, and request " + id + " asks for it: ask the user " +
-		"to run `yolo approve " + id + "` on the host, then run the same push again within 15 minutes. Allow once " +
-		"covers exactly this push, once; a different push asks again. To push a branch without asking each time, " +
+		"to run `yolo approve " + id + "` on the host, then run the same push again within 15 minutes. That is Allow " +
+		"once: it covers exactly this push, once, and a different push asks again. `yolo approve " + id + " --for 15m` " +
+		"allows every push to these refs for 15 minutes instead, and `yolo approve " + id + " --add` adds these " +
+		"branches to the workspace's working set for good. To push a branch without asking each time, " +
 		"the lines above name the grant that covers it; or " + hostPush + "."}
 }
 
@@ -130,7 +133,11 @@ func (b *Broker) revalidate(q brokerstore.Request) (brokerstore.Policy, error) {
 // nothing else covered. It returns the grant it spent and true when an Allow once covers the
 // push: the use is spent and audited under the store's lock, which is released before the push
 // is forwarded (GB-D19). Otherwise it returns the refusal each ref in needs is refused with.
-func (b *Broker) askForPush(ctx context.Context, repo string, cmds []gitproto.Command, opts, needs []string, ev *brokeraudit.Event) (brokerstore.Grant, refusal, bool) {
+//
+// An answer that is not an Allow once (Allow push for a time, or Add to the working set,
+// GB-D26) leaves no grant to spend: its entries are in the working-set store, so once the host
+// allowed the request cover is asked again, and a push every ref of which it now covers goes on.
+func (b *Broker) askForPush(ctx context.Context, repo string, cmds []gitproto.Command, opts, needs []string, cover coverer, ev *brokeraudit.Event) (brokerstore.Grant, refusal, bool) {
 	q := b.pushRequest(repo, cmds, opts)
 	q.NeedsApproval = needs
 	ev.CommandDigest, ev.StdinDigest = q.Digest, q.StdinDigest
@@ -192,7 +199,32 @@ func (b *Broker) askForPush(ctx context.Context, repo string, cmds []gitproto.Co
 		}
 		return g, refusal{}, true
 	}
+	if by, ok := b.coveredNow(cmds, needs, cover); ok {
+		return brokerstore.Grant{ID: by}, refusal{}, true
+	}
 	return brokerstore.Grant{}, answeredRefusal(filed.ID, "allowed"), false
+}
+
+// coveredNow reports whether cover now covers every ref in needs, and the entry that covers the
+// first: what a host's Allow push for a time or Add to the working set did to the push.
+func (b *Broker) coveredNow(cmds []gitproto.Command, needs []string, cover coverer) (string, bool) {
+	if cover == nil {
+		return "", false
+	}
+	first := ""
+	for _, c := range cmds {
+		if !slices.Contains(needs, c.Ref) {
+			continue
+		}
+		_, by, ok := cover(c)
+		if !ok {
+			return "", false
+		}
+		if first == "" {
+			first = by
+		}
+	}
+	return first, first != ""
 }
 
 // waitStatus polls request id until it is no longer pending, for at most the push wait.

@@ -27,16 +27,18 @@ import (
 // "<old> <new> <ref>" per ref command, and one "push-option=<value>" per push option the push
 // sends upstream (a server acts on them: GitLab merges or sets CI variables by them), its repository is the remote's identity
 // (gitproto.Identity), and its stdin digest is that of nothing, since the new ids already name
-// what the push sends. The only answers are Allow once and Deny (GB-D16): Allow once is one use
-// of that exact push, held by the workspace, for 15 minutes.
+// what the push sends. The answers are Allow once, Deny, Allow push to the refs for a time and
+// Add the refs to the working set (GB-D16, GB-D26): Allow once is one use of that exact push,
+// held by the workspace, for 15 minutes; the other two are entries per ref, in the working-set
+// store (pushEntries).
 
 // setPush is the request set of a push that asked for approval, and the audit set a push an
 // Allow once covered falls in.
 const setPush = "push"
 
-// pushPolicy is every push request's fixed policy: one use, for 15 minutes, with no longer
-// window to grant (GB-D16). `yolo approve --for` is refused for git requests besides.
-var pushPolicy = brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: 15 * time.Minute, Uses: 1}
+// pushPolicy is every push request's fixed policy: Allow once is one use for 15 minutes
+// (GB-D16), and `yolo approve --for <duration>` may run as long as MaxWindow (GB-D26).
+var pushPolicy = brokerstore.Policy{Window: 15 * time.Minute, MaxWindow: 24 * time.Hour, Uses: 1}
 
 // pushStdinDigest is a push request's stdin digest: SHA-256 of nothing.
 var pushStdinDigest = func() string {
@@ -169,10 +171,55 @@ func StoreAudit(log *brokeraudit.Log) func(context.Context, string, brokerstore.
 }
 
 // ApprovalStore is the git source's host store as a front end opens it: its revalidation is
-// ApprovalAuthority and every request, decision and spent grant is audited.
+// ApprovalAuthority, its per-ref answers are pushEntries, and every request, decision and spent
+// grant is audited.
 func ApprovalStore() *brokerstore.Store {
 	return &brokerstore.Store{Dir: paths.BrokerSourceDir(Source), Source: Source, Revalidate: ApprovalAuthority,
-		Audit: StoreAudit(brokeraudit.Open(paths.BrokerAuditLog(), nil))}
+		Entries: pushEntries, Audit: StoreAudit(brokeraudit.Open(paths.BrokerAuditLog(), nil))}
+}
+
+// pushEntries is the working-set entries `yolo approve <id> --for` (add false, timed) or
+// `--add` (add true) records for push request q: one per ref the request needed approval for
+// (every ref when the request does not say), in q's workspace and repository (GB-D26).
+//
+// Add does not apply to a tag (the working set holds branches, GB-D11, GB-D18) nor to a branch
+// creation (a lasting right to create is a user grant, BB-D90); either refuses, naming the
+// answer that does apply. A timed answer applies to both.
+func pushEntries(q brokerstore.Request, add bool) ([]brokerstore.WorkingEntry, error) {
+	if err := checkPushArgv(q.Argv); err != nil {
+		return nil, err
+	}
+	needed := map[string]bool{}
+	for _, r := range q.NeedsApproval {
+		needed[r] = true
+	}
+	var out []brokerstore.WorkingEntry
+	for _, line := range q.Argv[1:] {
+		if strings.HasPrefix(line, pushOptionPrefix) {
+			continue
+		}
+		f := strings.Split(line, " ")
+		c := gitproto.Command{Old: f[0], New: f[1], Ref: f[2]}
+		if len(needed) > 0 && !needed[c.Ref] {
+			continue
+		}
+		e := brokerstore.WorkingEntry{Workspace: q.Workspace, Repo: q.Repo, Kind: brokerstore.WorkingBranch, Resource: c.Ref, By: "human"}
+		switch {
+		case strings.HasPrefix(c.Ref, "refs/tags/"):
+			if add {
+				return nil, fmt.Errorf("--add is not available for %s: the working set holds branches, never tags. "+
+					"Next: run `yolo approve %s --for 15m` to allow pushes to the tag for 15 minutes, or `yolo approve %s` to Allow once, "+
+					"or give a release agent a `tag` grant in the workspace config", c.Ref, q.ID, q.ID)
+			}
+			e.Kind = brokerstore.WorkingTag
+		case add && c.Create():
+			return nil, fmt.Errorf("--add is not available for %s: it is a new branch, and a lasting right to create is a "+
+				"user grant. Next: run `yolo approve %s --for 15m` (the branch joins the working set once the push creates it), "+
+				"or `yolo approve %s` to Allow once", c.Ref, q.ID, q.ID)
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 // pushRequest is the request a push of cmds to repo files from this broker, unfiled.

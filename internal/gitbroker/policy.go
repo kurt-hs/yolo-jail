@@ -26,6 +26,8 @@ import (
 //   - a creation, update or delete under refs/tags/ is covered by an approved `tag` grant whose
 //     name or pattern matches the tag, on the repository or on `*`, while the user's own config
 //     still lists the kind; a tag never joins the working set;
+//   - a ref, tag or branch, a human allowed for a time (`yolo approve <id> --for`) is covered
+//     by that timed entry in the store until it expires (GB-D26);
 //   - nothing else is covered: any other tag or branch needs approval, which the push asks for
 //     (approval.go).
 //
@@ -43,6 +45,7 @@ const (
 	// The audit sets a covered push falls in (ID-13).
 	setCreateBranch = "create-branch"
 	setWorkingSet   = "working-set"
+	setTimed        = "timed-grant"
 	setTag          = "tag"
 	// byCreateBranch is a working-set entry's By when a creation under the grant added it.
 	byCreateBranch = "create-branch"
@@ -161,12 +164,21 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			// A tag a tag grant covers, its kind allowed, is pushed unasked: creation, update,
 			// force and delete alike (GB-D25). It never joins the working set.
 			g, declared := declaredBy(f.Grants, grantTag, repo, c.Ref)
-			const asks = "so this push asks for approval (Allow once, with `yolo approve` on the host)"
+			const asks = "so this push asks for approval (`yolo approve` on the host answers it: Allow once, `--for 15m`, or `--add` for a branch)"
 			switch {
 			case declared && tagAllowed:
 				return setTag, grantTag + ":" + g.Name(), true
 			case declared:
 				kindMissing(grantTag, "push the tags it names")
+			}
+			// A tag a human allowed for a time (GB-D26): a timed entry, never a lasting one.
+			if e, live, err := b.store.LiveWorking(b.bound.Workspace, repo, c.Ref); err != nil {
+				storeFailed(err)
+			} else if live {
+				return setTimed, e.ID, true
+			}
+			switch {
+			case declared:
 			case brokerscope.ValidGrantBranch(tag):
 				hint(c.Ref, "no tag grant covers it, "+asks, brokerscope.Grant{Kind: grantTag, Repo: repo, Tag: tag})
 			default:
@@ -220,6 +232,11 @@ func (b *Broker) coverFor(f brokerscope.File, repo string, say func(string)) cov
 			storeFailed(err)
 			// The store is not needed for a branch the config declares.
 			return orRefused(inConfig())
+		}
+		if live && e.Timed() {
+			// Allowed for a time (GB-D26): a creation, update or delete alike. A creation the
+			// upstream then accepts makes the entry lasting (record).
+			return setTimed, e.ID, true
 		}
 		if c.Create() {
 			// The workspace held this branch, and the upstream no longer has it: someone
@@ -301,11 +318,14 @@ func relayReport(out io.Writer, upstream io.Reader, caps gitproto.Caps) (gitprot
 func (b *Broker) record(repo string, p pushRead, refs []brokeraudit.RefUpdate, rep gitproto.Report, repErr error, say func(string)) {
 	for i, c := range p.cmds {
 		by := refs[i].CoveredBy
-		if !strings.HasPrefix(by, "g-") {
+		// A creation covered by a w- entry was covered by a timed one (GB-D26): the branch the
+		// agent then created is the workspace's, so the entry becomes lasting, by itself.
+		timedCreate := c.Create() && strings.HasPrefix(refs[i].CoveredBy, "w-")
+		if !strings.HasPrefix(by, "g-") && !timedCreate {
 			by = byCreateBranch
 		}
 		created := c.Create() && strings.HasPrefix(c.Ref, "refs/heads/") &&
-			(refs[i].CoveredBy == grantCreateBranch || strings.HasPrefix(refs[i].CoveredBy, "g-"))
+			(refs[i].CoveredBy == grantCreateBranch || strings.HasPrefix(refs[i].CoveredBy, "g-") || timedCreate)
 		deleted := c.Delete() && strings.HasPrefix(refs[i].CoveredBy, "w-")
 		if !created && !deleted {
 			continue

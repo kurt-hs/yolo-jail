@@ -21,6 +21,11 @@ import (
 // WorkingBranch is the kind of a git working-set entry: a branch, named by its full ref.
 const WorkingBranch = "branch"
 
+// WorkingTag is the kind of a timed entry on a tag: a human's Allow push to <tag> for a time.
+// A tag never joins the working set for good (git-broker.md GB-D18), so a WorkingTag entry
+// always has an Expires.
+const WorkingTag = "tag"
+
 // The reasons a working-set entry ends, recorded in WorkingEntry.EndReason; a human's revoke
 // is EndRevoked, as for a grant.
 const (
@@ -41,13 +46,57 @@ type WorkingEntry struct {
 	By        string
 	Ended     time.Time
 	EndReason string `json:",omitempty"`
+	// Expires is when a timed entry (a human's Allow push to <ref> for a time) stops covering
+	// its resource; zero for an entry that stays until it is deleted or revoked.
+	Expires time.Time
 }
 
-// Live reports whether the entry still covers its resource.
+// Live reports whether the entry has not been ended. A timed entry past its Expires is still
+// Live here; LiveAt is the question a coverage check asks.
 func (e WorkingEntry) Live() bool { return e.Ended.IsZero() }
 
-func (e WorkingEntry) matches(workspace, repo, resource string) bool {
-	return e.Live() && e.Workspace == workspace && e.Repo == repo && e.Resource == resource
+// LiveAt reports whether the entry covers its resource at now: not ended, and not past its
+// Expires.
+func (e WorkingEntry) LiveAt(now time.Time) bool {
+	return e.Live() && (e.Expires.IsZero() || now.Before(e.Expires))
+}
+
+// Timed reports whether the entry expires on its own.
+func (e WorkingEntry) Timed() bool { return !e.Expires.IsZero() }
+
+func (e WorkingEntry) matches(now time.Time, workspace, repo, resource string) bool {
+	return e.LiveAt(now) && e.Workspace == workspace && e.Repo == repo && e.Resource == resource
+}
+
+// upsertWorkingIn records e in the caller's transaction and returns the entry that now holds
+// its resource, with added true when a new record was written. A live entry for the same
+// workspace, repository and resource is kept, except that a timed one is made lasting when e
+// is lasting, and made longer when e is timed and runs later.
+func (s *Store) upsertWorkingIn(r *records, now time.Time, e WorkingEntry) (WorkingEntry, bool, error) {
+	for i := range r.working {
+		w := &r.working[i]
+		if !w.matches(now, e.Workspace, e.Repo, e.Resource) {
+			continue
+		}
+		switch {
+		case w.Timed() && !e.Timed():
+			w.Expires, w.By = time.Time{}, e.By
+		case w.Timed() && e.Expires.After(w.Expires):
+			w.Expires = e.Expires
+		default:
+			return *w, false, nil
+		}
+		return *w, false, s.write("working", w.ID, w)
+	}
+	id, err := newID("w-")
+	if err != nil {
+		return WorkingEntry{}, false, err
+	}
+	e.ID, e.Added, e.Ended, e.EndReason = id, now, time.Time{}, ""
+	if err := s.write("working", id, e); err != nil {
+		return WorkingEntry{}, false, err
+	}
+	return e, true, nil
 }
 
 // AddWorking records e as live and returns it with its id and time, added true. When a live
@@ -60,28 +109,18 @@ func (s *Store) AddWorking(e WorkingEntry) (WorkingEntry, bool, error) {
 	if e.Workspace == "" || e.Repo == "" || e.Resource == "" || e.By == "" {
 		return WorkingEntry{}, false, errors.New("a working-set entry needs a workspace, a repository, a resource and what added it")
 	}
-	if e.Kind != WorkingBranch {
-		return WorkingEntry{}, false, fmt.Errorf("working-set entry kind %q is not %q", e.Kind, WorkingBranch)
+	if e.Kind != WorkingBranch && e.Kind != WorkingTag {
+		return WorkingEntry{}, false, fmt.Errorf("working-set entry kind %q is not %q or %q", e.Kind, WorkingBranch, WorkingTag)
+	}
+	if e.Kind == WorkingTag && !e.Timed() {
+		return WorkingEntry{}, false, errors.New("a tag never joins the working set for good: its entry needs an expiry")
 	}
 	var out WorkingEntry
 	added := false
 	err := s.transaction(func(r *records, now time.Time) error {
-		for _, w := range r.working {
-			if w.matches(e.Workspace, e.Repo, e.Resource) {
-				out = w
-				return nil
-			}
-		}
-		id, err := newID("w-")
-		if err != nil {
-			return err
-		}
-		e.ID, e.Added, e.Ended, e.EndReason = id, now, time.Time{}, ""
-		if err := s.write("working", id, e); err != nil {
-			return err
-		}
-		out, added = e, true
-		return nil
+		var err error
+		out, added, err = s.upsertWorkingIn(r, now, e)
+		return err
 	})
 	return out, added, err
 }
@@ -90,9 +129,9 @@ func (s *Store) AddWorking(e WorkingEntry) (WorkingEntry, bool, error) {
 func (s *Store) LiveWorking(workspace, repo, resource string) (WorkingEntry, bool, error) {
 	var out WorkingEntry
 	found := false
-	err := s.transaction(func(r *records, _ time.Time) error {
+	err := s.transaction(func(r *records, now time.Time) error {
 		for _, w := range r.working {
-			if w.matches(workspace, repo, resource) {
+			if w.matches(now, workspace, repo, resource) {
 				out, found = w, true
 				return nil
 			}
