@@ -89,7 +89,9 @@ func TestUndeclaredProfileNameRefusesTheLaunch(t *testing.T) {
 		t.Fatalf("a profile name nothing declares must refuse the launch, not select nothing:\n%s",
 			r.combined())
 	}
-	for _, want := range []string{`zai-fst`, `declared: bedrock`} {
+	// The declared list also names every provider a selected pack makes selectable by name
+	// (anthropic, from claude-auth), so the assertion is that bedrock is among them.
+	for _, want := range []string{`zai-fst`, `declared: `, `bedrock`} {
 		if !strings.Contains(r.combined(), want) {
 			t.Errorf("the refusal should name %q:\n%s", want, r.combined())
 		}
