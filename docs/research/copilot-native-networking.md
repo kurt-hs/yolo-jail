@@ -3,7 +3,7 @@ title: "GitHub Copilot CLI native TLS under macOS keychain isolation"
 date: 2026-10-29
 status: accepted
 stage: CURRENT
-next: "Compare Safehouse effective Copilot policy with the measured yolo baseline using only a disposable item; identify a supported Copilot verifier path without changing the deny"
+next: "Compare Safehouse effective Copilot policy with the measured yolo baseline using only a disposable item; identify a supported Copilot verifier path without changing the deny; on a disposable Mac harness, discriminate TLS paths and certificate failures under the unchanged deny"
 tags: [research, copilot, macos, tls, keychain, networking]
 summary: "Native Mac controls prove certificate validation via SecTrust and URLSession works with SecurityServer denied; legacy SecureTransport fails. Yolo synthetic keychain negatives pass while Safehouse effective Copilot policy and real CLI requests remain untested."
 ---
@@ -74,6 +74,8 @@ The release JS and addon contain no `COPILOT_ENABLE_HTTP2` string at this versio
 ## Next native verification (not run here)
 
 The [Mac-side follow-up](../design/macos-native-tls.md#mac-side-follow-up--audit-the-securityserver-boundary) records the completed yolo native baseline and the still-pending owner-authorized **Safehouse comparison**; this Linux task did not launch a Mac executor. A real Copilot login, prompt or API run is outside that audit. Vendor-documented auth storage and the bounded static package limit are recorded above; neither a mock CLI nor a miniature Security.framework client proves actual CLI login or TLS behavior.
+
+Harness shape for that follow-up, folded from the superseded branch research: use a disposable workspace and a synthetic public HTTPS endpoint or controlled certificate fixture, never an agent prompt, account login, owner keychain item or production profile edit. First record the OS, executable and runtime hashes and versions, and inspect supported help and packaged evidence without launching an agent. In a throwaway Seatbelt harness with the shipped service deny unchanged, run a minimal client on each identified verifier path: a positive chain and hostname case, negative untrusted-chain and hostname-mismatch cases, and an unsandboxed positive control. Add disposable guest-keychain read, enumeration and write negatives for the exact API under test only if the fixture can be made without touching owner login or search state. Compare the actual yolo self profile and, separately, the account UID, and distinguish TLS, trust-root, token or auth, and reachability errors. Record evidence before proposing a policy change: no relaxation is recommended as safe without both the positive HTTPS control and the negative credential controls.
 
 ## Fast-moving — verify before building
 
