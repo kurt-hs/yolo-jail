@@ -63,6 +63,11 @@ type loweringContext struct {
 	// keepUnconverted keeps every old key the lowering cannot convert at its old spelling (the
 	// equality check's old side); otherwise it is left out and reported (a file's conversion).
 	keepUnconverted bool
+	// merged marks the lowering of the merged user-and-project read, which holds the user-only
+	// vocabulary too and converts it the way a user file does.
+	merged bool
+	// user is the merged old user config the user-scope conversions rest on (RC-D32).
+	user *userView
 }
 
 // lowered is one lowering's result: the new-vocabulary values, the old path each new path came
@@ -130,12 +135,29 @@ func lower(old *jsonx.OrderedMap, ctx loweringContext, file string) lowered {
 		out.origins[strings.Join(newPath, "\x00")] = oldPath
 		return true
 	}
+	var profiles any
+	hasProfiles := false
 	for _, key := range old.Keys() {
 		value, _ := old.Get(key)
 		path := []string{key}
 		switch key {
 		case convertLaterKey:
 			continue
+		case "loopholes":
+			if ctx.userScoped() {
+				lowerLoopholes(value, ctx, place, skip)
+				continue
+			}
+		case "profile":
+			if ctx.userScoped() {
+				lowerProfileSelection(value, ctx, place, skip)
+				continue
+			}
+		case "profiles":
+			if ctx.userScoped() {
+				profiles, hasProfiles = value, true
+				continue
+			}
 		case "packages", "mise_tools", "gpu", "resources":
 			target, ok := renameReplacement(key)
 			if !ok || !place(target, value, path) {
@@ -157,13 +179,17 @@ func lower(old *jsonx.OrderedMap, ctx loweringContext, file string) lowered {
 			continue
 		}
 		kept, dropped := filterRenamedLeaves(value, path)
+		// Place what converts first: a dropped leaf kept at its old spelling is written beside
+		// it, and writing it first would leave the table's other keys out of the check.
+		if kept != nil {
+			place(path, kept, path)
+		}
 		for _, nc := range dropped {
 			skip(nc.path, nc.value, nc.reason)
 		}
-		if kept == nil {
-			continue
-		}
-		place(path, kept, path)
+	}
+	if hasProfiles {
+		lowerProfiles(profiles, ctx, &out, skip)
 	}
 	// The schema is the last word: a key with no readable spelling is not written.
 	if !ctx.keepUnconverted {

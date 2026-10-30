@@ -127,12 +127,13 @@ type canonicalSet struct {
 func Plan(g *Graph) (*MigrationPlan, error) {
 	p := &MigrationPlan{Graph: g, Unreachable: append([]Missing(nil), g.Unreachable...)}
 	remotes := workspaceRemotes(g.Request.Workspace)
+	view := userViewOf(g)
 	newBytes := map[*File][]byte{}
 	writers := writerCounts{}
 	for _, f := range g.Files {
 		switch f.Role {
 		case RoleConvert:
-			writers.add(lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes}, f.Logical).values)
+			writers.add(lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes, user: view}, f.Logical).values)
 		default:
 			writers.add(f.doc.Values)
 		}
@@ -140,7 +141,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	for _, f := range g.Files {
 		switch f.Role {
 		case RoleConvert:
-			t, skipped, err := convertFile(f, remotes, writers)
+			t, skipped, err := convertFile(f, remotes, view, writers)
 			if err != nil {
 				return nil, err
 			}
@@ -165,7 +166,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	if err := p.preflight(); err != nil {
 		return nil, err
 	}
-	before, err := readCanonical(g, oldTop(g), g.Request.Workspace, remotes, "", true)
+	before, err := readCanonical(g, oldTop(g), g.Request.Workspace, remotes, view, "", true)
 	if err != nil {
 		return nil, fmt.Errorf("read the old config: %w", err)
 	}
@@ -181,7 +182,7 @@ func Plan(g *Graph) (*MigrationPlan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stage the converted files: %w", err)
 	}
-	after, err := readCanonical(g, userTop, workspace, nil, mirror, false)
+	after, err := readCanonical(g, userTop, workspace, nil, nil, mirror, false)
 	if err != nil {
 		return nil, fmt.Errorf("the converted files would not read: %w; nothing was written", err)
 	}
@@ -209,8 +210,8 @@ func oldTop(g *Graph) string {
 }
 
 // convertFile makes one old file's TOML.
-func convertFile(f *File, remotes []string, writers writerCounts) (Target, []NotConverted, error) {
-	l := lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes}, f.Logical)
+func convertFile(f *File, remotes []string, view *userView, writers writerCounts) (Target, []NotConverted, error) {
+	l := lower(f.doc.Values, loweringContext{scope: f.Scope, remotes: remotes, user: view}, f.Logical)
 	dropped := dropDefaults(l.values, writers)
 	var respelled []string
 	if value, ok := l.values.Get("include_if_found"); ok {
@@ -469,21 +470,21 @@ func launchEnv(composed *jsonx.OrderedMap) *jsonx.OrderedMap {
 
 // loweredRoots are the roots the comparison checks per scope only: their lowering depends on the
 // scope that wrote them, which the merged read no longer knows.
-var loweredRoots = []string{"env_sources", "env", "brokered", "requests", "allow"}
+var loweredRoots = []string{"env_sources", "env", "brokered", "requests", "allow", "loopholes", "profile", "profiles", "active_provider"}
 
 // readCanonical reads one side through the launch's readers (config.ReadMigrationGraph). The old
 // side (remotes non-nil or mirror empty) is lowered; the new side is the readers' output with
 // the staging root taken back out of every anchored path.
-func readCanonical(g *Graph, userTop, workspace string, remotes []string, mirror string, lowerOld bool) (*sideRead, error) {
+func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *userView, mirror string, lowerOld bool) (*sideRead, error) {
 	read, err := config.ReadMigrationGraph(userTop, workspace)
 	if err != nil {
 		return nil, err
 	}
 	s := &sideRead{}
 	if lowerOld {
-		s.user, _ = canonicalOld(read.User, loweringContext{scope: ScopeUser, remotes: remotes})
-		s.project, _ = canonicalOld(read.Workspace, loweringContext{scope: ScopeProject, remotes: remotes})
-		s.composed, _ = canonicalOld(read.Composed, loweringContext{scope: ScopeProject, remotes: remotes})
+		s.user, _ = canonicalOld(read.User, loweringContext{scope: ScopeUser, remotes: remotes, user: view})
+		s.project, _ = canonicalOld(read.Workspace, loweringContext{scope: ScopeProject, remotes: remotes, user: view})
+		s.composed, _ = canonicalOld(read.Composed, loweringContext{scope: ScopeProject, remotes: remotes, user: view, merged: true})
 		// The OLD spelling as the launch reads it, not its lowering: the proof is that the
 		// converted files resolve to the env the old ones resolve to.
 		s.env = launchEnv(read.Composed)
