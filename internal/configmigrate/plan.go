@@ -540,7 +540,7 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *
 		// The OLD spelling as the launch reads it, not its lowering: the proof is that the
 		// converted files resolve to the env the old ones resolve to.
 		s.env = launchEnv(read.Composed)
-		s.providers = providerTable(read.Composed, packs)
+		s.providers = providerTable(withMovedProviderKeys(read.Composed, s.composed), packs)
 	} else {
 		s.user = unmirror(read.User, mirror).(*jsonx.OrderedMap)
 		s.project = unmirror(read.Workspace, mirror).(*jsonx.OrderedMap)
@@ -571,6 +571,46 @@ func readCanonical(g *Graph, userTop, workspace string, remotes []string, view *
 		*pair.out = text
 	}
 	return s, nil
+}
+
+// withMovedProviderKeys is the old side's merged read as the provider table is proved from: its
+// own provider rows, plus each provider-level key the lowering moved there from elsewhere (a
+// profile's `model` and `variants`, RC-D32) that the old provider does not write. Those moves are
+// proved by the composed layer; this layer proves what the models say, so it must not count them
+// twice as a difference.
+func withMovedProviderKeys(read, lowered *jsonx.OrderedMap) *jsonx.OrderedMap {
+	moved, ok := mapAt(lowered, "providers")
+	if !ok {
+		return read
+	}
+	out := jsonx.DeepCopyMap(read)
+	providers, ok := mapAt(out, "providers")
+	if !ok {
+		providers = jsonx.NewOrderedMap()
+		out.Set("providers", providers)
+	}
+	for _, name := range moved.Keys() {
+		from, ok := mapAt(moved, name)
+		if !ok {
+			continue
+		}
+		to, ok := mapAt(providers, name)
+		if !ok {
+			to = jsonx.NewOrderedMap()
+			providers.Set(name, to)
+		}
+		for _, key := range from.Keys() {
+			if key == "models" || key == everyModelKey {
+				continue
+			}
+			if _, written := to.Get(key); written {
+				continue
+			}
+			v, _ := from.Get(key)
+			to.Set(key, v)
+		}
+	}
+	return out
 }
 
 func unmirror(v any, root string) any {
