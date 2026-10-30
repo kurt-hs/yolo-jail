@@ -47,6 +47,12 @@ func runPackSkew(t *testing.T, ws, env string, tty bool, stdin string, getenv ma
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+":/bin:/usr/bin")
+	// PINNED, not inherited: with YOLO_VERSION unset (a host or CI run) the launch is not in a jail,
+	// so offerConfigMigration discovers the fixture's config.jsonc as old-format and, at a terminal,
+	// reads the first stdin line as ITS answer, leaving the restart prompt with end of input (a "yes"
+	// then declined: "a yes did not stop the jail: stops=[]"). In a jail it never looks at the user
+	// config, which is why the dev jail never saw it.
+	t.Setenv("YOLO_VERSION", "9.9.9-test")
 	r := packSkewRun{rt: &skewRuntime{env: env, execIDs: "1"}}
 	var stdout, stderr bytes.Buffer
 	o := dispatchOptions(t, ws, "podman", &stdout, &stderr, nil)
