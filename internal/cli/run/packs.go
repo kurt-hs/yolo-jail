@@ -780,9 +780,9 @@ func packLoopholeModules(loaded []*packload.Pack) []loopholes.PackModule {
 // has to be pushed IN from a package that can. internal/cli/run is linked into `yolo`
 // (internal/cli imports it), which is what makes one registration cover every subcommand.
 //
-// It resolves from the STORE and never fetches, like PackRoot: a `yolo check` must not
-// depend on a reachable git server, and an unresolvable pack contributes nothing rather than
-// failing the command. The staged record supersedes it the moment staging runs, because
+// It resolves from the STORE, never fetches and checks nothing out (resolveConfiguredPacks
+// says why): a `yolo check` must not depend on a reachable git server or write into the pack
+// store, and an unresolvable pack contributes nothing rather than failing the command. The staged record supersedes it the moment staging runs, because
 // staging is the authoritative view — it is what the jail actually mounts, `only`/`exclude`
 // filters included.
 func init() {
@@ -854,9 +854,19 @@ func resolveConfiguredPacks() []*packload.Pack {
 	// staged tree it looks for is the one this process is running against. An unresolvable
 	// pack (never fetched, moved remote, offline) is not a deactivation signal: it
 	// contributes nothing.
+	//
+	// ReadOnlyStore, because a read-only surface WRITES NOTHING into the pack store
+	// (docs/reference/pack-system.md, "What never fetches"): Store.Resolve checks a commit
+	// out of the partial mirror, which can fetch blobs, and measured that is exactly what
+	// `yolo check` did through this resolver — a commit the mirror held but had not checked
+	// out came back checked out, and an earlier yolo's whole-commit tree gained a
+	// subdirectory checkout beside it. A commit not checked out yet contributes nothing
+	// here, like a pack never fetched. The launch loses nothing: its refresh (refreshPacks)
+	// checks every resolved commit out before config validation first asks this resolver,
+	// and staging, not this lazy view, is what the jail mounts.
 	sel, _ := config.SelectPacks(entries, config.PackSelectSpec{
 		Resolve: func(entry config.PackEntry) (*packload.Pack, error) {
-			res, err := config.ResolvePackForProcess(entry, config.ResolvePackSpec{})
+			res, err := config.ResolvePackForProcess(entry, config.ResolvePackSpec{ReadOnlyStore: true})
 			if err != nil || res.Pack == nil || len(res.Problems) > 0 {
 				return nil, nil // contributes nothing: see above
 			}

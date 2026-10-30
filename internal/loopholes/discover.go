@@ -6,6 +6,7 @@ import (
 	"github.com/mschulkind-oss/yolo-jail/internal/config"
 	"github.com/mschulkind-oss/yolo-jail/internal/jsonx"
 	"github.com/mschulkind-oss/yolo-jail/internal/loopholedecl"
+	"github.com/mschulkind-oss/yolo-jail/internal/paths"
 )
 
 // yolo-jail.jsonc loopholes: entries as Loophole records (lifecycle spawned,
@@ -483,7 +484,20 @@ var (
 	packModuleResolver  func() []PackModule
 	packModulesCached   []PackModule
 	packModulesResolved bool
+	packModulesKey      string
 )
+
+// resolverMemoKey is what a lazy resolver's memo answers FOR: the home whose user config
+// names the packs and whose store holds them. The memo is a fact about one configuration,
+// not about the process, so an answer resolved under one home is never handed out under
+// another. A launch never changes its home, so this costs production nothing; it is what
+// keeps an in-process caller that does (a test, one after another) from reading the pack
+// set some earlier caller resolved under a different home. Measured: an internal/cli test
+// asserting `yolo check`'s grants-nothing broker note passed alone and failed in the full
+// package run, because an earlier test had memoized an empty pack set under its own HOME.
+func resolverMemoKey() string {
+	return paths.Home()
+}
 
 // SetPackModules records the pack-contributed loophole modules for this process, from the
 // STAGED trees. Called by the host-side command that resolved and gated the pack set.
@@ -526,8 +540,8 @@ func SetPackModules(mods []PackModule) {
 // would permanently disable the lazy resolver — every later `yolo loopholes list` in the
 // process would report no pack loopholes at all.
 //
-// The resolver's MEMO is deliberately untouched: it answers "what does this machine's pack
-// store hold", which is a fact about the machine and not about one launch.
+// The resolver's MEMO is deliberately untouched: it answers "what does this home's pack
+// store hold", which is a fact about the home (resolverMemoKey) and not about one launch.
 func SnapshotPackModules() func() {
 	prev, prevSet := append([]PackModule(nil), packModules...), packModulesSet
 	return func() { packModules, packModulesSet = prev, prevSet }
@@ -552,10 +566,10 @@ func PackModules() []PackModule {
 	if packModulesSet {
 		return append([]PackModule(nil), packModules...)
 	}
-	if packModuleResolver != nil && !packModulesResolved {
-		// Memoized: resolution reads the pack store and every pack's manifest, and the
-		// surfaces that need it ask more than once per process.
-		packModulesCached, packModulesResolved = packModuleResolver(), true
+	if key := resolverMemoKey(); packModuleResolver != nil && (!packModulesResolved || packModulesKey != key) {
+		// Memoized per home (resolverMemoKey): resolution reads the pack store and every
+		// pack's manifest, and the surfaces that need it ask more than once per process.
+		packModulesCached, packModulesResolved, packModulesKey = packModuleResolver(), true, key
 	}
 	return append([]PackModule(nil), packModulesCached...)
 }

@@ -95,6 +95,7 @@ var (
 	packSupersessionResolver  func() []PackSupersession
 	packSupersessionsCached   []PackSupersession
 	packSupersessionsResolved bool
+	packSupersessionsKey      string
 )
 
 // SetPackSupersessions records the supersession claims of this process's selected
@@ -133,8 +134,9 @@ func PackSupersessions() []PackSupersession {
 	if packSupersessionsSet {
 		return append([]PackSupersession(nil), packSupersessions...)
 	}
-	if packSupersessionResolver != nil && !packSupersessionsResolved {
-		packSupersessionsCached, packSupersessionsResolved = packSupersessionResolver(), true
+	// Memoized per home, like PackModules (resolverMemoKey).
+	if key := resolverMemoKey(); packSupersessionResolver != nil && (!packSupersessionsResolved || packSupersessionsKey != key) {
+		packSupersessionsCached, packSupersessionsResolved, packSupersessionsKey = packSupersessionResolver(), true, key
 	}
 	return append([]PackSupersession(nil), packSupersessionsCached...)
 }

@@ -102,6 +102,63 @@ func TestLazyResolverCoversTheSurfacesThatNeverStage(t *testing.T) {
 	}
 }
 
+// THE LAZY RESOLVERS' MEMO IS PER HOME, not per process. Their answer is a fact about one
+// configuration — the home whose user config names the packs and whose store holds them — so
+// an answer resolved under one home must not be handed out under another. A process-lifetime
+// memo did exactly that, measured: a `yolo check` test asserting a broker note passed alone
+// and failed in the full package run, because an earlier test had memoized an empty pack set
+// under its own HOME. Within one home the memo still holds (one resolution, however many
+// surfaces ask), and ResetPackModules / ResetPackSupersessions still force a fresh answer.
+func TestLazyResolverMemoFollowsHome(t *testing.T) {
+	unsetJail(t)
+	isolateModules(t)
+	t.Cleanup(func() {
+		ResetPackSupersessions()
+		SetPackSupersessionResolver(nil)
+	})
+	homeA, homeB := t.TempDir(), t.TempDir()
+	modCalls, supCalls := 0, 0
+	SetPackModuleResolver(func() []PackModule {
+		modCalls++
+		return []PackModule{{Dir: os.Getenv("HOME"), HostExecApproved: true}}
+	})
+	SetPackSupersessionResolver(func() []PackSupersession {
+		supCalls++
+		return []PackSupersession{{Pack: os.Getenv("HOME"), Capability: "c", Because: "b"}}
+	})
+	ResetPackSupersessions()
+
+	for _, step := range []struct {
+		home  string
+		calls int // each resolver's calls so far
+	}{
+		{homeA, 1},
+		{homeA, 1}, // memoized within one home
+		{homeB, 2}, // a new home resolves again
+		{homeA, 3}, // and so does a return to the first
+	} {
+		t.Setenv("HOME", step.home)
+		if got := PackModules(); len(got) != 1 || got[0].Dir != step.home {
+			t.Errorf("under HOME=%s PackModules() = %+v, want the answer resolved for that home", step.home, got)
+		}
+		if got := PackSupersessions(); len(got) != 1 || got[0].Pack != step.home {
+			t.Errorf("under HOME=%s PackSupersessions() = %+v, want the answer resolved for that home", step.home, got)
+		}
+		if modCalls != step.calls || supCalls != step.calls {
+			t.Errorf("under HOME=%s: module resolver ran %d times, supersession resolver %d; want %d each",
+				step.home, modCalls, supCalls, step.calls)
+		}
+	}
+
+	// Reset still forces a fresh answer under an unchanged home.
+	ResetPackModules()
+	ResetPackSupersessions()
+	_, _ = PackModules(), PackSupersessions()
+	if modCalls != 4 || supCalls != 4 {
+		t.Errorf("after Reset: module resolver ran %d times, supersession resolver %d; want 4 each", modCalls, supCalls)
+	}
+}
+
 // The STAGED record SUPERSEDES the lazy resolver, and it must: staging is the authoritative
 // view — it is what the jail actually mounts, `only`/`exclude` filters included — so a
 // launch must never validate against one set and mount another.
